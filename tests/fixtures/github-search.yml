@@ -1,0 +1,7 @@
+- generic [ref=e1]:
+  - searchbox "Search GitHub" [ref=e2]
+  - link "tenacity" [ref=e10]:
+      - /url: https://github.com/jd/tenacity
+  - link "urllib3" [ref=e11]:
+      - /url: https://github.com/urllib3/urllib3
+  - button "Sponsor" [ref=e20]
