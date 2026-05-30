@@ -30,21 +30,28 @@ The map answers: *"I'm in state X, I want goal G — give me the cheapest, most 
 
 4. **Confidence decays with age, updates with use.** Recall prefers recently-verified, high-reliability routes. Using a route re-verifies it. Routes nobody uses are allowed to go stale — that's correct. The map gets freshest exactly where it's used most.
 
-5. **The map surfaces evidence; it does NOT score or judge.** No hard-coded rubrics, no per-goal scoring formulas. The map routes and reads declared signals; the **LLM** does all judgment/ranking, per use-case, using its own reasoning. Keeping the map judgment-free is what makes it generalize to every future goal.
+5. **The map surfaces evidence; it does NOT score or judge.** No hard-coded rubrics, no per-goal scoring formulas. The map routes and reads declared signals; **the calling AGENT does all judgment/ranking**, per use-case, using its own reasoning. Keeping the map judgment-free is what makes it generalize to every future goal.
+
+5a. **webnav contains ZERO LLM — it is pure navigation infrastructure (settled).** webnav never reasons. All reasoning (ranking evidence, resolving a broken step, classifying whether an action is destructive) is offloaded to the **calling agent** via a call-and-response protocol. webnav surfaces evidence and, when it hits a fork it isn't allowed to decide, returns a structured "your move" response. The agent holds the brain; webnav holds the map and the mechanics. This is the natural MCP shape and keeps webnav cheap, deterministic, and testable (no API keys, no provider config, hot path has no LLM call).
+   - **Response protocol** — `recall(goal, query)` returns one of:
+     - `{ status: "done", evidence }` — reached the goal; here are the declared signals (agent ranks).
+     - `{ status: "needs-navigation", at, semanticStep, snapshot, question }` — deterministic self-heal failed on real drift; agent picks the ref, webnav continues and writes the repair back.
+     - `{ status: "needs-classification", action, snapshot }` — encountered an action that might be destructive; agent decides safe vs commit-point before webnav traverses.
+     - `{ status: "failed", reason }` — genuinely no route.
+   - **resolve** is deterministic-first (cached ref present? role+name match in snapshot?); only real drift escalates to `needs-navigation`. **classify** is never done by webnav — commit-points come back as `needs-classification` (or are pre-tagged on the route as static data). **judge/rank** never happens in webnav at all.
 
 6. **Map = use-case-INDEPENDENT navigation skeleton (built ahead of time).**
    - What we *remember* is the reusable **navigation skeleton** of a site (how to reach search, apply filters, get from a result to its detail pages). This is explored **ahead of time / open-endedly** and is durable.
    - A **use-case query travels** that skeleton and reads **fresh signals** each time. The use-case does NOT build the map; it *uses* it. Use-case-specific data (search terms, which repos came back, their current stats) is fresh every time and is **never** stored as map (it changes constantly).
    - **Hard split (settled in design review):** the **skeleton = site STRUCTURE only** (states + edges; knows nothing about repos/stars). The **goal = SIGNAL interests** (which states to visit, which signals to surface, candidate_limit). Anything GitHub-repo-specific lives ONLY in the goal, never in the skeleton. Goals reference the skeleton; the skeleton never references goals. This is what keeps the map judgment-free and generalizable to npm/PyPI later.
 
-## Architecture (settled — "Approach 1": three components behind one CLI)
+## Architecture (settled — "Approach 1": three components behind one CLI; ZERO LLM)
 
-One `webnav` CLI orchestrating three independently-testable components + a shared LLM service:
+One `webnav` CLI orchestrating three independently-testable components. **No LLM service** — reasoning is offloaded to the calling agent via the response protocol (principle #5a).
 
-- **Explorer** — *"Given a start + goal, extend the map by READING the site."* Drives `playwright-cli`, snapshots, builds states/edges from declared structure, clicks only safe actions. Writes nodes/edges to MapStore. Depends on: playwright-cli, LLM svc.
-- **MapStore** — *"Persist the graph; answer structural queries."* Owns the data model (states, edges+weights, goal index, semantic route + selector cache). Starts as SQLite/JSON — no premature graph DB. Depends on: nothing (pure persistence).
-- **Router** — *"Given a goal, return cheapest reliable route, replay, self-heal, return evidence."* Asks MapStore for a route (or Explorer to build one), replays via playwright-cli (cached selectors first, semantic re-resolution on miss, repairs written back), surfaces raw declared signals. Does NOT score. Depends on: MapStore, playwright-cli, LLM svc.
-- **LLM Reasoning Service** (shared, the ONLY place LLM calls live) — three jobs: **classify** actions (safe vs commit), **resolve** semantic step → live element on cache miss, **judge/rank** surfaced evidence. Both Explorer and Router call it; neither embeds reasoning.
+- **Explorer** — *"Given a start + goal, extend the map by READING the site."* Drives `playwright-cli`, snapshots, builds states/edges from declared structure (links/buttons/inputs), traverses only navigate/safe edges. Unclassified actions are surfaced for the agent, not classified by webnav. Writes nodes/edges to MapStore. Depends on: playwright-cli.
+- **MapStore** — *"Persist the graph; answer structural queries."* Owns the data model (states, edges+weights, goals, semantic route + selector cache). SQLite. Depends on: nothing (pure persistence).
+- **Router** — *"Given a goal, return cheapest reliable route, replay, self-heal deterministically, return evidence OR a 'your move' response."* Asks MapStore for a route (or Explorer to build one), replays via playwright-cli (cached selectors first; deterministic role+name re-match on miss; real drift → `needs-navigation` to the agent; repairs written back). Surfaces raw declared signals. Does NOT score, does NOT call an LLM. Depends on: MapStore, playwright-cli.
 
 Browser automation layer: **`playwright-cli`** (github.com/microsoft/playwright-cli) — built for agents, token-efficient, returns stable element refs from `snapshot`.
 
@@ -52,28 +59,30 @@ Browser automation layer: **`playwright-cli`** (github.com/microsoft/playwright-
 - Language: **TypeScript** (strict), Node. Test runner: **vitest**.
 - Browser: **`playwright-cli`** invoked as a child process via a thin adapter.
 - MapStore backing: **SQLite** (via `better-sqlite3` — synchronous, fits one-serialized-session model).
-- LLM: **pluggable behind an `LlmProvider` interface** from day one (classify / resolve / judge). Concrete providers (Claude, Gemini) implement the interface; the engine never hard-codes one.
+- **No LLM dependency in webnav.** The calling agent supplies all reasoning via the response protocol (#5a). webnav has no API keys, no provider config.
 
 ## v1 scope (settled)
 
 **Target site:** GitHub (read-only, public browsing — no auth, no checkout, no commit points).
 
 **v1 deliverable:** `webnav recall "<use-case>"` →
-1. travels the pre-built GitHub navigation skeleton (search → filter → top candidates → each candidate's signal-bearing pages: README, insights, commits, issues, releases, dependents/used-by, license),
-2. **reads and returns the declared quality signals** compactly,
-3. the **LLM ranks** them into a **ranked, evidenced shortlist** of battle-tested + relevant repos (each with raw signals + one-line "why"), judged by the LLM with no rubric.
+1. travels the GitHub navigation skeleton (search for the query → top-N candidate repos → each repo's detail/signal pages),
+2. **reads and returns the declared quality signals** compactly as an **evidence bundle** (each candidate: id, url, declared signals like stars/last-commit/issues/license),
+3. returns `{ status: "done", evidence }` — **the calling AGENT ranks** into a battle-tested + relevant shortlist using its own judgment. webnav does NOT rank.
 
-Output is **structured so a future stitching layer can consume multiple shortlists** (stitching itself is v2, designed-for not built).
+If deterministic navigation can't complete (real drift / ambiguous action), webnav returns `needs-navigation` / `needs-classification` instead, and the agent supplies the missing decision (principle #5a).
 
-**Why this v1:** real pain (web search returns un-vetted repos), read-only/safe, exercises the full map engine on a real high-value site, immediately dogfoodable (use it to find libs to build the rest of this project).
+Output is **structured so a future stitching layer can consume multiple evidence bundles** (stitching itself is v2, designed-for not built).
+
+**Why this v1:** real pain (web search returns un-vetted repos), read-only/safe, exercises the full map engine on a real high-value site, immediately dogfoodable (an agent — e.g. Claude Code — calls webnav, supplies judgment, gets a vetted shortlist; used to find libs to build the rest of this project).
 
 **Success criteria:**
-1. Returns repos genuinely more battle-tested + relevant than plain web search (user judges — dogfood).
-2. Second run of a similar goal is cheaper/faster than the first (memory works — the core thesis).
-3. Never re-explores the skeleton from scratch; self-heals when a remembered page changed.
+1. The evidence bundle lets the calling agent pick repos genuinely more battle-tested + relevant than plain web search (user judges — dogfood).
+2. Second run of a similar goal is cheaper/faster than the first (memory works — the core thesis). Cost = playwright-cli call count.
+3. Never re-explores the skeleton from scratch; self-heals deterministically when a remembered page changed, escalating to the agent only on real drift.
 
-**Out of scope for v1:** stitching (designed-for only), destructive actions (none on GitHub), auth/login, multi-site mapping, proactive background re-crawl (self-heal-on-use only).
+**Out of scope for v1:** stitching (designed-for only), destructive actions (none on GitHub), auth/login, multi-site mapping, proactive background re-crawl (self-heal-on-use only), **any LLM inside webnav** (reasoning is the agent's job — #5a).
 
 ## Status
 
-In brainstorming/design. Full design (§1–6) approved and written to `docs/superpowers/specs/2026-05-30-webnav-design.md`. Adversarial design review complete; spec revised with: structure-vs-signal split (skeleton=structure, goal=signals), explicit search-term injection (`accepts_input="query"` on the search edge), candidate selection (`candidate_limit`, default 10, `--top N`), cost = playwright-cli calls + LLM calls (§4.1), stitch-ready output schema (§4.2), and operational flags (one serialized session/invocation; GitHub rate limits to verify early). Next: user re-review of revised spec → invoke writing-plans skill for the implementation plan.
+Design + plan complete and committed. Spec: `docs/superpowers/specs/2026-05-30-webnav-design.md`. Plan: `docs/superpowers/plans/2026-05-30-webnav.md`. **Major revision (post-plan):** webnav is now ZERO-LLM (principle #5a) — all reasoning (judge/resolve/classify) offloaded to the calling agent via the call-and-response protocol. Cost = playwright-cli calls only. Plan tasks 5/8/10/11/13 being rewritten accordingly (Task 11 — LLM providers — deleted). Next: finish plan rewrite, then execute.

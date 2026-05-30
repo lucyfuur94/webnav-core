@@ -1,8 +1,10 @@
 # webnav — Design Spec
 
 **Date:** 2026-05-30
-**Status:** Approved (design); pending user review of this document before implementation planning.
+**Status:** Approved (design); superseded in one respect by the post-plan revision below.
 **Working name:** `webnav` (project: `zy-core`)
+
+> **⚠️ REVISION (post-plan): webnav contains ZERO LLM.** This document originally described a shared "LLM Reasoning Service" inside webnav performing classify / resolve / judge. That has been **removed**. webnav is now pure navigation infrastructure: it surfaces an **evidence bundle** and offloads ALL reasoning to the **calling agent** via a call-and-response protocol — `recall()` returns `done` (evidence; agent ranks) | `needs-navigation` (real drift; agent picks the element) | `needs-classification` (agent decides if an action is destructive) | `failed`. `resolve` is deterministic-first (role+name match); `classify` and `judge` never happen inside webnav. Cost = **playwright-cli call count** only. Wherever this spec says "the LLM does X" or "LLM service," read it as "the calling agent does X via the response protocol." See `CLAUDE.md` principle #5a and the implementation plan `docs/superpowers/plans/2026-05-30-webnav.md` (authoritative for code).
 
 ---
 
