@@ -33,8 +33,9 @@ The map answers: *"I'm in state X, I want goal G — give me the cheapest, most 
 5. **The map surfaces evidence; it does NOT score or judge.** No hard-coded rubrics, no per-goal scoring formulas. The map routes and reads declared signals; the **LLM** does all judgment/ranking, per use-case, using its own reasoning. Keeping the map judgment-free is what makes it generalize to every future goal.
 
 6. **Map = use-case-INDEPENDENT navigation skeleton (built ahead of time).**
-   - What we *remember* is the reusable **navigation skeleton** of a site (how to reach search, apply filters, get from a result to its signal-bearing pages). This is explored **ahead of time / open-endedly** and is durable.
+   - What we *remember* is the reusable **navigation skeleton** of a site (how to reach search, apply filters, get from a result to its detail pages). This is explored **ahead of time / open-endedly** and is durable.
    - A **use-case query travels** that skeleton and reads **fresh signals** each time. The use-case does NOT build the map; it *uses* it. Use-case-specific data (search terms, which repos came back, their current stats) is fresh every time and is **never** stored as map (it changes constantly).
+   - **Hard split (settled in design review):** the **skeleton = site STRUCTURE only** (states + edges; knows nothing about repos/stars). The **goal = SIGNAL interests** (which states to visit, which signals to surface, candidate_limit). Anything GitHub-repo-specific lives ONLY in the goal, never in the skeleton. Goals reference the skeleton; the skeleton never references goals. This is what keeps the map judgment-free and generalizable to npm/PyPI later.
 
 ## Architecture (settled — "Approach 1": three components behind one CLI)
 
@@ -69,4 +70,4 @@ Output is **structured so a future stitching layer can consume multiple shortlis
 
 ## Status
 
-In brainstorming/design. Design sections 1–2 approved; navigation-skeleton principle (#6) confirmed. Next: data model (states/edges/goals), then error handling, then testing → write spec → implementation plan.
+In brainstorming/design. Full design (§1–6) approved and written to `docs/superpowers/specs/2026-05-30-webnav-design.md`. Adversarial design review complete; spec revised with: structure-vs-signal split (skeleton=structure, goal=signals), explicit search-term injection (`accepts_input="query"` on the search edge), candidate selection (`candidate_limit`, default 10, `--top N`), cost = playwright-cli calls + LLM calls (§4.1), stitch-ready output schema (§4.2), and operational flags (one serialized session/invocation; GitHub rate limits to verify early). Next: user re-review of revised spec → invoke writing-plans skill for the implementation plan.

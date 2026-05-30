@@ -107,22 +107,30 @@ Both Explorer and Router call it; neither embeds reasoning itself.
 
 ## 4. Data model
 
-States and edges are the **reusable skeleton** (principle #6). Specific repos and their stats are **runtime data** that flows through the skeleton, never stored as map.
+The model has a hard separation between two layers (the resolution of the review's deepest finding):
 
-### State (node)
+- **The skeleton = site STRUCTURE only.** States and the edges between them describe *how a site is shaped and navigated* — search → result → detail pages. The skeleton knows nothing about repos, stars, or any goal. It is genuinely use-case-independent (principle #6) and would generalize to npm/PyPI later.
+- **The goal = SIGNAL interests.** A goal declares *which* states to visit and *which* signals to surface at each — the only place anything GitHub-repo-specific (stars, dependents) lives. Goals reference the skeleton; the skeleton never references goals.
+
+Specific repos and their stats are **runtime data** that flows through the skeleton, never stored as map.
+
+### State (node) — structure only
 
 ```
 State {
   id              # stable internal id
-  semantic_name   # "github:search-results", "github:repo-overview", ...
+  semantic_name   # "github:search-results", "github:repo-detail", "github:repo-insights", ...
   url_pattern     # e.g. "github.com/search?q=*" (a pattern, not a fixed URL)
-  signals_here    # which declared signals this state exposes
-                  #   (repo-overview: stars, last-commit, license, topics, about, releases-link, ...)
-  fingerprint     # how to recognize "am I in this state?" — key declared elements present
+  role            # structural role: search-entry | result-list | detail | sub-detail
+  available_signals  # the signals this state is CAPABLE of exposing, named generically
+                     #   (a state advertises what's readable here; the GOAL decides what to read)
+  fingerprint     # how to recognize "am I in this state?" — key declared elements present.
+                  #   On ambiguous/failed match: escalate to the LLM service, NEVER guess silently.
+                  #   (Exact composition + matching rule is driven out via TDD in the plan.)
 }
 ```
 
-`github:repo-overview` is **one** node, not one-per-repo. The specific repo is runtime data flowing through it.
+`github:repo-detail` is **one** node, not one-per-repo. The specific repo is runtime data flowing through it. Note `available_signals` describes capability, not goal intent — a repo-detail state *can* expose stars/topics/license; whether we read them is the goal's call.
 
 ### Edge (action)
 
@@ -132,32 +140,74 @@ Edge {
   semantic_step   # DURABLE intent: "open the Insights tab", "enter query in primary search box"
   selector_cache  # DISPOSABLE: the playwright-cli ref/selector that worked last time
   kind            # safe-reversible | commit-point(never-traversed) | navigate
-  cost            # observed tokens/time to perform
+  accepts_input   # optional: names a runtime slot this edge consumes (e.g. "query").
+                  #   The search-box edge declares accepts_input="query"; Router injects the
+                  #   recall term here. This makes search-term injection explicit, not implicit.
+  cost            # observed cost to perform (see §4.1)
   reliability     # success_count / (success + fail)
   last_verified   # timestamp
   confidence      # derived: decays with age, rises with successful use
 }
 ```
 
-### Goal
+### Goal — signal interests (the only goal-specific layer)
 
 ```
 Goal {
   name            # "find-battle-tested-repos"
-  target_states   # which states hold the evidence (repo-overview, insights, issues, dependents, ...)
-  surface         # which signals_here to extract and return as evidence
+  visit           # ordered list of state roles/ids to visit per candidate
+                  #   (detail; optionally sub-details like insights/dependents)
+  surface         # which of each visited state's available_signals to extract as evidence
+  candidate_limit # how many candidates from the result-list to process. Default 10, configurable
+                  #   via `recall ... --top N`. Bounds cost; prevents "traverse 1000 results".
   # NO scoring weights. The LLM judges the surfaced evidence.
 }
 ```
 
 ### Map vs. runtime (the critical line)
 
-- **Map (stored, durable):** states, edges, semantic steps, goal definitions. The skeleton.
+- **Map (stored, durable):** states, edges, semantic steps, goal definitions. The skeleton + goals.
 - **Runtime (never stored as map):** the actual search term, which repos returned, their current star counts / commit dates / signals. Read fresh every query, handed to the LLM, discarded.
+
+### 4.1 Cost measurement
+
+`cost` is defined concretely as **`playwright-cli call count + LLM call count`** for the step (or summed over a route). This is cheap to log and makes success criterion #2 directly testable: run a goal twice, assert run 2 issues strictly fewer of both than run 1. Wall-clock is recorded too, but call-counts are the primary, deterministic metric. Route preference ("cheapest reliable route") ranks by summed call-count cost weighted by reliability.
 
 ### Recall flow
 
-`recall "python retry lib"` → Router loads the skeleton route for `find-battle-tested-repos` → travels it (plugging the search term in as runtime data) → reads `surface` signals at each `target_state` for each candidate repo → returns the evidence bundle → LLM ranks it. The skeleton was cheap to recall; the signals are fresh.
+`recall "python retry lib"` → Router loads the skeleton route for `find-battle-tested-repos` → travels it, **injecting the term at the edge whose `accepts_input="query"`** → at the result-list, selects the **top `candidate_limit`** results (in GitHub's own search ranking order, deduped by owner/repo) → for each candidate, visits the goal's `visit` states and reads the goal's `surface` signals → returns the evidence bundle → LLM ranks it. The skeleton was cheap to recall; the signals are fresh.
+
+### 4.2 Output schema (stitch-ready)
+
+The recall output is a structured bundle so a future stitching layer can consume several at once:
+
+```json
+{
+  "goal": "find-battle-tested-repos",
+  "query": "python lib for retrying flaky HTTP",
+  "candidates": [
+    {
+      "id": "owner/repo",
+      "url": "https://github.com/owner/repo",
+      "signals": {
+        "stars": 1234,
+        "last_commit": "2026-05-15",
+        "open_issues": 12,
+        "closed_issues": 480,
+        "latest_release": "2.1.0 (2026-04-02)",
+        "license": "MIT",
+        "dependents": 5300,
+        "has_ci": true
+      },
+      "why": "one-line LLM rationale"
+    }
+  ],
+  "ranked_by": "llm",
+  "cost": { "playwright_calls": 0, "llm_calls": 0, "wall_ms": 0 }
+}
+```
+
+Signal keys present depend on the goal's `surface` and what the live page declared; absent signals are omitted, never fabricated.
 
 ---
 
@@ -166,7 +216,7 @@ Goal {
 Four failure classes, each with a defined response.
 
 **1. Stale selector (common).** Cached selector no longer matches the live page; the semantic intent is still valid.
-*Response:* LLM re-resolves the semantic step against the current snapshot → fresh ref → continue → **write the new selector back**, bump `last_verified`. Edge reliability ticks down slightly, recovers with use. The route self-heals one step at a time.
+*Response:* LLM re-resolves the semantic step against the current snapshot → fresh ref → continue → **write the new selector back**, bump `last_verified`. Edge reliability ticks down slightly, recovers with use. The route self-heals one step at a time. **Re-resolution must not silently guess:** if the LLM cannot confidently map the semantic step to a live element, this escalates to case 2 (re-exploration), never an arbitrary click. (The confidence threshold is tuned during implementation.)
 
 **2. Structural drift (rare, serious).** The state itself changed — a page is gone, or a step leads somewhere whose fingerprint matches no known state.
 *Response:* flag the edge broken, drop confidence sharply, **hand off to Explorer** to re-map that local region from the last known-good state. Write the repaired sub-route back. If re-exploration cannot reach the target state, return an honest *"route lost, re-exploration failed"* — never a silent wrong answer.
@@ -183,6 +233,11 @@ Four failure classes, each with a defined response.
 - **Always write learnings back.** Every recall updates the map — selectors repaired, reliability/confidence adjusted, `last_verified` stamped.
 - **Bound the blast radius.** Self-heal touches one step; re-exploration touches one local region — never silently re-crawl the whole site mid-query.
 - **Safety holds in error paths.** Re-exploration and self-heal still obey "observe first, never traverse a commit point."
+
+### Operational notes (flagged for the plan, not fully designed here)
+
+- **Session model:** v1 uses **one `playwright-cli` session per `webnav` invocation**, and Explorer/Router calls within an invocation are **serialized** (no concurrency). This keeps selector validity and cost predictable. A persistent shared session is a later optimization.
+- **GitHub rate limits:** unauthenticated browsing is subject to GitHub's rate limits, which can throttle repeated recalls. This is a feasibility risk to **verify empirically early in implementation** (measure limits on the first few queries). Mitigations if needed (short-lived result caching, optional auth) are deferred, but the risk is named so the plan budgets for it. Transient rate-limit responses are handled as case 3 (retry/backoff), never recorded as edge-reliability hits.
 
 ---
 
@@ -204,7 +259,8 @@ Isolate the engine from the live web using captured snapshots; reserve a few liv
 ### End-to-end smoke tests (slow, live, few)
 
 - A handful of real `webnav recall "<use-case>"` runs against live GitHub, asserting structural properties (≥1 repo; every repo has declared signals attached; output matches the stitch-ready schema), not exact results.
-- **The thesis test:** run a goal twice; assert run 2 issues fewer playwright-cli calls / less exploration than run 1. Validates success criterion #2 directly.
+- **The thesis test:** run a goal twice; assert run 2 issues strictly fewer playwright-cli calls **and** LLM calls than run 1 (the cost metric defined in §4.1). Validates success criterion #2 directly.
+- **Schema test:** assert every recall output validates against the §4.2 stitch-ready schema (candidates carry `id`, `url`, `signals`, `why`; no fabricated signal keys).
 
 ### Deliberately NOT tested
 
@@ -220,5 +276,10 @@ A small `webnav capture <url>` dev helper saves a real snapshot into the test fi
 
 - Implementation language (TypeScript vs. Python) — to be decided in the plan, factoring in `playwright-cli` invocation ergonomics and the dogfooding context.
 - MapStore concrete backing (SQLite vs. JSON) for v1 — start simple; the interface is fixed regardless.
-- Exact wire schema of the stitch-ready output bundle.
 - Which LLM and how it is invoked from the reasoning service.
+- **Fingerprint composition + matching rule** — the precise definition of "key declared elements" and the match/escalate threshold. Design intent is fixed (§4: recognize by declared elements; escalate to LLM on ambiguity, never guess); the exact rule is driven out via TDD.
+- **Re-resolution confidence threshold** value (§5 case 1) — tuned empirically.
+- **GitHub rate-limit behavior** — measure early; decide if caching/auth mitigation is needed (§5 operational notes).
+- **Persistent/shared playwright-cli session** — v1 is one-session-per-invocation, serialized; revisit for performance later.
+
+> Resolved during design review (now specified above, no longer open): structure-vs-signal split (§4), search-term injection via `accepts_input` (§4), candidate selection + `candidate_limit` (§4), cost measurement (§4.1), and the stitch-ready output schema (§4.2).
