@@ -18,7 +18,12 @@ describe('recall (evidence only, no ranking)', () => {
     - /url: https://github.com/jd/tenacity
 - link "urllib3" [ref=e11]:
     - /url: https://github.com/urllib3/urllib3`;
-    const repoDetail = `- heading "tenacity" [ref=e1]\n- generic "12,000 stars" [ref=e2]`;
+    // Real GitHub repo pages are tens of KB of snapshot YAML. Pad the detail
+    // snapshots to a realistic size so the token-savings estimate reflects what
+    // the agent actually avoids ingesting (a tiny synthetic page would show ~0
+    // saving — correctly, but unrealistically).
+    const repoDetail = `- heading "tenacity" [ref=e1]\n- generic "12,000 stars" [ref=e2]\n`
+      + '- generic "noise" [ref=e9]\n'.repeat(400); // ~12KB, realistic page bulk
     const browser = fakeBrowser([searchResults, repoDetail, repoDetail]);
 
     const r = recall({
@@ -37,6 +42,11 @@ describe('recall (evidence only, no ranking)', () => {
     // No ranking, no 'why' — that's the agent's job.
     expect(r.evidence.candidates[0]).not.toHaveProperty('why');
     expect(r.evidence.cost.playwright_calls).toBeGreaterThan(0);
+    // The real cost win: reports the agent LLM tokens webnav saved by parsing
+    // the raw snapshots and returning a compact bundle.
+    expect(r.evidence.cost.savings.tokens_saved).toBeGreaterThan(0);
+    expect(r.evidence.cost.savings.raw_snapshot_tokens)
+      .toBeGreaterThan(r.evidence.cost.savings.bundle_tokens);
   });
 
   it('respects candidateLimit', () => {
