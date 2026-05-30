@@ -95,4 +95,8 @@ Output is **structured so a future stitching layer can consume multiple evidence
 
 ## Status
 
-Design + plan complete and committed. Spec: `docs/superpowers/specs/2026-05-30-webnav-design.md`. Plan: `docs/superpowers/plans/2026-05-30-webnav.md`. **Major revision (post-plan):** webnav is now ZERO-LLM (principle #5a) — all reasoning (judge/resolve/classify) offloaded to the calling agent via the call-and-response protocol. Cost = playwright-cli calls only. Plan tasks 5/8/10/11/13 being rewritten accordingly (Task 11 — LLM providers — deleted). Next: finish plan rewrite, then execute.
+v1 built + merged to main (zero-LLM engine; verbs: list/describe/locate/recall + capture; 61 tests). Spec: `docs/superpowers/specs/2026-05-30-webnav-design.md`. Plan: `docs/superpowers/plans/2026-05-30-webnav.md`.
+
+**Memory loop wired (increment M1–M3, branch `webnav-memory-loop`):** the live path now goes Router→MapStore→Explorer. `exploreGitHub(store)` persists the structure-only skeleton (M1); `recallViaMap` builds it once if absent and never re-explores a known skeleton, then delegates to `recall` (M2); `live.ts` uses a FILE-backed MapStore so the skeleton survives across separate runs, proven by a deterministic test that reopens a fresh MapStore from disk on run-2 and confirms no re-exploration (M3, criterion #3). 69 unit tests + 1 gated live e2e.
+
+**Honest remaining gap:** criterion #2 (run-2 *cheaper* in playwright calls) is only partially realized — the live path still navigates search + each detail every run, so per-run call counts are similar. The architectural "built once, never re-explored" invariant holds; a dramatic per-run cost drop awaits a future increment where replay can SKIP navigation for addressable steps (use `locate`/URL coordinates to jump directly instead of re-traversing). Also still pending: richer signal extraction (5 of 7 signals), self-growing gazetteer, optional MCP surface, and a real live dogfood run against GitHub.
