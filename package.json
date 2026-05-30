@@ -4,7 +4,7 @@
   "type": "module",
   "bin": { "webnav": "dist/cli.js" },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/",
     "test": "vitest run",
     "test:watch": "vitest",
     "webnav": "tsx src/cli.ts"
