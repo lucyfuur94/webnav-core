@@ -1,10 +1,14 @@
 export type ParsedArgs =
+  | { cmd: 'list' }
+  | { cmd: 'describe'; place: string }
   | { cmd: 'locate'; place: string }
   | { cmd: 'recall'; query: string; top: number }
   | { cmd: 'capture'; url: string; out: string };
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const [cmd, ...rest] = argv;
+  if (cmd === 'list') return { cmd };
+  if (cmd === 'describe') return { cmd, place: rest[0] };
   if (cmd === 'locate') return { cmd, place: rest[0] };
   if (cmd === 'capture') return { cmd, url: rest[0], out: rest[1] };
   if (cmd === 'recall') {
@@ -12,11 +16,23 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 10;
     return { cmd, query, top };
   }
-  throw new Error(`usage: webnav locate "<place>"\n       webnav recall "<use-case>" [--top N]\n       webnav capture <url> <out.yml>`);
+  throw new Error(`usage: webnav list\n       webnav describe "<place>"\n       webnav locate "<place>"\n       webnav recall "<use-case>" [--top N]\n       webnav capture <url> <out.yml>`);
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.cmd === 'list') {
+    // "what's on this map?" — known sites, places, goals. No browser needed.
+    const { listCoverage } = await import('./router/catalog.js');
+    console.log(JSON.stringify(listCoverage(), null, 2));
+    return;
+  }
+  if (args.cmd === 'describe') {
+    // "what's at A / what can I do here?" — affordances + address. No browser.
+    const { describePlace } = await import('./router/catalog.js');
+    console.log(JSON.stringify(describePlace(args.place), null, 2));
+    return;
+  }
   if (args.cmd === 'locate') {
     // "where is A?" — return the coordinate WITHOUT navigating. No browser needed.
     const { locate } = await import('./router/locate.js');

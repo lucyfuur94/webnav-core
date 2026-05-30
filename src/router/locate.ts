@@ -13,26 +13,35 @@ import type { Coordinate, LocateResponse } from '../protocol.js';
  * v1 seeds the obvious GitHub addressable places. `{repo}` is a runtime slot:
  * `locate('repo facebook/react')` resolves to https://github.com/facebook/react.
  */
-interface GazetteerEntry {
+export interface GazetteerEntry {
   /** Canonical name of the place. */
   canonical: string;
   /** Alternate phrasings an agent might use. */
   aliases: string[];
   /** Canonical URL coordinate. May contain a `{repo}` slot filled from the query tail. */
   url: string;
+  /** Which site this place belongs to (for coverage listing). */
+  site: string;
+  /** What an agent can read/do at this place (the "tap a pin" affordances). */
+  affordances?: string[];
 }
 
-const GITHUB_GAZETTEER: GazetteerEntry[] = [
+export const GITHUB_GAZETTEER: GazetteerEntry[] = [
   { canonical: 'trending repositories', aliases: ['trending', 'trending repos', 'what is trending'],
-    url: 'https://github.com/trending' },
+    url: 'https://github.com/trending', site: 'github.com',
+    affordances: ['browse trending repos by language and time window'] },
   { canonical: 'trending developers', aliases: ['trending devs'],
-    url: 'https://github.com/trending/developers' },
+    url: 'https://github.com/trending/developers', site: 'github.com',
+    affordances: ['browse trending developers'] },
   { canonical: 'repository search', aliases: ['search repos', 'repo search', 'search repositories'],
-    url: 'https://github.com/search?type=repositories' },
+    url: 'https://github.com/search?type=repositories', site: 'github.com',
+    affordances: ['search repos by keyword, language, stars, sort'] },
   { canonical: 'explore', aliases: ['explore github', 'discover'],
-    url: 'https://github.com/explore' },
+    url: 'https://github.com/explore', site: 'github.com',
+    affordances: ['discover curated topics and collections'] },
   { canonical: 'repo', aliases: ['repository', 'repo overview', 'project'],
-    url: 'https://github.com/{repo}' },
+    url: 'https://github.com/{repo}', site: 'github.com',
+    affordances: ['read stars, last commit, license, topics, readme; reach insights/issues/releases'] },
 ];
 
 /** Lowercase, collapse whitespace, strip surrounding quotes/punctuation. */

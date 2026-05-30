@@ -18,4 +18,11 @@ describe('parseArgs', () => {
     expect(parseArgs(['locate', 'trending repositories']))
       .toEqual({ cmd: 'locate', place: 'trending repositories' });
   });
+  it('parses list', () => {
+    expect(parseArgs(['list'])).toEqual({ cmd: 'list' });
+  });
+  it('parses describe', () => {
+    expect(parseArgs(['describe', 'trending repositories']))
+      .toEqual({ cmd: 'describe', place: 'trending repositories' });
+  });
 });
