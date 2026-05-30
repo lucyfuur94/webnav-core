@@ -10,12 +10,22 @@ It is **a map, not a driver.** It gets the agent to where the signals live, chea
 
 ## The mental model (settled)
 
-A **weighted goal-routing graph**:
+A **place index + weighted routing graph** (Google Maps does BOTH place-lookup and directions — so does webnav):
 - **Nodes = states** of a site (what's true / what's possible from here). A URL is an *attribute* of a state, not the node itself (same URL can be many states; many URLs can be one state).
 - **Edges = actions** (click/type/navigate) that transition between states. Every edge carries **cost** (tokens/time), **reliability** (success/fail history), and **age/confidence** (decays over time).
 - **Goals = named destinations** the agent cares about, plus *what signals to surface there*. A goal index resolves intent → target state + route.
 
-The map answers: *"I'm in state X, I want goal G — give me the cheapest, most reliable known route."*
+The map answers TWO kinds of query:
+- *"Where is A?"* → **locate** (place-lookup) — return A's coordinate WITHOUT traversing. The agent can jump there itself or just know where it is.
+- *"I'm in state X, I want goal G."* → **recall** (directions) — give the cheapest reliable route, travel it, and bring back evidence. (recall = locate + travel + read.)
+
+## Coordinate system (settled) — webnav's "lat/lon"
+
+Two tiers, because not every place has a street address:
+1. **Addressable place → canonical URL.** When a place has a stable canonical URL (e.g. `github.com/trending`, `github.com/owner/repo`), the URL IS its coordinate: you `goto(url)` and land directly, **no routing needed**. This is the lat/lon of the addressable web and powers `locate`.
+2. **Unaddressable place → semantic state identity + fingerprint (+ the route that reaches it).** Modals, filtered/sorted views, logged-in dashboards often have no clean URL. Their coordinate is the durable **semantic state name + fingerprint** (how you recognize you've arrived), reached by replaying the route. (Like a map pinning "the bench behind the third oak" by description + path, not a coordinate.)
+
+URL is the lat/lon of the *addressable subset* — NOT a universal coordinate (it's site-specific, and a URL ≠ a state). Prefer the URL shortcut when canonical; fall back to state+fingerprint otherwise.
 
 ## Settled principles (do not violate)
 

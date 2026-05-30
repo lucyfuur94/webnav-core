@@ -14,4 +14,8 @@ describe('parseArgs', () => {
     expect(parseArgs(['capture', 'https://github.com', 'out.yml']))
       .toEqual({ cmd: 'capture', url: 'https://github.com', out: 'out.yml' });
   });
+  it('parses locate', () => {
+    expect(parseArgs(['locate', 'trending repositories']))
+      .toEqual({ cmd: 'locate', place: 'trending repositories' });
+  });
 });
