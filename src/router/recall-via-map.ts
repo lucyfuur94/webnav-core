@@ -21,22 +21,28 @@ export interface RecallViaMapArgs {
  * route search-entry -> result-list -> repo-detail exists, then delegates the
  * result-list -> candidates -> evidence gathering to recall() unchanged.
  */
-export function recallViaMap(args: RecallViaMapArgs): RecallResponse {
-  const { query, goal, store, browser, extractSignals } = args;
-
-  // 1. Ensure the skeleton is present in the map; build it once if missing.
-  if (store.getState('github:repo-detail') === null ||
-      store.edgesFrom('github:search-entry').length === 0) {
-    skeleton.exploreGitHub(store);
-  }
-
-  // 2. Confirm the route exists: search step + navigate step.
+/** Is the full search-entry -> result-list -> repo-detail route present in the map? */
+function routePresent(store: MapStore): boolean {
   const searchEdge = store.edgesFrom('github:search-entry')
     .find(e => e.toState === 'github:result-list' && e.acceptsInput === 'query');
   const navigateEdge = store.edgesFrom('github:result-list')
     .find(e => e.toState === 'github:repo-detail' && e.kind === 'navigate');
+  return store.getState('github:repo-detail') !== null && !!searchEdge && !!navigateEdge;
+}
 
-  if (!searchEdge || !navigateEdge) {
+export function recallViaMap(args: RecallViaMapArgs): RecallResponse {
+  const { query, goal, store, browser, extractSignals } = args;
+
+  // 1. Ensure the FULL skeleton route is present; build it once if missing OR
+  //    torn (partial). Checking the whole route — not just one node/edge — means
+  //    a partially-written map self-repairs by rebuilding rather than failing.
+  //    A complete, known skeleton is never rebuilt (criterion #3).
+  if (!routePresent(store)) {
+    skeleton.exploreGitHub(store);
+  }
+
+  // 2. Confirm the route now exists (exploreGitHub is atomic, so it should).
+  if (!routePresent(store)) {
     return { status: 'failed', reason: 'no route to repo-detail in map' };
   }
 

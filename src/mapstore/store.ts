@@ -15,6 +15,11 @@ export class MapStore {
     this.db.exec(SCHEMA);
   }
 
+  /** Run `fn` atomically — all writes commit together or none do (no torn skeleton). */
+  transaction(fn: () => void): void {
+    this.db.transaction(fn)();
+  }
+
   upsertState(s: State): void {
     this.db.prepare(`INSERT INTO states VALUES (@id,@semanticName,@urlPattern,@role,@sig,@fp)
       ON CONFLICT(id) DO UPDATE SET semantic_name=@semanticName, url_pattern=@urlPattern,

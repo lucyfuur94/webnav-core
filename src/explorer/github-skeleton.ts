@@ -64,10 +64,14 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
  * re-exploring leaves exactly one row per state/edge.
  */
 export function exploreGitHub(store: MapStore): void {
-  for (const state of GITHUB_SKELETON.states) {
-    store.upsertState(state);
-  }
-  for (const edge of GITHUB_SKELETON.edges) {
-    store.upsertEdge(edge);
-  }
+  // Atomic: states + edges commit together, so a crash can never leave a torn,
+  // partially-written skeleton that the recall guard would mistake for complete.
+  store.transaction(() => {
+    for (const state of GITHUB_SKELETON.states) {
+      store.upsertState(state);
+    }
+    for (const edge of GITHUB_SKELETON.edges) {
+      store.upsertEdge(edge);
+    }
+  });
 }
