@@ -1,6 +1,6 @@
 import type { Goal } from '../mapstore/types.js';
 import type { Candidate, RecallResponse } from '../protocol.js';
-import { parseSnapshot } from '../playwright/snapshot.js';
+import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 
 export interface RecallBrowser {
   callCount: () => number;
@@ -13,7 +13,16 @@ export interface RecallArgs {
   browser: RecallBrowser;
   /** Extract goal signals from a repo-detail snapshot (absent signals omitted). */
   extractSignals: (detailYaml: string) => Record<string, unknown>;
-  nowMs?: number; // injectable for deterministic wall_ms in tests
+}
+
+/**
+ * Is this snapshot node a GitHub owner/repo link? The SINGLE source of truth for
+ * candidate selection — live.ts prefetches details using the SAME predicate, so
+ * the snapshot stream and recall's iteration stay aligned. A trailing path
+ * (e.g. /owner/repo/issues) is excluded: we want repo landing pages only.
+ */
+export function isRepoLink(n: SnapNode): boolean {
+  return n.role === 'link' && /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(n.url ?? '');
 }
 
 /**
@@ -23,13 +32,10 @@ export interface RecallArgs {
  */
 export function recall(args: RecallArgs): RecallResponse {
   const { query, goal, browser, extractSignals } = args;
-  const start = args.nowMs ?? 0;
 
   // 1. Result list (search term already injected upstream by the CLI/live wiring).
   const resultNodes = parseSnapshot(browser.nextSnapshot());
-  const repoLinks = resultNodes
-    .filter((n) => n.role === 'link' && /github\.com\/[^/]+\/[^/]+/.test(n.url ?? ''))
-    .slice(0, goal.candidateLimit);
+  const repoLinks = resultNodes.filter(isRepoLink).slice(0, goal.candidateLimit);
 
   if (repoLinks.length === 0) {
     return { status: 'failed', reason: 'no repository links found in search results' };
@@ -48,7 +54,7 @@ export function recall(args: RecallArgs): RecallResponse {
     status: 'done',
     evidence: {
       goal: goal.name, query, candidates,
-      cost: { playwright_calls: browser.callCount(), wall_ms: (args.nowMs ?? 0) - start },
+      cost: { playwright_calls: browser.callCount() },
     },
   };
 }

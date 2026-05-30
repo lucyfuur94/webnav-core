@@ -9,7 +9,7 @@ export interface EvidenceBundle {
   goal: string;
   query: string;
   candidates: Candidate[];        // raw evidence; the AGENT ranks, webnav does not
-  cost: { playwright_calls: number; wall_ms: number };
+  cost: { playwright_calls: number };   // webnav makes no LLM calls; cost is the call count
 }
 
 export type RecallResponse =
