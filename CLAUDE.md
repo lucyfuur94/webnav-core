@@ -48,6 +48,12 @@ One `webnav` CLI orchestrating three independently-testable components + a share
 
 Browser automation layer: **`playwright-cli`** (github.com/microsoft/playwright-cli) — built for agents, token-efficient, returns stable element refs from `snapshot`.
 
+**Tech stack (settled in planning):**
+- Language: **TypeScript** (strict), Node. Test runner: **vitest**.
+- Browser: **`playwright-cli`** invoked as a child process via a thin adapter.
+- MapStore backing: **SQLite** (via `better-sqlite3` — synchronous, fits one-serialized-session model).
+- LLM: **pluggable behind an `LlmProvider` interface** from day one (classify / resolve / judge). Concrete providers (Claude, Gemini) implement the interface; the engine never hard-codes one.
+
 ## v1 scope (settled)
 
 **Target site:** GitHub (read-only, public browsing — no auth, no checkout, no commit points).
