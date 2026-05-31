@@ -3,6 +3,7 @@ export type ParsedArgs =
   | { cmd: 'describe'; place: string }
   | { cmd: 'locate'; place: string }
   | { cmd: 'recall'; query: string; top: number }
+  | { cmd: 'search'; query: string; top: number }
   | { cmd: 'capture'; url: string; out: string };
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -16,7 +17,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 10;
     return { cmd, query, top };
   }
-  throw new Error(`usage: webnav list\n       webnav describe "<place>"\n       webnav locate "<place>"\n       webnav recall "<use-case>" [--top N]\n       webnav capture <url> <out.yml>`);
+  if (cmd === 'search') {
+    const query = rest[0];
+    const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 3;
+    return { cmd, query, top };
+  }
+  throw new Error(`usage: webnav list\n       webnav describe "<place>"\n       webnav locate "<place>"\n       webnav recall "<use-case>" [--top N]\n       webnav search "<query>" [--top N]\n       webnav capture <url> <out.yml>`);
 }
 
 async function main() {
@@ -43,6 +49,14 @@ async function main() {
     const { capture } = await import('./playwright/capture.js');
     await capture(args.url, args.out);
     console.log(`captured ${args.url} -> ${args.out}`);
+    return;
+  }
+  if (args.cmd === 'search') {
+    // search: open-web search — search engine → top-N results → visit + extract
+    // answer-evidence. Prints a SearchGatherResult JSON for the calling agent.
+    const { runSearchLive } = await import('./router/search-live.js');
+    const response = await runSearchLive(args.query, args.top);
+    console.log(JSON.stringify(response, null, 2));
     return;
   }
   // recall: open GitHub search for the query, then drive recall() over the live

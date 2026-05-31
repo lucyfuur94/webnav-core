@@ -25,4 +25,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['describe', 'trending repositories']))
       .toEqual({ cmd: 'describe', place: 'trending repositories' });
   });
+  it('parses search with default top', () => {
+    expect(parseArgs(['search', 'who won the 2018 world cup']))
+      .toEqual({ cmd: 'search', query: 'who won the 2018 world cup', top: 3 });
+  });
+  it('parses search --top', () => {
+    expect(parseArgs(['search', 'x', '--top', '5']))
+      .toEqual({ cmd: 'search', query: 'x', top: 5 });
+  });
 });
