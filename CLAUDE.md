@@ -106,15 +106,23 @@ v1 built + merged to main (zero-LLM engine; verbs: list/describe/locate/recall +
 
 **Honest remaining gaps:** (1) The saucedemo walk escalates at add-to-cart rather than completing autonomously — correct behavior (the agent should pick which item), but means the full login→checkout-overview autonomous walk isn't shown end-to-end without an agent resolving that step; a resume/continue API (agent answers a `needs-*`, walk continues) is designed but not built. (2) GitHub run-2 doesn't navigate fewer pages (search + details are irreducible re-reads); the real saving is agent tokens, per above. (3) Still pending: self-growing gazetteer, optional MCP surface, richer goal-state evidence in the walk, `closed_issues`/`latest_release`/`has_ci` signals.
 
-## Research push (increment R — branch `webnav-research`) — IN PROGRESS
+## Research push (increment R) — R2/R3/R4 DONE + merged to main
 
-Reframe from recon: webnav's value = **agent + webnav vs. agent + plain web search** on INFO-SEEKING tasks (the user's original pain: "web search returns poor results"). Benchmark reality-check (AssistantBench gym task) confirmed: plain WebFetch/search gets JS-nav-shells and is WRONG; the REAL browser (playwright-cli) rendered the full JS schedule WebFetch couldn't see — webnav's true edge — but some sites (Cloudflare) bot-wall even a real browser. **Every failure mode is treated as a feature to build, not an excuse.**
+webnav's value = **agent + webnav vs. agent + plain web search** on INFO-SEEKING tasks (the user's original pain). Recon confirmed: plain WebFetch/search gets JS-nav-shells (wrong); the REAL browser renders JS content WebFetch can't see (webnav's edge); some sites bot-wall even a real browser. **Every failure mode = a feature to build, not an excuse.**
+- ✅ **R2** — page-readiness / interstitial detection (`classifyReadiness`: ready|loading|interstitial; detect+escalate, NEVER evade).
+- ✅ **R3** — info-seeking content extraction (`extractContent`: clean answer-evidence from any page snapshot).
+- ✅ **R4** — web-search skeleton (`search-live.ts`: search Marginalia → parse results → visit top-N with readiness retry → extract). CLI `webnav search`. Verified live. (Marginalia chosen because DuckDuckGo/Bing/Google bot-wall browsers.)
+- ⏳ **R5** — needs-* RESUME loop (agent answers escalation → walk continues). Deferred to Phase 3 below.
+- ⏳ **R1** — A/B benchmark (subagent + real webnav CLI vs subagent + plain search; gold answers + agent tokens). Deferred to Phase 4 below.
 
-Scope (settled with user):
-- **R1 — Benchmark Arm B calls the REAL `webnav` CLI** (non-negotiable: the prior reality-check wrongly used WebFetch for both arms — meaningless. Arm B must shell out to our actual tool / PlaywrightAdapter).
-- **R2 — Bot-wall / interstitial detection + wait-retry**: generalize the GitHub "wait-for-results" into a reusable "page-not-ready / interstitial detected → wait+retry, then escalate if still blocked" capability (handles JS-loading + Cloudflare-style screens; escalates rather than evades — we do NOT do detection evasion).
-- **R3 — Info-seeking goal type**: navigate → extract answer-relevant content as a clean evidence bundle (the info-seeking analog of `find-battle-tested-repos`).
-- **R4 — webnav does the SEARCH step itself**: a generic web-search skeleton (search engine → results → visit top-N → extract), so webnav handles open questions end-to-end (search → gather), not just known routes. (User chose this over "agent supplies URLs" — webnav is the fuller research tool here.)
-- **R5 — needs-* RESUME loop**: agent answers an escalation, the walk CONTINUES to completion — multi-step flows finish autonomously end-to-end.
+## THE PLAN (settled with user — "do all, plan and execute") — dependency-ordered
 
-Then: A/B harness (subagent-as-agent) on info-seeking tasks, Arm A = plain web search, Arm B = the real webnav CLI, scored on gold answers + agent tokens. Curate out genuinely bot-walled sites (out of scope — not evasion).
+The internet-graph spec (`docs/superpowers/specs/2026-05-31-internet-graph-design.md`) is the north-star: **the web as one clustered graph of site-nodes; capabilities are neighborhoods (clusters); intra-site skeletons are node interiors.** Agent interface = `route` (graph: which node(s) for a request + signals) → agent decides → `run` (intra-site skeleton acts) → optional `hop` (graph: move to related node) → agent synthesizes. webnav gives SIGNALS; the agent JUDGES (#5a). Provider selection is mechanical (capability match + reachability + learned co-use weight that emerges from usage & decays — the Maps-traffic analog), never a quality judgment.
+
+Build order (each its own increment, on its own worktree, merged when green):
+- **Phase 0** ✅ consolidate (R2/R3/R4 merged to main).
+- **Phase 1 — CLI hardening** (CLI is the PRIMARY agent surface, per user). Proper `webnav --help` + per-verb help (the agent's tool-discovery mechanism), `--json`, `--version`, exit codes (0=ok, non-zero=failure modes), stdout=result/stderr=logs, consistent verb grammar, discoverability-on-error. clig.dev standards, agent-tuned (help-as-tool-menu + clean JSON + exit codes matter most). Answers "how does the agent know how to call the tools".
+- **Phase 2 — Internet graph (G1–G4):** G1 data model (nodes + node_edges in MapStore) + seed; G2 `route`; G3 `hop`; G4 co-use weight learning. Reframes web-search as the `web-search` cluster.
+- **Phase 3 — R5 resume loop:** agent answers a `needs-*`, walk continues to completion.
+- **Phase 4 — R1 benchmark:** A/B harness (subagent + real CLI, graph-routed) vs. plain search; real tasks + agent tokens. Proves the thesis.
+- **Phase 5 — MCP wrapper (SECONDARY):** expose the now-stable verbs as MCP tools so agents see them natively. Thin layer over the CLI verbs; CLI stays primary. Test both via CLI and MCP.
