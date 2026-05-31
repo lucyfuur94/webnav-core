@@ -5,14 +5,32 @@ export interface SearchResult {
   url: string;
 }
 
-// Host SUFFIXES that are search chrome / mirrors, not real results. Matched as
-// suffixes so the whole Marginalia family (search.marginalia.nu,
-// about.marginalia-search.com, etc.) and archive mirrors are all excluded.
-const EXCLUDED_HOST_SUFFIXES = ['marginalia.nu', 'marginalia-search.com', 'web.archive.org', 'archive.org'];
+// Host SUFFIXES that are search chrome / mirrors / license boilerplate, not real
+// results. Suffix-matched so the whole Marginalia family (search.marginalia.nu,
+// about.marginalia-search.com), archive mirrors, and the engine's footer license
+// link (creativecommons.org) are all excluded.
+const EXCLUDED_HOST_SUFFIXES = [
+  'marginalia.nu', 'marginalia-search.com', 'web.archive.org', 'archive.org', 'creativecommons.org',
+];
 
 function isExcludedHost(host: string): boolean {
   const h = host.toLowerCase();
   return EXCLUDED_HOST_SUFFIXES.some((s) => h === s || h.endsWith('.' + s) || h.includes(s));
+}
+
+// The engine's own footer/header links can point off-site (e.g. its source repo
+// at github.com/MarginaliaSearch). Exclude such chrome URLs by substring.
+const EXCLUDED_URL_SUBSTRINGS = ['github.com/MarginaliaSearch', '/MarginaliaSearch/'];
+
+/**
+ * A real search RESULT has a descriptive multi-word TITLE; search-engine chrome
+ * links are short nav labels ("About", "git repository", "CC-BY-SA 4.0"). Require
+ * >=3 whitespace-separated words to separate the dozens of real result titles
+ * from the handful of chrome links that otherwise pass host filtering.
+ * (Live-found bug: those 3 chrome links were leaking in as "results".)
+ */
+function looksLikeResultTitle(name: string): boolean {
+  return name.trim().split(/\s+/).length >= 3;
 }
 
 /** Parse external result links from a Marginalia results snapshot. Pure. */
@@ -26,7 +44,9 @@ export function parseSearchResults(resultsYaml: string, limit: number): SearchRe
     if (!url || !url.startsWith('http')) continue;
     const name = n.name?.trim();
     if (!name) continue;
-    if (name === url) continue;
+    if (name === url) continue;                 // bare-url duplicate link
+    if (!looksLikeResultTitle(name)) continue;  // chrome nav label, not a result title
+    if (EXCLUDED_URL_SUBSTRINGS.some((s) => url.includes(s))) continue;
     let host: string;
     try {
       host = new URL(url).host;

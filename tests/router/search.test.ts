@@ -45,4 +45,22 @@ describe('parseSearchResults', () => {
     ].join('\n');
     expect(parseSearchResults(yml, 10).map((x) => x.url)).toEqual(['https://example.com/article']);
   });
+
+  // Regression (found by DOGFOODING `webnav search`): short chrome nav links
+  // ("git repository" -> the engine's source repo, "CC-BY-SA 4.0" -> license)
+  // leaked in as results. Real results have multi-word titles; chrome labels
+  // are 1-2 words and/or point at known chrome URLs.
+  it('drops short chrome nav links, keeps multi-word result titles', () => {
+    const yml = [
+      '- link "git repository" [ref=e1]:',                       // 2 words + chrome url
+      '    - /url: https://github.com/MarginaliaSearch/marginalia',
+      '- link "CC-BY-SA 4.0" [ref=e2]:',                          // license footer
+      '    - /url: https://creativecommons.org/licenses/by-sa/4.0/',
+      '- link "About" [ref=e3]:',                                 // 1-word nav
+      '    - /url: https://example.org/about',
+      '- link "ICLR GPT-4V is a Generalist Web Agent if Grounded" [ref=e4]:',  // real result
+      '    - /url: https://iclr.cc/virtual/2024/22163',
+    ].join('\n');
+    expect(parseSearchResults(yml, 10).map((x) => x.url)).toEqual(['https://iclr.cc/virtual/2024/22163']);
+  });
 });

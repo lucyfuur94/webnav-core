@@ -36,7 +36,23 @@ export async function runSearchLive(query: string, topN = 3): Promise<SearchGath
   try {
     await adapter.open('https://search.marginalia.nu/search?query=' + encodeURIComponent(query));
 
-    const { yaml: resultsYaml, readiness: searchReadiness } = await readySnapshot(adapter);
+    // The search page's nav/footer shell renders BEFORE the result list, so a
+    // generic readiness check calls it 'ready' with zero results (a race we hit
+    // live: sometimes 6 chrome links, sometimes 85 with results). Retry the
+    // snapshot until actual RESULTS parse out (domain-specific readiness), or a
+    // bounded number of attempts — then accept whatever we have (genuinely-empty
+    // result sets are valid: a thin index returns nothing).
+    let resultsYaml = '';
+    let searchReadiness: ReturnType<typeof classifyReadiness> = 'loading';
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const snap = await readySnapshot(adapter);
+      resultsYaml = snap.yaml;
+      searchReadiness = snap.readiness;
+      if (searchReadiness === 'interstitial') break;
+      results = parseSearchResults(resultsYaml, topN);
+      if (results.length > 0) break;   // results rendered — proceed
+      await sleep(1500);               // shell-only render — wait for results
+    }
     rawChars += resultsYaml.length;
 
     if (searchReadiness === 'interstitial') {
@@ -45,8 +61,7 @@ export async function runSearchLive(query: string, topN = 3): Promise<SearchGath
       const savings = tokenSavings(rawChars, JSON.stringify({ results, evidence }));
       return { query, results, evidence, blocked, cost: { playwright_calls: adapter.callCount, savings } };
     }
-
-    results = parseSearchResults(resultsYaml, topN);
+    // results already parsed in the loop above (possibly empty for a thin index).
 
     const queryTerms = query.toLowerCase().split(/\s+/);
     for (const result of results) {
