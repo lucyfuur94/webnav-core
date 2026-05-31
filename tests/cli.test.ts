@@ -33,4 +33,15 @@ describe('parseArgs', () => {
     expect(parseArgs(['search', 'x', '--top', '5']))
       .toEqual({ cmd: 'search', query: 'x', top: 5 });
   });
+  it('parses --help', () => { expect(parseArgs(['--help'])).toEqual({ cmd: 'help' }); });
+  it('parses -h', () => { expect(parseArgs(['-h'])).toEqual({ cmd: 'help' }); });
+  it('parses no args as help', () => { expect(parseArgs([])).toEqual({ cmd: 'help' }); });
+  it('parses --version', () => { expect(parseArgs(['--version'])).toEqual({ cmd: 'version' }); });
+  it('parses -V', () => { expect(parseArgs(['-V'])).toEqual({ cmd: 'version' }); });
+  it('parses per-command help', () => {
+    expect(parseArgs(['recall', '--help'])).toEqual({ cmd: 'help', command: 'recall' });
+  });
+  it('unknown verb throws with a --help hint', () => {
+    expect(() => parseArgs(['bogus'])).toThrow(/--help/);
+  });
 });
