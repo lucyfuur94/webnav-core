@@ -33,6 +33,29 @@ describe('parseArgs', () => {
     expect(parseArgs(['search', 'x', '--top', '5']))
       .toEqual({ cmd: 'search', query: 'x', top: 5 });
   });
+  it('parses route without capability', () => {
+    expect(parseArgs(['route', 'find a python retry library']))
+      .toEqual({ cmd: 'route', request: 'find a python retry library', capability: undefined });
+  });
+  it('parses route --capability', () => {
+    expect(parseArgs(['route', 'x', '--capability', 'web-search']))
+      .toEqual({ cmd: 'route', request: 'x', capability: 'web-search' });
+  });
+  it('parses route --cap alias', () => {
+    expect(parseArgs(['route', 'x', '--cap', 'web-search']))
+      .toEqual({ cmd: 'route', request: 'x', capability: 'web-search' });
+  });
+  it('parses hop --to-cluster', () => {
+    expect(parseArgs(['hop', 'https://github.com/jd/tenacity', '--to-cluster', 'package-search']))
+      .toEqual({ cmd: 'hop', url: 'https://github.com/jd/tenacity', toCluster: 'package-search', toNode: undefined });
+  });
+  it('parses hop --to-node', () => {
+    expect(parseArgs(['hop', 'https://github.com/jd/tenacity', '--to-node', 'pypi.org']))
+      .toEqual({ cmd: 'hop', url: 'https://github.com/jd/tenacity', toCluster: undefined, toNode: 'pypi.org' });
+  });
+  it('parses per-command help for route', () => {
+    expect(parseArgs(['route', '--help'])).toEqual({ cmd: 'help', command: 'route' });
+  });
   it('parses --help', () => { expect(parseArgs(['--help'])).toEqual({ cmd: 'help' }); });
   it('parses -h', () => { expect(parseArgs(['-h'])).toEqual({ cmd: 'help' }); });
   it('parses no args as help', () => { expect(parseArgs([])).toEqual({ cmd: 'help' }); });

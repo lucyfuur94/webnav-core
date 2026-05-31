@@ -9,7 +9,18 @@ export type ParsedArgs =
   | { cmd: 'locate'; place: string }
   | { cmd: 'recall'; query: string; top: number }
   | { cmd: 'search'; query: string; top: number }
+  | { cmd: 'route'; request: string; capability?: string }
+  | { cmd: 'hop'; url: string; toCluster?: string; toNode?: string }
   | { cmd: 'capture'; url: string; out: string };
+
+// Pull the value following a flag (or one of its aliases) out of an arg list.
+function flagValue(args: string[], ...names: string[]): string | undefined {
+  for (const name of names) {
+    const i = args.indexOf(name);
+    if (i !== -1) return args[i + 1];
+  }
+  return undefined;
+}
 
 const KNOWN_VERBS = new Set(COMMANDS.map((c) => c.name));
 
@@ -41,6 +52,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const query = rest[0];
     const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 3;
     return { cmd, query, top };
+  }
+  if (cmd === 'route') {
+    return { cmd, request: rest[0], capability: flagValue(rest, '--capability', '--cap') };
+  }
+  if (cmd === 'hop') {
+    return {
+      cmd, url: rest[0],
+      toCluster: flagValue(rest, '--to-cluster'),
+      toNode: flagValue(rest, '--to-node'),
+    };
   }
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }
@@ -101,6 +122,28 @@ async function main() {
     // "ran fine but found nothing / blocked" → exit 3 so an agent's shell can
     // distinguish a clean empty result from a crash.
     if (isEmptyOrFailed(response)) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'route') {
+    // route: ask the graph which node(s) serve a request. Pure structural query
+    // over the seeded internet graph — no browser. Seed on first use.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { seedGraph } = await import('./graph/seed.js');
+    const { route } = await import('./graph/route.js');
+    const store = new MapStore('webnav.db');
+    if (!store.getNode('github.com')) seedGraph(store);
+    console.log(JSON.stringify(route(store, args.request, args.capability), null, 2));
+    return;
+  }
+  if (args.cmd === 'hop') {
+    // hop: move from the current page's node to a related node in the graph.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { seedGraph } = await import('./graph/seed.js');
+    const { hop } = await import('./graph/hop.js');
+    const store = new MapStore('webnav.db');
+    if (!store.getNode('github.com')) seedGraph(store);
+    console.log(JSON.stringify(
+      hop(store, args.url, { toCluster: args.toCluster, toNode: args.toNode }), null, 2));
     return;
   }
   // recall: open GitHub search for the query, then drive recall() over the live

@@ -2,8 +2,8 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { State, Edge, Goal } from './types.js';
-import { makeEdge } from './types.js';
+import type { State, Edge, Goal, SiteNode, NodeEdge } from './types.js';
+import { makeEdge, makeNodeEdge } from './types.js';
 
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
@@ -89,6 +89,62 @@ export class MapStore {
     return r ? { name: r.name, visit: JSON.parse(r.visit),
       surface: JSON.parse(r.surface), candidateLimit: r.candidate_limit } : null;
   }
+
+  // ─── Internet graph (inter-site) — Phase 2 ─────────────────────────────────
+  upsertNode(n: SiteNode): void {
+    this.db.prepare(`INSERT INTO nodes VALUES (@id,@homeUrl,@capabilities,@topics)
+      ON CONFLICT(id) DO UPDATE SET home_url=@homeUrl,
+      capabilities=@capabilities, topics=@topics`)
+      .run({
+        id: n.id, homeUrl: n.homeUrl,
+        capabilities: JSON.stringify(n.capabilities), topics: JSON.stringify(n.topics),
+      });
+  }
+  getNode(id: string): SiteNode | null {
+    const r: any = this.db.prepare('SELECT * FROM nodes WHERE id=?').get(id);
+    return r ? rowToNode(r) : null;
+  }
+  allNodes(): SiteNode[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM nodes ORDER BY id').all();
+    return rows.map(rowToNode);
+  }
+  /**
+   * Nodes whose `capabilities` JSON array CONTAINS the given capability. We
+   * JSON-parse each row and test array membership rather than a SQL LIKE — a
+   * LIKE would false-match substrings (e.g. searching 'search' would hit
+   * 'web-search', 'code-search', 'repo-search' all at once). Membership is exact.
+   */
+  nodesByCapability(capability: string): SiteNode[] {
+    return this.allNodes().filter((n) => n.capabilities.includes(capability));
+  }
+
+  upsertNodeEdge(e: NodeEdge): void {
+    this.db.prepare(`INSERT INTO node_edges
+      (from_node,to_node,kind,weight,last_verified,confidence)
+      VALUES (@fromNode,@toNode,@kind,@weight,@lastVerified,@confidence)
+      ON CONFLICT(from_node,to_node,kind) DO UPDATE SET
+      weight=@weight, last_verified=@lastVerified, confidence=@confidence`)
+      .run({
+        fromNode: e.fromNode, toNode: e.toNode, kind: e.kind,
+        weight: e.weight, lastVerified: e.lastVerified, confidence: e.confidence,
+      });
+  }
+  nodeEdgesFrom(fromNode: string): NodeEdge[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM node_edges WHERE from_node=?').all(fromNode);
+    return rows.map(rowToNodeEdge);
+  }
+}
+
+function rowToNode(r: any): SiteNode {
+  return { id: r.id, homeUrl: r.home_url,
+    capabilities: JSON.parse(r.capabilities), topics: JSON.parse(r.topics) };
+}
+
+function rowToNodeEdge(r: any): NodeEdge {
+  return makeNodeEdge({
+    fromNode: r.from_node, toNode: r.to_node, kind: r.kind,
+    weight: r.weight, lastVerified: r.last_verified, confidence: r.confidence,
+  });
 }
 
 function rowToEdge(r: any): Edge {

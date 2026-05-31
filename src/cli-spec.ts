@@ -86,6 +86,43 @@ export const COMMANDS: CommandSpec[] = [
     example: 'webnav search "who won the 2018 world cup" --top 3',
   },
   {
+    name: 'route',
+    summary:
+      'Ask the graph which site(s) to use for a request (returns candidates + signals; you decide).',
+    args: [
+      { name: 'request', required: true, description: 'The request to route to candidate sites.' },
+    ],
+    flags: [
+      {
+        name: '--capability',
+        takesValue: true,
+        description:
+          'Explicit capability/cluster to route to (e.g. web-search). Alias: --cap. If omitted, the request is matched against declared tokens.',
+      },
+    ],
+    example: 'webnav route "find a python retry library"',
+  },
+  {
+    name: 'hop',
+    summary: 'Move from the current page to a related site in the graph.',
+    args: [
+      { name: 'url', required: true, description: 'The current page URL to hop from.' },
+    ],
+    flags: [
+      {
+        name: '--to-cluster',
+        takesValue: true,
+        description: 'Capability/cluster to hop into (any related node serving it).',
+      },
+      {
+        name: '--to-node',
+        takesValue: true,
+        description: 'Specific node id to hop to.',
+      },
+    ],
+    example: 'webnav hop https://github.com/jd/tenacity --to-cluster package-search',
+  },
+  {
     name: 'capture',
     summary: 'Dev helper: open a URL and save its snapshot YAML to a file (for test fixtures).',
     args: [

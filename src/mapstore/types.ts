@@ -44,3 +44,33 @@ export function makeEdge(
     ...init,
   };
 }
+
+// ─── Internet graph (inter-site) — Phase 2 ───────────────────────────────────
+// A NODE is a website (it owns an intra-site skeleton as its interior); a
+// CLUSTER is a neighborhood of nodes serving the same CAPABILITY.
+export interface SiteNode {
+  id: string;             // e.g. 'github.com' — also the skeleton namespace prefix
+  homeUrl: string;        // entry URL
+  capabilities: string[]; // cluster names this node serves (web-search, code-search, ...)
+  topics: string[];       // declared content tags (v1 of "content similarity")
+}
+
+export type NodeEdgeKind = 'capability' | 'hyperlink' | 'co-use' | 'content';
+
+export interface NodeEdge {
+  fromNode: string;
+  toNode: string;
+  kind: NodeEdgeKind;
+  weight: number;               // usage weight signal (1 for now; G4 learns it)
+  lastVerified: number | null;  // epoch ms
+  confidence: number;           // decays with age, rises with use
+}
+
+export function makeNodeEdge(
+  init: Pick<NodeEdge, 'fromNode' | 'toNode' | 'kind'> & Partial<NodeEdge>,
+): NodeEdge {
+  return {
+    weight: 1, lastVerified: null, confidence: 1,
+    ...init,
+  };
+}

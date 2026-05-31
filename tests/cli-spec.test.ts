@@ -2,9 +2,30 @@ import { describe, it, expect } from 'vitest';
 import { COMMANDS, VERSION } from '../src/cli-spec.js';
 
 describe('COMMANDS registry', () => {
-  it('has all six verbs', () => {
+  it('has all eight verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'describe', 'list', 'locate', 'recall', 'search']);
+    expect(names).toEqual(['capture', 'describe', 'hop', 'list', 'locate', 'recall', 'route', 'search']);
+  });
+
+  it('route has a summary, an example, and a --capability flag', () => {
+    const r = COMMANDS.find((c) => c.name === 'route')!;
+    expect(r.summary.length).toBeGreaterThan(0);
+    expect(r.example).toContain('webnav route');
+    const cap = r.flags.find((f) => f.name === '--capability')!;
+    expect(cap).toBeDefined();
+    expect(cap.takesValue).toBe(true);
+    const request = r.args.find((a) => a.name === 'request')!;
+    expect(request.required).toBe(true);
+  });
+
+  it('hop has a summary, an example, and --to-cluster/--to-node flags', () => {
+    const h = COMMANDS.find((c) => c.name === 'hop')!;
+    expect(h.summary.length).toBeGreaterThan(0);
+    expect(h.example).toContain('webnav hop');
+    expect(h.flags.find((f) => f.name === '--to-cluster')?.takesValue).toBe(true);
+    expect(h.flags.find((f) => f.name === '--to-node')?.takesValue).toBe(true);
+    const url = h.args.find((a) => a.name === 'url')!;
+    expect(url.required).toBe(true);
   });
 
   it('every command has a non-empty summary and example', () => {
