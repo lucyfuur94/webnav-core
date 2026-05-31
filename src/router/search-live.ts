@@ -3,12 +3,14 @@ import { parseSearchResults } from './search.js';
 import { classifyReadiness } from './readiness.js';
 import { extractContent, type ContentEvidence } from './extract-content.js';
 import { tokenSavings, type TokenSavings } from './tokens.js';
+import { SEARCH_PROVIDERS, type SearchProvider } from './search-providers.js';
 
 export interface SearchGatherResult {
   query: string;
-  results: { title: string; url: string }[];   // the top-N results found
+  results: { title: string; url: string }[];   // MERGED+deduped results across providers
   evidence: ContentEvidence[];                  // extracted content per visited page
-  blocked: string[];                            // urls that were bot-walled (interstitial) — escalated, not evaded
+  blocked: string[];                            // result urls that were bot-walled (interstitial) — escalated, not evaded
+  providers: { id: string; results: number; blocked: boolean }[];  // per-provider summary
   cost: { playwright_calls: number; savings: TokenSavings };
 }
 
@@ -26,43 +28,81 @@ async function readySnapshot(adapter: PlaywrightAdapter): Promise<{ yaml: string
   return { yaml, readiness };
 }
 
+interface ProviderGather {
+  results: { title: string; url: string }[];
+  blocked: boolean;   // the provider's SEARCH page was bot-walled (interstitial)
+  rawChars: number;   // chars snapshotted while gathering from this provider
+}
+
+/**
+ * Gather results from ONE provider: open its search url, then re-snapshot until
+ * results actually parse out (the search shell renders BEFORE the result list —
+ * a render race) or a bounded number of attempts. An interstitial search page is
+ * recorded as blocked (DETECT + escalate, never evade). Caps to topN.
+ */
+async function gatherFromProvider(
+  adapter: PlaywrightAdapter,
+  provider: SearchProvider,
+  query: string,
+  topN: number,
+): Promise<ProviderGather> {
+  await adapter.open(provider.searchUrl(query));
+
+  let resultsYaml = '';
+  let searchReadiness: ReturnType<typeof classifyReadiness> = 'loading';
+  let results: { title: string; url: string }[] = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const snap = await readySnapshot(adapter);
+    resultsYaml = snap.yaml;
+    searchReadiness = snap.readiness;
+    if (searchReadiness === 'interstitial') break;
+    results = parseSearchResults(resultsYaml, topN);
+    if (results.length > 0) break;   // results rendered — proceed
+    await sleep(1500);               // shell-only render — wait for results
+  }
+
+  if (searchReadiness === 'interstitial') {
+    // The provider's search page is bot-walled — record + skip. Never evade.
+    return { results: [], blocked: true, rawChars: resultsYaml.length };
+  }
+  // results already parsed in the loop above (possibly empty for a thin index).
+  return { results, blocked: false, rawChars: resultsYaml.length };
+}
+
 export async function runSearchLive(query: string, topN = 3): Promise<SearchGatherResult> {
   const adapter = new PlaywrightAdapter('search-' + Date.now());
   const evidence: ContentEvidence[] = [];
   const blocked: string[] = [];
+  const providers: { id: string; results: number; blocked: boolean }[] = [];
   let rawChars = 0;
   let results: { title: string; url: string }[] = [];
 
   try {
-    await adapter.open('https://search.marginalia.nu/search?query=' + encodeURIComponent(query));
-
-    // The search page's nav/footer shell renders BEFORE the result list, so a
-    // generic readiness check calls it 'ready' with zero results (a race we hit
-    // live: sometimes 6 chrome links, sometimes 85 with results). Retry the
-    // snapshot until actual RESULTS parse out (domain-specific readiness), or a
-    // bounded number of attempts — then accept whatever we have (genuinely-empty
-    // result sets are valid: a thin index returns nothing).
-    let resultsYaml = '';
-    let searchReadiness: ReturnType<typeof classifyReadiness> = 'loading';
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const snap = await readySnapshot(adapter);
-      resultsYaml = snap.yaml;
-      searchReadiness = snap.readiness;
-      if (searchReadiness === 'interstitial') break;
-      results = parseSearchResults(resultsYaml, topN);
-      if (results.length > 0) break;   // results rendered — proceed
-      await sleep(1500);               // shell-only render — wait for results
+    // 1. Fan out across providers sequentially (one shared adapter). A blocked
+    //    provider is recorded and skipped; the others still contribute (the whole
+    //    point — resilience + broader coverage).
+    const perProvider: { provider: SearchProvider; gather: ProviderGather }[] = [];
+    for (const provider of SEARCH_PROVIDERS) {
+      const gather = await gatherFromProvider(adapter, provider, query, topN);
+      rawChars += gather.rawChars;
+      providers.push({ id: provider.id, results: gather.results.length, blocked: gather.blocked });
+      perProvider.push({ provider, gather });
     }
-    rawChars += resultsYaml.length;
 
-    if (searchReadiness === 'interstitial') {
-      // The search page itself is bot-walled — record + return early. Never evade.
-      blocked.push('https://search.marginalia.nu/search?query=' + encodeURIComponent(query));
-      const savings = tokenSavings(rawChars, JSON.stringify({ results, evidence }));
-      return { query, results, evidence, blocked, cost: { playwright_calls: adapter.callCount, savings } };
+    // 2. MERGE + DEDUPE by url, preserving first-seen order (Marginalia first).
+    //    Cap the merged list to topN*2 so both providers can contribute.
+    const seen = new Set<string>();
+    for (const { gather } of perProvider) {
+      for (const r of gather.results) {
+        if (seen.has(r.url)) continue;
+        seen.add(r.url);
+        results.push(r);
+      }
     }
-    // results already parsed in the loop above (possibly empty for a thin index).
+    results = results.slice(0, topN * 2);
 
+    // 3. Visit each merged result url, readiness-retry, interstitial -> blocked,
+    //    else extract content.
     const queryTerms = query.toLowerCase().split(/\s+/);
     for (const result of results) {
       await adapter.goto(result.url);
@@ -80,5 +120,5 @@ export async function runSearchLive(query: string, topN = 3): Promise<SearchGath
   }
 
   const savings = tokenSavings(rawChars, JSON.stringify({ results, evidence }));
-  return { query, results, evidence, blocked, cost: { playwright_calls: adapter.callCount, savings } };
+  return { query, results, evidence, blocked, providers, cost: { playwright_calls: adapter.callCount, savings } };
 }

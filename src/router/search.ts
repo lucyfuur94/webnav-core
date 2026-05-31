@@ -7,10 +7,11 @@ export interface SearchResult {
 
 // Host SUFFIXES that are search chrome / mirrors / license boilerplate, not real
 // results. Suffix-matched so the whole Marginalia family (search.marginalia.nu,
-// about.marginalia-search.com), archive mirrors, and the engine's footer license
-// link (creativecommons.org) are all excluded.
+// about.marginalia-search.com), archive mirrors, the engine's footer license
+// link (creativecommons.org), and Wiby's own nav/footer (wiby.me) are all
+// excluded — same shape across all providers we fan out across.
 const EXCLUDED_HOST_SUFFIXES = [
-  'marginalia.nu', 'marginalia-search.com', 'web.archive.org', 'archive.org', 'creativecommons.org',
+  'marginalia.nu', 'marginalia-search.com', 'web.archive.org', 'archive.org', 'creativecommons.org', 'wiby.me',
 ];
 
 function isExcludedHost(host: string): boolean {

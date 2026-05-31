@@ -63,4 +63,16 @@ describe('parseSearchResults', () => {
     ].join('\n');
     expect(parseSearchResults(yml, 10).map((x) => x.url)).toEqual(['https://iclr.cc/virtual/2024/22163']);
   });
+
+  // Wiby is a second provider with the SAME result-link shape (multi-word title +
+  // external /url). Its own host (wiby.me) is chrome and must be excluded too.
+  it('parses wiby-shaped results and excludes wiby.me chrome', () => {
+    const yml = [
+      '- link "About Wiby" [ref=e1]:',                          // 2-word chrome + wiby host
+      '    - /url: https://wiby.me/about/',
+      '- link "Juergen Schmidhuber home page Universal AI" [ref=e2]:',  // real result
+      '    - /url: https://people.idsia.ch/~juergen/',
+    ].join('\n');
+    expect(parseSearchResults(yml, 10).map((r) => r.url)).toEqual(['https://people.idsia.ch/~juergen/']);
+  });
 });
