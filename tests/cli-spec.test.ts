@@ -2,9 +2,36 @@ import { describe, it, expect } from 'vitest';
 import { COMMANDS, VERSION } from '../src/cli-spec.js';
 
 describe('COMMANDS registry', () => {
-  it('has all eight verbs', () => {
+  it('has all eleven verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'describe', 'hop', 'list', 'locate', 'recall', 'route', 'search']);
+    expect(names).toEqual(['add-edge', 'add-node', 'capture', 'describe', 'graph', 'hop', 'list', 'locate', 'recall', 'route', 'search']);
+  });
+
+  it('graph has a summary and an example', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph')!;
+    expect(g.summary.length).toBeGreaterThan(0);
+    expect(g.example).toContain('webnav graph');
+  });
+
+  it('add-node has a required id arg and --url/--capabilities/--topics flags', () => {
+    const a = COMMANDS.find((c) => c.name === 'add-node')!;
+    expect(a.summary.length).toBeGreaterThan(0);
+    expect(a.example).toContain('webnav add-node');
+    expect(a.args.find((arg) => arg.name === 'id')?.required).toBe(true);
+    expect(a.flags.find((f) => f.name === '--url')?.takesValue).toBe(true);
+    expect(a.flags.find((f) => f.name === '--capabilities')?.takesValue).toBe(true);
+    expect(a.flags.find((f) => f.name === '--topics')?.takesValue).toBe(true);
+  });
+
+  it('add-edge has required from/to args and a --kind flag defaulting to capability', () => {
+    const a = COMMANDS.find((c) => c.name === 'add-edge')!;
+    expect(a.summary.length).toBeGreaterThan(0);
+    expect(a.example).toContain('webnav add-edge');
+    expect(a.args.find((arg) => arg.name === 'from')?.required).toBe(true);
+    expect(a.args.find((arg) => arg.name === 'to')?.required).toBe(true);
+    const kind = a.flags.find((f) => f.name === '--kind')!;
+    expect(kind.takesValue).toBe(true);
+    expect(kind.default).toBe('capability');
   });
 
   it('route has a summary, an example, and a --capability flag', () => {

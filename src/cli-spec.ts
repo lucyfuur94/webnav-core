@@ -123,6 +123,44 @@ export const COMMANDS: CommandSpec[] = [
     example: 'webnav hop https://github.com/jd/tenacity --to-cluster package-search',
   },
   {
+    name: 'graph',
+    summary: 'Show the map of known sites (the internet graph) as JSON.',
+    args: [],
+    flags: [
+      {
+        name: '--json',
+        takesValue: false,
+        description: 'Emit JSON (it is already JSON — kept for flag consistency).',
+      },
+    ],
+    example: 'webnav graph --json > map.json',
+  },
+  {
+    name: 'add-node',
+    summary: 'Teach webnav a new site: its id, url, capabilities, topics.',
+    args: [
+      { name: 'id', required: true, description: 'Node id (e.g. npmjs.com) — also the skeleton namespace.' },
+    ],
+    flags: [
+      { name: '--url', takesValue: true, description: 'Entry/home URL for the site.' },
+      { name: '--capabilities', takesValue: true, description: 'Comma-separated capability/cluster names this site serves.' },
+      { name: '--topics', takesValue: true, description: 'Comma-separated declared content topics.' },
+    ],
+    example: 'webnav add-node npmjs.com --url https://www.npmjs.com --capabilities package-search --topics javascript,packages',
+  },
+  {
+    name: 'add-edge',
+    summary: 'Teach webnav a relationship between two known sites.',
+    args: [
+      { name: 'from', required: true, description: 'Source node id (must already be known).' },
+      { name: 'to', required: true, description: 'Target node id (must already be known).' },
+    ],
+    flags: [
+      { name: '--kind', takesValue: true, default: 'capability', description: 'Edge kind: capability | hyperlink | co-use | content.' },
+    ],
+    example: 'webnav add-edge github.com pypi.org --kind hyperlink',
+  },
+  {
     name: 'capture',
     summary: 'Dev helper: open a URL and save its snapshot YAML to a file (for test fixtures).',
     args: [
