@@ -172,3 +172,28 @@ that layer's terms vocabulary (`+ attention-loop`) and adds webnav's three hones
 responsibilities (§6). It is NOT a near-term coding task — it's the economic north-star
 that the doors layer should be designed to *not preclude*. Build doors first; keep the
 attention-terms field in the schema from the start so this can land later without rework.
+
+## 10. PARKED — not testable enough to build yet (decision 2026-06-01)
+
+Real-world recon confirmed the ecosystem is forming exactly as theorized — but it is
+too early/gated for us to test end-to-end, so we are NOT building the attention/
+attribution thread now:
+- **Pay-per-crawl / 402 is PRIVATE BETA** (Cloudflare). Named participating publishers
+  exist (Time, Condé Nast, AP, Reddit, Stack Overflow, Quora, Pinterest…), but probing
+  them today returns **block/302/`cf-mitigated: challenge`, not a 402 toll** — the toll
+  isn't observable without crawler-beta access. (Our R2 already detects the
+  challenge/interstitial, which is the honest behavior.)
+- **Real attribution PAYOUT needs an affiliate account + a real sale** (Amazon
+  Associates / eBay Partner Network / a Shopify store) — not ours to fake.
+- **Industry is real & live** (for the record): Cloudflare pay-per-crawl (402),
+  OpenAI Ads Manager (labeled "sponsored" in ChatGPT, May 2026), Walmart Sparky / Amazon
+  Rufus / Google AI Mode ads, Shopify agentic storefronts (5.6M stores), server-side/
+  affiliate attribution as the agreed tracking answer. Our thesis matched it.
+- **What WOULD be testable now (deferred with the rest):** (a) detect+report a toll/
+  challenge header as a "door requires payment/challenge" signal (extends R2), and
+  (b) preserve an attribution tag through a consented navigation (assert the visited URL
+  keeps `?aff=…`). Pure mechanics, no accounts — pick these up first if/when we revisit.
+
+**Revisit trigger:** we obtain Cloudflare pay-per-crawl beta access OR a real affiliate
+account, OR a participating publisher starts returning live 402s to ordinary crawlers.
+Until then: do not build; the corrected thesis above is the record.
