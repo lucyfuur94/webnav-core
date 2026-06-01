@@ -174,7 +174,15 @@ async function main() {
     const { buildGraphView } = await import('./graph/export.js');
     const store = new MapStore('webnav.db');
     if (!store.getNode('github.com')) seedGraph(store);
-    console.log(JSON.stringify(buildGraphView(store), null, 2));
+    const view = buildGraphView(store);
+    // --html emits a self-contained interactive viewer instead of JSON.
+    // Detected directly off rawArgs, mirroring the --json flag detection.
+    if (rawArgs.includes('--html')) {
+      const { renderGraphHtml } = await import('./graph/html.js');
+      console.log(renderGraphHtml(view));
+      return;
+    }
+    console.log(JSON.stringify(view, null, 2));
     return;
   }
   if (args.cmd === 'add-node') {

@@ -13,6 +13,15 @@ describe('COMMANDS registry', () => {
     expect(g.example).toContain('webnav graph');
   });
 
+  it('graph declares an --html flag for the interactive viewer', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph')!;
+    const html = g.flags.find((f) => f.name === '--html')!;
+    expect(html).toBeDefined();
+    expect(html.takesValue).toBe(false);
+    expect(html.description.length).toBeGreaterThan(0);
+    expect(g.example).toContain('--html');
+  });
+
   it('add-node has a required id arg and --url/--capabilities/--topics flags', () => {
     const a = COMMANDS.find((c) => c.name === 'add-node')!;
     expect(a.summary.length).toBeGreaterThan(0);
