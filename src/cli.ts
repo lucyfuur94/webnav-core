@@ -11,7 +11,16 @@ export type ParsedArgs =
   | { cmd: 'search'; query: string; top: number }
   | { cmd: 'route'; request: string; capability?: string }
   | { cmd: 'hop'; url: string; toCluster?: string; toNode?: string }
+  | { cmd: 'graph' }
+  | { cmd: 'add-node'; id: string; url: string; capabilities: string[]; topics: string[] }
+  | { cmd: 'add-edge'; from: string; to: string; kind: string }
   | { cmd: 'capture'; url: string; out: string };
+
+// Split a comma-separated flag value into an array; absent flag → empty array.
+function listFlag(args: string[], name: string): string[] {
+  const v = flagValue(args, name);
+  return v === undefined ? [] : v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+}
 
 // Pull the value following a flag (or one of its aliases) out of an arg list.
 function flagValue(args: string[], ...names: string[]): string | undefined {
@@ -62,6 +71,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
       toCluster: flagValue(rest, '--to-cluster'),
       toNode: flagValue(rest, '--to-node'),
     };
+  }
+  if (cmd === 'graph') return { cmd };
+  if (cmd === 'add-node') {
+    return {
+      cmd, id: rest[0], url: flagValue(rest, '--url') ?? '',
+      capabilities: listFlag(rest, '--capabilities'),
+      topics: listFlag(rest, '--topics'),
+    };
+  }
+  if (cmd === 'add-edge') {
+    return { cmd, from: rest[0], to: rest[1], kind: flagValue(rest, '--kind') ?? 'capability' };
   }
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }
@@ -144,6 +164,52 @@ async function main() {
     if (!store.getNode('github.com')) seedGraph(store);
     console.log(JSON.stringify(
       hop(store, args.url, { toCluster: args.toCluster, toNode: args.toNode }), null, 2));
+    return;
+  }
+  if (args.cmd === 'graph') {
+    // graph: export the whole internet graph as a visualization-ready JSON view.
+    // Pure structural read over the seeded graph — no browser. Seed on first use.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { seedGraph } = await import('./graph/seed.js');
+    const { buildGraphView } = await import('./graph/export.js');
+    const store = new MapStore('webnav.db');
+    if (!store.getNode('github.com')) seedGraph(store);
+    const view = buildGraphView(store);
+    // --html emits a self-contained interactive viewer instead of JSON.
+    // Detected directly off rawArgs, mirroring the --json flag detection.
+    if (rawArgs.includes('--html')) {
+      const { renderGraphHtml } = await import('./graph/html.js');
+      console.log(renderGraphHtml(view));
+      return;
+    }
+    console.log(JSON.stringify(view, null, 2));
+    return;
+  }
+  if (args.cmd === 'add-node') {
+    // add-node: teach webnav a new site (persisted; the viz UI reads the same store).
+    const { MapStore } = await import('./mapstore/store.js');
+    const { seedGraph } = await import('./graph/seed.js');
+    const { addNode } = await import('./graph/teach.js');
+    const store = new MapStore('webnav.db');
+    if (!store.getNode('github.com')) seedGraph(store);
+    const node = addNode(store, {
+      id: args.id, homeUrl: args.url, capabilities: args.capabilities, topics: args.topics,
+    });
+    console.log(JSON.stringify(node, null, 2));
+    return;
+  }
+  if (args.cmd === 'add-edge') {
+    // add-edge: teach webnav a relationship between two KNOWN sites.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { seedGraph } = await import('./graph/seed.js');
+    const { addEdge } = await import('./graph/teach.js');
+    const store = new MapStore('webnav.db');
+    if (!store.getNode('github.com')) seedGraph(store);
+    const result = addEdge(store, { from: args.from, to: args.to, kind: args.kind as any });
+    console.log(JSON.stringify(result, null, 2));
+    // "ran fine but couldn't" — an edge to an unknown node → exit 3, the same
+    // code search/recall use for a clean-but-unsatisfiable result.
+    if (result.status === 'unknown-node') process.exitCode = 3;
     return;
   }
   // recall: open GitHub search for the query, then drive recall() over the live

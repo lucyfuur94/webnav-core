@@ -133,6 +133,11 @@ export class MapStore {
     const rows: any[] = this.db.prepare('SELECT * FROM node_edges WHERE from_node=?').all(fromNode);
     return rows.map(rowToNodeEdge);
   }
+  /** ALL node edges (the export/visualization needs every edge, not just from one node). */
+  allNodeEdges(): NodeEdge[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM node_edges').all();
+    return rows.map(rowToNodeEdge);
+  }
 }
 
 function rowToNode(r: any): SiteNode {

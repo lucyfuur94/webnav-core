@@ -56,6 +56,31 @@ describe('parseArgs', () => {
   it('parses per-command help for route', () => {
     expect(parseArgs(['route', '--help'])).toEqual({ cmd: 'help', command: 'route' });
   });
+  it('parses graph', () => {
+    expect(parseArgs(['graph'])).toEqual({ cmd: 'graph' });
+  });
+  it('parses graph --json', () => {
+    expect(parseArgs(['graph', '--json'])).toEqual({ cmd: 'graph' });
+  });
+  it('parses add-node with comma-split capabilities/topics', () => {
+    expect(parseArgs(['add-node', 'npmjs.com', '--url', 'https://www.npmjs.com',
+      '--capabilities', 'package-search,registry', '--topics', 'javascript,packages']))
+      .toEqual({ cmd: 'add-node', id: 'npmjs.com', url: 'https://www.npmjs.com',
+        capabilities: ['package-search', 'registry'], topics: ['javascript', 'packages'] });
+  });
+  it('parses add-node with absent capabilities/topics as empty arrays', () => {
+    expect(parseArgs(['add-node', 'npmjs.com', '--url', 'https://www.npmjs.com']))
+      .toEqual({ cmd: 'add-node', id: 'npmjs.com', url: 'https://www.npmjs.com',
+        capabilities: [], topics: [] });
+  });
+  it('parses add-edge with default kind', () => {
+    expect(parseArgs(['add-edge', 'github.com', 'pypi.org']))
+      .toEqual({ cmd: 'add-edge', from: 'github.com', to: 'pypi.org', kind: 'capability' });
+  });
+  it('parses add-edge --kind', () => {
+    expect(parseArgs(['add-edge', 'github.com', 'pypi.org', '--kind', 'hyperlink']))
+      .toEqual({ cmd: 'add-edge', from: 'github.com', to: 'pypi.org', kind: 'hyperlink' });
+  });
   it('parses --help', () => { expect(parseArgs(['--help'])).toEqual({ cmd: 'help' }); });
   it('parses -h', () => { expect(parseArgs(['-h'])).toEqual({ cmd: 'help' }); });
   it('parses no args as help', () => { expect(parseArgs([])).toEqual({ cmd: 'help' }); });
