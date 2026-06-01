@@ -96,15 +96,26 @@ Output is **structured so a future stitching layer can consume multiple evidence
 
 ## Status
 
-v1 built + merged to main (zero-LLM engine; verbs: list/describe/locate/recall + capture; 61 tests). Spec: `docs/superpowers/specs/2026-05-30-webnav-design.md`. Plan: `docs/superpowers/plans/2026-05-30-webnav.md`.
+> **Single source of truth for current state + how to run + next steps: `docs/STATUS.md`.** Quickstart + module map: `README.md`. This section is the narrative; STATUS.md is the live checklist — keep STATUS.md updated as the canonical handoff.
 
-**Memory loop wired (increment M1–M3, branch `webnav-memory-loop`):** the live path now goes Router→MapStore→Explorer. `exploreGitHub(store)` persists the structure-only skeleton (M1); `recallViaMap` builds it once if absent and never re-explores a known skeleton, then delegates to `recall` (M2); `live.ts` uses a FILE-backed MapStore so the skeleton survives across separate runs, proven by a deterministic test that reopens a fresh MapStore from disk on run-2 and confirms no re-exploration (M3, criterion #3). 69 unit tests + 1 gated live e2e.
+**Snapshot (2026-06-01):** All work below is **merged to `main`**, **192 unit tests pass (+2 gated live e2e)**, build green. webnav is a working zero-LLM CLI tool with these verbs: `list`, `describe`, `locate`, `recall` (GitHub repo evidence), `search` (multi-provider open-web), `route` + `hop` (the internet graph), `graph`/`add-node`/`add-edge` (the visualizable, teachable map), `capture` (dev). Self-describing CLI (`--help`/`--version`/`--json`/exit-codes).
 
-**Cost thesis (corrected + verified):** the real saving is the calling AGENT's LLM tokens + time, not playwright page-loads. The evidence bundle now reports an estimated `tokens-saved` figure. Verified live on GitHub: `python retry http` → 5 real repos with rich signals (stars/forks/issues/PRs/commits/tags/last-commit/license), ~65k agent tokens saved. (`playwright_calls` is a minor diagnostic only.)
+Built + verified (each merged from its own worktree):
+- **v1 (Tasks 0–13):** zero-LLM engine — snapshot parser, playwright-cli adapter, SQLite MapStore, deterministic resolve/replay, explorer, recall→evidence-bundle, goals, CLI. Spec `docs/superpowers/specs/2026-05-30-webnav-design.md`, plan `docs/.../plans/2026-05-30-webnav.md`.
+- **Memory loop (M1–M3):** live path goes Router→MapStore→Explorer; skeleton built once, persisted, never re-explored (criterion #3, proven by a reopen-from-disk test).
+- **Cost thesis (corrected + verified live):** the saving is the calling AGENT's tokens/time, not playwright page-loads; evidence bundle reports `tokens_saved`. GitHub `python retry http` → 5 real repos w/ rich signals, ~65k tokens saved.
+- **Multi-step walk (W1–W2, verified live):** `walkRoute` (async) walks a multi-page route to a NON-addressable state edge-by-edge; per-step prediction(`edge.toState`)-vs-observation(`matchState`); escalates `needs-navigation` on drift / `needs-classification` at a commit point (never fired). saucedemo: logs in, reaches inventory, correctly escalates at the ambiguous add-to-cart (resolveStep stays strict — never guesses among equivalents).
+- **Research (R2/R3/R4, R4 verified live):** R2 `classifyReadiness` (ready|loading|interstitial — detect+escalate, NEVER evade); R3 `extractContent` (answer-evidence from any page); R4 multi-provider open-web search (Marginalia + Wiby — Google/Bing/DDG bot-wall browsers), fan-out + merge, found-via-dogfooding chrome-leak + render-race fixes.
+- **Phase 1 — CLI hardening (DONE):** clig.dev self-describing CLI (the agent's tool-discovery: `webnav --help` + per-verb help), `--json`, `--version`, exit codes (0 ok / 2 error+hint / 3 ran-but-empty), stdout=result / stderr=diagnostics.
+- **Phase 2 G1–G3 — internet graph (DONE):** nodes + node_edges in MapStore; `route "<request>"` (surfaces candidate nodes + signals, agent decides — #5a) and `hop` (move to a related node via an edge). Spec `docs/.../specs/2026-05-31-internet-graph-design.md`.
+- **Graph-viz (DONE):** `graph` (JSON/`--html`), `add-node`/`add-edge` (teach new sites; persisted), interactive Cytoscape.js HTML viewer (`webnav graph --html > map.html`) — clustered, drag/hover/click, teach-via-UI forms.
 
-**Multi-step walk DONE + verified live (increment W1–W2, branch `webnav-multistep`):** `walkRoute` (async) walks a multi-page route to a NON-addressable state edge-by-edge — the capability GitHub (all URL-addressable) could never exercise. Each step: `replayStep` (cached selector → deterministic re-resolve) → act → snapshot → `matchState`, then PREDICTION (edge.toState) vs OBSERVATION (matchState) — mismatch/ambiguity → `needs-navigation`; an unclassified commit edge → `needs-classification`, never fired. Target: saucedemo (structure-only skeleton, fingerprints from real markup; credentials/shipping are runtime inputs). **Proven live:** logs in (multi-field), reaches inventory, then correctly ESCALATES `needs-navigation` at add-to-cart (6 equivalent buttons → webnav refuses to guess, hands to agent — the safety stance working). This finally exercises `matchState` + the `needs-navigation`/`needs-classification` protocol as a live loop. `resolveStep` kept strict by design (never guesses among equivalent targets). 97 unit tests + 2 gated live e2e (GitHub recall, saucedemo walk).
-
-**Honest remaining gaps:** (1) The saucedemo walk escalates at add-to-cart rather than completing autonomously — correct behavior (the agent should pick which item), but means the full login→checkout-overview autonomous walk isn't shown end-to-end without an agent resolving that step; a resume/continue API (agent answers a `needs-*`, walk continues) is designed but not built. (2) GitHub run-2 doesn't navigate fewer pages (search + details are irreducible re-reads); the real saving is agent tokens, per above. (3) Still pending: self-growing gazetteer, optional MCP surface, richer goal-state evidence in the walk, `closed_issues`/`latest_release`/`has_ci` signals.
+**Honest remaining gaps / pending (full list in `docs/STATUS.md`):**
+1. **Graph HTML viewer render NOT yet visually confirmed** — it generates + is unit-tested, but the Chrome browser-bridge tool timed out so the in-browser render is unverified. *Verify first next session* (e.g. via playwright-cli headless, since the Chrome MCP bridge was down).
+2. The saucedemo walk escalates at add-to-cart rather than completing autonomously (correct behavior, but needs the **R5 resume loop** to finish a multi-step flow end-to-end — designed, not built).
+3. GitHub run-2 doesn't navigate fewer pages (irreducible re-reads); the real saving is agent tokens.
+4. Open-web search quality is capped by the automation-friendly engines' thin indexes (good engines bot-wall browsers; we don't evade).
+5. Pending features: **G4** co-use weight learning, **R5** resume loop, **R1** A/B benchmark, **Phase 5** MCP wrapper, auto-learn-nodes-from-usage, richer goal signals (`closed_issues`/`latest_release`/`has_ci`).
 
 ## Research push (increment R) — R2/R3/R4 DONE + merged to main
 
@@ -121,11 +132,12 @@ The internet-graph spec (`docs/superpowers/specs/2026-05-31-internet-graph-desig
 
 Build order (each its own increment, on its own worktree, merged when green):
 - **Phase 0** ✅ consolidate (R2/R3/R4 merged to main).
-- **Phase 1 — CLI hardening** (CLI is the PRIMARY agent surface, per user). Proper `webnav --help` + per-verb help (the agent's tool-discovery mechanism), `--json`, `--version`, exit codes (0=ok, non-zero=failure modes), stdout=result/stderr=logs, consistent verb grammar, discoverability-on-error. clig.dev standards, agent-tuned (help-as-tool-menu + clean JSON + exit codes matter most). Answers "how does the agent know how to call the tools".
-- **Phase 2 — Internet graph (G1–G4):** G1 data model (nodes + node_edges in MapStore) + seed; G2 `route`; G3 `hop`; G4 co-use weight learning. Reframes web-search as the `web-search` cluster.
-- **Phase 3 — R5 resume loop:** agent answers a `needs-*`, walk continues to completion.
-- **Phase 4 — R1 benchmark:** A/B harness (subagent + real CLI, graph-routed) vs. plain search; real tasks + agent tokens. Proves the thesis.
-- **Phase 5 — MCP wrapper (SECONDARY):** expose the now-stable verbs as MCP tools so agents see them natively. Thin layer over the CLI verbs; CLI stays primary. Test both via CLI and MCP.
+- **Phase 1 — CLI hardening** ✅ DONE. Self-describing CLI (`--help`/per-verb help/`--json`/`--version`/exit-codes/stdout=result). Answers "how does the agent know how to call the tools".
+- **Phase 2 — Internet graph:** G1–G3 ✅ DONE (nodes/node_edges + `route` + `hop`). **G4 ⏳ PENDING** — co-use weight learning (the Maps-traffic analog: weight emerges from usage, decays). + ✅ graph-viz (export/teach/HTML viewer) landed alongside.
+- **Phase 3 — R5 resume loop ⏳ PENDING:** agent answers a `needs-*`, walk continues to completion (lets the saucedemo flow finish autonomously end-to-end).
+- **Phase 4 — R1 benchmark ⏳ PENDING:** A/B harness (subagent + real CLI, graph-routed) vs. plain search; real tasks + agent tokens. Proves the thesis. *Recommended next-after-verify.*
+- **Phase 5 — MCP wrapper ⏳ PENDING (SECONDARY):** expose the stable verbs as MCP tools so agents see them natively. Thin layer over the CLI verbs; CLI stays primary. Test both via CLI and MCP.
+- **Immediate first step next session:** ⚠️ **verify the graph HTML viewer actually renders** (browser bridge was down — use playwright-cli headless). Then pick a pending phase (R1 benchmark recommended).
 
 ## Sanctioned-doors layer + attention-return economics (agreed direction; not yet built)
 
