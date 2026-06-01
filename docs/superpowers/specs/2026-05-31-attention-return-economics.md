@@ -55,27 +55,40 @@ the offer only at genuine intent, so its referrals convert far better than a ban
 (Option C) exist for brand/awareness goals with no click, but A is the one that works
 today.)
 
-## 4. The incentive problem, and the solve (decouple pay from the recommendation)
+## 4. The only real constraint: honest communication (not anti-"adware" machinery)
 
-The adware failure mode: if the agent earns per-conversion on offers it controls, it
-has a standing incentive to **nudge** — and becomes an ad channel wearing an
-assistant's clothes. The solve is structural — **break the link between the agent's
-pay and any individual recommendation:**
+An earlier draft over-engineered this with a "decouple pay from recommendation to avoid
+adware" structure. That was wrong, and worth correcting plainly:
 
-1. **The agent is funded by, and accountable to, its PRINCIPAL** — and the principal
-   must have a genuine stake in the beneficiary being well-served.
-2. **Attention revenue is POOLED and decoupled, not per-recommendation.** Attribution
-   flows to a pool that offsets cost *in aggregate, blind to which specific offer
-   converted.* The agent can't increase its take by pushing offer Y over Z — it's
-   indifferent to *which* offer, caring only *that the user is well-served* (so they
-   keep using it).
-3. **The beneficiary is the auditor.** Every surfaced offer is labeled, logged,
-   reviewable, and per-category opt-out. A nudgy agent loses its users — and since the
-   principal's livelihood depends on retention, restraint is self-enforcing.
+- **An agent showing a labeled, relevant, consented offer is just ADVERTISING** — the
+  same legitimate thing as a search ad, a sponsored result, a billboard. There is
+  nothing wrong with it; it's precisely what could let sites drop the toll (§2).
+- The LLM has **no "selfish incentive."** It follows its instructions. So the risk was
+  never a greedy model — any risk lives with the **operator** who writes the agent's
+  instructions/funding.
+- **The one real line is the ordinary advertising ethic: don't deceive.** Label ads as
+  ads, disclose sponsorship, never pass paid placement off as neutral recommendation.
+  That's the difference between honest advertising (fine) and deceptive/biased advice (not).
+  It is NOT a novel agent-web hazard requiring special plumbing — it's standard disclosure.
 
-Under this structure, **user-first and attention-return stop being in tension**:
-returning attention is just "served the user well at a moment that also happened to
-convert," and the agent has no lever to abuse because its money isn't per-recommendation.
+So the requirement collapses to one rule:
+
+> **Communicate honestly.** When the agent surfaces an offer, it is clearly labeled as a
+> sponsored/paid offer and distinguishable from the agent's neutral recommendations. No
+> disguising paid placement as impartial advice. Beneficiary can see and switch it off.
+
+That's it. No pooling, no decoupling-the-paycheck machinery — those solved an invented
+problem. Operators who deceive lose user trust (and run into ordinary advertising/
+disclosure regulation); that market + legal discipline is the same one all advertising
+already lives under.
+
+**Payment terms can be impression-based OR conversion-based** — both are legitimate and
+the doors layer should let a site declare either:
+- *Conversion/click* (referral token): self-verifying (the tagged action reaches the
+  site), but pays for getting the user to act.
+- *Impression* (the agent surfaced the labeled offer): gentler — pays for the honest
+  mention, no push-to-convert — but harder to verify (needs a trusted attestation/
+  receipt, since the showing happens privately). Choose per site/relationship.
 
 ## 5. Who is the PRINCIPAL? (generalized — both deployment shapes)
 
@@ -95,11 +108,13 @@ The alignment rule is **principal-agnostic**:
   user-retention / competitive pressure (a concierge that pushes bad options for
   commission loses customers to a rival). Market discipline moves up a level.
 - **Failure mode (the line):** a payer whose interest is *opposed* to the beneficiary's
-  (e.g. agent funded purely by advertisers with no retention stake) → adware. Not built.
+  (e.g. an operator that instructs the agent to disguise paid placements as neutral
+  advice) → deceptive/biased advice. The guard is honest disclosure (§4) + the
+  retention/regulation discipline, not special machinery.
 
 Company-scale deployment actually **strengthens** the model: attention/conversions
-aggregate into real volume sites will negotiate B2B terms for, and pooled attribution
-becomes a business agreement rather than per-individual micro-settlement.
+aggregate into real volume that sites will negotiate B2B terms for — a business
+agreement rather than per-individual micro-settlement.
 
 ## 6. webnav's role: the honest, principal-AGNOSTIC substrate
 
@@ -137,12 +152,16 @@ sanctioned door (which may be a paid API).
 
 ## 8. Hard problems still open (not hand-waved)
 
-- **Attribution plumbing** beyond affiliate links (who pays whom, revenue share, the
-  pool mechanics) — needs a settlement layer; affiliate rails are the bootstrap.
+- **Attribution plumbing** (who pays whom, revenue share, settlement) — needs a layer;
+  affiliate/referral rails are the bootstrap for conversion-based terms.
+- **Impression verification** — if a site is paid per labeled-impression, it can't see
+  the private showing; needs a trusted attestation/receipt. (Conversion-based terms
+  sidestep this — the tagged action self-verifies.)
 - **Standardizing "attention-terms"** so sites can declare them (an `llms.txt`-like
   field) — doesn't exist yet.
-- **Verifying the pool stays decoupled** (that an operator doesn't quietly re-link pay
-  to recommendations) — needs auditability, maybe third-party.
+- **Disclosure enforcement** — ensuring operators actually label sponsored offers and
+  don't disguise them as neutral advice. This is ordinary advertising-disclosure
+  ground (market trust + regulation), not a webnav-specific mechanism.
 - **Regulatory** treatment of agent-mediated advertising / disclosure — nascent.
 
 ## 9. Relationship to the build
