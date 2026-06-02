@@ -59,9 +59,15 @@ export class MapStore {
   }
   getState(id: string): State | null {
     const r: any = this.db.prepare('SELECT * FROM states WHERE id=?').get(id);
-    return r ? { id: r.id, nodeId: r.node_id, semanticName: r.semantic_name, urlPattern: r.url_pattern,
-      role: r.role, availableSignals: JSON.parse(r.available_signals),
-      fingerprint: JSON.parse(r.fingerprint) } : null;
+    return r ? rowToState(r) : null;
+  }
+  allStates(): State[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM states ORDER BY id').all();
+    return rows.map(rowToState);
+  }
+  statesForNode(nodeId: string): State[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM states WHERE node_id=? ORDER BY id').all(nodeId);
+    return rows.map(rowToState);
   }
 
   upsertEdge(e: Edge): void {
@@ -80,6 +86,10 @@ export class MapStore {
   }
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
+    return rows.map(rowToEdge);
+  }
+  allEdges(): Edge[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM edges ORDER BY from_state, to_state, semantic_step').all();
     return rows.map(rowToEdge);
   }
 
@@ -178,6 +188,12 @@ function rowToNodeEdge(r: any): NodeEdge {
     fromNode: r.from_node, toNode: r.to_node, kind: r.kind,
     weight: r.weight, lastVerified: r.last_verified, confidence: r.confidence,
   });
+}
+
+function rowToState(r: any): State {
+  return { id: r.id, nodeId: r.node_id, semanticName: r.semantic_name, urlPattern: r.url_pattern,
+    role: r.role, availableSignals: JSON.parse(r.available_signals),
+    fingerprint: JSON.parse(r.fingerprint) };
 }
 
 function rowToEdge(r: any): Edge {
