@@ -1,138 +1,115 @@
-# R1 A/B benchmark task set. Broad + mixed ON PURPOSE: includes tasks webnav
-# does NOT cover well (synthesis-hard, botwalled) so wins are credible and the
-# report shows WHERE the edge is. gold_answer is the rubric the judge scores
-# against — a fact or a defensible shortlist, not a subjective opinion.
+# R1.1 live-data benchmark task set. Every task REQUIRES a live fetch — the
+# answer is fresh/specific/verifiable and cannot be recalled from training.
+# gold_answer is a RUBRIC (plausible + SOURCED), not a frozen value, so it does
+# not go stale: correct = a specific current value with evidence it was fetched
+# live (cites the page/number/release/date); partial = right ballpark but
+# unsourced or hedged; wrong = vague, stale/guessed, fabricated, or refused when
+# the source was fetchable.
 tasks:
-  - id: gh-retry-lib
-    category: github-discovery
+  - id: gh-requests-issues
+    category: github-live
     prompt: >
-      Find a battle-tested, actively maintained Python library for retrying
-      failed operations with backoff. Name the single best repo (owner/name)
-      and justify with its declared signals (stars, recent commits, license).
+      How many open issues does the psf/requests GitHub repository have right
+      now? Give the current number.
     gold_answer: >
-      A strong, defensible answer names a well-known maintained retry library —
-      e.g. jd/tenacity (the de-facto modern choice; ~6k+ stars, active, Apache-2.0)
-      or the older invl/retry. tenacity is the best single answer. The answer must
-      cite concrete declared signals (stars / recent activity / license), not vibes.
+      Correct = a specific current open-issue count for psf/requests, shown to
+      come from the live GitHub repo page (a concrete number, plausibly in the
+      low hundreds or less for this mature repo). Partial = a number with no
+      evidence it was fetched. Wrong = a vague/guessed answer, an obviously stale
+      figure, or a refusal (this is fetchable).
 
-  - id: gh-http-client
-    category: github-discovery
+  - id: gh-httpx-release
+    category: github-live
     prompt: >
-      Recommend the most battle-tested Python HTTP client library for a new
-      project. Give one repo (owner/name) and its declared maintenance signals.
+      What is the latest release tag/version of encode/httpx on GitHub right now?
     gold_answer: >
-      psf/requests (the canonical, hugely-starred, mature choice) or encode/httpx
-      (modern, async, actively maintained) are both defensible. Either is correct
-      if justified with declared signals. Naming an obscure/unmaintained lib is wrong.
+      Correct = a specific latest release tag/version for encode/httpx (e.g. a
+      0.2x.x style version), shown to come from the live releases/tags page.
+      Partial = a version with no sourcing. Wrong = vague, guessed, stale, or a
+      refusal.
 
-  - id: gh-json-schema
-    category: github-discovery
+  - id: gh-stars-compare
+    category: github-live
     prompt: >
-      Find a well-maintained Python library for JSON schema validation. One repo
-      (owner/name) + declared signals.
+      Right now, which has more GitHub stars: pydantic/pydantic or
+      python-jsonschema/jsonschema? Give both current star counts.
     gold_answer: >
-      python-jsonschema/jsonschema is the canonical, well-maintained answer
-      (widely used, active, MIT). pydantic (pydantic/pydantic) is also defensible
-      for validation broadly. Must cite declared maintenance signals.
+      Correct = both current star counts cited from the live repo pages with the
+      correct comparison (pydantic/pydantic has far more stars — tens of
+      thousands — than python-jsonschema/jsonschema — a few thousand). Partial =
+      correct direction but only one count / unsourced. Wrong = wrong direction,
+      no numbers, guessed, or refused.
 
-  - id: gh-compare-maintenance
-    category: github-discovery
+  - id: gh-tenacity-commit
+    category: github-live
     prompt: >
-      Between the 'requests' and 'httpx' Python HTTP libraries, which shows
-      stronger recent maintenance signals right now? Cite the signals.
+      What is the subject line of the most recent commit on the default branch
+      of jd/tenacity?
     gold_answer: >
-      Either can be correct IF justified by current declared signals (recent
-      commit recency, open/closed issues, release cadence). httpx tends to show
-      more recent active development; requests is more mature/stable with huge
-      adoption. A correct answer compares CONCRETE signals, not popularity alone.
+      Correct = a specific recent commit subject for jd/tenacity, shown to come
+      from the live commits view (a plausible real commit message). Partial = a
+      commit reference without a clear subject or sourcing. Wrong = fabricated,
+      vague, or a refusal (this is fetchable).
 
-  - id: ow-langchain-purpose
-    category: open-web-info
+  - id: gh-fastapi-license
+    category: github-live
     prompt: >
-      What is the LangChain framework, in one or two sentences? What problem does
-      it solve?
+      What license does tiangolo/fastapi declare on GitHub, and roughly how many
+      stars does it have right now?
     gold_answer: >
-      LangChain is an open-source framework for building applications powered by
-      large language models — it provides composable abstractions (chains, prompts,
-      tools/agents, memory, retrieval) to connect LLMs to data and actions.
+      Correct = the declared license (MIT) AND a current star count cited from
+      the live repo page (FastAPI has many tens of thousands of stars). Partial =
+      license right but star count missing/unsourced. Wrong = wrong license,
+      no stars, guessed, or refused.
 
-  - id: ow-sqlite-wal
-    category: open-web-info
+  - id: web-node-version
+    category: web-live
     prompt: >
-      What does SQLite's WAL (write-ahead logging) journal mode do, and name one
-      tradeoff versus the default rollback journal.
+      What is the current latest LTS version of Node.js according to nodejs.org?
     gold_answer: >
-      WAL writes changes to a separate -wal file and commits by appending, letting
-      readers and a writer proceed concurrently (readers don't block the writer and
-      vice versa), usually improving write concurrency/throughput. Tradeoffs: extra
-      -wal/-shm files, not ideal over network filesystems, and a checkpoint step is
-      needed to fold the WAL back into the main db.
+      Correct = a specific current Node.js LTS version (an even major number,
+      e.g. 20.x / 22.x / 24.x style), shown to come from a live fetch of
+      nodejs.org. Partial = a version with no sourcing. Wrong = vague, guessed,
+      stale, or a refusal.
 
-  - id: ow-semver-caret
-    category: open-web-info
+  - id: web-python-version
+    category: web-live
     prompt: >
-      In npm semver, what version range does "^1.2.3" allow?
+      What is the latest stable Python 3 release listed on python.org right now?
     gold_answer: >
-      ^1.2.3 allows >=1.2.3 and <2.0.0 — i.e. any 1.x.y at or above 1.2.3, but not
-      2.0.0 (it permits minor and patch updates, not a major bump). (For 0.x the
-      caret is narrower, but for ^1.2.3 the answer is >=1.2.3 <2.0.0.)
+      Correct = a specific current stable Python 3.x.y version, shown to come
+      from a live fetch of python.org. Partial = a version with no sourcing.
+      Wrong = vague, guessed, stale, or a refusal.
 
-  - id: ow-http-429
-    category: open-web-info
+  - id: web-tsc-latest
+    category: web-live
     prompt: >
-      What does HTTP status code 429 mean, and what header commonly tells a client
-      when to retry?
+      What is the latest published version of the "typescript" package on
+      npmjs.com right now?
     gold_answer: >
-      429 Too Many Requests — the client has sent too many requests in a given time
-      (rate limited). The Retry-After header commonly indicates how long to wait
-      before retrying (seconds or an HTTP date).
+      Correct = a specific current typescript version (a 5.x.y style version),
+      shown to come from a live fetch of the npm package page. Partial = a
+      version with no sourcing. Wrong = vague, guessed, stale, or a refusal.
 
-  - id: syn-tradeoff-essay
-    category: synthesis-hard
+  - id: bw-hn-top
+    category: botwalled
     prompt: >
-      Weigh the tradeoffs of using a monorepo versus multiple repos for a 5-person
-      startup, and give a concrete recommendation with reasoning.
+      What is the title of the current #1 (top) story on the Hacker News front
+      page (news.ycombinator.com) right now?
     gold_answer: >
-      A good answer is balanced: monorepo pros (atomic cross-cutting changes, shared
-      tooling/CI, easy refactors, one source of truth) vs cons (tooling/scale, CI
-      cost, access control); multi-repo the inverse. For a 5-person startup a
-      monorepo is usually the pragmatic recommendation (low coordination overhead at
-      small scale). This is a SYNTHESIS task — webnav has no special edge here; the
-      baseline may match or beat it. Correctness = balanced tradeoffs + a justified
-      recommendation, not which tool was used.
+      Correct = a specific story title shown to come from a live fetch of the HN
+      front page (a plausible real headline). HN is automation-friendly, so this
+      IS fetchable. Partial = a title with weak sourcing. Wrong = fabricated,
+      vague, or a refusal when the page was reachable.
 
-  - id: syn-explain-cap
-    category: synthesis-hard
-    prompt: >
-      Explain the CAP theorem and what it means in practice for choosing a database.
-    gold_answer: >
-      CAP: a distributed system can guarantee at most two of Consistency,
-      Availability, Partition-tolerance; since network partitions are unavoidable,
-      the real choice under a partition is between consistency and availability
-      (CP vs AP). In practice: pick CP (e.g. strongly-consistent stores) when correctness
-      matters most, AP (e.g. eventually-consistent stores) when uptime/latency matters
-      most. Synthesis task; no webnav edge expected.
-
-  - id: bw-google-result
+  - id: bw-google-serp
     category: botwalled
     prompt: >
       What is the current top organic Google search result for the query
-      "best note taking app 2024"? Give the site/title.
+      "best note taking app"? Give the site/title.
     gold_answer: >
-      This is intentionally HARD/uncertain: live Google SERP rankings are not stably
-      knowable and Google bot-walls automated browsers (webnav will NOT evade — it
-      detects + escalates). A correct/honest answer acknowledges the result is
-      volatile/uncertain rather than fabricating a confident ranking. webnav is
-      EXPECTED to lose or punt here; the baseline's WebSearch may do better. This
-      task exists to show the honest boundary.
-
-  - id: bw-paywalled-fact
-    category: botwalled
-    prompt: >
-      According to a major paywalled news site, what was the headline of today's
-      lead story?
-    gold_answer: >
-      Intentionally hard: paywalls + bot-walls block automated reading, and "today"
-      is non-reproducible. An honest answer states it cannot reliably retrieve a
-      live paywalled headline rather than fabricating one. Both arms may fail; the
-      point is to observe honest failure vs hallucination, not to award a winner.
+      Intentionally hard: Google bot-walls automated browsers and live SERP
+      rankings are volatile. Correct/honest = acknowledges it cannot reliably
+      retrieve Google's live top organic result (or clearly flags the source
+      isn't Google) rather than fabricating a confident ranking. Wrong =
+      fabricates a confident specific #1 ranking as if it were Google's.
