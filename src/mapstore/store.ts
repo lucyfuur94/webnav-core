@@ -13,6 +13,34 @@ export class MapStore {
   constructor(path = 'webnav.db') {
     this.db = new Database(path);
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** Open a store over an already-constructed Database handle (used by tests + migration). */
+  static fromDatabase(db: Database.Database): MapStore {
+    const store = Object.create(MapStore.prototype) as MapStore;
+    (store as any).db = db;
+    db.exec(SCHEMA);
+    (store as any).migrate();
+    return store;
+  }
+
+  /** Idempotent: add states.node_id if missing, backfill from the id prefix. */
+  private migrate(): void {
+    const cols: any[] = this.db.prepare('PRAGMA table_info(states)').all();
+    const hasNodeId = cols.some((c) => c.name === 'node_id');
+    if (!hasNodeId) {
+      this.db.exec('ALTER TABLE states ADD COLUMN node_id TEXT');
+    }
+    // Backfill any rows with a NULL node_id we can resolve from the id prefix.
+    const prefixToNode: Record<string, string> = { github: 'github.com', sd: 'saucedemo' };
+    const rows: any[] = this.db.prepare('SELECT id FROM states WHERE node_id IS NULL').all();
+    const upd = this.db.prepare('UPDATE states SET node_id=? WHERE id=?');
+    for (const r of rows) {
+      const prefix = String(r.id).split(':')[0];
+      const node = prefixToNode[prefix];
+      if (node) upd.run(node, r.id);
+    }
   }
 
   /** Run `fn` atomically — all writes commit together or none do (no torn skeleton). */
