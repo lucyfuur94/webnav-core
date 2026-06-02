@@ -12,14 +12,68 @@ import type { GraphView } from './export.js';
  * JSON to '<' so a node id/url containing the literal "</script>" cannot
  * break out of the data block (defensive — ids/urls are controlled, but free).
  */
-export function renderGraphHtml(view: GraphView, _opts?: { live?: boolean }): string {
+export function renderGraphHtml(view: GraphView, opts: { live?: boolean } = {}): string {
   // JSON.stringify of the whole view, with '<' neutralized so neither
   // "</script>" nor "<!--" can terminate the embedding script block.
   const data = JSON.stringify(view).replace(/</g, '\\u003c');
+  const live = opts.live === true;
 
   const siteCount = view.nodes.length;
   const clusterCount = view.clusters.length;
   const edgeCount = view.edges.length;
+
+  const liveScript = live ? `
+  // --- Live mode: drill into a node's interior on click. ---
+  var LIVE = true;
+  var GRAPH_API = '/api/graph'; // canonical refresh endpoint (initial render uses embedded data)
+  function renderInterior(nodeId, interior) {
+    var cyDiv = document.getElementById('cy');
+    var overlay = document.getElementById('interior-overlay');
+    if (overlay) overlay.remove();
+    overlay = document.createElement('div');
+    overlay.id = 'interior-overlay';
+    overlay.style.cssText = 'position:absolute;inset:0;background:#0f1115;z-index:10;display:flex;flex-direction:column;';
+    var bar = document.createElement('div');
+    bar.style.cssText = 'padding:8px 12px;color:#e6e6e6;font-size:13px;border-bottom:1px solid #2a2f3a;';
+    bar.innerHTML = '<button id="interior-back" style="margin-right:10px;cursor:pointer;">back</button><span id="interior-title"></span>';
+    var box = document.createElement('div');
+    box.id = 'interior-cy';
+    box.style.cssText = 'flex:1 1 auto;min-height:0;';
+    overlay.appendChild(bar); overlay.appendChild(box);
+    cyDiv.appendChild(overlay);
+    document.getElementById('interior-back').addEventListener('click', function () { overlay.remove(); });
+    document.getElementById('interior-title').textContent =
+      nodeId + ' - ' + interior.states.length + ' states, ' + interior.edges.length + ' edges';
+    if (!interior.states.length) {
+      box.innerHTML = '<p style="color:#9aa4b2;padding:24px;">No interior mapped for this site yet.</p>';
+      return;
+    }
+    var els = [];
+    interior.states.forEach(function (s) {
+      els.push({ data: { id: s.id, label: s.semanticName + ' (' + s.role + ')' } });
+    });
+    interior.edges.forEach(function (e, i) {
+      els.push({ data: { id: 'ie' + i, source: e.from, target: e.to, label: e.semanticStep } });
+    });
+    var icy = cytoscape({ container: box, elements: els,
+      style: [
+        { selector: 'node', style: { 'background-color': '#4e79a7', 'label': 'data(label)',
+          'color': '#e6e6e6', 'font-size': 9, 'text-wrap': 'wrap', 'text-valign': 'bottom', 'text-margin-y': 4 } },
+        { selector: 'edge', style: { 'width': 1.5, 'line-color': '#54607a',
+          'target-arrow-color': '#54607a', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+          'label': 'data(label)', 'font-size': 7, 'color': '#9aa4b2', 'text-rotation': 'autorotate' } }
+      ] });
+    try { icy.layout({ name: (window.cytoscapeFcose ? 'fcose' : 'cose'), animate: false, fit: true, padding: 30 }).run(); }
+    catch (e) { icy.layout({ name: 'cose', animate: false, fit: true, padding: 30 }).run(); }
+  }
+  cy.on('tap', 'node', function (evt) {
+    var id = evt.target.id();
+    fetch('/api/node/' + encodeURIComponent(id) + '/interior')
+      .then(function (r) { return r.json(); })
+      .then(function (interior) { renderInterior(id, interior); })
+      .catch(function (e) { showError('Failed to load interior: ' + e); });
+  });
+` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -311,7 +365,7 @@ try {
       runLayout();
     }
   });
-})();
+${liveScript}})();
 </script>
 </body>
 </html>

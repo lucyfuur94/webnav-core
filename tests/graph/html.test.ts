@@ -76,4 +76,16 @@ describe('renderGraphHtml', () => {
     // The literal closing-script sequence must not appear unescaped inside the embedded data.
     expect(h).not.toContain('</script><script>alert(1)</script>');
   });
+
+  it('live mode wires the API endpoints and a drill-in handler', () => {
+    const h = renderGraphHtml(view, { live: true });
+    expect(h).toContain('/api/graph');
+    expect(h).toContain('/api/node/');
+    expect(h).toContain('interior');
+  });
+
+  it('static mode (default) does NOT fetch the API', () => {
+    const h = renderGraphHtml(view);
+    expect(h).not.toContain('/api/graph');
+  });
 });
