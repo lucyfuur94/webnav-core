@@ -42,3 +42,16 @@ export function seedGraph(store: MapStore): void {
   exploreGitHub(store);
   exploreSaucedemo(store);
 }
+
+/**
+ * Ensure the map is fully seeded — nodes AND interiors. Use this as the bootstrap
+ * guard (NOT `if (!getNode(...))`): a pre-existing webnav.db may already have the
+ * nodes from an older seed but ZERO interior states, so a node-only guard would
+ * skip seeding and leave drill-in empty. We guard on a known interior state
+ * instead. seedGraph's upserts are idempotent, so calling it again is cheap+safe.
+ */
+export function ensureSeeded(store: MapStore): void {
+  if (store.getState('github:repo-detail') === null) {
+    seedGraph(store);
+  }
+}

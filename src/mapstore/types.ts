@@ -5,7 +5,8 @@ export type EdgeKind = 'safe-reversible' | 'commit-point' | 'navigate' | 'unclas
 
 export interface State {
   id: string;
-  nodeId: string;               // owning site-node id, e.g. 'github.com'
+  nodeId: string | null;        // owning site-node id, e.g. 'github.com'; null when the
+                                // id prefix didn't resolve to a known node (migration backfill)
   semanticName: string;
   urlPattern: string;
   role: StateRole;

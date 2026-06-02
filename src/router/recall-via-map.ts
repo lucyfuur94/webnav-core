@@ -2,9 +2,6 @@ import type { Goal } from '../mapstore/types.js';
 import type { RecallResponse } from '../protocol.js';
 import type { MapStore } from '../mapstore/store.js';
 import { recall, type RecallBrowser } from './router.js';
-// Namespace import so vi.spyOn(skeleton, 'exploreGitHub') observes the call
-// (the spy patches the namespace binding we dereference at call time).
-import * as skeleton from '../explorer/github-skeleton.js';
 
 export interface RecallViaMapArgs {
   query: string;

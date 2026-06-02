@@ -35,6 +35,15 @@ export function startServer(store: IMapStore, port = 7777): Server {
       send(500, JSON.stringify({ error: String(e) }));
     }
   });
+  // A clear message + nonzero exit on a bind failure (e.g. port already in use),
+  // instead of an unhandled 'error' event dumping a raw stack trace.
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    const hint = err.code === 'EADDRINUSE'
+      ? `port ${port} is already in use — set WEBNAV_PORT to a free port`
+      : err.message;
+    process.stderr.write(`webnav server: ${hint}\n`);
+    process.exitCode = 2;
+  });
   server.listen(port, '127.0.0.1');
   return server;
 }

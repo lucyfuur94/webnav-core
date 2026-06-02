@@ -148,20 +148,20 @@ async function main() {
     // route: ask the graph which node(s) serve a request. Pure structural query
     // over the seeded internet graph — no browser. Seed on first use.
     const { MapStore } = await import('./mapstore/store.js');
-    const { seedGraph } = await import('./graph/seed.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
     const { route } = await import('./graph/route.js');
     const store = new MapStore('webnav.db');
-    if (!store.getNode('github.com')) seedGraph(store);
+    ensureSeeded(store);
     console.log(JSON.stringify(route(store, args.request, args.capability), null, 2));
     return;
   }
   if (args.cmd === 'hop') {
     // hop: move from the current page's node to a related node in the graph.
     const { MapStore } = await import('./mapstore/store.js');
-    const { seedGraph } = await import('./graph/seed.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
     const { hop } = await import('./graph/hop.js');
     const store = new MapStore('webnav.db');
-    if (!store.getNode('github.com')) seedGraph(store);
+    ensureSeeded(store);
     console.log(JSON.stringify(
       hop(store, args.url, { toCluster: args.toCluster, toNode: args.toNode }), null, 2));
     return;
@@ -170,10 +170,10 @@ async function main() {
     // graph: export the whole internet graph as a visualization-ready JSON view.
     // Pure structural read over the seeded graph — no browser. Seed on first use.
     const { MapStore } = await import('./mapstore/store.js');
-    const { seedGraph } = await import('./graph/seed.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
     const { buildGraphView } = await import('./graph/export.js');
     const store = new MapStore('webnav.db');
-    if (!store.getNode('github.com')) seedGraph(store);
+    ensureSeeded(store);
     const view = buildGraphView(store);
     // --html emits a self-contained interactive viewer instead of JSON.
     // Detected directly off rawArgs, mirroring the --json flag detection.
@@ -188,10 +188,10 @@ async function main() {
   if (args.cmd === 'add-node') {
     // add-node: teach webnav a new site (persisted; the viz UI reads the same store).
     const { MapStore } = await import('./mapstore/store.js');
-    const { seedGraph } = await import('./graph/seed.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
     const { addNode } = await import('./graph/teach.js');
     const store = new MapStore('webnav.db');
-    if (!store.getNode('github.com')) seedGraph(store);
+    ensureSeeded(store);
     const node = addNode(store, {
       id: args.id, homeUrl: args.url, capabilities: args.capabilities, topics: args.topics,
     });
@@ -201,10 +201,10 @@ async function main() {
   if (args.cmd === 'add-edge') {
     // add-edge: teach webnav a relationship between two KNOWN sites.
     const { MapStore } = await import('./mapstore/store.js');
-    const { seedGraph } = await import('./graph/seed.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
     const { addEdge } = await import('./graph/teach.js');
     const store = new MapStore('webnav.db');
-    if (!store.getNode('github.com')) seedGraph(store);
+    ensureSeeded(store);
     const result = addEdge(store, { from: args.from, to: args.to, kind: args.kind as any });
     console.log(JSON.stringify(result, null, 2));
     // "ran fine but couldn't" — an edge to an unknown node → exit 3, the same

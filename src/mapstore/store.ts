@@ -73,7 +73,11 @@ export class MapStore implements IMapStore {
   }
 
   upsertState(s: State): void {
-    this.db.prepare(`INSERT INTO states VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp)
+    // Explicit column names (NOT positional VALUES): on a migrated DB the
+    // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
+    // schema. Naming the columns keeps the write correct regardless of order.
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
       role=@role, available_signals=@sig, fingerprint=@fp`)
       .run({
