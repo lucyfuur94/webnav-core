@@ -14,6 +14,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
   states: [
     {
       id: 'github:search-entry',
+      nodeId: 'github.com',
       semanticName: 'github:search-entry',
       urlPattern: 'https://github.com/search*',
       role: 'search-entry',
@@ -22,6 +23,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'github:result-list',
+      nodeId: 'github.com',
       semanticName: 'github:result-list',
       urlPattern: 'https://github.com/search?*type=repositories*',
       role: 'result-list',
@@ -30,6 +32,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'github:repo-detail',
+      nodeId: 'github.com',
       semanticName: 'github:repo-detail',
       urlPattern: 'https://github.com/*/*',
       role: 'detail',

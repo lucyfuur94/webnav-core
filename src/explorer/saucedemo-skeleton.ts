@@ -20,6 +20,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
   states: [
     {
       id: 'sd:login',
+      nodeId: 'saucedemo',
       semanticName: 'sd:login',
       urlPattern: 'https://www.saucedemo.com/',
       role: 'search-entry',
@@ -28,6 +29,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'sd:inventory',
+      nodeId: 'saucedemo',
       semanticName: 'sd:inventory',
       urlPattern: '*inventory*',
       role: 'detail',
@@ -36,6 +38,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'sd:cart',
+      nodeId: 'saucedemo',
       semanticName: 'sd:cart',
       urlPattern: '*cart*',
       role: 'detail',
@@ -44,6 +47,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'sd:checkout-info',
+      nodeId: 'saucedemo',
       semanticName: 'sd:checkout-info',
       urlPattern: '*checkout-step-one*',
       role: 'detail',
@@ -52,6 +56,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
     },
     {
       id: 'sd:checkout-overview',
+      nodeId: 'saucedemo',
       semanticName: 'sd:checkout-overview',
       urlPattern: '*checkout-step-two*',
       role: 'detail',
