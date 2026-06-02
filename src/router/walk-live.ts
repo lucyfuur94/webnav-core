@@ -1,7 +1,8 @@
 import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { MapStore } from '../mapstore/store.js';
 import { parseSnapshot, findByRoleAndName } from '../playwright/snapshot.js';
-import { SAUCEDEMO_SKELETON, exploreSaucedemo } from '../explorer/saucedemo-skeleton.js';
+import { SAUCEDEMO_SKELETON } from '../explorer/saucedemo-skeleton.js';
+import { seedGraph } from '../graph/seed.js';
 import { walkRoute, type WalkBrowser } from './walk.js';
 import type { RecallResponse } from '../protocol.js';
 
@@ -23,10 +24,12 @@ export async function runWalkLive(
   inputs: Record<string, string>,
   dbPath?: string,
 ): Promise<RecallResponse> {
-  // 1. File-backed MapStore; build the skeleton once if absent (idempotent upserts).
+  // 1. File-backed MapStore; DB is authoritative — the saucedemo interior is written
+  //    by the seed step, not lazily here. If it's absent, the walk seeds once (the
+  //    single bootstrap).
   const store = new MapStore(dbPath ?? 'webnav.db');
   if (!store.getState('sd:checkout-overview')) {
-    exploreSaucedemo(store);
+    seedGraph(store);
   }
 
   // 2. Open a real browser session on the saucedemo login page.

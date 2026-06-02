@@ -14,13 +14,13 @@ const RESULTS = `
 const DETAIL = '- heading "tenacity" [ref=e1]';
 
 describe('recallViaMap (memory loop)', () => {
-  it('builds the skeleton on first run when MapStore is empty', () => {
+  it('does NOT build the skeleton; an empty store has no route', () => {
     const store = new MapStore(':memory:');
     const spy = vi.spyOn(skeleton, 'exploreGitHub');
     const r = recallViaMap({ query: 'retry', goal: FIND_BATTLE_TESTED_REPOS, store,
       browser: fakeBrowser([RESULTS, DETAIL]), extractSignals: () => ({ stars: 1 }) });
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(r.status).toBe('done');
+    expect(spy).not.toHaveBeenCalled();
+    expect(r.status).toBe('failed');
     spy.mockRestore();
   });
 
@@ -37,6 +37,7 @@ describe('recallViaMap (memory loop)', () => {
 
   it('returns the same evidence bundle recall() would (delegation)', () => {
     const store = new MapStore(':memory:');
+    skeleton.exploreGitHub(store);
     const r = recallViaMap({ query: 'retry', goal: FIND_BATTLE_TESTED_REPOS, store,
       browser: fakeBrowser([RESULTS, DETAIL]), extractSignals: () => ({ stars: 12000 }) });
     if (r.status !== 'done') throw new Error('expected done');

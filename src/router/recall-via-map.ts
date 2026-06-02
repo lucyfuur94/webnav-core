@@ -16,10 +16,10 @@ export interface RecallViaMapArgs {
 
 /**
  * recall() + the MEMORY layer. Reads the GitHub navigation skeleton FROM the
- * MapStore; if it isn't there yet, builds it ONCE via exploreGitHub (never
- * re-explores a known skeleton — success criterion #3). Confirms the structural
- * route search-entry -> result-list -> repo-detail exists, then delegates the
- * result-list -> candidates -> evidence gathering to recall() unchanged.
+ * MapStore (the DB is the single source of truth — run seedGraph first). Confirms
+ * the structural route search-entry -> result-list -> repo-detail exists, then
+ * delegates the result-list -> candidates -> evidence gathering to recall().
+ * Returns `failed` if the map has not been seeded (no lazy build).
  */
 /** Is the full search-entry -> result-list -> repo-detail route present in the map? */
 function routePresent(store: MapStore): boolean {
@@ -33,19 +33,12 @@ function routePresent(store: MapStore): boolean {
 export function recallViaMap(args: RecallViaMapArgs): RecallResponse {
   const { query, goal, store, browser, extractSignals } = args;
 
-  // 1. Ensure the FULL skeleton route is present; build it once if missing OR
-  //    torn (partial). Checking the whole route — not just one node/edge — means
-  //    a partially-written map self-repairs by rebuilding rather than failing.
-  //    A complete, known skeleton is never rebuilt (criterion #3).
+  // 1. The DB is the single source of truth. We do NOT lazily build the skeleton;
+  //    an unseeded map simply has no route (run the seed step first).
   if (!routePresent(store)) {
-    skeleton.exploreGitHub(store);
+    return { status: 'failed', reason: 'no route to repo-detail in map (seed the map first)' };
   }
 
-  // 2. Confirm the route now exists (exploreGitHub is atomic, so it should).
-  if (!routePresent(store)) {
-    return { status: 'failed', reason: 'no route to repo-detail in map' };
-  }
-
-  // 3. Route confirmed — delegate candidate/evidence gathering to recall().
+  // 2. Route confirmed — delegate candidate/evidence gathering to recall().
   return recall({ query, goal, browser, extractSignals });
 }

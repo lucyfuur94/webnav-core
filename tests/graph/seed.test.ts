@@ -57,4 +57,12 @@ describe('seedGraph', () => {
     expect(s.allNodes().length).toBe(nodesBefore);
     expect(s.nodeEdgesFrom('marginalia').length).toBe(edgesBefore);
   });
+
+  it('seeds the GitHub + saucedemo interiors, not just nodes', () => {
+    const store = new MapStore(':memory:');
+    seedGraph(store);
+    expect(store.statesForNode('github.com').length).toBeGreaterThan(0);
+    expect(store.statesForNode('saucedemo').length).toBeGreaterThan(0);
+    expect(store.getState('github:repo-detail')).not.toBeNull();
+  });
 });
