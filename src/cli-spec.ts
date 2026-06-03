@@ -17,6 +17,7 @@ export interface FlagSpec {
 
 export interface CommandSpec {
   name: string;
+  group?: 'find' | 'read' | 'navigate';
   summary: string; // one-line "use this when..."
   args: ArgSpec[]; // positional
   flags: FlagSpec[];
@@ -28,25 +29,28 @@ export const VERSION = '0.1.0';
 export const CONSUMER_COMMANDS: CommandSpec[] = [
   {
     name: 'locate',
+    group: 'find',
     summary: 'Find WHERE a place is (its URL coordinate) WITHOUT navigating to it.',
     args: [
-      { name: 'place', required: true, description: 'Name of a known place to locate.' },
+      { name: 'place', required: true, description: 'A known place name (list via `webnav dev list`).' },
     ],
     flags: [],
     example: 'webnav locate "trending repositories"',
   },
   {
     name: 'read',
+    group: 'read',
     summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
-    args: [{ name: 'url', required: true, description: 'The URL to open and read.' }],
+    args: [{ name: 'url', required: true, description: 'A URL to open — e.g. a coordinate from `locate`.' }],
     flags: [{ name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' }],
     example: 'webnav read https://github.com/psf/requests',
   },
   {
     name: 'recall',
+    group: 'read',
     summary: 'Replay the known route for a goal and return an evidence bundle (the agent ranks). Run list-goals for goal ids.',
     args: [
-      { name: 'goal', required: false, description: 'Goal id (see list-goals); defaults to github-repos.' },
+      { name: 'goal', required: false, description: 'Goal id from `list-goals` (defaults to github-repos).' },
       { name: 'query', required: true, description: 'Search term fed into the goal\'s entry.' },
     ],
     flags: [
@@ -61,6 +65,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'search',
+    group: 'read',
     summary:
       'Search the open web for a query: visit top-N results and return extracted answer-evidence.',
     args: [
@@ -78,10 +83,11 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'route',
+    group: 'find',
     summary:
       'Ask the graph which site(s) to use for a request (returns candidates + signals; you decide).',
     args: [
-      { name: 'request', required: true, description: 'The request to route to candidate sites.' },
+      { name: 'request', required: true, description: 'What you want to do; returns candidate sites to act on.' },
     ],
     flags: [
       {
@@ -95,9 +101,10 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'hop',
+    group: 'navigate',
     summary: 'Move from the current page to a related site in the graph.',
     args: [
-      { name: 'url', required: true, description: 'The current page URL to hop from.' },
+      { name: 'url', required: true, description: 'The page URL you are currently on.' },
     ],
     flags: [
       {
@@ -114,7 +121,43 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     example: 'webnav hop https://github.com/jd/tenacity --to-cluster package-search',
   },
   {
+    name: 'eval',
+    group: 'navigate',
+    summary: 'Open a URL and run a JS expression in the page — returns just the value (cheap, targeted extraction).',
+    args: [
+      { name: 'url', required: true, description: 'A URL to open.' },
+      { name: 'js', required: true, description: 'A () => <value> JS expression evaluated in the page; its return value is returned.' },
+    ],
+    flags: [],
+    example: 'webnav eval https://github.com/psf/requests "() => document.title"',
+  },
+  {
+    name: 'network',
+    group: 'navigate',
+    summary: 'Open a URL and return the network/API calls the page made (often the JSON behind the rendered DOM).',
+    args: [{ name: 'url', required: true, description: 'A URL to open.' }],
+    flags: [],
+    example: 'webnav network https://api-backed-site.example',
+  },
+  {
+    name: 'go-back',
+    group: 'navigate',
+    summary: 'Step back in a browser session (pass --session to target one you are driving).',
+    args: [],
+    flags: [{ name: '--session', takesValue: true, description: 'Browser session name to act on (default: webnav-nav).' }],
+    example: 'webnav go-back --session mysession',
+  },
+  {
+    name: 'reload',
+    group: 'navigate',
+    summary: 'Reload the page in a browser session (pass --session to target one you are driving).',
+    args: [],
+    flags: [{ name: '--session', takesValue: true, description: 'Browser session name to act on (default: webnav-nav).' }],
+    example: 'webnav reload --session mysession',
+  },
+  {
     name: 'list-goals',
+    group: 'find',
     summary: 'List the recall goals webnav knows: id, what it does, and the signals it returns.',
     args: [],
     flags: [],

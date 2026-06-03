@@ -20,12 +20,21 @@ export function topLevelHelp(): string {
   lines.push('Usage: webnav <command> [args...] [flags]');
   lines.push(`Version: ${VERSION}`);
   lines.push('');
-  lines.push('Commands:');
+  const GROUPS: { key: 'find' | 'read' | 'navigate'; header: string }[] = [
+    { key: 'find', header: 'Find:      (where is it)' },
+    { key: 'read', header: 'Read:      (get content / evidence)' },
+    { key: 'navigate', header: 'Navigate:  (drive a page)' },
+  ];
   const nameWidth = Math.max(...CONSUMER_COMMANDS.map((c) => c.name.length));
-  for (const c of CONSUMER_COMMANDS) {
-    lines.push(`  ${pad(c.name, nameWidth)}  ${c.summary}`);
+  for (const g of GROUPS) {
+    const cmds = CONSUMER_COMMANDS.filter((c) => c.group === g.key);
+    if (cmds.length === 0) continue;
+    lines.push(g.header);
+    for (const c of cmds) {
+      lines.push(`  ${pad(c.name, nameWidth)}  ${c.summary}`);
+    }
+    lines.push('');
   }
-  lines.push('');
   lines.push('Global flags:');
   const flagWidth = Math.max(...GLOBAL_FLAGS.map((f) => f.name.length));
   for (const f of GLOBAL_FLAGS) {

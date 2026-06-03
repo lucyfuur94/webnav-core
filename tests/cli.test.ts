@@ -101,6 +101,21 @@ describe('parseArgs', () => {
   it('parses per-command help', () => {
     expect(parseArgs(['recall', '--help'])).toEqual({ cmd: 'help', command: 'recall' });
   });
+  it('parses eval with url + js', () => {
+    expect(parseArgs(['eval', 'https://x.com', '() => 1']))
+      .toEqual({ cmd: 'eval', url: 'https://x.com', js: '() => 1' });
+  });
+  it('parses network with a url', () => {
+    expect(parseArgs(['network', 'https://x.com']))
+      .toEqual({ cmd: 'network', url: 'https://x.com' });
+  });
+  it('parses go-back with --session (the documented example)', () => {
+    expect(parseArgs(['go-back', '--session', 'mysession']))
+      .toEqual({ cmd: 'go-back', session: 'mysession' });
+  });
+  it('parses go-back with no session (default)', () => {
+    expect(parseArgs(['go-back'])).toEqual({ cmd: 'go-back', session: undefined });
+  });
   it('unknown verb throws with a --help hint', () => {
     expect(() => parseArgs(['bogus'])).toThrow(/--help/);
   });

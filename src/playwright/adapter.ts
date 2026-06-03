@@ -31,6 +31,10 @@ export class PlaywrightAdapter {
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
   press(key: string) { return this.exec('press', key); }
+  evalJs(func: string) { return this.exec('eval', func); }
+  network() { return this.exec('network'); }
+  goBack() { return this.exec('go-back'); }
+  reload() { return this.exec('reload'); }
   close() { return this.exec('close'); }
 
   /** Returns the snapshot YAML content (reads the file path printed by the CLI). */
