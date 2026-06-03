@@ -3,6 +3,7 @@ import type { SiteNode, NodeEdge } from '../mapstore/types.js';
 import { makeNodeEdge } from '../mapstore/types.js';
 import { exploreGitHub } from '../explorer/github-skeleton.js';
 import { exploreSaucedemo } from '../explorer/saucedemo-skeleton.js';
+import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
 
 // Seed-and-grow (spec #2): the graph starts from the nodes webnav actually
 // navigates and grows from there. This is the structure-only starting set —
@@ -41,6 +42,8 @@ export function seedGraph(store: MapStore): void {
   // each run their own transaction (atomic, idempotent upserts).
   exploreGitHub(store);
   exploreSaucedemo(store);
+  // Goals: seed the known goal records so getGoal() works after ensureSeeded().
+  store.upsertGoal(FIND_BATTLE_TESTED_REPOS);
 }
 
 /**
@@ -51,7 +54,10 @@ export function seedGraph(store: MapStore): void {
  * instead. seedGraph's upserts are idempotent, so calling it again is cheap+safe.
  */
 export function ensureSeeded(store: MapStore): void {
-  if (store.getState('github:repo-detail') === null) {
+  // Guard on BOTH a known interior state AND a known goal record: an older
+  // webnav.db may have interiors but predate goal records (or vice versa), so
+  // checking only one would skip the other. seedGraph's upserts are idempotent.
+  if (store.getState('github:repo-detail') === null || store.getGoal('github-repos') === null) {
     seedGraph(store);
   }
 }

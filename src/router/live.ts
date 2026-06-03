@@ -3,11 +3,15 @@ import { repoUrl } from './router.js';
 import { recallViaMap } from './recall-via-map.js';
 import { MapStore } from '../mapstore/store.js';
 import type { RecallResponse } from '../protocol.js';
-import { extractRepoSignals } from './extract.js';
-import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
+import { getExtractor } from './extractors.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Fill the {query} slot in a goal's entry template, url-encoding the query. */
+export function resolveEntry(entry: string, query: string): string {
+  return entry.replace('{query}', encodeURIComponent(query));
+}
 
 // NOTE (v1 status): the live path now goes Router -> MapStore -> Explorer via
 // recallViaMap(). The navigation skeleton is built ONCE and PERSISTS across
@@ -22,12 +26,23 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // re-explored" — a dramatic per-run call-count DROP on run-2 will only land once
 // replay can SKIP navigation for addressable steps (future increment). This code
 // does not fake a cost drop.
-export async function runRecallLive(query: string, top: number, dbPath = 'webnav.db'): Promise<RecallResponse> {
+export async function runRecallLive(
+  query: string, top: number, dbPath = 'webnav.db', goalName = 'github-repos',
+): Promise<RecallResponse> {
+  const store = new MapStore(dbPath);
+  const { ensureSeeded } = await import('../graph/seed.js');
+  ensureSeeded(store);
+  const goal = store.getGoal(goalName);
+  if (!goal || !goal.entry || !goal.extractor) {
+    return { status: 'failed', reason: `no such goal '${goalName}' (run \`webnav list-goals\`)` } as RecallResponse;
+  }
+  const extractor = getExtractor(goal.extractor);
+
   const adapter = new PlaywrightAdapter(`webnav-${Date.now()}`);
-  // Inject the query directly via GitHub's search URL (accepts_input="query").
+  // Inject the query directly via the goal's entry template (accepts_input="query").
   // First navigation must `open` (playwright-cli requires the browser opened
   // before `goto`); subsequent navigations reuse it via `goto`.
-  await adapter.open(`https://github.com/search?q=${encodeURIComponent(query)}&type=repositories`);
+  await adapter.open(resolveEntry(goal.entry, query));
 
   // GitHub search renders results asynchronously: an immediate snapshot can
   // catch the page before results load (just the nav shell). Re-snapshot until
@@ -58,9 +73,8 @@ export async function runRecallLive(query: string, top: number, dbPath = 'webnav
   // FILE-backed MapStore so the skeleton survives across separate runs. recallViaMap
   // builds the skeleton once if absent, confirms the route, then delegates evidence
   // gathering to recall(). The calling AGENT ranks. No LLM here.
-  const store = new MapStore(dbPath);
   return recallViaMap({
-    query, goal: { ...FIND_BATTLE_TESTED_REPOS, candidateLimit: top }, store, browser,
-    extractSignals: (yml) => extractRepoSignals(yml, FIND_BATTLE_TESTED_REPOS.surface.detail),
+    query, goal: { ...goal, candidateLimit: top }, store, browser,
+    extractSignals: (yml) => extractor(yml, goal.surface.detail ?? []),
   });
 }
