@@ -25,6 +25,14 @@ describe('grouped top-level help', () => {
     expect(recallIdx).toBeLessThan(navIdx);
   });
 
+  it('eval and network appear under Navigate', () => {
+    const navIdx = h.indexOf('Navigate:');
+    const evalIdx = h.indexOf('  eval ');
+    const netIdx = h.indexOf('  network ');
+    expect(evalIdx).toBeGreaterThan(navIdx);
+    expect(netIdx).toBeGreaterThan(navIdx);
+  });
+
   it('still points at the dev namespace', () => {
     expect(h).toContain('webnav dev');
   });

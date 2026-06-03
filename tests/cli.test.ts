@@ -101,6 +101,14 @@ describe('parseArgs', () => {
   it('parses per-command help', () => {
     expect(parseArgs(['recall', '--help'])).toEqual({ cmd: 'help', command: 'recall' });
   });
+  it('parses eval with url + js', () => {
+    expect(parseArgs(['eval', 'https://x.com', '() => 1']))
+      .toEqual({ cmd: 'eval', url: 'https://x.com', js: '() => 1' });
+  });
+  it('parses network with a url', () => {
+    expect(parseArgs(['network', 'https://x.com']))
+      .toEqual({ cmd: 'network', url: 'https://x.com' });
+  });
   it('unknown verb throws with a --help hint', () => {
     expect(() => parseArgs(['bogus'])).toThrow(/--help/);
   });

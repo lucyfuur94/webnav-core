@@ -17,6 +17,10 @@ export type ParsedArgs =
   | { cmd: 'add-node'; id: string; url: string; capabilities: string[]; topics: string[] }
   | { cmd: 'add-edge'; from: string; to: string; kind: string }
   | { cmd: 'capture'; url: string; out: string }
+  | { cmd: 'eval'; url: string; js: string }
+  | { cmd: 'network'; url: string }
+  | { cmd: 'go-back' }
+  | { cmd: 'reload' }
   | { cmd: 'dev-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
 
@@ -109,6 +113,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'add-edge') {
     return { cmd, from: rest[0], to: rest[1], kind: flagValue(rest, '--kind') ?? 'capability' };
   }
+  if (cmd === 'eval') {
+    const pos = rest.filter((a) => !a.startsWith('--'));
+    return { cmd, url: pos[0], js: pos[1] };
+  }
+  if (cmd === 'network') {
+    const pos = rest.filter((a) => !a.startsWith('--'));
+    return { cmd, url: pos[0] };
+  }
+  if (cmd === 'go-back') return { cmd };
+  if (cmd === 'reload') return { cmd };
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }
 
@@ -262,6 +276,32 @@ async function main() {
     // "ran fine but couldn't" — an edge to an unknown node → exit 3, the same
     // code search/recall use for a clean-but-unsatisfiable result.
     if (result.status === 'unknown-node') process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'eval') {
+    const { runEval } = await import('./router/browse.js');
+    const r = await runEval(args.url, args.js);
+    console.log(JSON.stringify(r, null, 2));
+    if (r.status !== 'done') process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'network') {
+    const { runNetwork } = await import('./router/browse.js');
+    const r = await runNetwork(args.url);
+    console.log(JSON.stringify(r, null, 2));
+    if (r.status !== 'done') process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'go-back' || args.cmd === 'reload') {
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const adapter = new PlaywrightAdapter('webnav-nav');
+    try {
+      const out = args.cmd === 'go-back' ? await adapter.goBack() : await adapter.reload();
+      console.log(JSON.stringify({ status: 'done', action: args.cmd, out: out.trim() }, null, 2));
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'failed', action: args.cmd, reason: String(e) }, null, 2));
+      process.exitCode = 3;
+    }
     return;
   }
   // recall: open GitHub search for the query, then drive recall() over the live
