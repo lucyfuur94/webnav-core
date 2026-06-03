@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-03 · **Branch:** `main` · **Tests:** 239 unit pass + 4 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
+**Updated:** 2026-06-03 · **Branch:** `main` · **Tests:** 259 unit pass + 5 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -41,10 +41,29 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 | `webnav route "<request>" [--capability X]` | graph: candidate site-nodes for a request + signals (agent decides) |
 | `webnav hop <url> --to-cluster X \| --to-node Y` | graph: move to a related site via an edge |
 | `webnav list-goals` | the recall goals webnav knows (id + signals) — so the agent can pick a goal-id |
+| `webnav eval <url> "<js>"` | open a URL, run a JS expression → just the value (cheap, targeted extraction vs a full snapshot) |
+| `webnav network <url>` | open a URL → the network/API calls the page made (the JSON behind the DOM) |
+| `webnav go-back \| reload` | step within the current `-s=<session>` browser |
+
+`--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
 **Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `add-node`, `add-edge`, `capture`.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
+
+### CLI framing + browser primitives (DONE, 2026-06-03)
+
+webnav's `--help` is now framed like playwright-cli's: consumer verbs grouped by
+purpose (**Find / Read / Navigate**) and per-verb help teaches **data-flow** (an
+arg names where it comes from / where output goes — e.g. recall's goal-id is "from
+`list-goals`", read's url is "from `locate`", playwright's `<ref>=from snapshot`
+move). Added Navigate primitives built ON playwright-cli: `eval <url> "<js>"` (run
+JS → just the value; clean-parsed out of playwright-cli's wrapper — the cheap
+targeted-extraction path vs a 53k-token snapshot), `network <url>` (the API/JSON
+calls behind the DOM), and `go-back`/`reload`. Verified live (eval returns the
+psf/requests page title cleanly). Spec/plan:
+`docs/superpowers/specs/2026-06-03-cli-framing-and-browser-primitives-design.md`,
+`docs/superpowers/plans/2026-06-03-cli-framing-and-browser-primitives.md`.
 
 ### Generic verb re-grounding (DONE, 2026-06-03)
 

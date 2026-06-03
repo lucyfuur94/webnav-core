@@ -31,12 +31,30 @@ export async function runEval(
 ): Promise<EvalResponse> {
   try {
     await adapter.open(url);
-    const value = (await adapter.evalJs!(func)).trim();
-    return { status: 'done', url, value };
+    const raw = await adapter.evalJs!(func);
+    return { status: 'done', url, value: parseEvalResult(raw) };
   } catch (e) {
     return { status: 'failed', url, reason: String(e) };
   } finally {
     await adapter.close().catch(() => {});
+  }
+}
+
+/**
+ * playwright-cli's `eval` prints the value inside a `### Result` block followed
+ * by `### Ran Playwright code` / `### Page` chrome. Extract just the value (and
+ * JSON-decode it if it's a quoted scalar) so the agent gets the answer, not the
+ * wrapper. Falls back to the trimmed raw output if no Result block is present
+ * (e.g. a fake/bare value in tests).
+ */
+export function parseEvalResult(raw: string): string {
+  const m = raw.match(/###\s*Result\s*\n([\s\S]*?)(?:\n###|\s*$)/);
+  const body = (m ? m[1] : raw).trim();
+  try {
+    const parsed = JSON.parse(body);
+    return typeof parsed === 'string' ? parsed : body;
+  } catch {
+    return body;
   }
 }
 

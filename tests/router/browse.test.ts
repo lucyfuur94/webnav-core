@@ -23,6 +23,23 @@ describe('runEval', () => {
     const r = await runEval('https://x', '() => 1', bad);
     expect(r.status).toBe('failed');
   });
+
+  it('extracts just the value from playwright-cli wrapper noise', async () => {
+    // playwright-cli wraps the value in `### Result\n<value>\n### Ran...` chrome;
+    // runEval should surface only the value, not the wrapper.
+    const wrapped = [
+      '### Result',
+      '"Example Domain"',
+      '### Ran Playwright code',
+      '```js',
+      "await page.evaluate('() => document.title');",
+      '```',
+    ].join('\n');
+    const r = await runEval('https://example.com', '() => document.title', fakeAdapter({ eval: wrapped }));
+    expect(r.status).toBe('done');
+    if (r.status !== 'done') throw new Error('expected done');
+    expect(r.value).toBe('Example Domain'); // unwrapped + JSON-decoded
+  });
 });
 
 describe('runNetwork', () => {
