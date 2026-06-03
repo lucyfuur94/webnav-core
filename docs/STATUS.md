@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-02 · **Branch:** `main` · **Tests:** 224 unit pass + 3 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
+**Updated:** 2026-06-03 · **Branch:** `main` · **Tests:** 239 unit pass + 4 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -28,23 +28,27 @@ WEBNAV_LIVE=1 npx vitest run tests/e2e   # the gated live tests (need a browser 
 Requires `playwright-cli` on PATH (installed at `/usr/local/bin/playwright-cli`).
 A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
-## The verbs (all live, behind a self-describing CLI)
+## The verbs (generic primitives over the map; self-describing CLI)
+
+**Consumer verbs** (the `webnav --help` menu):
 
 | Verb | What it does |
 |---|---|
-| `webnav list` | everything webnav knows (sites, places, goals) |
-| `webnav describe "<place>"` | a known place's address + affordances |
 | `webnav locate "<place>"` | WHERE a place is (URL coordinate) without navigating |
-| `webnav recall "<use-case>"` | navigate GitHub → evidence bundle of candidate repos (agent ranks) |
-| `webnav search "<query>" [--top N]` | multi-provider open-web search (Marginalia+Wiby) → visit top-N → extract evidence |
-| `webnav route "<request>" [--capability X]` | graph: surface candidate site-nodes for a request + signals (agent decides) |
+| `webnav read <url> [--raw]` | open a URL → distilled content (the "go read this page" primitive) |
+| `webnav recall <goal-id> "<query>"` | replay a goal's known route → evidence bundle (agent ranks). Goal carries site/entry/extractor as DATA — no site baked into the verb. Defaults to `github-repos`. |
+| `webnav search "<query>" [--top N]` | multi-provider open-web search → visit top-N → extract evidence |
+| `webnav route "<request>" [--capability X]` | graph: candidate site-nodes for a request + signals (agent decides) |
 | `webnav hop <url> --to-cluster X \| --to-node Y` | graph: move to a related site via an edge |
-| `webnav graph [--json\|--html]` | export the internet-graph (JSON) or an interactive Cytoscape viewer (HTML) |
-| `webnav add-node <id> --url --capabilities --topics` | teach a new site (persisted) |
-| `webnav add-edge <from> <to> --kind` | teach a relationship between two known sites |
-| `webnav capture <url> <out.yml>` | dev: save a snapshot YAML (test fixtures) |
+| `webnav list-goals` | the recall goals webnav knows (id + signals) — so the agent can pick a goal-id |
+
+**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `add-node`, `add-edge`, `capture`.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
+
+### Generic verb re-grounding (DONE, 2026-06-03)
+
+webnav's verbs are now **generic operations over map DATA** — no website baked into a verb (fixing the old `recall` = "navigate GitHub" coupling that made agents thrash a trivial "how many open issues" task). Highlights: added `read <url>` (the missing "open a page and read it" primitive — distilled content via `extractContent`/`classifyReadiness`, escalates on bot-walls, never evades); `recall <goal-id> "<query>"` is data-driven (explicit goal id, deterministic lookup, site-bound Goal record carries `site`/`entry`/`extractor`, named extractor registry) — GitHub-repos is the one seeded goal, a 2nd site is data-only; admin verbs moved under `webnav dev`; `list-goals` for discovery. Verified live (read returns "Issues 145" off the psf/requests page; recall still navigates GitHub end-to-end). Spec/plan: `docs/superpowers/specs/2026-06-02-generic-verb-regrounding-design.md`, `docs/superpowers/plans/2026-06-02-generic-verb-regrounding.md`.
 
 ## Viewing the graph (live) — NEW
 
