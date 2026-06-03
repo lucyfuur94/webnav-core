@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
 export const ALLOWED_CATEGORIES = [
-  'github-discovery', 'open-web-info', 'synthesis-hard', 'botwalled',
+  'github-live', 'web-live', 'botwalled',
 ] as const;
 export type Category = (typeof ALLOWED_CATEGORIES)[number];
 
