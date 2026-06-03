@@ -55,7 +55,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'list') return { cmd };
   if (cmd === 'describe') return { cmd, place: rest[0] };
   if (cmd === 'locate') return { cmd, place: rest[0] };
-  if (cmd === 'read') return { cmd, url: rest[0], raw: rest.includes('--raw') };
+  if (cmd === 'read') {
+    // First non-flag positional is the URL, so `read --raw <url>` and
+    // `read <url> --raw` both work (agents write the flag in either order).
+    const url = rest.find((a) => !a.startsWith('--')) ?? '';
+    return { cmd, url, raw: rest.includes('--raw') };
+  }
   if (cmd === 'list-goals') return { cmd };
   if (cmd === 'capture') return { cmd, url: rest[0], out: rest[1] };
   if (cmd === 'dev') {

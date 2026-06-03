@@ -33,6 +33,14 @@ describe('parseArgs', () => {
     expect(parseArgs(['search', 'who won the 2018 world cup']))
       .toEqual({ cmd: 'search', query: 'who won the 2018 world cup', top: 3 });
   });
+  it('parses read with the url first', () => {
+    expect(parseArgs(['read', 'https://github.com/psf/requests']))
+      .toEqual({ cmd: 'read', url: 'https://github.com/psf/requests', raw: false });
+  });
+  it('parses read --raw in either order (flag before url)', () => {
+    expect(parseArgs(['read', '--raw', 'https://x.com']))
+      .toEqual({ cmd: 'read', url: 'https://x.com', raw: true });
+  });
   it('parses search --top', () => {
     expect(parseArgs(['search', 'x', '--top', '5']))
       .toEqual({ cmd: 'search', query: 'x', top: 5 });
