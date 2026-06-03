@@ -32,7 +32,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     group: 'find',
     summary: 'Find WHERE a place is (its URL coordinate) WITHOUT navigating to it.',
     args: [
-      { name: 'place', required: true, description: 'Name of a known place to locate.' },
+      { name: 'place', required: true, description: 'A known place name (list via `webnav dev list`).' },
     ],
     flags: [],
     example: 'webnav locate "trending repositories"',
@@ -41,7 +41,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     name: 'read',
     group: 'read',
     summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
-    args: [{ name: 'url', required: true, description: 'The URL to open and read.' }],
+    args: [{ name: 'url', required: true, description: 'A URL to open — e.g. a coordinate from `locate`.' }],
     flags: [{ name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' }],
     example: 'webnav read https://github.com/psf/requests',
   },
@@ -50,7 +50,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     group: 'read',
     summary: 'Replay the known route for a goal and return an evidence bundle (the agent ranks). Run list-goals for goal ids.',
     args: [
-      { name: 'goal', required: false, description: 'Goal id (see list-goals); defaults to github-repos.' },
+      { name: 'goal', required: false, description: 'Goal id from `list-goals` (defaults to github-repos).' },
       { name: 'query', required: true, description: 'Search term fed into the goal\'s entry.' },
     ],
     flags: [
@@ -87,7 +87,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     summary:
       'Ask the graph which site(s) to use for a request (returns candidates + signals; you decide).',
     args: [
-      { name: 'request', required: true, description: 'The request to route to candidate sites.' },
+      { name: 'request', required: true, description: 'What you want to do; returns candidate sites to act on.' },
     ],
     flags: [
       {
@@ -104,7 +104,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     group: 'navigate',
     summary: 'Move from the current page to a related site in the graph.',
     args: [
-      { name: 'url', required: true, description: 'The current page URL to hop from.' },
+      { name: 'url', required: true, description: 'The page URL you are currently on.' },
     ],
     flags: [
       {
