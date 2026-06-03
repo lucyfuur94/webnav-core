@@ -17,6 +17,7 @@ export interface FlagSpec {
 
 export interface CommandSpec {
   name: string;
+  group?: 'find' | 'read' | 'navigate';
   summary: string; // one-line "use this when..."
   args: ArgSpec[]; // positional
   flags: FlagSpec[];
@@ -28,6 +29,7 @@ export const VERSION = '0.1.0';
 export const CONSUMER_COMMANDS: CommandSpec[] = [
   {
     name: 'locate',
+    group: 'find',
     summary: 'Find WHERE a place is (its URL coordinate) WITHOUT navigating to it.',
     args: [
       { name: 'place', required: true, description: 'Name of a known place to locate.' },
@@ -37,6 +39,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'read',
+    group: 'read',
     summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
     args: [{ name: 'url', required: true, description: 'The URL to open and read.' }],
     flags: [{ name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' }],
@@ -44,6 +47,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'recall',
+    group: 'read',
     summary: 'Replay the known route for a goal and return an evidence bundle (the agent ranks). Run list-goals for goal ids.',
     args: [
       { name: 'goal', required: false, description: 'Goal id (see list-goals); defaults to github-repos.' },
@@ -61,6 +65,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'search',
+    group: 'read',
     summary:
       'Search the open web for a query: visit top-N results and return extracted answer-evidence.',
     args: [
@@ -78,6 +83,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'route',
+    group: 'find',
     summary:
       'Ask the graph which site(s) to use for a request (returns candidates + signals; you decide).',
     args: [
@@ -95,6 +101,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'hop',
+    group: 'navigate',
     summary: 'Move from the current page to a related site in the graph.',
     args: [
       { name: 'url', required: true, description: 'The current page URL to hop from.' },
@@ -115,6 +122,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'list-goals',
+    group: 'find',
     summary: 'List the recall goals webnav knows: id, what it does, and the signals it returns.',
     args: [],
     flags: [],
