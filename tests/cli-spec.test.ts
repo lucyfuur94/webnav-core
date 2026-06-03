@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { COMMANDS, VERSION } from '../src/cli-spec.js';
 
 describe('COMMANDS registry', () => {
-  it('has all eleven verbs', () => {
+  it('has all thirteen verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['add-edge', 'add-node', 'capture', 'describe', 'graph', 'hop', 'list', 'locate', 'recall', 'route', 'search']);
+    expect(names).toEqual(['add-edge', 'add-node', 'capture', 'describe', 'graph', 'hop', 'list', 'list-goals', 'locate', 'read', 'recall', 'route', 'search']);
   });
 
   it('graph has a summary and an example', () => {

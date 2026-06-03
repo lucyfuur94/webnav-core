@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { topLevelHelp, commandHelp } from '../src/cli-help.js';
 
 describe('topLevelHelp', () => {
-  it('lists every command with its summary', () => {
+  it('lists consumer commands with their summaries', () => {
     const h = topLevelHelp();
-    for (const c of ['list', 'describe', 'locate', 'recall', 'search', 'capture'])
+    for (const c of ['locate', 'read', 'recall', 'search', 'list-goals'])
       expect(h).toContain(c);
     expect(h).toMatch(/--help/);
     expect(h).toMatch(/--version/);
     expect(h).toMatch(/--json/);
     expect(h).toMatch(/webnav <command> --help/);
+    expect(h).toContain('webnav dev');
   });
 });
 

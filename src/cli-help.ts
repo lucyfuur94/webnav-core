@@ -1,7 +1,7 @@
 // Pure string builders for help text, driven entirely by the COMMANDS registry
 // so help and parsing never drift. No I/O here — main() does the printing.
 
-import { COMMANDS, VERSION, type CommandSpec } from './cli-spec.js';
+import { COMMANDS, CONSUMER_COMMANDS, DEV_COMMANDS, VERSION, type CommandSpec } from './cli-spec.js';
 
 const GLOBAL_FLAGS = [
   { name: '--help, -h', description: 'Show help (this menu, or per-command help).' },
@@ -15,14 +15,14 @@ function pad(s: string, width: number): string {
 
 export function topLevelHelp(): string {
   const lines: string[] = [];
-  lines.push('webnav — a map for the agent-internet: recall routes, locate places, search the web.');
+  lines.push('webnav — a generic map of the agent-internet: locate places, read pages, recall routes, search the web.');
   lines.push('');
   lines.push('Usage: webnav <command> [args...] [flags]');
   lines.push(`Version: ${VERSION}`);
   lines.push('');
   lines.push('Commands:');
-  const nameWidth = Math.max(...COMMANDS.map((c) => c.name.length));
-  for (const c of COMMANDS) {
+  const nameWidth = Math.max(...CONSUMER_COMMANDS.map((c) => c.name.length));
+  for (const c of CONSUMER_COMMANDS) {
     lines.push(`  ${pad(c.name, nameWidth)}  ${c.summary}`);
   }
   lines.push('');
@@ -32,7 +32,24 @@ export function topLevelHelp(): string {
     lines.push(`  ${pad(f.name, flagWidth)}  ${f.description}`);
   }
   lines.push('');
+  lines.push('Run `webnav dev --help` for teach/inspect/dev tools.');
   lines.push('Run `webnav <command> --help` for details.');
+  return lines.join('\n');
+}
+
+export function devHelp(): string {
+  const lines: string[] = [];
+  lines.push('webnav dev — teaching & inspection tools (not needed for normal use).');
+  lines.push('');
+  lines.push('Usage: webnav dev <command> [args...]');
+  lines.push('');
+  lines.push('Commands:');
+  const nameWidth = Math.max(...DEV_COMMANDS.map((c) => c.name.length));
+  for (const c of DEV_COMMANDS) {
+    lines.push(`  ${pad(c.name, nameWidth)}  ${c.summary}`);
+  }
+  lines.push('');
+  lines.push('Run `webnav dev <command> --help` for details.');
   return lines.join('\n');
 }
 

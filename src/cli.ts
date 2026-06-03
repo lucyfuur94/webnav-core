@@ -7,14 +7,18 @@ export type ParsedArgs =
   | { cmd: 'list' }
   | { cmd: 'describe'; place: string }
   | { cmd: 'locate'; place: string }
-  | { cmd: 'recall'; query: string; top: number }
+  | { cmd: 'read'; url: string; raw: boolean }
+  | { cmd: 'list-goals' }
+  | { cmd: 'recall'; goal: string; query: string; top: number }
   | { cmd: 'search'; query: string; top: number }
   | { cmd: 'route'; request: string; capability?: string }
   | { cmd: 'hop'; url: string; toCluster?: string; toNode?: string }
   | { cmd: 'graph' }
   | { cmd: 'add-node'; id: string; url: string; capabilities: string[]; topics: string[] }
   | { cmd: 'add-edge'; from: string; to: string; kind: string }
-  | { cmd: 'capture'; url: string; out: string };
+  | { cmd: 'capture'; url: string; out: string }
+  | { cmd: 'dev-help' }
+  | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
 
 // Split a comma-separated flag value into an array; absent flag → empty array.
 function listFlag(args: string[], name: string): string[] {
@@ -31,7 +35,7 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
   return undefined;
 }
 
-const KNOWN_VERBS = new Set(COMMANDS.map((c) => c.name));
+const KNOWN_VERBS = new Set([...COMMANDS.map((c) => c.name), 'list-goals', 'read']);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   // Global help/version and empty argv are checked BEFORE the verb switch.
@@ -51,11 +55,28 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'list') return { cmd };
   if (cmd === 'describe') return { cmd, place: rest[0] };
   if (cmd === 'locate') return { cmd, place: rest[0] };
+  if (cmd === 'read') return { cmd, url: rest[0], raw: rest.includes('--raw') };
+  if (cmd === 'list-goals') return { cmd };
   if (cmd === 'capture') return { cmd, url: rest[0], out: rest[1] };
+  if (cmd === 'dev') {
+    const sub = rest[0];
+    if (!sub || sub === '--help' || sub === '-h') return { cmd: 'dev-help' };
+    return parseArgs([sub, ...rest.slice(1)]);
+  }
   if (cmd === 'recall') {
-    const query = rest[0];
     const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 10;
-    return { cmd, query, top };
+    // Positionals only: drop --flags AND the value immediately after --top
+    // (otherwise `recall x --top 5` mis-reads "5" as the query).
+    const pos: string[] = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--top') { i++; continue; }   // skip flag + its value
+      if (rest[i].startsWith('--')) continue;        // skip any other flag
+      pos.push(rest[i]);
+    }
+    const hasGoal = pos.length >= 2;
+    const goal = hasGoal ? pos[0] : 'github-repos';
+    const query = hasGoal ? pos[1] : pos[0];
+    return { cmd, goal, query, top };
   }
   if (cmd === 'search') {
     const query = rest[0];
@@ -119,6 +140,32 @@ async function main() {
     // "where is A?" — return the coordinate WITHOUT navigating. No browser needed.
     const { locate } = await import('./router/locate.js');
     console.log(JSON.stringify(locate(args.place), null, 2));
+    return;
+  }
+  if (args.cmd === 'read') {
+    const { readUrl } = await import('./router/read.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const adapter = new PlaywrightAdapter(`read-${Date.now()}`);
+    const fetchSnapshot = async (u: string) => { await adapter.open(u); return adapter.snapshot(); };
+    const r = await readUrl(args.url, fetchSnapshot, { raw: args.raw });
+    await adapter.close().catch(() => {});
+    console.log(JSON.stringify(r, null, 2));
+    if (r.status !== 'done') process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'list-goals') {
+    const { MapStore } = await import('./mapstore/store.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
+    const store = new MapStore('webnav.db');
+    ensureSeeded(store);
+    const goals = store.allGoals().map((g) => ({ id: g.name, site: g.site,
+      signals: Object.values(g.surface).flat() }));
+    console.log(JSON.stringify(goals, null, 2));
+    return;
+  }
+  if (args.cmd === 'dev-help') {
+    const { devHelp } = await import('./cli-help.js');
+    console.log(devHelp());
     return;
   }
   if (args.cmd === 'capture') {
@@ -214,10 +261,12 @@ async function main() {
   }
   // recall: open GitHub search for the query, then drive recall() over the live
   // browser. Prints a RecallResponse JSON for the calling agent.
-  const { runRecallLive } = await import('./router/live.js');
-  const response = await runRecallLive(args.query, args.top);
-  console.log(JSON.stringify(response, null, 2));
-  if (isEmptyOrFailed(response)) process.exitCode = 3;
+  if (args.cmd === 'recall') {
+    const { runRecallLive } = await import('./router/live.js');
+    const response = await runRecallLive(args.query, args.top, 'webnav.db', args.goal);
+    console.log(JSON.stringify(response, null, 2));
+    if (isEmptyOrFailed(response)) process.exitCode = 3;
+  }
 }
 
 // A result that "ran fine but found nothing/blocked/failed" → exit code 3.

@@ -25,23 +25,7 @@ export interface CommandSpec {
 
 export const VERSION = '0.1.0';
 
-export const COMMANDS: CommandSpec[] = [
-  {
-    name: 'list',
-    summary: 'List everything webnav knows: sites, locatable places, goals.',
-    args: [],
-    flags: [],
-    example: 'webnav list',
-  },
-  {
-    name: 'describe',
-    summary: 'Describe a known place: its address and what you can do there.',
-    args: [
-      { name: 'place', required: true, description: 'Name of a known place to describe.' },
-    ],
-    flags: [],
-    example: 'webnav describe "trending repositories"',
-  },
+export const CONSUMER_COMMANDS: CommandSpec[] = [
   {
     name: 'locate',
     summary: 'Find WHERE a place is (its URL coordinate) WITHOUT navigating to it.',
@@ -52,11 +36,18 @@ export const COMMANDS: CommandSpec[] = [
     example: 'webnav locate "trending repositories"',
   },
   {
+    name: 'read',
+    summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
+    args: [{ name: 'url', required: true, description: 'The URL to open and read.' }],
+    flags: [{ name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' }],
+    example: 'webnav read https://github.com/psf/requests',
+  },
+  {
     name: 'recall',
-    summary:
-      'Navigate GitHub for a use-case and return an evidence bundle of candidate repos (the agent ranks).',
+    summary: 'Replay the known route for a goal and return an evidence bundle (the agent ranks). Run list-goals for goal ids.',
     args: [
-      { name: 'query', required: true, description: 'The use-case to search GitHub for.' },
+      { name: 'goal', required: false, description: 'Goal id (see list-goals); defaults to github-repos.' },
+      { name: 'query', required: true, description: 'Search term fed into the goal\'s entry.' },
     ],
     flags: [
       {
@@ -123,6 +114,32 @@ export const COMMANDS: CommandSpec[] = [
     example: 'webnav hop https://github.com/jd/tenacity --to-cluster package-search',
   },
   {
+    name: 'list-goals',
+    summary: 'List the recall goals webnav knows: id, what it does, and the signals it returns.',
+    args: [],
+    flags: [],
+    example: 'webnav list-goals',
+  },
+];
+
+export const DEV_COMMANDS: CommandSpec[] = [
+  {
+    name: 'list',
+    summary: 'List everything webnav knows: sites, locatable places, goals.',
+    args: [],
+    flags: [],
+    example: 'webnav list',
+  },
+  {
+    name: 'describe',
+    summary: 'Describe a known place: its address and what you can do there.',
+    args: [
+      { name: 'place', required: true, description: 'Name of a known place to describe.' },
+    ],
+    flags: [],
+    example: 'webnav describe "trending repositories"',
+  },
+  {
     name: 'graph',
     summary: 'Show the map of known sites (the internet graph) as JSON.',
     args: [],
@@ -176,3 +193,5 @@ export const COMMANDS: CommandSpec[] = [
     example: 'webnav capture https://github.com out.yml',
   },
 ];
+
+export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];

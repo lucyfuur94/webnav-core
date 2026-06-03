@@ -2,13 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { parseArgs } from '../src/cli.js';
 
 describe('parseArgs', () => {
-  it('parses recall with default top', () => {
+  it('parses recall with default top and default goal', () => {
     expect(parseArgs(['recall', 'python retry lib']))
-      .toEqual({ cmd: 'recall', query: 'python retry lib', top: 10 });
+      .toEqual({ cmd: 'recall', goal: 'github-repos', query: 'python retry lib', top: 10 });
   });
-  it('parses --top', () => {
+  it('parses recall --top', () => {
     expect(parseArgs(['recall', 'x', '--top', '5']))
-      .toEqual({ cmd: 'recall', query: 'x', top: 5 });
+      .toEqual({ cmd: 'recall', goal: 'github-repos', query: 'x', top: 5 });
+  });
+  it('parses recall with explicit goal', () => {
+    expect(parseArgs(['recall', 'my-goal', 'search term']))
+      .toEqual({ cmd: 'recall', goal: 'my-goal', query: 'search term', top: 10 });
   });
   it('parses capture', () => {
     expect(parseArgs(['capture', 'https://github.com', 'out.yml']))
