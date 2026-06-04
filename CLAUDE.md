@@ -2,6 +2,18 @@
 
 > **Read this first, every session. These are settled decisions. Do not deviate without an explicit decision to change them.**
 
+## Subagent model (settled)
+
+**Subagents that USE or TEST webnav run on Haiku** (`claude-haiku-4-5-20251001`) — for both usage and testing. webnav is zero-LLM navigation infrastructure; its calling agent does the judgment, and that calling agent should be the cheap model — a deliberate dogfood of the cost thesis (a cheap agent + webnav's deterministic navigation should beat an expensive agent ad-hoc-driving the browser). Use `model: 'haiku'` on `Agent`/`Workflow agent()` calls that drive or exercise webnav. (Benchmark ARMS are a deliberate exception when a run must hold the model constant across arms — note it in that run's recipe.)
+
+**This Haiku rule is scoped ONLY to webnav-using/testing subagents.** For all other work — implementation, planning, code review, general tasks — use the best model for that task (do NOT downgrade to Haiku).
+
+## CLI categories (settled)
+
+webnav's verbs split into **two top-level categories**:
+- **`use`** — what an agent does at runtime: the playwright browser-driving primitives (`navigate`, `click`, `type`, `snapshot`, `read`, `eval`, `network`, `wait-for`, `go-back`/`reload`) AND the map-query verbs (`recall`, `search`, `locate`, `route`, `hop`, `list-goals`). "Use webnav" = drive the browser + query the map.
+- **`dev`** — authoring the map: the agent-driven site-mapping flow (`record-start`, `record-stop`, `graph-analyse`, `graph-edit`, `graph-show`) plus inspect/teach verbs (`list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`). Verbs are named **entity-first** (`record-start`, `node-add`), not action-first.
+
 ## What this project is
 
 **"Google Maps for the agent-internet."** A web-navigation **memory** that lets agents recall cheap, reliable routes to goals on a website instead of re-exploring from scratch every time. The core win is **speed and cost**: the second time an agent needs to get somewhere, it recalls the route rather than re-discovering it.
