@@ -317,6 +317,43 @@ async function main() {
     }
     return;
   }
+  if (args.cmd === 'record-start') {
+    const { RecordStore } = await import('./mapstore/record.js');
+    const rec = new RecordStore('webnav.db');
+    const session = args.session || `map-${Date.now()}`;
+    rec.start(session);
+    console.log(JSON.stringify({ status: 'recording', session }, null, 2));
+    return;
+  }
+  if (args.cmd === 'record-stop') {
+    const { RecordStore } = await import('./mapstore/record.js');
+    new RecordStore('webnav.db').stop(args.session);
+    console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
+    return;
+  }
+  if (args.cmd === 'graph-analyse') {
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { analyseObservations } = await import('./explorer/analyse.js');
+    const obs = new RecordStore('webnav.db').observations(args.session);
+    const result = analyseObservations(obs);
+    console.log(JSON.stringify(result, null, 2));
+    if (result.sites.length === 0) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'graph-edit') {
+    const { MapStore } = await import('./mapstore/store.js');
+    const { editGraph } = await import('./graph/edit.js');
+    const store = new MapStore('webnav.db');
+    const graph = JSON.parse(args.graph);
+    console.log(JSON.stringify(editGraph(store, args.node, graph), null, 2));
+    return;
+  }
+  if (args.cmd === 'graph-show') {
+    const { MapStore } = await import('./mapstore/store.js');
+    const { showInterior } = await import('./graph/show.js');
+    console.log(JSON.stringify(showInterior(new MapStore('webnav.db'), args.node), null, 2));
+    return;
+  }
   // recall: open GitHub search for the query, then drive recall() over the live
   // browser. Prints a RecallResponse JSON for the calling agent.
   if (args.cmd === 'recall') {
