@@ -24,3 +24,13 @@ CREATE TABLE IF NOT EXISTS node_edges (
   weight REAL NOT NULL DEFAULT 1, last_verified INTEGER, confidence REAL NOT NULL DEFAULT 1,
   UNIQUE(from_node, to_node, kind)
 );
+CREATE TABLE IF NOT EXISTS record_sessions (
+  session_id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
+  started_at INTEGER NOT NULL, stopped_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS record_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL, seq INTEGER NOT NULL,
+  url TEXT NOT NULL, fingerprint TEXT NOT NULL, declared_links TEXT NOT NULL,
+  captured_at INTEGER NOT NULL
+);
