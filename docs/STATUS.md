@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-03 · **Branch:** `main` · **Tests:** 259 unit pass + 5 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
+**Updated:** 2026-06-05 · **Branch:** `main` · **Tests:** 291 unit pass + 6 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -47,9 +47,32 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
 `--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
-**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`.
+**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`, **`record-start`**, **`record-stop`**, **`graph-analyse`**, **`graph-edit`**, **`graph-show`** (the agent-driven site-mapping flow — see below).
+
+Two CLI categories: **`use`** (drive the browser + query the map — the consumer verbs) and **`dev`** (author the map — the teach + mapping verbs). Both dispatchers re-parse the sub-verb; bare consumer verbs still work.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
+
+### Agent-driven site mapping (DONE, 2026-06-05)
+
+An agent explores an unknown site (driving via webnav's `use` browser primitives,
+which record each page) and webnav builds a per-site navigation skeleton it can
+later `recall`/`route` over — the "Google Maps was built from observed data"
+thesis applied to map-building. Flow: `dev record-start` opens a capture session →
+agent browses (each page → url + structural fingerprint + declared links buffered
+in SQLite via `runSnapshotRecorded`) → `dev record-stop` → `dev graph-analyse
+<session>` mechanically clusters pages into state-TYPES per site + cross-site edges
+(**zero-LLM, data not prose** — machine labels only; the agent names/validates) →
+`dev graph-edit --node --graph <json>` upserts the agent's validated graph (creates
+the node if new; fork edges that need user input are marked `unclassified` +
+`[needs-input: why]`) → `dev graph-show --node` reads it back. The exploration loop
++ all judgment lives in the AGENT (#5a); webnav stays mechanical. Verified live
+against GitHub. Spec/plan:
+`docs/superpowers/specs/2026-06-04-agent-driven-site-mapping-design.md`,
+`docs/superpowers/plans/2026-06-04-agent-driven-site-mapping.md`.
+
+**Subagent model (CLAUDE.md):** subagents that USE or TEST webnav run on Haiku
+(dogfooding the cost thesis); all other work uses the best model for the task.
 
 ### CLI framing + browser primitives (DONE, 2026-06-03)
 
