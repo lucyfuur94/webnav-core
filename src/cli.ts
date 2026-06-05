@@ -21,6 +21,11 @@ export type ParsedArgs =
   | { cmd: 'network'; url: string }
   | { cmd: 'go-back'; session: string | undefined }
   | { cmd: 'reload'; session: string | undefined }
+  | { cmd: 'record-start'; session: string }
+  | { cmd: 'record-stop'; session: string }
+  | { cmd: 'graph-analyse'; session: string }
+  | { cmd: 'graph-edit'; node: string; graph: string }
+  | { cmd: 'graph-show'; node: string }
   | { cmd: 'dev-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
 
@@ -123,6 +128,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'go-back') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
+  if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
+  if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }
 
