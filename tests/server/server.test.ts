@@ -7,10 +7,10 @@ import { startServer } from '../../src/server.js';
 let server: Server;
 afterEach(() => server?.close());
 
-async function boot() {
+async function boot(distDir?: string) {
   const store = new MapStore(':memory:');
   seedGraph(store);
-  server = startServer(store, 0); // port 0 = ephemeral
+  server = startServer(store, 0, distDir); // port 0 = ephemeral
   await new Promise<void>((r) => server.on('listening', r));
   const addr = server.address();
   const port = typeof addr === 'object' && addr ? addr.port : 0;
@@ -19,10 +19,11 @@ async function boot() {
 
 describe('webnav dev server', () => {
   it('GET / serves the build hint when web/dist is absent', async () => {
-    // The viewer is now the web/ Vite+React app served from web/dist; in this
-    // test it isn't built, so / returns the 503 "run npm run build" hint. (The
-    // served-static happy path is covered in tests/server-static.test.ts.)
-    const base = await boot();
+    // The viewer is the web/ Vite+React app served from web/dist; point the
+    // server at a guaranteed-absent dist so this is deterministic whether or not
+    // web has been built. The served-static happy path lives in
+    // tests/server-static.test.ts.
+    const base = await boot('/tmp/webnav-dist-does-not-exist-xyz');
     const res = await fetch(base + '/');
     expect(res.status).toBe(503);
     expect(await res.text()).toMatch(/npm run build/);
