@@ -17,8 +17,8 @@ describe('renderGraphHtml', () => {
     expect(h).toContain('cytoscape'); // loads the lib
     expect(h).toContain('github.com'); // node inlined
     expect(h).toContain('pypi.org'); // edge target inlined (in the JSON block)
-    expect(h).toContain('add-node'); // teach command template present
-    expect(h).toContain('add-edge');
+    expect(h).toContain('node-add'); // teach command template present
+    expect(h).toContain('edge-add');
   });
 
   it('embeds the GraphView as JSON', () => {

@@ -4,7 +4,7 @@ import { COMMANDS, VERSION } from '../src/cli-spec.js';
 describe('COMMANDS registry', () => {
   it('has all the registered verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['add-edge', 'add-node', 'capture', 'describe', 'eval', 'go-back', 'graph', 'graph-analyse', 'graph-edit', 'graph-show', 'hop', 'list', 'list-goals', 'locate', 'network', 'read', 'recall', 'record-start', 'record-stop', 'reload', 'route', 'search']);
+    expect(names).toEqual(['capture', 'describe', 'edge-add', 'eval', 'go-back', 'graph', 'graph-analyse', 'graph-edit', 'graph-show', 'hop', 'list', 'list-goals', 'locate', 'network', 'node-add', 'read', 'recall', 'record-start', 'record-stop', 'reload', 'route', 'search']);
   });
 
   it('graph has a summary and an example', () => {
@@ -22,20 +22,20 @@ describe('COMMANDS registry', () => {
     expect(g.example).toContain('--html');
   });
 
-  it('add-node has a required id arg and --url/--capabilities/--topics flags', () => {
-    const a = COMMANDS.find((c) => c.name === 'add-node')!;
+  it('node-add has a required id arg and --url/--capabilities/--topics flags', () => {
+    const a = COMMANDS.find((c) => c.name === 'node-add')!;
     expect(a.summary.length).toBeGreaterThan(0);
-    expect(a.example).toContain('webnav add-node');
+    expect(a.example).toContain('webnav dev node-add');
     expect(a.args.find((arg) => arg.name === 'id')?.required).toBe(true);
     expect(a.flags.find((f) => f.name === '--url')?.takesValue).toBe(true);
     expect(a.flags.find((f) => f.name === '--capabilities')?.takesValue).toBe(true);
     expect(a.flags.find((f) => f.name === '--topics')?.takesValue).toBe(true);
   });
 
-  it('add-edge has required from/to args and a --kind flag defaulting to capability', () => {
-    const a = COMMANDS.find((c) => c.name === 'add-edge')!;
+  it('edge-add has required from/to args and a --kind flag defaulting to capability', () => {
+    const a = COMMANDS.find((c) => c.name === 'edge-add')!;
     expect(a.summary.length).toBeGreaterThan(0);
-    expect(a.example).toContain('webnav add-edge');
+    expect(a.example).toContain('webnav dev edge-add');
     expect(a.args.find((arg) => arg.name === 'from')?.required).toBe(true);
     expect(a.args.find((arg) => arg.name === 'to')?.required).toBe(true);
     const kind = a.flags.find((f) => f.name === '--kind')!;

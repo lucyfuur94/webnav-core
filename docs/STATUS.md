@@ -47,7 +47,7 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
 `--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
-**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `add-node`, `add-edge`, `capture`.
+**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
 
@@ -113,7 +113,7 @@ hallucination). Spec: `docs/superpowers/specs/2026-06-02-r1-ab-benchmark-design.
 - **Research (R2/R3/R4):** readiness/interstitial detection; content extraction; multi-provider search. R4 verified live.
 - **Phase 1:** CLI hardening (clig.dev).
 - **Phase 2 G1–G3:** internet graph + `route`/`hop`.
-- **Graph-viz:** `graph`/`add-node`/`add-edge` + Cytoscape HTML viewer.
+- **Graph-viz:** `graph`/`node-add`/`edge-add` + Cytoscape HTML viewer.
 
 ## ✅ Graph HTML viewer render — VERIFIED (2026-06-01)
 

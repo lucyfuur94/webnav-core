@@ -38,8 +38,8 @@ webnav search "<query>" [--top N]            multi-provider open-web search -> e
 webnav route "<request>" [--capability X]    graph: which site(s) for this request + signals
 webnav hop <url> --to-cluster X|--to-node Y  graph: move to a related site
 webnav graph [--json|--html]                 export the internet-graph / interactive HTML viewer
-webnav add-node <id> --url --capabilities --topics    teach a new site
-webnav add-edge <from> <to> --kind           teach a relationship
+webnav dev node-add <id> --url --capabilities --topics    teach a new site
+webnav dev edge-add <from> <to> --kind           teach a relationship
 webnav capture <url> <out.yml>               dev: save a snapshot YAML
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.

@@ -14,8 +14,8 @@ export type ParsedArgs =
   | { cmd: 'route'; request: string; capability?: string }
   | { cmd: 'hop'; url: string; toCluster?: string; toNode?: string }
   | { cmd: 'graph' }
-  | { cmd: 'add-node'; id: string; url: string; capabilities: string[]; topics: string[] }
-  | { cmd: 'add-edge'; from: string; to: string; kind: string }
+  | { cmd: 'node-add'; id: string; url: string; capabilities: string[]; topics: string[] }
+  | { cmd: 'edge-add'; from: string; to: string; kind: string }
   | { cmd: 'capture'; url: string; out: string }
   | { cmd: 'eval'; url: string; js: string }
   | { cmd: 'network'; url: string }
@@ -108,14 +108,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
     };
   }
   if (cmd === 'graph') return { cmd };
-  if (cmd === 'add-node') {
+  if (cmd === 'node-add') {
     return {
       cmd, id: rest[0], url: flagValue(rest, '--url') ?? '',
       capabilities: listFlag(rest, '--capabilities'),
       topics: listFlag(rest, '--topics'),
     };
   }
-  if (cmd === 'add-edge') {
+  if (cmd === 'edge-add') {
     return { cmd, from: rest[0], to: rest[1], kind: flagValue(rest, '--kind') ?? 'capability' };
   }
   if (cmd === 'eval') {
@@ -261,8 +261,8 @@ async function main() {
     console.log(JSON.stringify(view, null, 2));
     return;
   }
-  if (args.cmd === 'add-node') {
-    // add-node: teach webnav a new site (persisted; the viz UI reads the same store).
+  if (args.cmd === 'node-add') {
+    // node-add: teach webnav a new site (persisted; the viz UI reads the same store).
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { addNode } = await import('./graph/teach.js');
@@ -274,8 +274,8 @@ async function main() {
     console.log(JSON.stringify(node, null, 2));
     return;
   }
-  if (args.cmd === 'add-edge') {
-    // add-edge: teach webnav a relationship between two KNOWN sites.
+  if (args.cmd === 'edge-add') {
+    // edge-add: teach webnav a relationship between two KNOWN sites.
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { addEdge } = await import('./graph/teach.js');

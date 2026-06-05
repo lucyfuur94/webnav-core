@@ -201,7 +201,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav graph --html > map.html',
   },
   {
-    name: 'add-node',
+    name: 'node-add',
     summary: 'Teach webnav a new site: its id, url, capabilities, topics.',
     args: [
       { name: 'id', required: true, description: 'Node id (e.g. npmjs.com) — also the skeleton namespace.' },
@@ -211,10 +211,10 @@ export const DEV_COMMANDS: CommandSpec[] = [
       { name: '--capabilities', takesValue: true, description: 'Comma-separated capability/cluster names this site serves.' },
       { name: '--topics', takesValue: true, description: 'Comma-separated declared content topics.' },
     ],
-    example: 'webnav add-node npmjs.com --url https://www.npmjs.com --capabilities package-search --topics javascript,packages',
+    example: 'webnav dev node-add npmjs.com --url https://www.npmjs.com --capabilities package-search --topics javascript,packages',
   },
   {
-    name: 'add-edge',
+    name: 'edge-add',
     summary: 'Teach webnav a relationship between two known sites.',
     args: [
       { name: 'from', required: true, description: 'Source node id (must already be known).' },
@@ -223,7 +223,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [
       { name: '--kind', takesValue: true, default: 'capability', description: 'Edge kind: capability | hyperlink | co-use | content.' },
     ],
-    example: 'webnav add-edge github.com pypi.org --kind hyperlink',
+    example: 'webnav dev edge-add github.com pypi.org --kind hyperlink',
   },
   {
     name: 'capture',

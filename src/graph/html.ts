@@ -135,7 +135,7 @@ export function renderGraphHtml(view: GraphView, opts: { live?: boolean } = {}):
         <label>topics (csv) <input name="topics" placeholder="javascript,packages" /></label>
         <button type="submit">Generate command + add to graph</button>
       </form>
-      <textarea id="add-node-cmd" class="cmd-box" rows="2" readonly placeholder="webnav add-node ..."></textarea>
+      <textarea id="add-node-cmd" class="cmd-box" rows="2" readonly placeholder="webnav dev node-add ..."></textarea>
     </div>
 
     <div class="section">
@@ -154,7 +154,7 @@ export function renderGraphHtml(view: GraphView, opts: { live?: boolean } = {}):
         </label>
         <button type="submit">Generate command + add to graph</button>
       </form>
-      <textarea id="add-edge-cmd" class="cmd-box" rows="2" readonly placeholder="webnav add-edge ..."></textarea>
+      <textarea id="add-edge-cmd" class="cmd-box" rows="2" readonly placeholder="webnav dev edge-add ..."></textarea>
     </div>
   </aside>
 </div>
@@ -325,7 +325,7 @@ try {
     var caps = f.capabilities.value.trim();
     var topics = f.topics.value.trim();
     if (!id) return;
-    var cmd = 'webnav add-node ' + id +
+    var cmd = 'webnav dev node-add ' + id +
       (url ? ' --url ' + url : '') +
       csvArg('--capabilities', caps) +
       csvArg('--topics', topics);
@@ -354,7 +354,7 @@ try {
     var to = f.to.value.trim();
     var kind = f.kind.value;
     if (!from || !to) return;
-    var cmd = 'webnav add-edge ' + from + ' ' + to + ' --kind ' + kind;
+    var cmd = 'webnav dev edge-add ' + from + ' ' + to + ' --kind ' + kind;
     document.getElementById('add-edge-cmd').value = cmd;
     // Optimistic add only if both nodes exist in the current graph.
     if (cy.getElementById(from).nonempty() && cy.getElementById(to).nonempty()) {

@@ -11,14 +11,14 @@ describe('CLI surface', () => {
 
   it('top-level help does NOT list admin verbs (they live under dev)', () => {
     const h = topLevelHelp();
-    expect(h).not.toMatch(/^\s+add-node\b/m);
-    expect(h).not.toMatch(/^\s+add-edge\b/m);
+    expect(h).not.toMatch(/^\s+node-add\b/m);
+    expect(h).not.toMatch(/^\s+edge-add\b/m);
     expect(h).toContain('webnav dev');
   });
 
   it('dev help lists the admin verbs', () => {
     const h = devHelp();
-    for (const v of ['graph', 'add-node', 'add-edge', 'list', 'describe', 'capture']) {
+    for (const v of ['graph', 'node-add', 'edge-add', 'list', 'describe', 'capture']) {
       expect(h).toContain(v);
     }
   });

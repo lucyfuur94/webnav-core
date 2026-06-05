@@ -74,24 +74,24 @@ describe('parseArgs', () => {
   it('parses graph --json', () => {
     expect(parseArgs(['graph', '--json'])).toEqual({ cmd: 'graph' });
   });
-  it('parses add-node with comma-split capabilities/topics', () => {
-    expect(parseArgs(['add-node', 'npmjs.com', '--url', 'https://www.npmjs.com',
+  it('parses node-add with comma-split capabilities/topics', () => {
+    expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com',
       '--capabilities', 'package-search,registry', '--topics', 'javascript,packages']))
-      .toEqual({ cmd: 'add-node', id: 'npmjs.com', url: 'https://www.npmjs.com',
+      .toEqual({ cmd: 'node-add', id: 'npmjs.com', url: 'https://www.npmjs.com',
         capabilities: ['package-search', 'registry'], topics: ['javascript', 'packages'] });
   });
-  it('parses add-node with absent capabilities/topics as empty arrays', () => {
-    expect(parseArgs(['add-node', 'npmjs.com', '--url', 'https://www.npmjs.com']))
-      .toEqual({ cmd: 'add-node', id: 'npmjs.com', url: 'https://www.npmjs.com',
+  it('parses node-add with absent capabilities/topics as empty arrays', () => {
+    expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com']))
+      .toEqual({ cmd: 'node-add', id: 'npmjs.com', url: 'https://www.npmjs.com',
         capabilities: [], topics: [] });
   });
-  it('parses add-edge with default kind', () => {
-    expect(parseArgs(['add-edge', 'github.com', 'pypi.org']))
-      .toEqual({ cmd: 'add-edge', from: 'github.com', to: 'pypi.org', kind: 'capability' });
+  it('parses edge-add with default kind', () => {
+    expect(parseArgs(['edge-add', 'github.com', 'pypi.org']))
+      .toEqual({ cmd: 'edge-add', from: 'github.com', to: 'pypi.org', kind: 'capability' });
   });
-  it('parses add-edge --kind', () => {
-    expect(parseArgs(['add-edge', 'github.com', 'pypi.org', '--kind', 'hyperlink']))
-      .toEqual({ cmd: 'add-edge', from: 'github.com', to: 'pypi.org', kind: 'hyperlink' });
+  it('parses edge-add --kind', () => {
+    expect(parseArgs(['edge-add', 'github.com', 'pypi.org', '--kind', 'hyperlink']))
+      .toEqual({ cmd: 'edge-add', from: 'github.com', to: 'pypi.org', kind: 'hyperlink' });
   });
   it('parses --help', () => { expect(parseArgs(['--help'])).toEqual({ cmd: 'help' }); });
   it('parses -h', () => { expect(parseArgs(['-h'])).toEqual({ cmd: 'help' }); });

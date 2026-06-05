@@ -11,8 +11,8 @@ export interface AddNodeInput {
 
 /** Teach webnav a new site (or update an existing one). Returns the stored node. */
 export function addNode(store: MapStore, input: AddNodeInput): SiteNode {
-  if (!input.id.trim()) throw new Error('add-node: id must not be empty');
-  if (!input.homeUrl.trim()) throw new Error('add-node: url must not be empty');
+  if (!input.id.trim()) throw new Error('node-add: id must not be empty');
+  if (!input.homeUrl.trim()) throw new Error('node-add: url must not be empty');
   const node: SiteNode = {
     id: input.id,
     homeUrl: input.homeUrl,
