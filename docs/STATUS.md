@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-05 · **Branch:** `main` · **Tests:** 291 unit pass + 6 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green
+**Updated:** 2026-06-06 · **Branch:** `main` · **Tests:** 287 unit pass + 6 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -92,15 +92,16 @@ psf/requests page title cleanly). Spec/plan:
 
 webnav's verbs are now **generic operations over map DATA** — no website baked into a verb (fixing the old `recall` = "navigate GitHub" coupling that made agents thrash a trivial "how many open issues" task). Highlights: added `read <url>` (the missing "open a page and read it" primitive — distilled content via `extractContent`/`classifyReadiness`, escalates on bot-walls, never evades); `recall <goal-id> "<query>"` is data-driven (explicit goal id, deterministic lookup, site-bound Goal record carries `site`/`entry`/`extractor`, named extractor registry) — GitHub-repos is the one seeded goal, a 2nd site is data-only; admin verbs moved under `webnav dev`; `list-goals` for discovery. Verified live (read returns "Issues 145" off the psf/requests page; recall still navigates GitHub end-to-end). Spec/plan: `docs/superpowers/specs/2026-06-02-generic-verb-regrounding-design.md`, `docs/superpowers/plans/2026-06-02-generic-verb-regrounding.md`.
 
-## Viewing the graph (live) — NEW
+## Viewing the graph (live)
 
 `npm run dev` → open **http://127.0.0.1:7777**. A read-only HTTP server
-(`src/server.ts`, Node built-in `http`, no new deps) over the **live** SQLite
+(`src/server.ts`, Node built-in `http`, no new ROOT deps) over the **live** SQLite
 map: `/api/graph` (whole internet graph) and `/api/node/:id/interior` (one
-site's intra-site skeleton — its states + action-edges). **Click a site-node to
-drill into its interior** (e.g. github.com → search-entry → result-list →
-repo-detail). `webnav graph --html > map.html` still produces a static,
-shareable snapshot (no drill-in).
+site's intra-site skeleton — its states + action-edges), plus the static viewer
+bundle from `web/dist/`. **Click a site-node to drill into its interior** (e.g.
+github.com → search-entry → result-list → repo-detail). The viewer is a `web/`
+Vite + React + **@xyflow/react** app laid out by **elkjs** (see below);
+`npm run dev:web` runs it with HMR. `webnav graph` emits the graph as JSON.
 
 DB is now the **single source of truth** for interiors: the known skeletons
 (GitHub, saucedemo) are written by the **seed step** (`seedGraph`), not lazily on
@@ -136,22 +137,23 @@ hallucination). Spec: `docs/superpowers/specs/2026-06-02-r1-ab-benchmark-design.
 - **Research (R2/R3/R4):** readiness/interstitial detection; content extraction; multi-provider search. R4 verified live.
 - **Phase 1:** CLI hardening (clig.dev).
 - **Phase 2 G1–G3:** internet graph + `route`/`hop`.
-- **Graph-viz:** `graph`/`node-add`/`edge-add` + Cytoscape HTML viewer.
+- **Graph-viz:** `graph`/`node-add`/`edge-add` + the live xyflow viewer (below).
 
-## ✅ Graph HTML viewer render — VERIFIED (2026-06-01)
+### Graph viewer — xyflow (DONE, 2026-06-06)
 
-Rendered `webnav graph --html` headlessly and confirmed Cytoscape draws all 5
-nodes, cluster colors, 3 labelled edges, the legend, and both teach forms.
-**Note:** `playwright-cli` blocks `file:` URLs (only http/https/data allowed),
-so the path is: `webnav graph --html > /tmp/map.html` → `python3 -m http.server`
-→ `playwright-cli goto http://127.0.0.1:PORT/map.html` → `eval`/`screenshot`.
-While verifying, found + fixed a real bug: `cytoscape-fcose@2` threw on load
-(`Cannot read properties of undefined (reading 'layoutBase')`) because its
-`layout-base`/`cose-base` peer deps weren't loaded and it wasn't registered via
-`cytoscape.use` — the viewer was silently falling back to the plain `cose`
-layout. Fixed in `src/graph/html.ts` (deps loaded in order + explicit guarded
-`cytoscape.use(cytoscapeFcose)`); re-verified render is clean (only a harmless
-favicon 404 remains). Covered by a new unit test in `tests/graph/html.test.ts`.
+The live graph viewer is now a `web/` Vite + React + **@xyflow/react** app laid
+out by **elkjs**, served as static `web/dist/` by the existing read-only Node
+server (`npm run dev` → http://127.0.0.1:7777; `npm run dev:web` for HMR).
+Cluster view → click a site → drill into its interior skeleton; fork
+(`needs-input`) edges are dashed/orange. The Cytoscape viewer + the
+`webnav graph --html` export were **removed**. The server stays read-only (live
+editing is a future increment). `web/` is an **isolated package** — React/xyflow/
+elk are NOT root deps. The riskiest logic (elk `layout.ts`, the fork-edge
+predicate) is unit-tested; `serveStatic` (with a path-traversal guard) is
+unit-tested; the live render was verified headless via playwright-cli (5 cluster
+nodes → drill into github.com's 3-state interior + back control). Spec/plan:
+`docs/superpowers/specs/2026-06-05-xyflow-graph-viewer-design.md`,
+`docs/superpowers/plans/2026-06-05-xyflow-graph-viewer.md`.
 
 ## ⚠️ PENDING — start here next session
 

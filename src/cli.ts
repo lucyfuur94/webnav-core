@@ -261,13 +261,6 @@ async function main() {
     const store = new MapStore('webnav.db');
     ensureSeeded(store);
     const view = buildGraphView(store);
-    // --html emits a self-contained interactive viewer instead of JSON.
-    // Detected directly off rawArgs, mirroring the --json flag detection.
-    if (rawArgs.includes('--html')) {
-      const { renderGraphHtml } = await import('./graph/html.js');
-      console.log(renderGraphHtml(view));
-      return;
-    }
     console.log(JSON.stringify(view, null, 2));
     return;
   }

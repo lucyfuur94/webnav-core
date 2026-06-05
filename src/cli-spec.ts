@@ -192,13 +192,8 @@ export const DEV_COMMANDS: CommandSpec[] = [
         takesValue: false,
         description: 'Emit JSON (it is already JSON — kept for flag consistency).',
       },
-      {
-        name: '--html',
-        takesValue: false,
-        description: 'Emit an interactive HTML viewer instead of JSON.',
-      },
     ],
-    example: 'webnav graph --html > map.html',
+    example: 'webnav graph > map.json',
   },
   {
     name: 'node-add',
