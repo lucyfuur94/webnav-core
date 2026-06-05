@@ -32,5 +32,6 @@ CREATE TABLE IF NOT EXISTS record_observations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL, seq INTEGER NOT NULL,
   url TEXT NOT NULL, fingerprint TEXT NOT NULL, declared_links TEXT NOT NULL,
-  captured_at INTEGER NOT NULL
+  captured_at INTEGER NOT NULL,
+  UNIQUE(session_id, seq)
 );

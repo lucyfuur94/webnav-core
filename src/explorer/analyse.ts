@@ -21,6 +21,11 @@ export function analyseObservations(observations: StoredObservation[]): Analysis
   // node -> fingerprint-key -> state accumulator
   const sites = new Map<string, Map<string, AnalysedState>>();
   // (node, url) -> state label, so edges can resolve a link target to a type.
+  // CONTRACT: if the SAME url was observed under two different fingerprints
+  // (e.g. a logged-out vs logged-in render, or a render-race), last-seen wins
+  // here — edges to that url resolve to the last fingerprint's type, and the
+  // earlier type may become an unreachable orphan. This is intended for v1
+  // (url != state, per the coordinate model); the agent reconciles on validate.
   const urlToLabel = new Map<string, string>();
   const counters = new Map<string, number>();
 
