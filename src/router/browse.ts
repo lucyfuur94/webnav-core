@@ -1,4 +1,7 @@
 import { PlaywrightAdapter } from '../playwright/adapter.js';
+import { parseSnapshot } from '../playwright/snapshot.js';
+import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js';
+import type { RecordStore } from '../mapstore/record.js';
 
 // Minimal structural type so these helpers accept either a real PlaywrightAdapter
 // or a fake (for tests). Only the methods we use are required.
@@ -8,6 +11,7 @@ export interface BrowseAdapter {
   network?(): Promise<string>;
   goBack?(): Promise<string>;
   reload?(): Promise<string>;
+  snapshot?(): Promise<string>;
   close(): Promise<string>;
 }
 
@@ -69,6 +73,33 @@ export async function runNetwork(
     return { status: 'done', url, requests };
   } catch (e) {
     return { status: 'failed', url, reason: String(e) };
+  } finally {
+    await adapter.close().catch(() => {});
+  }
+}
+
+export interface SnapshotRecordedResult { status: 'done' | 'failed'; url: string; recorded: boolean; reason?: string; }
+
+/** Open `url`, snapshot it, and (if `sessionId` is recording) append an
+ *  observation. The seam that makes a webnav browse contribute to the map. */
+export async function runSnapshotRecorded(
+  url: string, sessionId: string, recordStore: RecordStore,
+  adapter: BrowseAdapter = newAdapter(),
+): Promise<SnapshotRecordedResult> {
+  try {
+    await adapter.open(url);
+    const yml = await adapter.snapshot!();
+    const nodes = parseSnapshot(yml);
+    let recorded = false;
+    if (recordStore.isActive(sessionId)) {
+      recordStore.append(sessionId, {
+        url, fingerprint: fingerprintPage(nodes), declaredLinks: declaredLinks(nodes),
+      });
+      recorded = true;
+    }
+    return { status: 'done', url, recorded };
+  } catch (e) {
+    return { status: 'failed', url, recorded: false, reason: String(e) };
   } finally {
     await adapter.close().catch(() => {});
   }

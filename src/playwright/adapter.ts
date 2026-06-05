@@ -35,6 +35,7 @@ export class PlaywrightAdapter {
   network() { return this.exec('network'); }
   goBack() { return this.exec('go-back'); }
   reload() { return this.exec('reload'); }
+  waitFor(condition: string) { return this.exec('wait-for', condition); }
   close() { return this.exec('close'); }
 
   /** Returns the snapshot YAML content (reads the file path printed by the CLI). */
