@@ -4,10 +4,11 @@
   "type": "module",
   "bin": { "webnav": "dist/cli.js" },
   "scripts": {
-    "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/",
+    "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/ && npm --prefix web install && npm --prefix web run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/dev.ts",
+    "dev:web": "npm --prefix web run dev",
     "webnav": "tsx src/cli.ts"
   },
   "dependencies": {
