@@ -1,5 +1,5 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { Node, Edge } from '@xyflow/react';
+import { MarkerType, type Node, type Edge } from '@xyflow/react';
 
 export interface LayoutNode { id: string; label: string; parent?: string; }
 export interface LayoutEdge { id: string; source: string; target: string; fork: boolean; }
@@ -45,12 +45,18 @@ export async function layoutGraph(
     data: { label: n.label },
     type: mode === 'clusters' ? 'site' : 'state',
   }));
-  const rfEdges: Edge[] = edges.map((e) => ({
-    id: e.id, source: e.source, target: e.target,
-    data: { fork: e.fork },
-    animated: e.fork,
-    style: e.fork ? { strokeDasharray: '6 4', stroke: '#c2410c' } : undefined,
-  }));
+  // Every edge is DIRECTED (from -> to). Give it an arrowhead so direction is
+  // visible; color it to match (orange for fork edges, slate for normal).
+  const rfEdges: Edge[] = edges.map((e) => {
+    const color = e.fork ? '#c2410c' : '#64748b';
+    return {
+      id: e.id, source: e.source, target: e.target,
+      data: { fork: e.fork },
+      animated: e.fork,
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+      style: { stroke: color, ...(e.fork ? { strokeDasharray: '6 4' } : {}) },
+    };
+  });
   return { nodes: rfNodes, edges: rfEdges };
 }
 
