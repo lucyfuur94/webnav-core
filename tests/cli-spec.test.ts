@@ -4,7 +4,7 @@ import { COMMANDS, VERSION } from '../src/cli-spec.js';
 describe('COMMANDS registry', () => {
   it('has all the registered verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'describe', 'edge-add', 'eval', 'go-back', 'graph', 'graph-analyse', 'graph-edit', 'graph-show', 'hop', 'list', 'list-goals', 'locate', 'network', 'node-add', 'read', 'recall', 'record-start', 'record-stop', 'reload', 'route', 'search']);
+    expect(names).toEqual(['capture', 'describe', 'edge-add', 'eval', 'go-back', 'graph', 'graph-analyse', 'graph-edit', 'graph-show', 'hop', 'list', 'list-goals', 'locate', 'network', 'node-add', 'read', 'recall', 'record-start', 'record-stop', 'reload', 'route', 'search', 'walk', 'walk-resume']);
   });
 
   it('graph has a summary and an example', () => {

@@ -163,6 +163,27 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     flags: [],
     example: 'webnav list-goals',
   },
+  {
+    name: 'walk', group: 'navigate',
+    summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent).',
+    args: [],
+    flags: [
+      { name: '--start', takesValue: true, description: 'Start state id (from `dev graph-show`).' },
+      { name: '--goal', takesValue: true, description: 'Goal state id to reach.' },
+      { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored).' },
+    ],
+    example: 'webnav walk --start sd:login --goal sd:checkout-overview --input username=u --input password=p',
+  },
+  {
+    name: 'walk-resume', group: 'navigate',
+    summary: 'Continue a paused walk: answer the fork it stopped on.',
+    args: [{ name: 'session', required: true, description: 'Walk session id from a paused `walk`.' }],
+    flags: [
+      { name: '--ref', takesValue: true, description: 'Element ref (answers needs-navigation; from the snapshot).' },
+      { name: '--classify', takesValue: true, description: 'safe | commit (answers needs-classification; commit halts).' },
+    ],
+    example: 'webnav walk-resume walk-w-123 --ref e42',
+  },
 ];
 
 export const DEV_COMMANDS: CommandSpec[] = [
