@@ -2,7 +2,13 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import { MarkerType, type Node, type Edge } from '@xyflow/react';
 
 export interface LayoutNode { id: string; label: string; parent?: string; }
-export interface LayoutEdge { id: string; source: string; target: string; fork: boolean; }
+export interface LayoutEdge {
+  id: string; source: string; target: string; fork: boolean;
+  // Inter-site ASSOCIATIVE edge (capability/co-use/content — "related to", not a
+  // navigable link). Drawn dotted to distinguish from a real hyperlink/within-site
+  // navigation. Interior edges never set this.
+  associative?: boolean;
+}
 export type LayoutMode = 'clusters' | 'interior';
 
 const elk = new ELK();
@@ -49,12 +55,15 @@ export async function layoutGraph(
   // visible; color it to match (orange for fork edges, slate for normal).
   const rfEdges: Edge[] = edges.map((e) => {
     const color = e.fork ? '#c2410c' : '#64748b';
+    // Dotted when the edge is a fork (needs-input) OR an inter-site associative
+    // relationship; solid for a real navigable link / within-site navigation.
+    const dashed = e.fork ? '6 4' : e.associative ? '2 4' : undefined;
     return {
       id: e.id, source: e.source, target: e.target,
       data: { fork: e.fork },
       animated: e.fork,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
-      style: { stroke: color, ...(e.fork ? { strokeDasharray: '6 4' } : {}) },
+      style: { stroke: color, ...(dashed ? { strokeDasharray: dashed } : {}) },
     };
   });
   return { nodes: rfNodes, edges: rfEdges };
