@@ -17,7 +17,12 @@ export function GraphView({ onOpen }: { onOpen: (id: string) => void }) {
     fetchGraph().then(async (g) => {
       if (!g.nodes.length) { setEmpty(true); return; }
       const ln = g.nodes.map((n) => ({ id: n.id, label: n.id }));
-      const le = g.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to, fork: false }));
+      // hyperlink = a real navigable link between sites (solid); every other kind
+      // (capability/co-use/content) is an associative relationship (dotted).
+      const le = g.edges.map((e, i) => ({
+        id: `e${i}`, source: e.from, target: e.to, fork: false,
+        associative: e.kind !== 'hyperlink',
+      }));
       const laid = await layoutGraph(ln, le, 'clusters');
       const capById = new Map(g.nodes.map((n) => [n.id, n.capabilities]));
       setNodes(laid.nodes.map((nd) => ({ ...nd, data: { ...nd.data, capabilities: capById.get(nd.id) } })));
