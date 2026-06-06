@@ -18,6 +18,10 @@ export interface WalkBrowser {
   callCount(): number;
 }
 
+export type WalkAnswer =
+  | { kind: 'ref'; ref: string }
+  | { kind: 'classify'; verdict: 'safe' | 'commit' };
+
 export interface WalkArgs {
   goalName: string;
   startStateId: string;        // e.g. 'sd:login'
@@ -25,6 +29,8 @@ export interface WalkArgs {
   store: MapStore;
   states: State[];             // known states for matchState (the skeleton's states)
   browser: WalkBrowser;
+  path?: string[];             // resolved route (from findPath); follow it instead of edges[0]
+  answer?: WalkAnswer;         // resume answer applied to the FIRST step taken this call
   // NOTE: `inputs` was REMOVED from WalkArgs (cleaner option per W2). The walk no
   // longer touches runtime values; it only passes each edge's `acceptsInput` slot
   // NAME to browser.act(). The LIVE browser closure owns the inputs map and resolves
@@ -44,6 +50,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
 
   let current = startStateId;
   let at = 0;
+  let firstStep = true;
 
   // Halt as soon as we've arrived: this check at the TOP means when goalStateId is
   // a state the route passes THROUGH (e.g. sd:checkout-overview), the walk stops
@@ -54,7 +61,40 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
       return { status: 'failed', reason: 'no edge from ' + current };
     }
     // Linear route: each non-goal state has exactly one outgoing edge.
-    const edge = edges[0];
+    let edge = edges[0];
+    if (args.path) {
+      const i = args.path.indexOf(current);
+      const next = i >= 0 ? args.path[i + 1] : undefined;
+      const onPath = next ? edges.find((e) => e.toState === next) : undefined;
+      if (!onPath) return { status: 'failed', reason: 'no path edge from ' + current };
+      edge = onPath;
+    }
+
+    // Resume answer applies only on the FIRST iteration of THIS call.
+    if (firstStep && args.answer) {
+      const ans = args.answer;
+      firstStep = false;
+      if (ans.kind === 'classify') {
+        if (ans.verdict === 'commit') {
+          return doneHalted(args, browser);   // hard halt — never fire a commit point (#2)
+        }
+        // 'safe': fall through and resolve+act this step normally.
+      } else {
+        // 'ref': act on the agent-chosen element, skip replayStep for THIS step.
+        await browser.act(ans.ref, edge.acceptsInput);
+        const afterYaml = await browser.snapshot();
+        const observed = matchState(parseSnapshot(afterYaml), states);
+        if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+          return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: afterYaml,
+            question: 'after applying the supplied ref, expected ' + edge.toState + ' but observed '
+              + (observed.status === 'matched' ? observed.state.id : observed.status) };
+        }
+        store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
+        current = edge.toState; at++;
+        continue;
+      }
+    }
+    firstStep = false;
 
     // Read the CURRENT page (before acting) so commit/drift checks see this page.
     const yaml = await browser.snapshot();
@@ -116,5 +156,20 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         savings: { raw_snapshot_tokens: 0, bundle_tokens: 0, tokens_saved: 0, chars_per_token: 4 },
       },
     },
+  };
+}
+
+// A `done` response that HALTED at a commit point: the agent classified the next
+// action as a commit, so the walk stops without firing it (#2). Mirrors the final
+// `done` evidence shape exactly, with the `halted` marker set.
+function doneHalted(args: WalkArgs, browser: WalkBrowser): RecallResponse {
+  return {
+    status: 'done',
+    evidence: {
+      goal: args.goalName, query: args.goalName, candidates: [],
+      cost: { playwright_calls: browser.callCount(),
+        savings: { raw_snapshot_tokens: 0, bundle_tokens: 0, tokens_saved: 0, chars_per_token: 4 } },
+    },
+    halted: 'commit-point',
   };
 }
