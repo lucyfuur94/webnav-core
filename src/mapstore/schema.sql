@@ -35,3 +35,10 @@ CREATE TABLE IF NOT EXISTS record_observations (
   captured_at INTEGER NOT NULL,
   UNIQUE(session_id, seq)
 );
+CREATE TABLE IF NOT EXISTS walk_sessions (
+  session_id TEXT PRIMARY KEY,
+  start_state TEXT NOT NULL, goal_state TEXT NOT NULL,
+  path TEXT NOT NULL, pos INTEGER NOT NULL DEFAULT 0,
+  browser_session TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'paused',
+  created_at INTEGER NOT NULL
+);
