@@ -69,7 +69,11 @@ caller). `runActionRecorded` captures before/after around an agent action.
 Verified live on saucedemo (add-to-cart → `navigated:false` + "Remove" in the
 diff). Note: the page-only `runSnapshotRecorded` path still exists but
 `graph-analyse` now reads action-effects (`actionEffects()`), so recording should
-go through `runActionRecorded`. Spec/plan:
+go through `runActionRecorded`. **Known follow-up:** the full raw before/after
+snapshots ARE persisted (and readable in-process via `actionEffects()`), but
+`graph-analyse` only emits a readable diff *summary* — there's no CLI verb yet
+that hands the agent the raw snapshots, so the "raw stays for the agent" promise
+isn't CLI-reachable end-to-end. Spec/plan:
 `docs/superpowers/specs/2026-06-08-affordance-recording-design.md`,
 `docs/superpowers/plans/2026-06-08-affordance-recording.md`.
 
