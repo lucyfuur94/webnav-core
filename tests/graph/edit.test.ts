@@ -42,6 +42,16 @@ describe('editGraph', () => {
     expect(store.edgesFrom('example.com:b')[0].toState).toBe('example.com:a');
   });
 
+  it('persists requiresAffordances on an edge', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'example.com', {
+      states: [{ label: 'inventory' }, { label: 'cart' }],
+      edges: [{ from: 'inventory', to: 'cart', via: 'open cart', requiresAffordances: ['add an item'] }],
+    });
+    const e = store.edgesFrom('example.com:inventory')[0];
+    expect(e.requiresAffordances).toEqual(['add an item']);
+  });
+
   it('throws on an edge endpoint that is neither in the payload nor stored', () => {
     const store = freshStore();
     expect(() => editGraph(store, 'example.com', {

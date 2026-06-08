@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 318 unit pass + 8 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 326 unit pass + 9 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -199,23 +199,24 @@ nodes → drill into github.com's 3-state interior + back control). Spec/plan:
 `docs/superpowers/specs/2026-06-05-xyflow-graph-viewer-design.md`,
 `docs/superpowers/plans/2026-06-05-xyflow-graph-viewer.md`.
 
-### Interactive walk — engine + verbs (ENGINE DONE, demo pending — 2026-06-08)
+### Saucedemo affordance re-seed + walk affordance-pause (DONE, 2026-06-08)
 
-The multi-step walk is now agent-usable: `webnav walk --start <id> --goal <id>
-[--input k=v ...]` pathfinds the weighted-shortest route over the graph
-(`findPath`) and walks it; on a fork it persists a **walk-session** and returns
-`{ session, status: needs-* }`; `webnav walk-resume <session> --ref <e>` /
-`--classify safe|commit` continues (commit = hard halt, never fires — #2).
-Runtime inputs (`--input`) are in-memory only, never persisted. Walks are pure
-graph traversal (no walk records); webnav computes the path. Engine + verbs are
-unit-tested and the mechanics verified live (login → inventory → resume).
-**Pending:** the saucedemo *full-completion* demo hit the page=state defect
-(in-page add-to-cart was being modeled as a new state → ambiguity) — fixed at the
-root by the **affordance-recording** increment
-(`docs/superpowers/specs/2026-06-08-affordance-recording-design.md`). Finish the
-walk's live demo + a richer e2e after affordance-recording lands. Spec/plan:
-`docs/superpowers/specs/2026-06-06-interactive-walk-design.md`,
-`docs/superpowers/plans/2026-06-06-interactive-walk.md`.
+Saucedemo is re-seeded in the **affordance model** (page-states + navigation edges
+only; add-to-cart is an in-page affordance, NOT a state — the old page=state
+bundled `inventory→cart` edge is retired; `exploreSaucedemo` clears `sd:*` edges
+on seed). New edge field **`requiresAffordances: string[]`** (declared data) lets a
+navigation edge declare in-page actions that must be fired first. `walkRoute`
+**pauses** (`needs-navigation` listing the affordances) before traversing a gated
+edge — for ANY gated edge en route, not just the first — and the agent fires them
+then resumes; ungated edges traverse deterministically (autopilot preserved — see
+the **walk vs use** note in CLAUDE.md). `graph-edit` accepts `requiresAffordances`
+so agent-built graphs can gate edges too. Verified live: the saucedemo walk logs
+in, reaches inventory, and pauses for the add-to-cart affordance. This **completes
+the interactive walk** (engine + verbs landed earlier; this finishes the saucedemo
+demo on one consistent model). Spec/plan:
+`docs/superpowers/specs/2026-06-08-saucedemo-affordance-reseed-walk-design.md`,
+`docs/superpowers/plans/2026-06-08-saucedemo-affordance-reseed-walk.md`. (Walk
+engine + verbs: `docs/superpowers/specs/2026-06-06-interactive-walk-design.md`.)
 
 ## ⚠️ PENDING — start here next session
 

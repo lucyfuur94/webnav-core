@@ -17,6 +17,7 @@ export interface IMapStore {
   allStates(): State[];
   statesForNode(nodeId: string): State[];
   upsertEdge(e: Edge): void;
+  deleteEdgesFromPrefix(prefix: string): void;
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
   recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void;
@@ -73,6 +74,11 @@ export class MapStore implements IMapStore {
         this.db.exec(`ALTER TABLE goals ADD COLUMN ${col} TEXT`);
       }
     }
+    // edges: add requires_affordances if an older DB lacks it.
+    const ecols: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
+    if (!ecols.some((c) => c.name === 'requires_affordances')) {
+      this.db.exec('ALTER TABLE edges ADD COLUMN requires_affordances TEXT');
+    }
   }
 
   /** Run `fn` atomically — all writes commit together or none do (no torn skeleton). */
@@ -108,17 +114,21 @@ export class MapStore implements IMapStore {
 
   upsertEdge(e: Edge): void {
     this.db.prepare(`INSERT INTO edges
-      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,reliability,success_count,fail_count,last_verified,confidence)
-      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@reliability,@successCount,@failCount,@lastVerified,@confidence)
+      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,reliability,success_count,fail_count,last_verified,confidence,requires_affordances)
+      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@reliability,@successCount,@failCount,@lastVerified,@confidence,@requiresAffordances)
       ON CONFLICT(from_state,to_state,semantic_step) DO UPDATE SET
       selector_cache=@selectorCache, cost=@cost, reliability=@reliability,
-      success_count=@successCount, fail_count=@failCount, last_verified=@lastVerified, confidence=@confidence`)
+      success_count=@successCount, fail_count=@failCount, last_verified=@lastVerified, confidence=@confidence, requires_affordances=@requiresAffordances`)
       .run({
         fromState: e.fromState, toState: e.toState, semanticStep: e.semanticStep,
         selectorCache: e.selectorCache, kind: e.kind, acceptsInput: e.acceptsInput,
         cost: e.cost, reliability: e.reliability, successCount: e.successCount,
         failCount: e.failCount, lastVerified: e.lastVerified, confidence: e.confidence,
+        requiresAffordances: JSON.stringify(e.requiresAffordances ?? []),
       });
+  }
+  deleteEdgesFromPrefix(prefix: string): void {
+    this.db.prepare("DELETE FROM edges WHERE from_state LIKE ? || '%'").run(prefix);
   }
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
@@ -248,5 +258,6 @@ function rowToEdge(r: any): Edge {
     selectorCache: r.selector_cache, kind: r.kind, acceptsInput: r.accepts_input,
     cost: r.cost, reliability: r.reliability, successCount: r.success_count,
     failCount: r.fail_count, lastVerified: r.last_verified, confidence: r.confidence,
+    requiresAffordances: r.requires_affordances ? JSON.parse(r.requires_affordances) : [],
   });
 }

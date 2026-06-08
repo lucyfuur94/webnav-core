@@ -34,8 +34,17 @@ describe('SAUCEDEMO_SKELETON (structure only — principle #6)', () => {
   it('declares which steps accept runtime input slots (no values stored)', () => {
     const login = SAUCEDEMO_SKELETON.edges.find((e) => e.fromState === 'sd:login');
     expect(login?.acceptsInput).toBe('credentials');
-    const shipping = SAUCEDEMO_SKELETON.edges.find((e) => e.fromState === 'sd:checkout-info');
-    expect(shipping?.acceptsInput).toBe('shipping');
+  });
+
+  it('the cart-open edge requires the add-to-cart affordance', () => {
+    const e = SAUCEDEMO_SKELETON.edges.find((x) => x.fromState === 'sd:inventory' && x.toState === 'sd:cart')!;
+    expect(e.requiresAffordances.length).toBeGreaterThan(0);
+    expect(e.requiresAffordances.join(' ')).toMatch(/add/i);
+  });
+
+  it('the shipping-continue edge requires three shipping affordances', () => {
+    const e = SAUCEDEMO_SKELETON.edges.find((x) => x.fromState === 'sd:checkout-info')!;
+    expect(e.requiresAffordances.length).toBe(3);
   });
 
   it('is structure-only: no credentials, names, zips, or other runtime values', () => {

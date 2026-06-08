@@ -31,6 +31,7 @@ export interface Edge {
   selectorCache: string | null; // DISPOSABLE last-known ref/selector
   kind: EdgeKind;
   acceptsInput: string | null;  // runtime slot name, e.g. "query"
+  requiresAffordances: string[];  // in-page affordances to fire before traversing this edge; [] = none
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
   reliability: number;          // successCount / (successCount + failCount); 1 when unused
   successCount: number;
@@ -53,7 +54,7 @@ export function makeEdge(
   init: Pick<Edge, 'fromState' | 'toState' | 'semanticStep' | 'kind'> & Partial<Edge>,
 ): Edge {
   return {
-    selectorCache: null, acceptsInput: null, cost: 0,
+    selectorCache: null, acceptsInput: null, requiresAffordances: [], cost: 0,
     reliability: 1, successCount: 0, failCount: 0,
     lastVerified: null, confidence: 1,
     ...init,
