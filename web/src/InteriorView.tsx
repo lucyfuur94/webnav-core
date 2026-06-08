@@ -19,7 +19,7 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     // interior yet" case from a real API failure so the message isn't misleading.
     fetchInterior(id).then(async (iv) => {
       if (!iv.states.length) { setEmpty(true); return; }
-      const ln = iv.states.map((s) => ({ id: s.id, label: s.semanticName }));
+      const ln = iv.states.map((s) => ({ id: s.id, label: s.semanticName, badges: (s as any).affordances?.length ?? 0 }));
       const le = iv.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to, fork: isForkEdge(e), core: (e as any).core === true }));
       const laid = await layoutGraph(ln, le, 'interior');
       const meta = new Map(iv.states.map((s) => [s.id, s]));

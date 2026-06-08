@@ -7,7 +7,7 @@ export function SiteNode({ data }: NodeProps) {
   const d = data as { label: string; capabilities?: string[] };
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 8, background: '#fff',
-      padding: '8px 12px', minWidth: 160, fontFamily: 'sans-serif' }}>
+      padding: '8px 12px', width: 200, boxSizing: 'border-box', fontFamily: 'sans-serif' }}>
       <Handle type="target" position={Position.Left} style={HIDDEN} />
       <div style={{ fontWeight: 600, fontSize: 13 }}>{d.label}</div>
       {d.capabilities?.length ? (

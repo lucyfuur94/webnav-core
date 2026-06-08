@@ -1,7 +1,11 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { MarkerType, type Node, type Edge } from '@xyflow/react';
 
-export interface LayoutNode { id: string; label: string; parent?: string; }
+export interface LayoutNode { id: string; label: string; parent?: string;
+  // number of affordance badges this node renders — used to estimate its real
+  // height so elk spaces tall nodes correctly (badges wrap inside a fixed width).
+  badges?: number;
+}
 export interface LayoutEdge {
   id: string; source: string; target: string; fork: boolean;
   // Inter-site ASSOCIATIVE edge (capability/co-use/content — "related to", not a
@@ -13,7 +17,16 @@ export interface LayoutEdge {
 export type LayoutMode = 'clusters' | 'interior';
 
 const elk = new ELK();
-const NODE_W = 180, NODE_H = 56;
+// Boxes are FIXED-WIDTH (StateNode/SiteNode cap at this); height grows with the
+// number of affordance badges (they wrap into rows of ~2 at this width). Feeding
+// elk the REAL dimensions is what keeps edges from threading through nodes.
+const NODE_W = 220;
+const NODE_H_BASE = 52;          // label + role line, no badges
+const BADGE_ROW_H = 20;          // each wrapped row of badges
+const BADGES_PER_ROW = 2;        // ~2 chips fit per row at NODE_W
+function nodeHeight(badges = 0): number {
+  return NODE_H_BASE + Math.ceil(badges / BADGES_PER_ROW) * BADGE_ROW_H;
+}
 
 /**
  * Lay out nodes/edges with ELK. `interior` = layered top-down (state machine);
@@ -30,10 +43,11 @@ export async function layoutGraph(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': mode === 'clusters' ? 'RIGHT' : 'DOWN',
-      'elk.spacing.nodeNode': mode === 'clusters' ? '60' : '40',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+      'elk.spacing.nodeNode': mode === 'clusters' ? '80' : '70',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '110',
+      'elk.spacing.edgeNode': '30',
     },
-    children: nodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
+    children: nodes.map((n) => ({ id: n.id, width: NODE_W, height: nodeHeight(n.badges) })),
     edges: edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
   };
 
@@ -74,7 +88,7 @@ function gridPositions(nodes: LayoutNode[]): Record<string, { x: number; y: numb
   const out: Record<string, { x: number; y: number }> = {};
   const cols = Math.ceil(Math.sqrt(Math.max(1, nodes.length)));
   nodes.forEach((n, i) => {
-    out[n.id] = { x: (i % cols) * (NODE_W + 40), y: Math.floor(i / cols) * (NODE_H + 40) };
+    out[n.id] = { x: (i % cols) * (NODE_W + 60), y: Math.floor(i / cols) * (nodeHeight(n.badges) + 60) };
   });
   return out;
 }
