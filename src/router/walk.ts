@@ -70,6 +70,19 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
       edge = onPath;
     }
 
+    // Gated edge: pause for the agent to fire the required in-page affordances
+    // FIRST. Only on a fresh first step with no resume answer — on resume the
+    // agent has already fired them, so we proceed. Ungated edges never pause
+    // (autopilot preserved).
+    if (firstStep && !args.answer && edge.requiresAffordances && edge.requiresAffordances.length > 0) {
+      const yaml = await browser.snapshot();
+      return {
+        status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: yaml,
+        question: 'before "' + edge.semanticStep + '", fire these in-page affordances on the current page: '
+          + edge.requiresAffordances.join('; '),
+      };
+    }
+
     // Resume answer applies only on the FIRST iteration of THIS call.
     if (firstStep && args.answer) {
       const ans = args.answer;
