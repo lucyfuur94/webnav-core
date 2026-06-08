@@ -5,11 +5,9 @@ import { fetchInterior } from './api.js';
 import { layoutGraph } from './layout.js';
 import { isForkEdge } from './forkEdge.js';
 import { StateNode } from './nodes/StateNode.js';
-import { RoutedEdge } from './edges/RoutedEdge.js';
 import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
 
 const nodeTypes = { state: StateNode };
-const edgeTypes = { routed: RoutedEdge };
 const DIM = 0.18;   // opacity for nodes/edges NOT adjacent to the hovered node
 
 export function InteriorView({ id, onBack }: { id: string; onBack: () => void }) {
@@ -63,7 +61,7 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif', color: '#334155' }}>Couldn't load the interior for <b>{id}</b>: {error}</div>
         : empty
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif' }}>No interior recorded for <b>{id}</b> yet. Map it with a record session.</div>
-        : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView
+        : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} fitView
             onNodeMouseEnter={(_, n) => setHovered(n.id)}
             onNodeMouseLeave={() => setHovered(null)}>
             <Background /><Controls /><MiniMap />
