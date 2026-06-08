@@ -17,6 +17,7 @@ export interface IMapStore {
   allStates(): State[];
   statesForNode(nodeId: string): State[];
   upsertEdge(e: Edge): void;
+  deleteEdgesFromPrefix(prefix: string): void;
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
   recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void;
@@ -125,6 +126,9 @@ export class MapStore implements IMapStore {
         failCount: e.failCount, lastVerified: e.lastVerified, confidence: e.confidence,
         requiresAffordances: JSON.stringify(e.requiresAffordances ?? []),
       });
+  }
+  deleteEdgesFromPrefix(prefix: string): void {
+    this.db.prepare("DELETE FROM edges WHERE from_state LIKE ? || '%'").run(prefix);
   }
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
