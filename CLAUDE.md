@@ -8,6 +8,12 @@
 
 **This Haiku rule is scoped ONLY to webnav-using/testing subagents.** For all other work — implementation, planning, code review, general tasks — use the best model for that task (do NOT downgrade to Haiku).
 
+## CLI ergonomics (settled — agent-native, per clig.dev + CLI-Anything)
+
+- **Uniform JSON stdout.** Every verb writes a single JSON object to **stdout** (parseable by the calling agent with no special-casing). Page YAML that the agent must read (e.g. `snapshot`) is carried as a field (`{status,snapshot}`), never bare. Diagnostics/human prose go to **stderr**. Exit codes: 0 ok · 2 error · 3 ran-fine-but-empty/failed. Do NOT add a verb that prints non-JSON to stdout.
+- **Self-describing.** `--help` (grouped) + per-verb help that teaches data-flow (where an arg comes from / where output goes). Keep new verbs discoverable this way.
+- **Installed on PATH.** `webnav` is a real CLI (a peer of `playwright-cli`) via `bin/webnav` → `tsx src/cli.ts` + `npm link` — runs current source, NO build step needed.
+
 ## CLI categories (settled)
 
 webnav's verbs split into **two top-level categories**:

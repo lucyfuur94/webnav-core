@@ -497,7 +497,10 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const adapter = new PlaywrightAdapter(args.session);
     try {
-      console.log(await adapter.snapshot());
+      // Uniform JSON: every verb's stdout is structured. The page YAML (which the
+      // agent reads for element refs) is carried as the `snapshot` field.
+      const yaml = await adapter.snapshot();
+      console.log(JSON.stringify({ status: 'done', snapshot: yaml }, null, 2));
     } catch (e) {
       console.log(JSON.stringify({ status: 'failed', reason: 'no live page for session ' + args.session + ' — run `use navigate` first' }, null, 2));
       process.exitCode = 2;
