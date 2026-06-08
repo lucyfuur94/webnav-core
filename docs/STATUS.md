@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 326 unit pass + 9 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 322 unit pass + 9 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -200,6 +200,25 @@ unit-tested; the live render was verified headless via playwright-cli (5 cluster
 nodes → drill into github.com's 3-state interior + back control). Spec/plan:
 `docs/superpowers/specs/2026-06-05-xyflow-graph-viewer-design.md`,
 `docs/superpowers/plans/2026-06-05-xyflow-graph-viewer.md`.
+
+### Graph quality + viewer — affordances, core path, node hygiene (DONE, 2026-06-08)
+
+In-page actions are now first-class **`State.affordances`** (node repertoire),
+NOT self-loop edges; **`Edge.core`** marks the agent-declared main journey.
+`graph-edit` authors both + node `capabilities`/`topics` (no-clobber on update);
+the interior API exposes them. The **viewer** renders affordance badges inside
+node boxes, emphasizes core edges (thick/blue/full-opacity) vs faded non-core,
+and shows **no connection dots** (invisible handles — no-handle drops edges in
+@xyflow/react v12). The duplicate/blank saucedemo is fixed: the hand-seeded
+`saucedemo`/`sd:*` skeleton is **removed entirely** (deleted `saucedemo-skeleton.ts`;
+walk tests rewritten onto inline fixtures; gated walk e2es re-pointed to
+`www.saucedemo.com` — both pass live). Saucedemo is now a single **agent-built**
+`www.saucedemo.com` node (6 states with affordances, 9 edges incl. 4 core, node
+metadata set, ZERO self-loops) — verified live in the viewer (6 nodes, 9 edges,
+badges shown, 0 visible dots). **Note:** a fresh clone's `webnav.db` has no
+saucedemo until an agent maps it (the seed no longer ships it). Spec/plan:
+`docs/superpowers/specs/2026-06-08-graph-quality-and-viewer-design.md`,
+`docs/superpowers/plans/2026-06-08-graph-quality-and-viewer.md`.
 
 ### Saucedemo affordance re-seed + walk affordance-pause (DONE, 2026-06-08)
 
