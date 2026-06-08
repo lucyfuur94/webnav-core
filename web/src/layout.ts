@@ -79,6 +79,9 @@ export async function layoutGraph(
       'elk.spacing.nodeNode': mode === 'clusters' ? '80' : '70',
       'elk.layered.spacing.nodeNodeBetweenLayers': '110',
       'elk.spacing.edgeNode': '30',
+      // Let elk ROUTE edges around nodes (orthogonal bend-points) so arrows never
+      // cut through a box — we render those exact routed points (see edge.routed).
+      'elk.edgeRouting': 'ORTHOGONAL',
       ...(usePartition ? { 'elk.partitioning.activate': 'true' } : {}),
     },
     children: nodes.map((n) => {
@@ -98,9 +101,16 @@ export async function layoutGraph(
   };
 
   let positions: Record<string, { x: number; y: number }> = {};
+  // elk's routed polyline per edge id: [start, ...bends, end]. Used to draw the
+  // edge along the path elk computed AROUND the boxes (no through-box arrows).
+  const routes: Record<string, { x: number; y: number }[]> = {};
   try {
     const res = await elk.layout(elkGraph);
     for (const c of res.children ?? []) positions[c.id] = { x: c.x ?? 0, y: c.y ?? 0 };
+    for (const e of res.edges ?? []) {
+      const sec = (e.sections ?? [])[0];
+      if (sec) routes[e.id] = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint];
+    }
     if (Object.keys(positions).length < nodes.length) positions = gridPositions(nodes);
   } catch {
     positions = gridPositions(nodes);
@@ -118,9 +128,13 @@ export async function layoutGraph(
     const core = e.core === true;
     const color = e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
     const dashed = e.fork ? '6 4' : e.associative ? '2 4' : undefined;
+    const routed = routes[e.id];
     return {
       id: e.id, source: e.source, target: e.target,
-      data: { fork: e.fork, core },
+      // Use the custom 'routed' edge (draws elk's around-the-box polyline) when we
+      // have a route; else fall back to xyflow's default bezier.
+      type: routed && routed.length >= 2 ? 'routed' : 'default',
+      data: { fork: e.fork, core, routed },
       animated: e.fork,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
       style: { stroke: color, strokeWidth: core ? 2.5 : 1, opacity: core || e.fork ? 1 : 0.55,

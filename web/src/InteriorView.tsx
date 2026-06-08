@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { fetchInterior } from './api.js';
 import { layoutGraph } from './layout.js';
 import { isForkEdge } from './forkEdge.js';
 import { StateNode } from './nodes/StateNode.js';
+import { RoutedEdge } from './edges/RoutedEdge.js';
+import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
 
 const nodeTypes = { state: StateNode };
+const edgeTypes = { routed: RoutedEdge };
+const DIM = 0.18;   // opacity for nodes/edges NOT adjacent to the hovered node
 
 export function InteriorView({ id, onBack }: { id: string; onBack: () => void }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [empty, setEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
 
   useEffect(() => {
     // A 404 (unknown node) throws in fetchInterior — distinguish that "no
@@ -35,6 +40,21 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     });
   }, [id]);
 
+  // Hover highlight: when a node is hovered, fully show it + its neighbors + the
+  // edges touching it, and dim everything else. No hover → everything full.
+  const neighbors = useMemo(() => neighborSet(hovered, edges), [hovered, edges]);
+
+  const shownNodes = useMemo(() => nodes.map((n) => ({
+    ...n,
+    style: { ...(n.style || {}), opacity: nodeOpacity(n.id, neighbors, DIM), transition: 'opacity 120ms' },
+  })), [nodes, neighbors]);
+
+  const shownEdges = useMemo(() => edges.map((e) => {
+    const active = edgeActive(e, hovered);
+    return { ...e, style: { ...(e.style || {}), opacity: active ? (e.style as any)?.opacity ?? 1 : DIM,
+      transition: 'opacity 120ms' } };
+  }), [edges, hovered]);
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <button onClick={onBack} style={{ position: 'absolute', zIndex: 10, top: 12, left: 12,
@@ -43,7 +63,9 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif', color: '#334155' }}>Couldn't load the interior for <b>{id}</b>: {error}</div>
         : empty
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif' }}>No interior recorded for <b>{id}</b> yet. Map it with a record session.</div>
-        : <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView>
+        : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView
+            onNodeMouseEnter={(_, n) => setHovered(n.id)}
+            onNodeMouseLeave={() => setHovered(null)}>
             <Background /><Controls /><MiniMap />
           </ReactFlow>}
     </div>
