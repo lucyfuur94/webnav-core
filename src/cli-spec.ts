@@ -172,7 +172,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
       { name: '--goal', takesValue: true, description: 'Goal state id to reach.' },
       { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored).' },
     ],
-    example: 'webnav walk --start sd:login --goal sd:checkout-overview --input username=u --input password=p',
+    example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --input username=u --input password=p',
   },
   {
     name: 'walk-resume', group: 'navigate',
