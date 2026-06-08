@@ -1,9 +1,9 @@
 import type { MapStore } from '../mapstore/store.js';
 import { makeState, makeEdge } from '../mapstore/types.js';
 
-export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; }
-export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; }
-export interface EditGraph { states: EditState[]; edges: EditEdge[]; }
+export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: string[]; }
+export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
+export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
 
 export function editGraph(store: MapStore, node: string, graph: EditGraph): EditResult {
@@ -24,14 +24,19 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
 
   let statesWritten = 0, edgesWritten = 0;
   store.transaction(() => {
-    if (!store.getNode(node)) {
-      store.upsertNode({ id: node, homeUrl: `https://${node}`, capabilities: [], topics: [] });
-    }
+    const existing = store.getNode(node);
+    store.upsertNode({
+      id: node,
+      homeUrl: existing?.homeUrl ?? `https://${node}`,
+      capabilities: graph.node?.capabilities ?? existing?.capabilities ?? [],
+      topics: graph.node?.topics ?? existing?.topics ?? [],
+    });
     for (const s of graph.states) {
       store.upsertState(makeState({
         id: stateId(s.label), nodeId: node, semanticName: s.label,
         urlPattern: s.urlPattern ?? '', role: 'detail',
         fingerprint: s.fingerprint ?? [],
+        affordances: s.affordances ?? [],
       }));
       statesWritten++;
     }
@@ -41,6 +46,7 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
         fromState: stateId(e.from), toState: stateId(e.to),
         semanticStep: step, kind: e.needsInput ? 'unclassified' : 'navigate',
         requiresAffordances: e.requiresAffordances ?? [],
+        core: e.core ?? false,
       }));
       edgesWritten++;
     }

@@ -12,6 +12,7 @@ export interface State {
   role: StateRole;
   availableSignals: string[];   // capability, NOT goal intent
   fingerprint: string[];        // key declared elements that identify this state
+  affordances: string[];        // in-page actions available here (node repertoire); [] = none
 }
 
 export function makeState(
@@ -20,6 +21,7 @@ export function makeState(
   return {
     availableSignals: [],
     fingerprint: [],
+    affordances: [],
     ...init,
   };
 }
@@ -32,6 +34,7 @@ export interface Edge {
   kind: EdgeKind;
   acceptsInput: string | null;  // runtime slot name, e.g. "query"
   requiresAffordances: string[];  // in-page affordances to fire before traversing this edge; [] = none
+  core: boolean;                // on the main/core path (agent-declared); default false
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
   reliability: number;          // successCount / (successCount + failCount); 1 when unused
   successCount: number;
@@ -54,7 +57,7 @@ export function makeEdge(
   init: Pick<Edge, 'fromState' | 'toState' | 'semanticStep' | 'kind'> & Partial<Edge>,
 ): Edge {
   return {
-    selectorCache: null, acceptsInput: null, requiresAffordances: [], cost: 0,
+    selectorCache: null, acceptsInput: null, requiresAffordances: [], core: false, cost: 0,
     reliability: 1, successCount: 0, failCount: 0,
     lastVerified: null, confidence: 1,
     ...init,

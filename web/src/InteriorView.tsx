@@ -20,12 +20,12 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     fetchInterior(id).then(async (iv) => {
       if (!iv.states.length) { setEmpty(true); return; }
       const ln = iv.states.map((s) => ({ id: s.id, label: s.semanticName }));
-      const le = iv.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to, fork: isForkEdge(e) }));
+      const le = iv.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to, fork: isForkEdge(e), core: (e as any).core === true }));
       const laid = await layoutGraph(ln, le, 'interior');
       const meta = new Map(iv.states.map((s) => [s.id, s]));
       setNodes(laid.nodes.map((nd) => {
-        const s = meta.get(nd.id);
-        return { ...nd, data: { ...nd.data, role: s?.role, signals: s?.availableSignals } };
+        const s = meta.get(nd.id) as any;
+        return { ...nd, data: { ...nd.data, role: s?.role, signals: s?.availableSignals, affordances: s?.affordances } };
       }));
       setEdges(laid.edges);
     }).catch((e) => {

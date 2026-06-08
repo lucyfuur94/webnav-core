@@ -79,6 +79,14 @@ export class MapStore implements IMapStore {
     if (!ecols.some((c) => c.name === 'requires_affordances')) {
       this.db.exec('ALTER TABLE edges ADD COLUMN requires_affordances TEXT');
     }
+    const scols: any[] = this.db.prepare('PRAGMA table_info(states)').all();
+    if (!scols.some((c) => c.name === 'affordances')) {
+      this.db.exec('ALTER TABLE states ADD COLUMN affordances TEXT');
+    }
+    const ecols2: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
+    if (!ecols2.some((c) => c.name === 'core')) {
+      this.db.exec('ALTER TABLE edges ADD COLUMN core INTEGER');
+    }
   }
 
   /** Run `fn` atomically — all writes commit together or none do (no torn skeleton). */
@@ -90,13 +98,14 @@ export class MapStore implements IMapStore {
     // Explicit column names (NOT positional VALUES): on a migrated DB the
     // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
     // schema. Naming the columns keeps the write correct regardless of order.
-    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint)
-      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp)
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
-      role=@role, available_signals=@sig, fingerprint=@fp`)
+      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff`)
       .run({
         id: s.id, nodeId: s.nodeId, semanticName: s.semanticName, urlPattern: s.urlPattern, role: s.role,
         sig: JSON.stringify(s.availableSignals), fp: JSON.stringify(s.fingerprint),
+        aff: JSON.stringify(s.affordances ?? []),
       });
   }
   getState(id: string): State | null {
@@ -114,17 +123,18 @@ export class MapStore implements IMapStore {
 
   upsertEdge(e: Edge): void {
     this.db.prepare(`INSERT INTO edges
-      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,reliability,success_count,fail_count,last_verified,confidence,requires_affordances)
-      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@reliability,@successCount,@failCount,@lastVerified,@confidence,@requiresAffordances)
+      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,reliability,success_count,fail_count,last_verified,confidence,requires_affordances,core)
+      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@reliability,@successCount,@failCount,@lastVerified,@confidence,@requiresAffordances,@core)
       ON CONFLICT(from_state,to_state,semantic_step) DO UPDATE SET
       selector_cache=@selectorCache, cost=@cost, reliability=@reliability,
-      success_count=@successCount, fail_count=@failCount, last_verified=@lastVerified, confidence=@confidence, requires_affordances=@requiresAffordances`)
+      success_count=@successCount, fail_count=@failCount, last_verified=@lastVerified, confidence=@confidence, requires_affordances=@requiresAffordances, core=@core`)
       .run({
         fromState: e.fromState, toState: e.toState, semanticStep: e.semanticStep,
         selectorCache: e.selectorCache, kind: e.kind, acceptsInput: e.acceptsInput,
         cost: e.cost, reliability: e.reliability, successCount: e.successCount,
         failCount: e.failCount, lastVerified: e.lastVerified, confidence: e.confidence,
         requiresAffordances: JSON.stringify(e.requiresAffordances ?? []),
+        core: e.core ? 1 : 0,
       });
   }
   deleteEdgesFromPrefix(prefix: string): void {
@@ -249,7 +259,8 @@ function rowToNodeEdge(r: any): NodeEdge {
 function rowToState(r: any): State {
   return { id: r.id, nodeId: r.node_id, semanticName: r.semantic_name, urlPattern: r.url_pattern,
     role: r.role, availableSignals: JSON.parse(r.available_signals),
-    fingerprint: JSON.parse(r.fingerprint) };
+    fingerprint: JSON.parse(r.fingerprint),
+    affordances: r.affordances ? JSON.parse(r.affordances) : [] };
 }
 
 function rowToEdge(r: any): Edge {
@@ -259,5 +270,6 @@ function rowToEdge(r: any): Edge {
     cost: r.cost, reliability: r.reliability, successCount: r.success_count,
     failCount: r.fail_count, lastVerified: r.last_verified, confidence: r.confidence,
     requiresAffordances: r.requires_affordances ? JSON.parse(r.requires_affordances) : [],
+    core: r.core === 1,
   });
 }

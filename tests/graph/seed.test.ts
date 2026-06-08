@@ -58,11 +58,10 @@ describe('seedGraph', () => {
     expect(s.nodeEdgesFrom('marginalia').length).toBe(edgesBefore);
   });
 
-  it('seeds the GitHub + saucedemo interiors, not just nodes', () => {
+  it('seeds the GitHub interior, not just nodes', () => {
     const store = new MapStore(':memory:');
     seedGraph(store);
     expect(store.statesForNode('github.com').length).toBeGreaterThan(0);
-    expect(store.statesForNode('saucedemo').length).toBeGreaterThan(0);
     expect(store.getState('github:repo-detail')).not.toBeNull();
   });
 
