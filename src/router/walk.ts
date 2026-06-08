@@ -71,10 +71,12 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     }
 
     // Gated edge: pause for the agent to fire the required in-page affordances
-    // FIRST. Only on a fresh first step with no resume answer — on resume the
-    // agent has already fired them, so we proceed. Ungated edges never pause
-    // (autopilot preserved).
-    if (firstStep && !args.answer && edge.requiresAffordances && edge.requiresAffordances.length > 0) {
+    // FIRST, whenever the walk is about to traverse it — NOT just on the first
+    // step (a gate is usually mid-route, e.g. inventory->cart after login). The
+    // only time we DON'T pause is when a resume answer is being consumed for this
+    // very step (firstStep && args.answer) — the agent has already fired them.
+    // Ungated edges never pause (autopilot preserved).
+    if (!(firstStep && args.answer) && edge.requiresAffordances && edge.requiresAffordances.length > 0) {
       const yaml = await browser.snapshot();
       return {
         status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: yaml,
