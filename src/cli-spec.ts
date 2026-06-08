@@ -193,7 +193,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'snapshot', group: 'navigate',
-    summary: 'Return the current page\'s accessibility snapshot (read refs to act on). Never records.',
+    summary: 'Return the current page snapshot as JSON {snapshot: "<yaml>"} (read refs from .snapshot to act on). Never records.',
     args: [],
     flags: [{ name: '--session', takesValue: true, description: 'Session id whose live browser to snapshot.' }],
     example: 'webnav use snapshot --session sd1',

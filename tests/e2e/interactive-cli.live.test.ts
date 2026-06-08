@@ -24,7 +24,7 @@ describe.skipIf(!live)('live: interactive CLI on saucedemo', () => {
   it('drives login + add-to-cart and records the effects', async () => {
     await cli(['dev', 'record-start', '--session', 'it1']);
     json(await cli(['navigate', 'https://www.saucedemo.com', '--session', 'it1']));
-    const login = await cli(['snapshot', '--session', 'it1']);
+    const login = json(await cli(['snapshot', '--session', 'it1'])).snapshot;
     const userRef = refOf(login, /textbox "Username"/)!;
     const passRef = refOf(login, /textbox "Password"/)!;
     const loginRef = refOf(login, /button "Login"/)!;
@@ -33,7 +33,7 @@ describe.skipIf(!live)('live: interactive CLI on saucedemo', () => {
     await cli(['type', passRef, 'secret_sauce', '--session', 'it1']);
     const r = json(await cli(['click', loginRef, '--session', 'it1']));
     expect(r.navigated).toBe(true);                              // login navigates to inventory
-    const inv = await cli(['snapshot', '--session', 'it1']);
+    const inv = json(await cli(['snapshot', '--session', 'it1'])).snapshot;
     const addRef = refOf(inv, /button "Add to cart"/)!;
     expect(addRef).toBeTruthy();
     const add = json(await cli(['click', addRef, '--session', 'it1']));
