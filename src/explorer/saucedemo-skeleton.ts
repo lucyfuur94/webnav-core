@@ -26,6 +26,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'search-entry',
       availableSignals: [],
       fingerprint: ['textbox:Username', 'button:Login'],
+      affordances: [],
     },
     {
       id: 'sd:inventory',
@@ -35,6 +36,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'detail',
       availableSignals: [],
       fingerprint: ['button:Add to cart'],
+      affordances: ['add an item to the cart (e.g. the "Add to cart" button on a product)'],
     },
     {
       id: 'sd:cart',
@@ -44,6 +46,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'detail',
       availableSignals: ['cart_items'],
       fingerprint: ['button:Checkout'],
+      affordances: [],
     },
     {
       id: 'sd:checkout-info',
@@ -53,6 +56,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'detail',
       availableSignals: [],
       fingerprint: ['textbox:First Name', 'button:Continue'],
+      affordances: [],
     },
     {
       id: 'sd:checkout-overview',
@@ -62,6 +66,7 @@ export const SAUCEDEMO_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'detail',
       availableSignals: ['total'],
       fingerprint: ['button:Finish'],
+      affordances: [],
     },
   ],
   edges: [
