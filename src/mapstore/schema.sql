@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS record_observations (
   session_id TEXT NOT NULL, seq INTEGER NOT NULL,
   url TEXT NOT NULL, fingerprint TEXT NOT NULL, declared_links TEXT NOT NULL,
   captured_at INTEGER NOT NULL,
+  from_url TEXT, from_snapshot TEXT, action TEXT, to_url TEXT, to_snapshot TEXT,
+  navigated INTEGER, diff TEXT,
   UNIQUE(session_id, seq)
 );
 CREATE TABLE IF NOT EXISTS walk_sessions (
