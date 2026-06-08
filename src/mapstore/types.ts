@@ -3,6 +3,46 @@ export type StateRole = 'search-entry' | 'result-list' | 'detail' | 'sub-detail'
 // the agent classifies it via needs-classification only if a route must traverse it.
 export type EdgeKind = 'safe-reversible' | 'commit-point' | 'navigate' | 'unclassified';
 
+// An affordance is one thing you can do at a state. KINDS:
+//  - navigate: fires -> lands on a DIFFERENT state (toState set when explored).
+//  - reveal:   opens an in-page overlay/disclosure exposing MORE affordances (children).
+//  - mutate:   changes the CURRENT state in place (sort/filter/add-to-cart); never routes.
+//  - input:    fills a field; never routes; usually named in some navigate's `needs`.
+// Affordances are the node's REPERTOIRE and the SOURCE OF TRUTH; navigate/reveal
+// affordances with a toState PROJECT into edges (store.edgesFrom). mutate/input never project.
+export type AffordanceKind = 'navigate' | 'reveal' | 'mutate' | 'input';
+
+export interface Affordance {
+  id: string;                   // stable within its owning state, e.g. 'aff_cart'
+  label: string;                // human/agent-readable, e.g. 'open the shopping cart'
+  kind: AffordanceKind;
+  commit: boolean;              // irreversible (Place Order/Pay/Delete) — NEVER auto-fired (#2)
+  toState: string | null;       // navigate/reveal destination; null = unexplored or n/a
+  children: Affordance[] | null;// reveal: affordances the overlay exposes; else null
+  needs: string[];              // affordance ids that should fire first (preconditions); [] = none
+  acceptsInput: string | null;  // runtime input slot the live browser fills (e.g. 'credentials')
+  // — durable intent + disposable cache + usage stats (moved off the old Edge) —
+  semanticStep: string;         // DURABLE intent (survives redesigns)
+  selectorCache: string | null; // DISPOSABLE last-known ref/selector
+  cost: number;
+  reliability: number;
+  successCount: number;
+  failCount: number;
+  lastVerified: number | null;
+  confidence: number;           // decays with age, rises with use
+}
+
+export function makeAffordance(
+  init: Pick<Affordance, 'id' | 'label' | 'kind'> & Partial<Affordance>,
+): Affordance {
+  return {
+    commit: false, toState: null, children: null, needs: [], acceptsInput: null,
+    semanticStep: init.label, selectorCache: null, cost: 0, reliability: 1,
+    successCount: 0, failCount: 0, lastVerified: null, confidence: 1,
+    ...init,
+  };
+}
+
 export interface State {
   id: string;
   nodeId: string | null;        // owning site-node id, e.g. 'github.com'; null when the
@@ -12,7 +52,7 @@ export interface State {
   role: StateRole;
   availableSignals: string[];   // capability, NOT goal intent
   fingerprint: string[];        // key declared elements that identify this state
-  affordances: string[];        // in-page actions available here (node repertoire); [] = none
+  affordances: Affordance[];    // the node's full typed repertoire (source of truth); [] = none
 }
 
 export function makeState(
@@ -41,6 +81,19 @@ export interface Edge {
   failCount: number;
   lastVerified: number | null;  // epoch ms
   confidence: number;           // decays with age, rises with use
+}
+
+// Viewer-facing edge (one node's interior). `viaAffordance` = the affordance id
+// that triggers this transition (the UI anchors the arrow to that row).
+// `dangling` = an explored-but-unmapped navigate/reveal (to === null).
+export interface InteriorEdge {
+  from: string;
+  to: string | null;
+  semanticStep: string;
+  kind: string;
+  viaAffordance: string;
+  core: boolean;
+  dangling?: boolean;
 }
 
 export interface Goal {

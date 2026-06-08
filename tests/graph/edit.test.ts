@@ -59,7 +59,10 @@ describe('editGraph', () => {
       states: [{ label: 'inventory', affordances: ['add to cart', 'open menu'] }, { label: 'cart' }],
       edges: [{ from: 'inventory', to: 'cart', via: 'open cart', core: true }],
     });
-    expect(store.getState('shop.example:inventory')!.affordances).toEqual(['add to cart', 'open menu']);
+    // String affordances are stored as `mutate` affordances (safe default).
+    const affs = store.getState('shop.example:inventory')!.affordances;
+    expect(affs.map((a) => a.label)).toEqual(['add to cart', 'open menu']);
+    expect(affs.every((a) => a.kind === 'mutate')).toBe(true);
     expect(store.edgesFrom('shop.example:inventory')[0].core).toBe(true);
     const node = store.getNode('shop.example')!;
     expect(node.capabilities).toEqual(['shopping-demo']);
