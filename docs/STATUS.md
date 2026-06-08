@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 311 unit pass + 7 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 318 unit pass + 8 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -44,6 +44,10 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 | `webnav eval <url> "<js>"` | open a URL, run a JS expression → just the value (cheap, targeted extraction vs a full snapshot) |
 | `webnav network <url>` | open a URL → the network/API calls the page made (the JSON behind the DOM) |
 | `webnav go-back \| reload` | step within the current `-s=<session>` browser |
+| `webnav use navigate <url> --session S` | open a URL in session S's browser (records a landing observation if S is recording) |
+| `webnav use snapshot --session S` | the current page's snapshot + refs (the agent's "look"; never records) |
+| `webnav use click <ref> --session S` | click a ref (from snapshot); records the before/after action-effect if recording |
+| `webnav use type <ref> <text> --session S` | type into a field by ref; records the action-effect if recording |
 
 `--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
@@ -52,6 +56,22 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 Two CLI categories: **`use`** (drive the browser + query the map — the consumer verbs) and **`dev`** (author the map — the teach + mapping verbs). Both dispatchers re-parse the sub-verb; bare consumer verbs still work.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
+
+### Interactive recording verbs (DONE, 2026-06-08)
+
+Four `use` verbs give the agent **hands** to drive a live page across CLI calls and
+record action-effects: `use navigate <url>` (open + landing observation),
+`use snapshot` (read the page + refs; never records), `use click <ref>` /
+`use type <ref> <text>` (perform + record before/after via `runActionRecorded`,
+which now supports type/fill as well as click). One `--session` id = the
+persistent `-s=` browser (survives across CLI processes) + the record buffer;
+recording is conditional on an active session; verbs never close the browser.
+`navigate` uses `open` (creates+navigates; `goto` fails on a fresh session).
+This completes the agent loop: `dev record-start` → navigate/snapshot/click/type
+→ `dev record-stop` → `dev graph-analyse` → `dev graph-edit`. Verified live on
+saucedemo via the CLI (login `navigated:true`; add-to-cart `navigated:false`).
+Spec/plan: `docs/superpowers/specs/2026-06-08-interactive-recording-verbs-design.md`,
+`docs/superpowers/plans/2026-06-08-interactive-recording-verbs.md`.
 
 ### Affordance recording — action-effects (DONE, 2026-06-08)
 
