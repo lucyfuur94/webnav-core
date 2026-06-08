@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS edges (
   cost REAL NOT NULL DEFAULT 0, reliability REAL NOT NULL DEFAULT 1,
   success_count INTEGER NOT NULL DEFAULT 0, fail_count INTEGER NOT NULL DEFAULT 0,
   last_verified INTEGER, confidence REAL NOT NULL DEFAULT 1,
+  requires_affordances TEXT,
   UNIQUE(from_state, to_state, semantic_step)
 );
 CREATE TABLE IF NOT EXISTS goals (
