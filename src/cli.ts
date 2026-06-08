@@ -363,7 +363,7 @@ async function main() {
   }
   if (args.cmd === 'record-start') {
     const { RecordStore } = await import('./mapstore/record.js');
-    const rec = new RecordStore('webnav.db');
+    const rec = new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db');
     const session = args.session || `map-${Date.now()}`;
     rec.start(session);
     console.log(JSON.stringify({ status: 'recording', session }, null, 2));
@@ -371,14 +371,14 @@ async function main() {
   }
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
-    new RecordStore('webnav.db').stop(args.session);
+    new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db').stop(args.session);
     console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
     return;
   }
   if (args.cmd === 'graph-analyse') {
     const { RecordStore } = await import('./mapstore/record.js');
     const { analyseActionEffects } = await import('./explorer/analyse.js');
-    const result = analyseActionEffects(new RecordStore('webnav.db').actionEffects(args.session));
+    const result = analyseActionEffects(new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db').actionEffects(args.session));
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
     return;
@@ -386,7 +386,7 @@ async function main() {
   if (args.cmd === 'graph-edit') {
     const { MapStore } = await import('./mapstore/store.js');
     const { editGraph } = await import('./graph/edit.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
     const graph = JSON.parse(args.graph);
     console.log(JSON.stringify(editGraph(store, args.node, graph), null, 2));
     return;
@@ -394,7 +394,7 @@ async function main() {
   if (args.cmd === 'graph-show') {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
-    console.log(JSON.stringify(showInterior(new MapStore('webnav.db'), args.node), null, 2));
+    console.log(JSON.stringify(showInterior(new MapStore(process.env.WEBNAV_DB ?? 'webnav.db'), args.node), null, 2));
     return;
   }
   if (args.cmd === 'walk') {
@@ -460,6 +460,70 @@ async function main() {
       sessions.close(args.session);
       await adapter.close().catch(() => {});
       console.log(JSON.stringify(res, null, 2));
+    }
+    return;
+  }
+  if (args.cmd === 'navigate') {
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const adapter = new PlaywrightAdapter(args.session);
+    try {
+      // `open` creates the session if new AND navigates; it also works to
+      // re-navigate an existing session (whereas `goto` requires the session to
+      // already exist, which fails on the first navigate of a fresh session).
+      await adapter.open(args.url);
+      const toSnapshot = await adapter.snapshot();
+      const toUrl = await adapter.currentUrl();
+      const rec = new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db');
+      let recorded = false;
+      if (rec.isActive(args.session)) {
+        const { diffSnapshots } = await import('./explorer/diff.js');
+        const { parseSnapshot } = await import('./playwright/snapshot.js');
+        rec.appendActionEffect(args.session, {
+          fromUrl: args.url, fromSnapshot: '', action: null,
+          toUrl, toSnapshot, navigated: true,
+          diff: diffSnapshots([], parseSnapshot(toSnapshot)),
+        });
+        recorded = true;
+      }
+      console.log(JSON.stringify({ status: 'done', url: toUrl, recorded }, null, 2));
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));
+      process.exitCode = 2;
+    }
+    return;
+  }
+  if (args.cmd === 'snapshot') {
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const adapter = new PlaywrightAdapter(args.session);
+    try {
+      console.log(await adapter.snapshot());
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'failed', reason: 'no live page for session ' + args.session + ' — run `use navigate` first' }, null, 2));
+      process.exitCode = 2;
+    }
+    return;
+  }
+  if (args.cmd === 'click' || args.cmd === 'type') {
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { runActionRecorded } = await import('./router/browse.js');
+    const adapter = new PlaywrightAdapter(args.session);
+    try {
+      const fromSnapshot = await adapter.snapshot();
+      const fromUrl = await adapter.currentUrl();
+      const r = await runActionRecorded({
+        sessionId: args.session, recordStore: new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db'),
+        fromUrl, fromSnapshot,
+        action: { role: '', name: null, ref: args.ref },
+        text: args.cmd === 'type' ? args.text : undefined,
+        adapter: adapter as any,
+      });
+      console.log(JSON.stringify(r, null, 2));
+      if (r.status === 'failed') process.exitCode = 2;
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));
+      process.exitCode = 2;
     }
     return;
   }
