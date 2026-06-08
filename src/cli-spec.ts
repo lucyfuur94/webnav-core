@@ -184,6 +184,37 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     ],
     example: 'webnav walk-resume walk-w-123 --ref e42',
   },
+  {
+    name: 'navigate', group: 'navigate',
+    summary: 'Open a URL in a session browser; records a landing observation if the session is recording.',
+    args: [{ name: 'url', required: true, description: 'URL to open.' }],
+    flags: [{ name: '--session', takesValue: true, description: 'Session id (browser + record buffer; from `dev record-start`).' }],
+    example: 'webnav use navigate https://www.saucedemo.com --session sd1',
+  },
+  {
+    name: 'snapshot', group: 'navigate',
+    summary: 'Return the current page\'s accessibility snapshot (read refs to act on). Never records.',
+    args: [],
+    flags: [{ name: '--session', takesValue: true, description: 'Session id whose live browser to snapshot.' }],
+    example: 'webnav use snapshot --session sd1',
+  },
+  {
+    name: 'click', group: 'navigate',
+    summary: 'Click an element by ref (from `use snapshot`); records the before/after action-effect if recording.',
+    args: [{ name: 'ref', required: true, description: 'Element ref from a prior `use snapshot`.' }],
+    flags: [{ name: '--session', takesValue: true, description: 'Session id (browser + record buffer).' }],
+    example: 'webnav use click e42 --session sd1',
+  },
+  {
+    name: 'type', group: 'navigate',
+    summary: 'Type text into a field by ref (from `use snapshot`); records the action-effect if recording.',
+    args: [
+      { name: 'ref', required: true, description: 'Field ref from a prior `use snapshot`.' },
+      { name: 'text', required: true, description: 'Text to type into the field.' },
+    ],
+    flags: [{ name: '--session', takesValue: true, description: 'Session id (browser + record buffer).' }],
+    example: 'webnav use type e1 standard_user --session sd1',
+  },
 ];
 
 export const DEV_COMMANDS: CommandSpec[] = [
