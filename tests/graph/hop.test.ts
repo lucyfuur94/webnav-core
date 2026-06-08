@@ -27,9 +27,12 @@ describe('hop', () => {
     expect(h.toNode).toBe('pypi.org');
   });
 
-  it('derives the source node by homeUrl host, not by id (saucedemo)', () => {
+  it('derives the source node by homeUrl host, not by id (id != host)', () => {
     const store = freshSeeded();
-    // www.saucedemo.com host matches node 'saucedemo' (id != host).
+    // Inline node whose id ('saucedemo') differs from its homeUrl host
+    // ('www.saucedemo.com') — proves host-based derivation, not id matching.
+    store.upsertNode({ id: 'saucedemo', homeUrl: 'https://www.saucedemo.com',
+      capabilities: ['shopping-demo'], topics: ['shopping', 'demo'] });
     const h = hop(store, 'https://www.saucedemo.com/inventory', { toCluster: 'web-search' });
     expect(h.fromNode).toBe('saucedemo');
   });
@@ -42,6 +45,9 @@ describe('hop', () => {
 
   it('no edge toward the cluster -> no-edge', () => {
     const store = freshSeeded();
+    // Inline node with no edge toward the web-search cluster.
+    store.upsertNode({ id: 'saucedemo', homeUrl: 'https://www.saucedemo.com',
+      capabilities: ['shopping-demo'], topics: ['shopping', 'demo'] });
     const h = hop(store, 'https://www.saucedemo.com/inventory', { toCluster: 'web-search' });
     expect(h.status).toBe('no-edge');
     expect(h.fromNode).toBe('saucedemo');

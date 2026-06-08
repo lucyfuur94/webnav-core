@@ -29,6 +29,19 @@ describe('layoutGraph', () => {
     expect(out.edges).toHaveLength(2);
   });
 
+  it('styles a core edge thicker/full-opacity vs a faded non-core edge', async () => {
+    const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
+    const edges = [
+      { id: 'e1', source: 'a', target: 'b', fork: false, core: true },
+      { id: 'e2', source: 'a', target: 'c', fork: false, core: false },
+    ];
+    const out = await layoutGraph(nodes, edges as any, 'interior');
+    const core = out.edges.find((e) => e.id === 'e1')!;
+    const non = out.edges.find((e) => e.id === 'e2')!;
+    expect((core.style as any).strokeWidth).toBeGreaterThan((non.style as any).strokeWidth);
+    expect((non.style as any).opacity).toBeLessThan(1);
+  });
+
   it('falls back to a grid if a node is malformed (no throw, all positioned)', async () => {
     const nodes = [{ id: 'x', label: 'x' }, { id: 'x', label: 'x-dup' }];
     const edges: { id: string; source: string; target: string; fork: boolean }[] = [];

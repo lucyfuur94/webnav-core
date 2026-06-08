@@ -20,6 +20,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'search-entry',
       availableSignals: [],
       fingerprint: ['searchbox'],
+      affordances: [],
     },
     {
       id: 'github:result-list',
@@ -29,6 +30,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'result-list',
       availableSignals: [],
       fingerprint: ['link'],
+      affordances: [],
     },
     {
       id: 'github:repo-detail',
@@ -38,6 +40,7 @@ export const GITHUB_SKELETON: { states: State[]; edges: Edge[] } = {
       role: 'detail',
       availableSignals: ['stars', 'license', 'last_commit'],
       fingerprint: ['heading'],
+      affordances: [],
     },
   ],
   edges: [

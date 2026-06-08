@@ -8,6 +8,7 @@ export interface LayoutEdge {
   // navigable link). Drawn dotted to distinguish from a real hyperlink/within-site
   // navigation. Interior edges never set this.
   associative?: boolean;
+  core?: boolean;
 }
 export type LayoutMode = 'clusters' | 'interior';
 
@@ -54,16 +55,16 @@ export async function layoutGraph(
   // Every edge is DIRECTED (from -> to). Give it an arrowhead so direction is
   // visible; color it to match (orange for fork edges, slate for normal).
   const rfEdges: Edge[] = edges.map((e) => {
-    const color = e.fork ? '#c2410c' : '#64748b';
-    // Dotted when the edge is a fork (needs-input) OR an inter-site associative
-    // relationship; solid for a real navigable link / within-site navigation.
+    const core = e.core === true;
+    const color = e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
     const dashed = e.fork ? '6 4' : e.associative ? '2 4' : undefined;
     return {
       id: e.id, source: e.source, target: e.target,
-      data: { fork: e.fork },
+      data: { fork: e.fork, core },
       animated: e.fork,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
-      style: { stroke: color, ...(dashed ? { strokeDasharray: dashed } : {}) },
+      style: { stroke: color, strokeWidth: core ? 2.5 : 1, opacity: core || e.fork ? 1 : 0.55,
+        ...(dashed ? { strokeDasharray: dashed } : {}) },
     };
   });
   return { nodes: rfNodes, edges: rfEdges };
