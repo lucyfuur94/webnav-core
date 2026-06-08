@@ -1,7 +1,9 @@
 import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js';
+import { diffSnapshots, didNavigate } from '../explorer/diff.js';
 import type { RecordStore } from '../mapstore/record.js';
+import type { ActionRef } from '../mapstore/record.js';
 
 // Minimal structural type so these helpers accept either a real PlaywrightAdapter
 // or a fake (for tests). Only the methods we use are required.
@@ -12,6 +14,8 @@ export interface BrowseAdapter {
   goBack?(): Promise<string>;
   reload?(): Promise<string>;
   snapshot?(): Promise<string>;
+  act?(ref: string): Promise<void>;
+  currentUrl?(): Promise<string>;
   close(): Promise<string>;
 }
 
@@ -102,5 +106,41 @@ export async function runSnapshotRecorded(
     return { status: 'failed', url, recorded: false, reason: String(e) };
   } finally {
     await adapter.close().catch(() => {});
+  }
+}
+
+export interface RunActionArgs {
+  sessionId: string;
+  recordStore: RecordStore;
+  fromUrl: string;
+  fromSnapshot: string;
+  action: ActionRef;          // the element the agent fires (its ref drives the click)
+  adapter?: BrowseAdapter;
+}
+export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; reason?: string; }
+
+/** Perform the agent's action, capture the after-page, record an ActionEffect.
+ *  webnav does NOT decide what to fire — the agent supplies `action`; we record
+ *  what changed (full before/after + diff + navigated). The caller manages the
+ *  browser lifecycle (an action sequence reuses the session) — we do NOT close. */
+export async function runActionRecorded(args: RunActionArgs): Promise<ActionRecordedResult> {
+  const adapter = args.adapter ?? newAdapter();
+  try {
+    if (args.action.ref) await adapter.act!(args.action.ref);
+    const toSnapshot = await adapter.snapshot!();
+    const toUrl = adapter.currentUrl ? await adapter.currentUrl() : args.fromUrl;
+    const navigated = didNavigate(args.fromUrl, toUrl);
+    let recorded = false;
+    if (args.recordStore.isActive(args.sessionId)) {
+      args.recordStore.appendActionEffect(args.sessionId, {
+        fromUrl: args.fromUrl, fromSnapshot: args.fromSnapshot, action: args.action,
+        toUrl, toSnapshot, navigated,
+        diff: diffSnapshots(parseSnapshot(args.fromSnapshot), parseSnapshot(toSnapshot)),
+      });
+      recorded = true;
+    }
+    return { status: 'done', recorded, navigated };
+  } catch (e) {
+    return { status: 'failed', recorded: false, reason: String(e) };
   }
 }

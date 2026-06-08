@@ -38,6 +38,18 @@ export class PlaywrightAdapter {
   waitFor(condition: string) { return this.exec('wait-for', condition); }
   close() { return this.exec('close'); }
 
+  /** Fire an action on a ref (alias for click — the agent decides what to fire). */
+  act(ref: string) { return this.click(ref).then(() => undefined); }
+
+  /** Current page URL. Extracts the value from playwright-cli's `### Result`
+   *  wrapper (if present) and strips the surrounding quotes off the scalar. */
+  async currentUrl(): Promise<string> {
+    const raw = await this.evalJs('() => location.href');
+    const m = raw.match(/###\s*Result\s*\n([\s\S]*?)(?:\n###|\s*$)/);
+    const body = (m ? m[1] : raw).trim();
+    return body.replace(/^"|"$/g, '');
+  }
+
   /** Returns the snapshot YAML content (reads the file path printed by the CLI). */
   async snapshot(): Promise<string> {
     const out = await this.exec('snapshot');

@@ -359,9 +359,8 @@ async function main() {
   }
   if (args.cmd === 'graph-analyse') {
     const { RecordStore } = await import('./mapstore/record.js');
-    const { analyseObservations } = await import('./explorer/analyse.js');
-    const obs = new RecordStore('webnav.db').observations(args.session);
-    const result = analyseObservations(obs);
+    const { analyseActionEffects } = await import('./explorer/analyse.js');
+    const result = analyseActionEffects(new RecordStore('webnav.db').actionEffects(args.session));
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
     return;

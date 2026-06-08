@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-06 · **Branch:** `main` · **Tests:** 287 unit pass + 6 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 311 unit pass + 7 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
 > current. CLAUDE.md = settled design & principles; this = the live checklist.
@@ -52,6 +52,30 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 Two CLI categories: **`use`** (drive the browser + query the map — the consumer verbs) and **`dev`** (author the map — the teach + mapping verbs). Both dispatchers re-parse the sub-verb; bare consumer verbs still work.
 
 Exit codes: 0 ok · 2 error (→ stderr + `--help` hint) · 3 ran-fine-but-empty/failed.
+
+### Affordance recording — action-effects (DONE, 2026-06-08)
+
+webnav now records observed **action-effects** instead of inventing a state-node
+per in-page change: each recorded step is `{ fromUrl, fromSnapshot, action, toUrl,
+toSnapshot, navigated, diff }` (full before/after kept raw; diff + `navigated` are
+mechanical derivations — `diffSnapshots`/`didNavigate`). In-page mutations
+(saucedemo add-to-cart → button flips to "Remove", URL unchanged) record with
+`navigated:false` — never a new node, killing the page=state ambiguity that
+blocked the walk. `graph-analyse` is rebuilt **structure-neutral**: it returns raw
+observations grouped by host (the page the action was taken on — `fromUrl`), with
+NO clustering / states / edges. The calling AGENT decides the site's structure and
+writes it via `graph-edit` (unchanged); webnav stays zero-LLM (the LLM is the
+caller). `runActionRecorded` captures before/after around an agent action.
+Verified live on saucedemo (add-to-cart → `navigated:false` + "Remove" in the
+diff). Note: the page-only `runSnapshotRecorded` path still exists but
+`graph-analyse` now reads action-effects (`actionEffects()`), so recording should
+go through `runActionRecorded`. **Known follow-up:** the full raw before/after
+snapshots ARE persisted (and readable in-process via `actionEffects()`), but
+`graph-analyse` only emits a readable diff *summary* — there's no CLI verb yet
+that hands the agent the raw snapshots, so the "raw stays for the agent" promise
+isn't CLI-reachable end-to-end. Spec/plan:
+`docs/superpowers/specs/2026-06-08-affordance-recording-design.md`,
+`docs/superpowers/plans/2026-06-08-affordance-recording.md`.
 
 ### Agent-driven site mapping (DONE, 2026-06-05)
 
