@@ -2,7 +2,7 @@ import type { MapStore } from '../mapstore/store.js';
 import { makeState, makeEdge } from '../mapstore/types.js';
 
 export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; }
-export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; }
+export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
 
@@ -40,6 +40,7 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
       store.upsertEdge(makeEdge({
         fromState: stateId(e.from), toState: stateId(e.to),
         semanticStep: step, kind: e.needsInput ? 'unclassified' : 'navigate',
+        requiresAffordances: e.requiresAffordances ?? [],
       }));
       edgesWritten++;
     }

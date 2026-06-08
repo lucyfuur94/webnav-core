@@ -27,27 +27,33 @@ const states = SAUCEDEMO_SKELETON.states;
 function freshStore() { const s = new MapStore(':memory:'); exploreSaucedemo(s); return s; }
 
 describe('walkRoute (interactive multi-step walk)', () => {
-  it('walks login -> checkout-overview and halts at the Finish commit point', async () => {
+  // Under the affordance model the saucedemo `inventory -> cart` edge declares
+  // `requiresAffordances: ['add an item ...']`, so a walk from login PAUSES at the
+  // inventory page for the agent to add an item before opening the cart. (Full
+  // resume-through-gates completion is covered by walk-affordance.test.ts and the
+  // gated live e2e.)
+  it('walks login -> inventory then PAUSES at the add-to-cart affordance gate', async () => {
     const store = freshStore();
-    // The scripted browser advances through the real route order:
     const seq = ['sd:login', 'sd:inventory', 'sd:cart', 'sd:checkout-info', 'sd:checkout-overview', 'sd:checkout-overview'];
     const r = await walkRoute({
       goalName: 'complete-checkout-dryrun', startStateId: 'sd:login',
       goalStateId: 'sd:checkout-overview', store, states, browser: scriptedBrowser(seq),
     });
-    expect(r.status).toBe('done');
+    expect(r.status).toBe('needs-navigation');
+    if (r.status === 'needs-navigation') expect(r.question).toMatch(/add/i);
   });
 
-  it('returns needs-classification at the Finish commit point when goal is purchase-complete', async () => {
+  it('does not reach the Finish commit point without first clearing the affordance gate', async () => {
     const store = freshStore();
-    // Goal is the post-commit state; the walk must hit the unclassified Finish edge and halt.
+    // Goal is the post-commit state; before any Finish classification the walk must
+    // first pause at the add-to-cart affordance gate.
     const seq = ['sd:login', 'sd:inventory', 'sd:cart', 'sd:checkout-info', 'sd:checkout-overview', 'sd:checkout-overview'];
     const r = await walkRoute({
       goalName: 'buy', startStateId: 'sd:login',
       goalStateId: 'sd:purchase-complete', store, states, browser: scriptedBrowser(seq),
     });
-    expect(r.status).toBe('needs-classification');
-    if (r.status === 'needs-classification') expect(r.action).toMatch(/Finish/i);
+    expect(r.status).toBe('needs-navigation');
+    if (r.status === 'needs-navigation') expect(r.question).toMatch(/add/i);
   });
 
   it('escalates needs-navigation when a step lands on an unexpected state', async () => {
