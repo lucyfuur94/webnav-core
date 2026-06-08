@@ -26,6 +26,10 @@ export type ParsedArgs =
   | { cmd: 'graph-analyse'; session: string }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
+  | { cmd: 'navigate'; url: string; session: string }
+  | { cmd: 'snapshot'; session: string }
+  | { cmd: 'click'; ref: string; session: string }
+  | { cmd: 'type'; ref: string; text: string; session: string }
   | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string> }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
   | { cmd: 'dev-help' }
@@ -161,6 +165,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
       ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify') };
+  }
+  if (cmd === 'navigate') {
+    const pos = rest.filter((a) => !a.startsWith('--'));
+    return { cmd, url: pos[0] ?? '', session: flagValue(rest, '--session') ?? '' };
+  }
+  if (cmd === 'snapshot') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'click') {
+    const pos = rest.filter((a) => !a.startsWith('--'));
+    return { cmd, ref: pos[0] ?? '', session: flagValue(rest, '--session') ?? '' };
+  }
+  if (cmd === 'type') {
+    const sessionVal = flagValue(rest, '--session');
+    const pos = rest.filter((a) => !a.startsWith('--') && a !== sessionVal);
+    return { cmd, ref: pos[0] ?? '', text: pos[1] ?? '', session: sessionVal ?? '' };
   }
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }

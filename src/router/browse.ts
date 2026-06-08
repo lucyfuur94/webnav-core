@@ -15,6 +15,9 @@ export interface BrowseAdapter {
   reload?(): Promise<string>;
   snapshot?(): Promise<string>;
   act?(ref: string): Promise<void>;
+  // PlaywrightAdapter.fill returns the CLI output (Promise<string>); fakes return
+  // void. Accept both — runActionRecorded ignores the return value.
+  fill?(ref: string, text: string): Promise<string | void>;
   currentUrl?(): Promise<string>;
   close(): Promise<string>;
 }
@@ -115,6 +118,7 @@ export interface RunActionArgs {
   fromUrl: string;
   fromSnapshot: string;
   action: ActionRef;          // the element the agent fires (its ref drives the click)
+  text?: string;              // when present, the action TYPES (fill) instead of clicks
   adapter?: BrowseAdapter;
 }
 export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; reason?: string; }
@@ -126,7 +130,10 @@ export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boo
 export async function runActionRecorded(args: RunActionArgs): Promise<ActionRecordedResult> {
   const adapter = args.adapter ?? newAdapter();
   try {
-    if (args.action.ref) await adapter.act!(args.action.ref);
+    if (args.action.ref) {
+      if (args.text != null) await adapter.fill!(args.action.ref, args.text);
+      else await adapter.act!(args.action.ref);
+    }
     const toSnapshot = await adapter.snapshot!();
     const toUrl = adapter.currentUrl ? await adapter.currentUrl() : args.fromUrl;
     const navigated = didNavigate(args.fromUrl, toUrl);
