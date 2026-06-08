@@ -28,6 +28,31 @@ function nodeHeight(badges = 0): number {
   return NODE_H_BASE + Math.ceil(badges / BADGES_PER_ROW) * BADGE_ROW_H;
 }
 
+/** Chain the core edges into an ordered spine and return a node-id -> partition
+ *  index map (login=0, inventory=1, ...). Empty if there's no core path. */
+function spinePartitions(edges: LayoutEdge[]): Map<string, number> {
+  const core = edges.filter((e) => e.core);
+  if (core.length === 0) return new Map();
+  const next = new Map(core.map((e) => [e.source, e.target]));
+  const targets = new Set(core.map((e) => e.target));
+  const start = core.map((e) => e.source).find((s) => !targets.has(s));
+  const out = new Map<string, number>();
+  let cur = start, i = 0;
+  const seen = new Set<string>();
+  while (cur !== undefined && !seen.has(cur)) {
+    seen.add(cur); out.set(cur, i++); cur = next.get(cur);
+  }
+  return out;
+}
+
+/** A back-edge points from a later spine node to an earlier one (or any edge
+ *  whose source is on the spine and target is at a lower-or-equal partition).
+ *  These are dropped from the ELK layout (kept for rendering) to avoid tangles. */
+function isBackEdge(e: LayoutEdge, part: Map<string, number>): boolean {
+  const s = part.get(e.source), t = part.get(e.target);
+  return s !== undefined && t !== undefined && t <= s;
+}
+
 /**
  * Lay out nodes/edges with ELK. `interior` = layered top-down (state machine);
  * `clusters` = layered left-right with more spacing (capability neighborhoods).
@@ -38,6 +63,14 @@ function nodeHeight(badges = 0): number {
 export async function layoutGraph(
   nodes: LayoutNode[], edges: LayoutEdge[], mode: LayoutMode,
 ): Promise<{ nodes: Node[]; edges: Edge[] }> {
+  // Derive the CORE PATH spine: chain the core edges from their start (a core
+  // `from` that is never a core `to`) and assign each spine node a consecutive
+  // ELK partition, so the core journey lays out as a straight ordered column and
+  // branches/back-edges hang off it. (elk partitioning: activate on the root,
+  // partition index per node.)
+  const corePartition = spinePartitions(edges);
+  const usePartition = corePartition.size > 0 && mode === 'interior';
+
   const elkGraph = {
     id: 'root',
     layoutOptions: {
@@ -46,9 +79,22 @@ export async function layoutGraph(
       'elk.spacing.nodeNode': mode === 'clusters' ? '80' : '70',
       'elk.layered.spacing.nodeNodeBetweenLayers': '110',
       'elk.spacing.edgeNode': '30',
+      ...(usePartition ? { 'elk.partitioning.activate': 'true' } : {}),
     },
-    children: nodes.map((n) => ({ id: n.id, width: NODE_W, height: nodeHeight(n.badges) })),
-    edges: edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+    children: nodes.map((n) => {
+      const p = corePartition.get(n.id);
+      return {
+        id: n.id, width: NODE_W, height: nodeHeight(n.badges),
+        ...(usePartition && p !== undefined ? { layoutOptions: { 'elk.partitioning.partition': String(p) } } : {}),
+      };
+    }),
+    // Feed elk the FORWARD edges (core + non-core forward) but DROP back-edges
+    // (target is earlier on the spine than source) — back-edges are what make the
+    // layered layout tangle/loop. They're still RETURNED for rendering (faded);
+    // they just don't constrain the layout. Partitioning forces the core order.
+    edges: edges
+      .filter((e) => !isBackEdge(e, corePartition))
+      .map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
   };
 
   let positions: Record<string, { x: number; y: number }> = {};
