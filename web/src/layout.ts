@@ -113,8 +113,9 @@ export async function layoutGraph(
     const core = e.core === true;
     const color = e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
     const dashed = e.fork ? '6 4' : e.associative ? '2 4' : undefined;
+    const { sourceHandle, targetHandle } = pickHandles(positions[e.source], positions[e.target]);
     return {
-      id: e.id, source: e.source, target: e.target,
+      id: e.id, source: e.source, target: e.target, sourceHandle, targetHandle,
       type: 'default',
       data: { fork: e.fork, core },
       animated: e.fork,
@@ -124,6 +125,26 @@ export async function layoutGraph(
     };
   });
   return { nodes: rfNodes, edges: rfEdges };
+}
+
+/** Choose which handles an edge connects to based on the two nodes' relative
+ *  position: side-by-side (horizontal gap dominates) → use right/left so the edge
+ *  is a clean horizontal arc; otherwise → bottom/top for the vertical spine.
+ *  Handle ids match StateNode's: source `s-{t,b,l,r}`, target `t-{t,b,l,r}`. */
+function pickHandles(a?: { x: number; y: number }, b?: { x: number; y: number }):
+  { sourceHandle?: string; targetHandle?: string } {
+  if (!a || !b) return {};
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // horizontal: leave the right/left side toward the target, enter the opposite side
+    return dx >= 0
+      ? { sourceHandle: 's-r', targetHandle: 't-l' }
+      : { sourceHandle: 's-l', targetHandle: 't-r' };
+  }
+  // vertical: down → leave bottom enter top; up → leave top enter bottom
+  return dy >= 0
+    ? { sourceHandle: 's-b', targetHandle: 't-t' }
+    : { sourceHandle: 's-t', targetHandle: 't-b' };
 }
 
 /** Place each non-core (branch) node BESIDE its nearest core neighbor: to the
