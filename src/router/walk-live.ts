@@ -1,10 +1,56 @@
 import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { MapStore } from '../mapstore/store.js';
 import { parseSnapshot, findByRoleAndName } from '../playwright/snapshot.js';
-import { SAUCEDEMO_SKELETON } from '../explorer/saucedemo-skeleton.js';
-import { seedGraph } from '../graph/seed.js';
+import { makeState, makeEdge } from '../mapstore/types.js';
 import { walkRoute, type WalkBrowser } from './walk.js';
 import type { RecallResponse } from '../protocol.js';
+
+/**
+ * Seed the `www.saucedemo.com` page-states + navigation edges inline (STRUCTURE
+ * ONLY, principle #6 — no credentials/names/zips; those are runtime, supplied by
+ * the live browser closure). This replaces the old hand-seeded saucedemo skeleton:
+ * saucedemo is now an agent-built `www.saucedemo.com` graph, and the multi-step
+ * walk seeds its interior inline here for the live wiring + gated e2es.
+ *
+ * Idempotent: upsertState (ON CONFLICT id) and upsertEdge (UNIQUE from,to,step).
+ */
+export function seedSaucedemoForWalk(store: MapStore): void {
+  store.transaction(() => {
+    const states = [
+      makeState({ id: 'www.saucedemo.com:login', nodeId: 'www.saucedemo.com',
+        semanticName: 'www.saucedemo.com:login', urlPattern: 'https://www.saucedemo.com/',
+        role: 'detail', fingerprint: ['textbox:Username', 'button:Login'] }),
+      makeState({ id: 'www.saucedemo.com:inventory', nodeId: 'www.saucedemo.com',
+        semanticName: 'www.saucedemo.com:inventory', urlPattern: '*inventory*',
+        role: 'detail', fingerprint: ['button:Add to cart'] }),
+      makeState({ id: 'www.saucedemo.com:cart', nodeId: 'www.saucedemo.com',
+        semanticName: 'www.saucedemo.com:cart', urlPattern: '*cart*',
+        role: 'detail', fingerprint: ['button:Checkout'] }),
+      makeState({ id: 'www.saucedemo.com:checkout-info', nodeId: 'www.saucedemo.com',
+        semanticName: 'www.saucedemo.com:checkout-info', urlPattern: '*checkout-step-one*',
+        role: 'detail', fingerprint: ['textbox:First Name', 'button:Continue'] }),
+      makeState({ id: 'www.saucedemo.com:checkout-overview', nodeId: 'www.saucedemo.com',
+        semanticName: 'www.saucedemo.com:checkout-overview', urlPattern: '*checkout-step-two*',
+        role: 'detail', fingerprint: ['button:Finish'] }),
+    ];
+    const edges = [
+      makeEdge({ fromState: 'www.saucedemo.com:login', toState: 'www.saucedemo.com:inventory',
+        semanticStep: 'log in by clicking "Login"', kind: 'safe-reversible', acceptsInput: 'credentials' }),
+      makeEdge({ fromState: 'www.saucedemo.com:inventory', toState: 'www.saucedemo.com:cart',
+        semanticStep: 'open the shopping cart', kind: 'safe-reversible',
+        requiresAffordances: ['add an item to the cart'] }),
+      makeEdge({ fromState: 'www.saucedemo.com:cart', toState: 'www.saucedemo.com:checkout-info',
+        semanticStep: 'click "Checkout"', kind: 'safe-reversible' }),
+      makeEdge({ fromState: 'www.saucedemo.com:checkout-info', toState: 'www.saucedemo.com:checkout-overview',
+        semanticStep: 'click "Continue"', kind: 'safe-reversible',
+        requiresAffordances: ['enter First Name', 'enter Last Name', 'enter Zip/Postal Code'] }),
+      makeEdge({ fromState: 'www.saucedemo.com:checkout-overview', toState: 'www.saucedemo.com:purchase-complete',
+        semanticStep: 'click "Finish"', kind: 'unclassified' }),
+    ];
+    for (const s of states) store.upsertState(s);
+    for (const e of edges) store.upsertEdge(e);
+  });
+}
 
 /**
  * Build a live WalkBrowser over a playwright adapter, resolving each edge's input
@@ -62,20 +108,20 @@ export function makeLiveWalkBrowser(
  * NAME to `act`. THIS closure owns the `inputs` map and resolves slot -> value(s)
  * when filling fields (principle #6: inputs are runtime, never stored as map).
  *
- * Goal is `sd:checkout-overview` (a PASS-THROUGH state), so the walk HALTS there and
- * returns `done` WITHOUT ever attempting the next edge — the unclassified "Finish"
- * commit point is never fired (principle #2).
+ * Goal is `www.saucedemo.com:checkout-overview` (a PASS-THROUGH state), so the walk
+ * HALTS there and returns `done` WITHOUT ever attempting the next edge — the
+ * unclassified "Finish" commit point is never fired (principle #2).
  */
 export async function runWalkLive(
   inputs: Record<string, string>,
   dbPath?: string,
 ): Promise<RecallResponse> {
   // 1. File-backed MapStore; DB is authoritative — the saucedemo interior is written
-  //    by the seed step, not lazily here. If it's absent, the walk seeds once (the
-  //    single bootstrap).
+  //    inline here (saucedemo is no longer part of the seeded graph). If it's absent,
+  //    the walk seeds it once (the single bootstrap).
   const store = new MapStore(dbPath ?? 'webnav.db');
-  if (!store.getState('sd:checkout-overview')) {
-    seedGraph(store);
+  if (!store.getState('www.saucedemo.com:checkout-overview')) {
+    seedSaucedemoForWalk(store);
   }
 
   // 2. Open a real browser session on the saucedemo login page.
@@ -164,10 +210,10 @@ export async function runWalkLive(
   //    removed from WalkArgs — the walk only forwards the acceptsInput slot name).
   const result = await walkRoute({
     goalName: 'complete-checkout-dryrun',
-    startStateId: 'sd:login',
-    goalStateId: 'sd:checkout-overview',
+    startStateId: 'www.saucedemo.com:login',
+    goalStateId: 'www.saucedemo.com:checkout-overview',
     store,
-    states: SAUCEDEMO_SKELETON.states,
+    states: store.statesForNode('www.saucedemo.com'),
     browser,
   });
 

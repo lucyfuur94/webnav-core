@@ -2,7 +2,6 @@ import type { MapStore } from '../mapstore/store.js';
 import type { SiteNode, NodeEdge } from '../mapstore/types.js';
 import { makeNodeEdge } from '../mapstore/types.js';
 import { exploreGitHub } from '../explorer/github-skeleton.js';
-import { exploreSaucedemo } from '../explorer/saucedemo-skeleton.js';
 import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
 
 // Seed-and-grow (spec #2): the graph starts from the nodes webnav actually
@@ -20,8 +19,6 @@ export const INTERNET_GRAPH_SEED: { nodes: SiteNode[]; edges: NodeEdge[] } = {
       capabilities: ['web-search'], topics: ['general'] },
     { id: 'duckduckgo', homeUrl: 'https://html.duckduckgo.com',
       capabilities: ['web-search'], topics: ['general'] },
-    { id: 'saucedemo', homeUrl: 'https://www.saucedemo.com',
-      capabilities: ['shopping-demo'], topics: ['shopping', 'demo'] },
   ],
   edges: [
     // A GitHub repo links its PyPI package page — a real hyperlink in the web graph.
@@ -38,10 +35,10 @@ export function seedGraph(store: MapStore): void {
     for (const n of INTERNET_GRAPH_SEED.nodes) store.upsertNode(n);
     for (const e of INTERNET_GRAPH_SEED.edges) store.upsertNodeEdge(e);
   });
-  // Interiors: the known site skeletons are seed DATA. exploreGitHub/Saucedemo
-  // each run their own transaction (atomic, idempotent upserts).
+  // Interiors: the known site skeletons are seed DATA. exploreGitHub runs its own
+  // transaction (atomic, idempotent upserts). saucedemo is no longer seeded — it is
+  // an agent-built `www.saucedemo.com` graph (the walk tests seed it inline).
   exploreGitHub(store);
-  exploreSaucedemo(store);
   // Goals: seed the known goal records so getGoal() works after ensureSeeded().
   store.upsertGoal(FIND_BATTLE_TESTED_REPOS);
 }
