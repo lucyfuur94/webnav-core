@@ -155,6 +155,24 @@ nodes → drill into github.com's 3-state interior + back control). Spec/plan:
 `docs/superpowers/specs/2026-06-05-xyflow-graph-viewer-design.md`,
 `docs/superpowers/plans/2026-06-05-xyflow-graph-viewer.md`.
 
+### Interactive walk — engine + verbs (ENGINE DONE, demo pending — 2026-06-08)
+
+The multi-step walk is now agent-usable: `webnav walk --start <id> --goal <id>
+[--input k=v ...]` pathfinds the weighted-shortest route over the graph
+(`findPath`) and walks it; on a fork it persists a **walk-session** and returns
+`{ session, status: needs-* }`; `webnav walk-resume <session> --ref <e>` /
+`--classify safe|commit` continues (commit = hard halt, never fires — #2).
+Runtime inputs (`--input`) are in-memory only, never persisted. Walks are pure
+graph traversal (no walk records); webnav computes the path. Engine + verbs are
+unit-tested and the mechanics verified live (login → inventory → resume).
+**Pending:** the saucedemo *full-completion* demo hit the page=state defect
+(in-page add-to-cart was being modeled as a new state → ambiguity) — fixed at the
+root by the **affordance-recording** increment
+(`docs/superpowers/specs/2026-06-08-affordance-recording-design.md`). Finish the
+walk's live demo + a richer e2e after affordance-recording lands. Spec/plan:
+`docs/superpowers/specs/2026-06-06-interactive-walk-design.md`,
+`docs/superpowers/plans/2026-06-06-interactive-walk.md`.
+
 ## ⚠️ PENDING — start here next session
 
 In roughly recommended order:
