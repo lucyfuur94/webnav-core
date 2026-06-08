@@ -26,6 +26,8 @@ export type ParsedArgs =
   | { cmd: 'graph-analyse'; session: string }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
+  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string> }
+  | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -43,6 +45,19 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
     if (i !== -1) return args[i + 1];
   }
   return undefined;
+}
+
+// Collect repeated `--input slot=value` flags into a map. Runtime-only values
+// (credentials, form fields) — the walk forwards slot NAMES, never stores values.
+function inputFlags(args: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--input' && args[i + 1]) {
+      const [k, ...rest] = args[i + 1].split('=');
+      out[k] = rest.join('='); i++;
+    }
+  }
+  return out;
 }
 
 const KNOWN_VERBS = new Set([...COMMANDS.map((c) => c.name), 'list-goals', 'read']);
@@ -139,6 +154,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  if (cmd === 'walk') {
+    return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
+      inputs: inputFlags(rest) };
+  }
+  if (cmd === 'walk-resume') {
+    return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
+      ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify') };
+  }
   throw new Error(`unknown command: ${cmd}\nRun \`webnav --help\` to see available commands.`);
 }
 
@@ -355,6 +378,72 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
     console.log(JSON.stringify(showInterior(new MapStore('webnav.db'), args.node), null, 2));
+    return;
+  }
+  if (args.cmd === 'walk') {
+    const { MapStore } = await import('./mapstore/store.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
+    const { findPath } = await import('./router/path.js');
+    const { walkRoute } = await import('./router/walk.js');
+    const { WalkSessionStore } = await import('./router/walk-session.js');
+    const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const store = new MapStore('webnav.db');
+    ensureSeeded(store);
+    if (!store.getState(args.start)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.start }, null, 2)); process.exitCode = 2; return; }
+    if (!store.getState(args.goal)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.goal }, null, 2)); process.exitCode = 2; return; }
+    const path = findPath(store, args.start, args.goal);
+    if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
+    const browserSession = 'w-' + Date.now();
+    const adapter = new PlaywrightAdapter(browserSession);
+    const startState = store.getState(args.start)!;
+    await adapter.open(startState.urlPattern || 'about:blank');
+    const browser = makeLiveWalkBrowser(adapter, args.inputs);
+    const states = store.statesForNode(startState.nodeId ?? '');
+    const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path });
+    if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
+      const sessions = new WalkSessionStore('webnav.db');
+      const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession });
+      // pos points at the state the walk paused ON, so resume restarts there.
+      const pausedAt = (res as any).at;
+      if (typeof pausedAt === 'number') sessions.advance(id, pausedAt);
+      console.log(JSON.stringify({ ...res, session: id }, null, 2));
+    } else {
+      await adapter.close().catch(() => {});
+      console.log(JSON.stringify(res, null, 2));
+      if (res.status === 'failed') process.exitCode = 3;
+    }
+    return;
+  }
+  if (args.cmd === 'walk-resume') {
+    const { MapStore } = await import('./mapstore/store.js');
+    const { walkRoute } = await import('./router/walk.js');
+    const { WalkSessionStore } = await import('./router/walk-session.js');
+    const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const store = new MapStore('webnav.db');
+    const sessions = new WalkSessionStore('webnav.db');
+    const w = sessions.load(args.session);
+    if (!w) { console.log(JSON.stringify({ status: 'failed', reason: 'no active walk-session ' + args.session }, null, 2)); process.exitCode = 2; return; }
+    const answer = args.ref ? { kind: 'ref' as const, ref: args.ref }
+      : args.classify ? { kind: 'classify' as const, verdict: args.classify as 'safe' | 'commit' }
+      : undefined;
+    if (!answer) { console.log(JSON.stringify({ status: 'failed', reason: 'supply --ref or --classify' }, null, 2)); process.exitCode = 2; return; }
+    const resumeFrom = w.path[w.pos] ?? w.startState;
+    const adapter = new PlaywrightAdapter(w.browserSession);   // reattach the live browser
+    const browser = makeLiveWalkBrowser(adapter, {});
+    const startState = store.getState(resumeFrom) ?? store.getState(w.startState)!;
+    const states = store.statesForNode(startState.nodeId ?? '');
+    const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer });
+    if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
+      const pausedAt = (res as any).at;
+      sessions.advance(args.session, typeof pausedAt === 'number' ? pausedAt : w.pos + 1);
+      console.log(JSON.stringify({ ...res, session: args.session }, null, 2));
+    } else {
+      sessions.close(args.session);
+      await adapter.close().catch(() => {});
+      console.log(JSON.stringify(res, null, 2));
+    }
     return;
   }
   // recall: open GitHub search for the query, then drive recall() over the live

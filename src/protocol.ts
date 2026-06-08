@@ -18,7 +18,7 @@ export interface EvidenceBundle {
 }
 
 export type RecallResponse =
-  | { status: 'done'; evidence: EvidenceBundle }
+  | { status: 'done'; evidence: EvidenceBundle; halted?: 'commit-point' }
   | { status: 'needs-navigation'; at: number; semanticStep: string; snapshot: string; question: string }
   | { status: 'needs-classification'; action: string; snapshot: string }
   | { status: 'failed'; reason: string };

@@ -7,6 +7,52 @@ import { walkRoute, type WalkBrowser } from './walk.js';
 import type { RecallResponse } from '../protocol.js';
 
 /**
+ * Build a live WalkBrowser over a playwright adapter, resolving each edge's input
+ * slot from `inputs` at fill time. `inputs` is held only in memory here — never
+ * persisted. Shared by runWalkLive and the walk / walk-resume CLI verbs.
+ */
+export function makeLiveWalkBrowser(
+  adapter: PlaywrightAdapter,
+  inputs: Record<string, string>,
+): WalkBrowser {
+  let lastSnapshot = '';
+  async function fieldRef(name: string): Promise<string> {
+    let nodes = parseSnapshot(lastSnapshot);
+    let node = findByRoleAndName(nodes, 'textbox', name);
+    if (!node || !node.ref) {
+      lastSnapshot = await adapter.snapshot();
+      nodes = parseSnapshot(lastSnapshot);
+      node = findByRoleAndName(nodes, 'textbox', name);
+    }
+    if (!node || !node.ref) throw new Error('walk: could not resolve textbox "' + name + '"');
+    return node.ref;
+  }
+  return {
+    snapshot: async () => {
+      lastSnapshot = await adapter.snapshot();
+      return lastSnapshot;
+    },
+    callCount: () => adapter.callCount,
+    act: async (ref: string, inputSlot: string | null) => {
+      if (inputSlot === 'credentials') {
+        await adapter.fill(await fieldRef('Username'), inputs.username);
+        await adapter.fill(await fieldRef('Password'), inputs.password);
+        await adapter.click(ref);
+        return;
+      }
+      if (inputSlot === 'shipping') {
+        await adapter.fill(await fieldRef('First Name'), inputs.firstName ?? 'A');
+        await adapter.fill(await fieldRef('Last Name'), inputs.lastName ?? 'B');
+        await adapter.fill(await fieldRef('Zip/Postal Code'), inputs.zip);
+        await adapter.click(ref);
+        return;
+      }
+      await adapter.click(ref);
+    },
+  };
+}
+
+/**
  * Live wiring for the saucedemo multi-step walk (increment W2).
  *
  * Drives the REAL PlaywrightAdapter against live saucedemo.com through the SAME
