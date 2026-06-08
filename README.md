@@ -20,10 +20,11 @@ measured win is the agent's **tokens + time** (the evidence bundle reports `toke
 
 ```bash
 npm install                 # Node 18+ (better-sqlite3 native build)
+npm link                    # install `webnav` on PATH (runs src via tsx — NO build needed)
+webnav --help               # the tool menu (a peer of playwright-cli)
 npm test                    # unit tests (+ gated browser e2e)
-npm run build               # tsc -> dist/
 npm run dev                 # live graph viewer -> http://127.0.0.1:7777
-npx tsx src/cli.ts --help   # the tool menu
+npm run build               # tsc -> dist/ (only needed for the dist build; the `webnav` CLI runs src directly)
 ```
 Needs `playwright-cli` on PATH. A gitignored `webnav.db` (SQLite) persists the map across runs.
 

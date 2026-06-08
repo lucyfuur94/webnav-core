@@ -20,11 +20,13 @@ webnav contains NO LLM; never evades bot-walls).
 
 ```
 npm install          # better-sqlite3 native build; Node 18+
-npm test             # vitest — 192 pass, 2 gated e2e skipped
-npm run build        # tsc -> dist/ (+ copies schema.sql)
-npx tsx src/cli.ts --help      # the tool menu (every verb + when-to-use)
+npm link             # install `webnav` on PATH (a peer of playwright-cli; runs src via tsx — NO build)
+webnav --help        # the tool menu (every verb + when-to-use)
+npm test             # vitest unit + gated e2e (skipped without WEBNAV_LIVE=1)
+npm run build        # tsc -> dist/ (only for the dist build; the webnav CLI runs src directly)
 WEBNAV_LIVE=1 npx vitest run tests/e2e   # the gated live tests (need a browser + network)
 ```
+**`webnav` is an installed CLI** (`bin/webnav` launcher → `tsx src/cli.ts`; `npm link` puts it on PATH). It runs current source, so code changes need NO rebuild. Invoke as `webnav <verb>` everywhere (like `playwright-cli`).
 Requires `playwright-cli` on PATH (installed at `/usr/local/bin/playwright-cli`).
 A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 

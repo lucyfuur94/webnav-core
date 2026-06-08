@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# webnav launcher — runs the TypeScript CLI directly via the project's local tsx,
+# so `webnav` works on PATH with NO build step (always runs current src/).
+# Resolve the repo root from this script's location (bin/ is at the repo root),
+# following symlinks (npm link puts a symlink on PATH).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli.ts" "$@"

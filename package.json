@@ -2,7 +2,7 @@
   "name": "webnav",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "webnav": "dist/cli.js" },
+  "bin": { "webnav": "bin/webnav" },
   "scripts": {
     "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/ && npm --prefix web install && npm --prefix web run build",
     "test": "vitest run",
