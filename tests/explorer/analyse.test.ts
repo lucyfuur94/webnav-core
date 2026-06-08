@@ -1,60 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { analyseObservations } from '../../src/explorer/analyse.js';
-import type { StoredObservation } from '../../src/mapstore/record.js';
+import { analyseActionEffects } from '../../src/explorer/analyse.js';
+import type { StoredActionEffect } from '../../src/mapstore/record.js';
 
-function obs(url: string, fingerprint: string[], links: { to: string; via: string }[] = [], seq = 0): StoredObservation {
-  return { url, fingerprint, declaredLinks: links, seq, capturedAt: 0 };
+function fx(p: Partial<StoredActionEffect>): StoredActionEffect {
+  return {
+    fromUrl: 'https://x.com/a', fromSnapshot: '', action: null,
+    toUrl: 'https://x.com/a', toSnapshot: '', navigated: false,
+    diff: { added: [], removed: [] }, seq: 0, capturedAt: 0, ...p,
+  };
 }
 
-describe('analyseObservations', () => {
-  it('clusters same-fingerprint pages of one site into one state-type', () => {
-    const r = analyseObservations([
-      obs('https://github.com/a/x', ['heading', 'link'], [], 0),
-      obs('https://github.com/b/y', ['heading', 'link'], [], 1),
-      obs('https://github.com/search', ['searchbox'], [], 2),
-    ]);
-    expect(r.sites).toHaveLength(1);
-    const gh = r.sites[0];
-    expect(gh.node).toBe('github.com');
-    expect(gh.states).toHaveLength(2); // detail-type (x2 pages) + search-type
-    const detail = gh.states.find((s) => s.fingerprint.join(',') === 'heading,link')!;
-    expect(detail.pageCount).toBe(2);
-    expect(detail.sampleUrls).toContain('https://github.com/a/x');
-    expect(detail.label).toMatch(/state-type-\d+/);
-    // mechanical only — no prose field
-    expect(Object.keys(detail)).not.toContain('description');
-  });
-
-  it('derives an intra-site edge when one observed page links to another observed type', () => {
-    const r = analyseObservations([
-      obs('https://github.com/search', ['searchbox', 'link'],
-        [{ to: 'https://github.com/o/r', via: 'follow link "o/r"' }], 0),
-      obs('https://github.com/o/r', ['heading'], [], 1),
-    ]);
-    const gh = r.sites[0];
-    expect(gh.edges).toHaveLength(1);
-    const from = gh.states.find((s) => s.fingerprint.includes('searchbox'))!.label;
-    const to = gh.states.find((s) => s.fingerprint.join(',') === 'heading')!.label;
-    expect(gh.edges[0]).toMatchObject({ from, to, via: 'follow link "o/r"' });
-  });
-
-  it('drops links whose target page was never observed', () => {
-    const r = analyseObservations([
-      obs('https://github.com/search', ['searchbox'],
-        [{ to: 'https://github.com/never/seen', via: 'follow link "x"' }], 0),
-    ]);
-    expect(r.sites[0].edges).toHaveLength(0);
-  });
-
-  it('groups multiple sites separately and records cross-site edges', () => {
-    const r = analyseObservations([
-      obs('https://github.com/o/r', ['heading'],
-        [{ to: 'https://pypi.org/project/r', via: 'follow link "PyPI"' }], 0),
-      obs('https://pypi.org/project/r', ['heading', 'table'], [], 1),
+describe('analyseActionEffects (structure-neutral)', () => {
+  it('groups observations by host, imposes NO structure', () => {
+    const r = analyseActionEffects([
+      fx({ fromUrl: 'https://github.com/x', toUrl: 'https://github.com/x', navigated: false, seq: 0 }),
+      fx({ fromUrl: 'https://github.com/x', toUrl: 'https://pypi.org/p', navigated: true, seq: 1 }),
+      fx({ fromUrl: 'https://pypi.org/p', toUrl: 'https://pypi.org/p', navigated: false, seq: 2 }),
     ]);
     expect(r.sites.map((s) => s.node).sort()).toEqual(['github.com', 'pypi.org']);
-    expect(r.crossSiteEdges).toEqual([
-      { from: 'github.com', to: 'pypi.org', via: 'follow link "PyPI"' },
+    const gh = r.sites.find((s) => s.node === 'github.com')!;
+    expect(gh.observations).toHaveLength(2);
+    expect(gh).not.toHaveProperty('states');
+    expect(gh).not.toHaveProperty('clusters');
+    expect((gh.observations[0] as any)).not.toHaveProperty('stateType');
+  });
+
+  it('carries navigated + diff through unchanged', () => {
+    const r = analyseActionEffects([
+      fx({ fromUrl: 'https://x.com/i', toUrl: 'https://x.com/i', navigated: false,
+        action: { role: 'button', name: 'Add to cart', ref: 'e1' },
+        diff: { added: [{ role: 'button', name: 'Remove', ref: 'e1b', url: null, raw: '' }], removed: [] } }),
     ]);
+    const o = r.sites[0].observations[0];
+    expect(o.navigated).toBe(false);
+    expect(o.action!.name).toBe('Add to cart');
+    expect(o.addedSummary).toContain('button "Remove"');
   });
 });
