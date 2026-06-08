@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { State, Edge, Goal, SiteNode, NodeEdge } from './types.js';
+import type { State, Edge, Affordance, InteriorEdge, Goal, SiteNode, NodeEdge } from './types.js';
 import { makeEdge, makeNodeEdge } from './types.js';
 
 const SCHEMA = readFileSync(
@@ -20,6 +20,7 @@ export interface IMapStore {
   deleteEdgesFromPrefix(prefix: string): void;
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
+  interiorEdges(nodeId: string): InteriorEdge[];
   recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void;
   decayConfidence(nowMs?: number, halfLifeMs?: number): void;
   upsertGoal(g: Goal): void;
@@ -140,12 +141,107 @@ export class MapStore implements IMapStore {
   deleteEdgesFromPrefix(prefix: string): void {
     this.db.prepare("DELETE FROM edges WHERE from_state LIKE ? || '%'").run(prefix);
   }
+  /**
+   * Project a state's navigate/reveal affordances (recursing into reveal children)
+   * into edges. Affordances are the SOURCE OF TRUTH; this is how the router/walk
+   * see them as edges WITHOUT changing their interface (principle: edges = actions).
+   * mutate/input affordances and navigate/reveal with no toState do NOT project.
+   */
+  private projectFromAffordances(s: State): Edge[] {
+    const out: Edge[] = [];
+    const walk = (affs: Affordance[]) => {
+      for (const a of affs) {
+        if ((a.kind === 'navigate' || a.kind === 'reveal') && a.toState) {
+          out.push(makeEdge({
+            fromState: s.id, toState: a.toState, semanticStep: a.semanticStep,
+            selectorCache: a.selectorCache,
+            kind: a.commit ? 'commit-point' : 'navigate',
+            acceptsInput: a.acceptsInput,
+            requiresAffordances: a.needs,
+            cost: a.cost, reliability: a.reliability, successCount: a.successCount,
+            failCount: a.failCount, lastVerified: a.lastVerified, confidence: a.confidence,
+          }));
+        }
+        if (a.children) walk(a.children);
+      }
+    };
+    walk(s.affordances ?? []);
+    return out;
+  }
+
+  /** Edges leaving a state = stored edges UNION projected-from-affordances, deduped
+   *  by (from,to,semanticStep) preferring the stored row (carries live reliability). */
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
-    return rows.map(rowToEdge);
+    const stored = rows.map(rowToEdge);
+    const s = this.getState(fromState);
+    if (!s) return stored;
+    const have = new Set(stored.map(edgeKey));
+    const projected = this.projectFromAffordances(s).filter((e) => !have.has(edgeKey(e)));
+    return [...stored, ...projected];
   }
   allEdges(): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges ORDER BY from_state, to_state, semantic_step').all();
+    const stored = rows.map(rowToEdge);
+    const have = new Set(stored.map(edgeKey));
+    const projected: Edge[] = [];
+    for (const s of this.allStates()) {
+      for (const e of this.projectFromAffordances(s)) {
+        if (!have.has(edgeKey(e))) { have.add(edgeKey(e)); projected.push(e); }
+      }
+    }
+    return [...stored, ...projected]
+      .sort((a, b) => a.fromState.localeCompare(b.fromState)
+        || a.toState.localeCompare(b.toState) || a.semanticStep.localeCompare(b.semanticStep));
+  }
+
+  /**
+   * Viewer-facing projection for ONE node's interior: every navigate/reveal
+   * affordance becomes an edge tagged with the affordance id that triggers it
+   * (`viaAffordance`, so the UI can anchor the arrow to that row). navigate/reveal
+   * with no toState emit a `dangling` stub (to=null) so the UI shows "unexplored".
+   */
+  interiorEdges(nodeId: string): InteriorEdge[] {
+    const out: InteriorEdge[] = [];
+    const seen = new Set<string>();
+    const stored = new Map<string, Edge>();
+    for (const e of this.allEdgesStored()) stored.set(edgeKey(e), e);
+    // 1. Affordance-projected edges (the source of truth; carry viaAffordance).
+    for (const s of this.statesForNode(nodeId)) {
+      const walk = (affs: Affordance[]) => {
+        for (const a of affs) {
+          if (a.kind === 'navigate' || a.kind === 'reveal') {
+            if (a.toState) {
+              const live = stored.get(s.id + ' ' + a.toState + ' ' + a.semanticStep);
+              out.push({ from: s.id, to: a.toState, semanticStep: a.semanticStep,
+                kind: a.commit ? 'commit-point' : 'navigate', viaAffordance: a.id,
+                core: live?.core ?? false });
+              seen.add(s.id + ' ' + a.toState + ' ' + a.semanticStep);
+            } else {
+              out.push({ from: s.id, to: null, semanticStep: a.semanticStep,
+                kind: a.commit ? 'commit-point' : 'navigate', viaAffordance: a.id,
+                core: false, dangling: true });
+            }
+          }
+          if (a.children) walk(a.children);
+        }
+      };
+      walk(s.affordances ?? []);
+    }
+    // 2. Stored edges with NO backing affordance (explorer/legacy/teach-written
+    //    edges). They have no affordance row to anchor to → synthetic viaAffordance.
+    const owned = new Set(this.statesForNode(nodeId).map((s) => s.id));
+    for (const e of stored.values()) {
+      if (!owned.has(e.fromState)) continue;
+      if (seen.has(edgeKey(e))) continue;
+      out.push({ from: e.fromState, to: e.toState, semanticStep: e.semanticStep,
+        kind: e.kind, viaAffordance: 'edge:' + e.toState, core: e.core });
+    }
+    return out;
+  }
+
+  private allEdgesStored(): Edge[] {
+    const rows: any[] = this.db.prepare('SELECT * FROM edges').all();
     return rows.map(rowToEdge);
   }
 
@@ -243,6 +339,8 @@ export class MapStore implements IMapStore {
     return rows.map(rowToNodeEdge);
   }
 }
+
+const edgeKey = (e: Edge) => e.fromState + ' ' + e.toState + ' ' + e.semanticStep;
 
 function rowToNode(r: any): SiteNode {
   return { id: r.id, homeUrl: r.home_url,
