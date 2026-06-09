@@ -47,6 +47,20 @@ describe('editGraph — full typed affordance authoring', () => {
     expect(loginEdges.find((e) => e.toState === 'shop.example:inventory')!.core).toBe(true);
   });
 
+  it('rejects a malformed affordance payload loudly (wrong field names)', () => {
+    const store = freshStore();
+    // An agent that uses `type`/`name` instead of `kind`/`label` must FAIL, not
+    // silently store a `mutate:undefined` affordance (regression: dogfooding bug).
+    expect(() => editGraph(store, 'x.com', {
+      states: [{ label: 'a', affordances: [{ id: 'q', type: 'input', name: 'user' } as never] }],
+      edges: [],
+    })).toThrow(/missing a string "label"/);
+    expect(() => editGraph(store, 'x.com', {
+      states: [{ label: 'a', affordances: [{ label: 'go', kind: 'teleport' as never }] }],
+      edges: [],
+    })).toThrow(/invalid kind/);
+  });
+
   it('creates the node if new and upserts states + edges', () => {
     const store = freshStore();
     const r = editGraph(store, 'example.com', {
