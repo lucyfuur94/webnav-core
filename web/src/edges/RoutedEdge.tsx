@@ -1,12 +1,9 @@
 // Edges for the interior graph viewer.
 //
-// RoutedEdge supports THREE connector shapes (toggled in InteriorView):
-//   • 'step'     — the ORTHOGONAL polyline ELK routed AROUND the node boxes
-//                  (data.points, absolute coords), rounded corners. This is the
-//                  collision-aware path — arrows never cut through a box.
-//   • 'curved'   — a bezier between the React-Flow endpoint coords (point-to-
-//                  point; does NOT avoid nodes — the user's explicit choice).
-//   • 'straight' — a straight line between the endpoint coords (likewise).
+// RoutedEdge draws the ELK-routed ORTHOGONAL polyline (data.points) — straight
+// segments with rounded bends only where the route turns (around boxes / into
+// lanes). One shape only; no connector toggle. Falls back to a straight line if
+// ELK produced no route.
 //
 // SelfLoopEdge (from===to) draws a small right-side rectangular loop from node
 // geometry — ELK doesn't route node→itself loops, so this is the ONLY edge that
@@ -14,7 +11,6 @@
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
   getStraightPath,
   useInternalNode,
   type EdgeProps,
@@ -22,10 +18,8 @@ import {
 } from '@xyflow/react';
 
 const CORNER_R = 12; // rounded-corner radius at interior bends
-const END_R = 24;    // larger radius on the first/last bend → curved lead-in/out (Fix 5)
+const END_R = 24;    // larger radius on the first/last bend → curved lead-in/out
 const HILITE = '#f59e0b'; // amber highlight for the hovered edge
-
-export type ConnectorShape = 'step' | 'curved' | 'straight';
 
 interface RoutedData {
   color?: string;
@@ -37,11 +31,9 @@ interface RoutedData {
   label?: string;
   fromLabel?: string;
   toLabel?: string;
-  // ELK-routed polyline (absolute coords) — used in 'step' mode to route around
-  // boxes. Undefined if ELK produced no route (then 'step' falls back to a line).
+  // ELK-routed orthogonal polyline (absolute coords). Undefined if ELK produced no
+  // route → falls back to a straight line.
   points?: { x: number; y: number }[];
-  // which connector shape to render; defaults to 'step'.
-  shape?: ConnectorShape;
 }
 
 function edgeStyle(d: RoutedData): React.CSSProperties {
@@ -142,36 +134,25 @@ function labelAnchor(pts: { x: number; y: number }[]): { x: number; y: number } 
 
 export function RoutedEdge(props: EdgeProps): JSX.Element {
   const {
-    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, id,
+    sourceX, sourceY, targetX, targetY, markerEnd, id,
     interactionWidth,
   } = props;
   const d = (props.data ?? {}) as RoutedData;
-  const shape = d.shape ?? 'step';
 
+  // Edges are ALWAYS the ELK-routed orthogonal polyline: straight segments with
+  // curved bends only where the route turns (around boxes / into lanes). No
+  // connector toggle. Falls back to a straight line if ELK produced no route.
   let path: string;
   let labelX: number;
   let labelY: number;
-
-  if (shape === 'curved') {
-    const [p, lx, ly] = getBezierPath({
-      sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
-    });
-    path = p; labelX = lx; labelY = ly;
-  } else if (shape === 'straight') {
+  const pts = d.points;
+  if (pts && pts.length >= 2) {
+    path = roundedPolyline(pts, CORNER_R, END_R);
+    const m = labelAnchor(pts);
+    labelX = m.x; labelY = m.y;
+  } else {
     const [p, lx, ly] = getStraightPath({ sourceX, sourceY, targetX, targetY });
     path = p; labelX = lx; labelY = ly;
-  } else {
-    // 'step' — the ELK-routed orthogonal polyline (around the boxes).
-    const pts = d.points;
-    if (pts && pts.length >= 2) {
-      path = roundedPolyline(pts, CORNER_R, END_R);
-      const m = labelAnchor(pts);
-      labelX = m.x; labelY = m.y;
-    } else {
-      // no route from ELK — fall back to a straight line between endpoints.
-      const [p, lx, ly] = getStraightPath({ sourceX, sourceY, targetX, targetY });
-      path = p; labelX = lx; labelY = ly;
-    }
   }
 
   const hovered = d.hovered === true;

@@ -11,7 +11,7 @@ import { isForkEdge } from './forkEdge.js';
 import { synthesizeRevealSubNodes, buildLayoutNodes, buildLayoutEdges } from './revealSubnodes.js';
 import { StateNode } from './nodes/StateNode.js';
 import { UnexploredNode } from './nodes/UnexploredNode.js';
-import { RoutedEdge, SelfLoopEdge, type ConnectorShape } from './edges/RoutedEdge.js';
+import { RoutedEdge, SelfLoopEdge } from './edges/RoutedEdge.js';
 import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
 import type { NodeInteriorView } from './types.js';
 
@@ -19,12 +19,6 @@ const nodeTypes = { state: StateNode, unexplored: UnexploredNode };
 const edgeTypes = { routed: RoutedEdge, selfloop: SelfLoopEdge };
 const DIM = 0.18;   // opacity for nodes NOT adjacent to the hovered node
 
-// Offered connector shapes. 'straight' is still supported by RoutedEdge but not
-// exposed (it doesn't route around boxes, so it's not useful on a cyclic graph).
-const SHAPES: ConnectorShape[] = ['step', 'curved'];
-const SHAPE_LABEL: Record<ConnectorShape, string> = {
-  step: 'Step', curved: 'Curved', straight: 'Straight',
-};
 
 // Inner component — runs INSIDE a ReactFlowProvider so it can use useReactFlow /
 // useNodesInitialized for the measured two-pass layout.
@@ -37,9 +31,6 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
   // id of the edge currently hovered. When set, that edge is highlighted and
   // everything else (other edges + non-endpoint nodes) is dimmed.
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
-  // Connector shape for ALL edges (Change 2): step (ELK-routed, around boxes),
-  // curved (bezier, point-to-point), straight. Default 'step'.
-  const [shape, setShape] = useState<ConnectorShape>('step');
   // Per-node expanded reveal overlays (Change 3). Keyed 'stateId::affId'. Empty =
   // every overlay collapsed (default). Toggling re-runs layout so the overlay
   // sub-node + its edges appear/disappear.
@@ -188,52 +179,34 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
     const opacity = edgeEndpoints
       ? (edgeEndpoints.has(n.id) ? 1 : DIM)
       : nodeOpacity(n.id, neighbors, DIM);
-    return { ...n, style: { ...(n.style || {}), opacity, transition: 'opacity 120ms' } };
-  }), [nodes, neighbors, edgeEndpoints]);
+    // Thread `dark` into node data here (no re-layout needed) so StateNode can
+    // theme its own colours — React Flow's colorMode only themes the canvas/chrome.
+    return { ...n, data: { ...n.data, dark },
+      style: { ...(n.style || {}), opacity, transition: 'opacity 120ms' } };
+  }), [nodes, neighbors, edgeEndpoints, dark]);
 
-  // Edges read opacity + the hovered flag + the connector SHAPE from data.
+  // Edges read opacity + the hovered flag from data. (All edges are the single
+  // orthogonal 'step' shape — straight segments with curved bends only where the
+  // route turns; no connector toggle.)
   const shownEdges = useMemo(() => edges.map((e) => {
-    const base = { ...(e.data || {}), shape };
+    const base = e.data || {};
     if (hoveredEdge) {
       const isHovered = e.id === hoveredEdge;
       return { ...e, data: { ...base, dimmed: !isHovered, hovered: isHovered } };
     }
     const active = edgeActive({ source: e.source, target: e.target }, hovered);
     return { ...e, data: { ...base, dimmed: !active, hovered: false } };
-  }), [edges, hovered, hoveredEdge, shape]);
+  }), [edges, hovered, hoveredEdge]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <button onClick={onBack} style={{ position: 'absolute', zIndex: 10, top: 12, left: 12,
         padding: '6px 10px', fontFamily: 'sans-serif', cursor: 'pointer' }}>← back to map</button>
 
-      {/* Top-right controls: connector-shape toggle + dark-mode toggle. */}
+      {/* Top-right control: dark-mode toggle. */}
       {!error && !empty ? (
         <div style={{ position: 'absolute', zIndex: 10, top: 12, right: 12, display: 'flex',
           alignItems: 'center', gap: 10, fontFamily: 'sans-serif' }}>
-          <div role="group" aria-label="connector shape" style={{ display: 'inline-flex',
-            border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`, borderRadius: 8, overflow: 'hidden',
-            background: dark ? '#1e293b' : '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
-            {SHAPES.map((s, i) => {
-              const active = s === shape;
-              return (
-                <button
-                  key={s}
-                  aria-pressed={active}
-                  onClick={() => setShape(s)}
-                  style={{
-                    padding: '5px 12px', fontSize: 12, cursor: 'pointer', border: 'none',
-                    borderLeft: i === 0 ? 'none' : `1px solid ${dark ? '#334155' : '#e2e8f0'}`,
-                    background: active ? '#2563eb' : 'transparent',
-                    color: active ? '#fff' : (dark ? '#cbd5e1' : '#334155'),
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  {SHAPE_LABEL[s]}
-                </button>
-              );
-            })}
-          </div>
           <button
             aria-label="toggle dark mode" aria-pressed={dark} onClick={() => setDark((v) => !v)}
             title={dark ? 'Switch to light' : 'Switch to dark'}
