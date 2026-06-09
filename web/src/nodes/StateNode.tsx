@@ -31,6 +31,14 @@ const KIND_COLOR: Record<Affordance['kind'], string> = {
 
 const HIDDEN = { opacity: 0, width: 1, height: 1, minWidth: 1, border: 'none', background: 'transparent' } as const;
 
+// The affordance PORT: a pink rectangle on the row's right edge marking where an
+// edge leaves. A rectangle (not a dot) reads as a labeled "this is an affordance
+// exit" tag. One element only — it IS the React Flow source <Handle>.
+const PORT = {
+  right: -1, width: 12, height: 9, borderRadius: 2,
+  background: '#ec4899', border: '1px solid #be185d',
+} as const;
+
 // A navigate affordance routes; a reveal CHILD that itself navigates also routes.
 function routes(a: Affordance): boolean {
   return a.kind === 'navigate';
@@ -73,16 +81,9 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
         <span style={{ fontSize: 8, color: '#94a3b8' }}>?</span>
       ) : null}
       {routable ? (
-        <>
-          <span style={{ width: 6, height: 6, borderRadius: 6, background: KIND_COLOR.navigate, flexShrink: 0 }} />
-          {/* Right-edge source handle for THIS row — floating edge anchors here. */}
-          <Handle
-            id={'aff_' + aff.id}
-            type="source"
-            position={Position.Right}
-            style={{ right: 0, width: 7, height: 7, background: KIND_COLOR.navigate, border: '1px solid #fff' }}
-          />
-        </>
+        /* Pink rectangle PORT — the single element marking this affordance's edge
+           exit (it IS the source handle the orthogonal edge anchors to). */
+        <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
       ) : null}
     </div>
   );
@@ -108,11 +109,7 @@ function RevealRow({ aff }: { aff: Affordance }): JSX.Element {
         ) : null}
         {/* A reveal that itself navigates can route too. */}
         {routes(aff) ? (
-          <>
-            <span style={{ width: 6, height: 6, borderRadius: 6, background: KIND_COLOR.navigate, flexShrink: 0 }} />
-            <Handle id={'aff_' + aff.id} type="source" position={Position.Right}
-              style={{ right: 0, width: 7, height: 7, background: KIND_COLOR.navigate, border: '1px solid #fff' }} />
-          </>
+          <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
         ) : null}
       </div>
       {open && children.length ? (
