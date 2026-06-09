@@ -156,6 +156,7 @@ export class MapStore implements IMapStore {
             fromState: s.id, toState: a.toState, semanticStep: a.semanticStep,
             selectorCache: a.selectorCache,
             kind: a.commit ? 'commit-point' : 'navigate',
+            core: a.core,
             acceptsInput: a.acceptsInput,
             addressableUrl: a.addressableUrl,
             // `needs` are preconditions. When the edge also declares acceptsInput, the
@@ -221,7 +222,7 @@ export class MapStore implements IMapStore {
               const live = stored.get(s.id + ' ' + a.toState + ' ' + a.semanticStep);
               out.push({ from: s.id, to: a.toState, semanticStep: a.semanticStep,
                 kind: a.commit ? 'commit-point' : 'navigate', viaAffordance: a.id,
-                core: live?.core ?? false });
+                core: a.core || (live?.core ?? false) });
               seen.add(s.id + ' ' + a.toState + ' ' + a.semanticStep);
             } else if (!(a.kind === 'reveal' && a.children && a.children.length)) {
               // A reveal that exposes children does NOT itself navigate — its CHILDREN

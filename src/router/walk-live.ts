@@ -29,13 +29,13 @@ export function seedSaucedemoForWalk(store: MapStore): void {
           makeAffordance({ id: 'aff_username', label: 'enter Username', kind: 'input' }),
           makeAffordance({ id: 'aff_password', label: 'enter Password', kind: 'input' }),
           makeAffordance({ id: 'aff_login', label: 'log in by clicking "Login"', kind: 'navigate',
-            toState: `${N}:inventory`, needs: ['aff_username', 'aff_password'], acceptsInput: 'credentials' }),
+            toState: `${N}:inventory`, needs: ['aff_username', 'aff_password'], acceptsInput: 'credentials', core: true }),
         ] }),
       makeState({ id: `${N}:inventory`, nodeId: N, semanticName: `${N}:inventory`,
         urlPattern: '*inventory*', role: 'detail', fingerprint: ['button:Add to cart'],
         affordances: [
           makeAffordance({ id: 'aff_cart', label: 'open the shopping cart', kind: 'navigate',
-            toState: `${N}:cart`, addressableUrl: 'https://www.saucedemo.com/cart.html' }),
+            toState: `${N}:cart`, addressableUrl: 'https://www.saucedemo.com/cart.html', core: true }),
           makeAffordance({ id: 'aff_sort', label: 'sort products', kind: 'mutate' }),
           makeAffordance({ id: 'aff_addcart', label: 'add an item to the cart', kind: 'mutate' }),
           makeAffordance({ id: 'aff_menu', label: 'open the burger menu', kind: 'reveal', children: [
@@ -49,7 +49,7 @@ export function seedSaucedemoForWalk(store: MapStore): void {
         urlPattern: '*cart*', role: 'detail', fingerprint: ['button:Checkout'],
         affordances: [
           makeAffordance({ id: 'aff_checkout', label: 'click "Checkout"', kind: 'navigate',
-            toState: `${N}:checkout-info` }),
+            toState: `${N}:checkout-info`, core: true }),
           makeAffordance({ id: 'aff_continue_shopping', label: 'Continue Shopping', kind: 'navigate',
             toState: `${N}:inventory` }),
         ] }),
@@ -60,7 +60,7 @@ export function seedSaucedemoForWalk(store: MapStore): void {
           makeAffordance({ id: 'aff_last', label: 'enter Last Name', kind: 'input' }),
           makeAffordance({ id: 'aff_zip', label: 'enter Zip/Postal Code', kind: 'input' }),
           makeAffordance({ id: 'aff_continue', label: 'click "Continue"', kind: 'navigate',
-            toState: `${N}:checkout-overview`, needs: ['aff_first', 'aff_last', 'aff_zip'], acceptsInput: 'shipping' }),
+            toState: `${N}:checkout-overview`, needs: ['aff_first', 'aff_last', 'aff_zip'], acceptsInput: 'shipping', core: true }),
         ] }),
       makeState({ id: `${N}:checkout-overview`, nodeId: N, semanticName: `${N}:checkout-overview`,
         urlPattern: '*checkout-step-two*', role: 'detail', fingerprint: ['button:Finish'],

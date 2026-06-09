@@ -24,6 +24,7 @@ export interface Affordance {
   children: Affordance[] | null;// reveal: affordances the overlay exposes; else null
   needs: string[];              // affordance ids that should fire first (preconditions); [] = none
   acceptsInput: string | null;  // runtime input slot the live browser fills (e.g. 'credentials')
+  core: boolean;                // on the site's MAIN path (drives the viewer's top-to-bottom spine); default false
   // — durable intent + disposable cache + usage stats (moved off the old Edge) —
   semanticStep: string;         // DURABLE intent (survives redesigns)
   selectorCache: string | null; // DISPOSABLE last-known ref/selector
@@ -39,7 +40,7 @@ export function makeAffordance(
   init: Pick<Affordance, 'id' | 'label' | 'kind'> & Partial<Affordance>,
 ): Affordance {
   return {
-    commit: false, toState: null, addressableUrl: null, children: null, needs: [], acceptsInput: null,
+    commit: false, toState: null, addressableUrl: null, children: null, needs: [], acceptsInput: null, core: false,
     semanticStep: init.label, selectorCache: null, cost: 0, reliability: 1,
     successCount: 0, failCount: 0, lastVerified: null, confidence: 1,
     ...init,
