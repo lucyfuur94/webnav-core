@@ -50,6 +50,23 @@ function handleCenter(n: InternalNode | undefined, handleId: string): Pt | null 
   };
 }
 
+// The point where an edge should LEAVE the source node toward `toward`, exiting
+// the border SIDE that faces the target. When an affordance row is given, the
+// edge keeps that row's vertical position if it exits left/right (so the arrow
+// visibly leaves that row), but exits the bottom/top centre when the target is
+// above/below — which keeps stacked-node edges straight instead of looping out
+// the right side and back through the box.
+function exitPoint(rect: Rect, toward: Pt, aff: Pt | null): { pt: Pt; side: Position } {
+  const side = sideOf(rect, toward);
+  const cx = rect.x + rect.width / 2;
+  if (side === Position.Bottom) return { pt: { x: cx, y: rect.y + rect.height }, side };
+  if (side === Position.Top) return { pt: { x: cx, y: rect.y }, side };
+  // Left/Right: leave from the affordance row's Y when we have one, else centre.
+  const y = aff ? aff.y : rect.y + rect.height / 2;
+  const x = side === Position.Right ? rect.x + rect.width : rect.x;
+  return { pt: { x, y }, side };
+}
+
 // Intersection of the line from rect center toward `target` with the rect border.
 function intersect(rect: Rect, target: Pt): Pt {
   const cx = rect.x + rect.width / 2;
@@ -122,32 +139,49 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     const lenc = Math.hypot(dxc, dyc) || 1;
     const px = -dyc / lenc;
     const py = dxc / lenc;
-    const a = Math.sign(reciprocalOffset) * Math.min(140, Math.max(34, lenc * 0.14));
-    const sp = affAnchor ?? intersect(sRect, { x: tCenter.x + px * a, y: tCenter.y + py * a });
+    // Gentle, capped bow so the two arcs separate WITHOUT ballooning over the boxes.
+    const a = Math.sign(reciprocalOffset) * Math.min(46, Math.max(24, lenc * 0.10));
+    // Endpoints sit ON the border facing the other node (shifted toward this arc's
+    // side), so arrowheads land on the border and the arc never starts inside a box.
+    const sp = intersect(sRect, { x: tCenter.x + px * a, y: tCenter.y + py * a });
     const tp = intersect(tRect, { x: sCenter.x + px * a, y: sCenter.y + py * a });
-    const midX = (sp.x + tp.x) / 2 + px * a * 1.7;
-    const midY = (sp.y + tp.y) / 2 + py * a * 1.7;
+    // Single control point at the midpoint pushed out by `a` (not 1.7×) → a shallow,
+    // even arc that clears the nodes without the old over-curl.
+    const midX = (sp.x + tp.x) / 2 + px * a;
+    const midY = (sp.y + tp.y) / 2 + py * a;
     path = `M ${sp.x},${sp.y} Q ${midX},${midY} ${tp.x},${tp.y}`;
-    const baseX = 0.25 * sp.x + 0.5 * midX + 0.25 * tp.x;
-    const baseY = 0.25 * sp.y + 0.5 * midY + 0.25 * tp.y;
-    const labelPush = Math.sign(a) * 16;
-    labelX = baseX + px * labelPush;
-    labelY = baseY + py * labelPush;
+    // Push each label OUTWARD along this arc's own bow side (full signed `a` + a
+    // margin) so the two reciprocal labels land on opposite sides instead of
+    // stacking on top of each other at the midpoint.
+    const labelPush = a + Math.sign(a) * 14;
+    labelX = (sp.x + tp.x) / 2 + px * labelPush;
+    labelY = (sp.y + tp.y) / 2 + py * labelPush;
   } else {
-    const sp = affAnchor ?? intersect(sRect, tCenter);
-    const tp = intersect(tRect, affAnchor ?? sCenter);
-    const [p, lx, ly] = getBezierPath({
-      sourceX: sp.x,
-      sourceY: sp.y,
-      targetX: tp.x,
-      targetY: tp.y,
-      sourcePosition: affAnchor ? Position.Right : sideOf(sRect, tCenter),
-      targetPosition: sideOf(tRect, affAnchor ?? sCenter),
-      curvature: d.curvature ?? 0.25,
-    });
-    path = p;
-    labelX = lx;
-    labelY = ly;
+    // Leave the source from the border SIDE facing the target (keeping the
+    // affordance row's Y only when exiting left/right); enter the target on the
+    // border facing the source. This stops the edge from cutting across the box.
+    const { pt: sp, side: sSide } = exitPoint(sRect, tCenter, affAnchor);
+    const tp = intersect(tRect, sp);
+    const tSide = sideOf(tRect, sp);
+    // STRAIGHT line when the two endpoints are essentially axis-aligned (a stacked
+    // spine, or a side-by-side pair) — a curve there only adds noise.
+    const dx = Math.abs(tp.x - sp.x);
+    const dy = Math.abs(tp.y - sp.y);
+    const aligned = dx < 8 || dy < 8;
+    if (aligned) {
+      path = `M ${sp.x},${sp.y} L ${tp.x},${tp.y}`;
+      labelX = (sp.x + tp.x) / 2;
+      labelY = (sp.y + tp.y) / 2;
+    } else {
+      const [p, lx, ly] = getBezierPath({
+        sourceX: sp.x, sourceY: sp.y, targetX: tp.x, targetY: tp.y,
+        sourcePosition: sSide, targetPosition: tSide,
+        curvature: d.curvature ?? 0.2,
+      });
+      path = p;
+      labelX = lx;
+      labelY = ly;
+    }
   }
 
   return (
