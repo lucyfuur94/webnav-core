@@ -29,11 +29,14 @@ const KIND_COLOR: Record<Affordance['kind'], string> = {
   navigate: '#1d4ed8', reveal: '#7c3aed', mutate: '#b45309', input: '#0f766e',
 };
 
-// The incoming TARGET handle: invisible (the arrowhead marks where edges land, so
-// the handle dot would just sit redundantly under the arrow). Still functional —
-// React Flow routes incoming edges into it; it's only hidden visually.
+// The incoming TARGET handles: invisible 1px anchor points (the arrowhead marks
+// where edges land, so a visible dot would just sit redundantly under the arrow).
+// THREE of them at distinct sides — top / left / bottom — so that the two
+// directions of a reciprocal pair (a→b and b→a) and forward-vs-back edges land on
+// DIFFERENT handles and getSmoothStepPath routes them apart instead of on top of
+// each other. layout.ts picks which handle each edge targets, by geometry.
 const IN_PORT = {
-  top: 0, width: 1, height: 1, minWidth: 1, minHeight: 1,
+  width: 1, height: 1, minWidth: 1, minHeight: 1,
   background: 'transparent', border: 'none', opacity: 0,
 } as const;
 
@@ -144,9 +147,13 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   return (
     <div style={{ border: '1px solid #475569', borderRadius: 8, background: '#f8fafc',
       width: WIDTH, boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
-      {/* Single TARGET handle on the node top — all incoming edges land here and
-          React Flow routes the smoothstep wire into it (arrow touches the border). */}
-      <Handle id="in" type="target" position={Position.Top} style={IN_PORT} />
+      {/* Three TARGET handles (top / left / bottom). layout.ts chooses which one
+          each incoming edge lands on by geometry, so forward and reverse edges of a
+          reciprocal pair don't coincide. React Flow routes the smoothstep wire into
+          the chosen handle (arrow touches the border). */}
+      <Handle id="in-top" type="target" position={Position.Top} style={IN_PORT} />
+      <Handle id="in-left" type="target" position={Position.Left} style={IN_PORT} />
+      <Handle id="in-bottom" type="target" position={Position.Bottom} style={IN_PORT} />
 
       {/* Title block */}
       <div style={{ padding: '8px 10px', borderBottom: affordances.length ? '1px solid #e2e8f0' : 'none' }}>

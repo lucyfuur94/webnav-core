@@ -17,8 +17,10 @@ describe('layoutGraph', () => {
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0].source).toBe('gh:search');
     expect(out.edges[0].type).toBe('orthogonal');
-    // Canonical handle wiring: incoming edges land on the node's top target handle.
-    expect(out.edges[0].targetHandle).toBe('in');
+    // Canonical handle wiring: incoming edges land on one of the node's three target
+    // handles ('in-top'/'in-left'/'in-bottom'), chosen by geometry. A single forward
+    // edge lands on one of them.
+    expect(['in-top', 'in-left', 'in-bottom']).toContain(out.edges[0].targetHandle);
   });
 
   it('drops the old hand-rolled lane/reciprocalOffset geometry from edge data', async () => {
@@ -51,11 +53,12 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges, 'interior');
     const real = out.edges.find((e) => e.id === 'e1')!;
     const synth = out.edges.find((e) => e.id === 'e2')!;
-    // real via → sourceHandle on the pink affordance port; both land on 'in'.
+    // real via → sourceHandle on the pink affordance port; both land on one of the
+    // three geometry-chosen target handles.
     expect(real.sourceHandle).toBe('aff_aff_cart');
     expect(synth.sourceHandle).toBeUndefined();
-    expect(real.targetHandle).toBe('in');
-    expect(synth.targetHandle).toBe('in');
+    expect(['in-top', 'in-left', 'in-bottom']).toContain(real.targetHandle);
+    expect(['in-top', 'in-left', 'in-bottom']).toContain(synth.targetHandle);
   });
 
   it('materialises a synthetic "?" target node for a dangling edge', async () => {
@@ -81,6 +84,30 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges, 'interior');
     expect(out.nodes).toHaveLength(2);
     expect(out.edges).toHaveLength(2);
+  });
+
+  it('routes a reciprocal pair (a→b AND b→a) onto DIFFERENT target handles', async () => {
+    const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }];
+    const edges = [
+      { id: 'e1', source: 'a', target: 'b', fork: false },
+      { id: 'e2', source: 'b', target: 'a', fork: false },
+    ];
+    const out = await layoutGraph(nodes, edges, 'interior');
+    const fwd = out.edges.find((e) => e.id === 'e1')!;
+    const rev = out.edges.find((e) => e.id === 'e2')!;
+    // forward (down) → in-top; reverse (up) → in-bottom — never the same → no overlap.
+    expect(fwd.targetHandle).not.toBe(rev.targetHandle);
+  });
+
+  it('carries from/to labels + a stepPosition on each edge for hover + fan-out', async () => {
+    const nodes = [{ id: 'a', label: 'Home' }, { id: 'b', label: 'Detail' }];
+    const edges = [{ id: 'e1', source: 'a', target: 'b', fork: false }];
+    const out = await layoutGraph(nodes, edges, 'interior');
+    const d = out.edges[0].data as any;
+    expect(d.fromLabel).toBe('Home');
+    expect(d.toLabel).toBe('Detail');
+    expect(typeof d.stepPosition).toBe('number');
+    expect(d.hovered).toBe(false);
   });
 
   it('styles a core edge thicker/full-opacity vs a faded non-core edge', async () => {
