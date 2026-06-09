@@ -26,6 +26,8 @@ export type ParsedArgs =
   | { cmd: 'graph-analyse'; session: string }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
+  | { cmd: 'outline'; node: string }
+  | { cmd: 'mermaid'; node: string }
   | { cmd: 'navigate'; url: string; session: string }
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
@@ -158,6 +160,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
+  if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
+  if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest) };
@@ -395,6 +400,26 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
     console.log(JSON.stringify(showInterior(new MapStore(process.env.WEBNAV_DB ?? 'webnav.db'), args.node), null, 2));
+    return;
+  }
+  if (args.cmd === 'outline' || args.cmd === 'mermaid') {
+    // Human-scannable completeness views of a site's interior (no UI needed).
+    // Per the CLI contract, the text view is carried as a `text` field on the
+    // JSON stdout object (never bare); the human reads `text`, the coverage
+    // summary (counts / unexplored / dead-ends / orphans) rides alongside.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { analyseCoverage, toOutline, toMermaid } = await import('./graph/coverage.js');
+    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    const states = store.statesForNode(args.node);
+    if (!states.length) {
+      console.log(JSON.stringify({ status: 'empty', node: args.node,
+        hint: `no interior captured for "${args.node}" — map it with the record/teach flow` }, null, 2));
+      process.exitCode = 3;
+      return;
+    }
+    const coverage = analyseCoverage(args.node, states);
+    const text = args.cmd === 'outline' ? toOutline(args.node, states) : toMermaid(args.node, states);
+    console.log(JSON.stringify({ status: 'ok', node: args.node, coverage, text }, null, 2));
     return;
   }
   if (args.cmd === 'walk') {

@@ -320,6 +320,20 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host), e.g. github.com.' }],
     example: 'webnav dev graph-show --node github.com',
   },
+  {
+    name: 'outline',
+    summary: 'Human-scannable text outline of a site\'s interior (states + typed affordances), with completeness cues: unexplored exits, dead-ends, orphans, per-kind counts. Answers "did we capture everything?" without the UI.',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
+    example: 'webnav dev outline www.saucedemo.com',
+  },
+  {
+    name: 'mermaid',
+    summary: 'Emit a Mermaid stateDiagram-v2 of a site\'s interior — paste into GitHub/markdown/mermaid.live to render a diagram (no React Flow). Unexplored exits → an "unexplored" sink; dead-ends marked terminal.',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
+    example: 'webnav dev mermaid www.saucedemo.com',
+  },
 ];
 
 export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];
