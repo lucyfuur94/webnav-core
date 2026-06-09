@@ -66,10 +66,10 @@ function spinePartitions(edges: LayoutEdge[]): Map<string, number> {
  *
  * DANGLING edges (target===null, dangling:true) get a synthetic faded "?" target
  * node so the unexplored exit reads as "leads somewhere unmapped". Interior edges
- * are typed 'selfloop' (from===to) or 'floating' (everything else); floating edges
- * anchor their start at the source affordance ROW via data.sourceAffordanceId and
- * handle reciprocal bowing / border-intersection themselves (no handle plumbing
- * needed from here).
+ * are typed 'selfloop' (from===to) or 'orthogonal' (everything else); orthogonal
+ * edges anchor their start at the source affordance ROW via data.sourceAffordanceId,
+ * run into a per-edge vertical routing lane (data.lane = the Nth outgoing edge of
+ * the source) and turn into the target border — clean right-angle wires, no arcs.
  */
 export async function layoutGraph(
   nodes: LayoutNode[], edges: LayoutEdge[], mode: LayoutMode,
@@ -131,10 +131,16 @@ export async function layoutGraph(
     type: n.unexplored ? 'unexplored' : mode === 'clusters' ? 'site' : 'state',
   }));
 
-  // Reciprocal pairs (a→b AND b→a): the FloatingEdge bows them to opposite sides
-  // itself via a signed reciprocalOffset (direction-invariant perpendicular).
+  // Reciprocal pairs (a→b AND b→a): each direction routes through its OWN gutter.
+  // The OrthogonalEdge reads the sign of reciprocalOffset to push the reverse
+  // direction's lane further right, so the two wires run parallel, not overlapping.
   const present = new Set(edges2.map((e) => e.source + ' ' + e.target));
   const isPair = (e: LayoutEdge) => e.target != null && present.has(e.target + ' ' + e.source);
+
+  // Lane assignment: the Nth outgoing edge of a source node gets lane N, so
+  // multiple wires leaving the same node occupy distinct vertical gutters and
+  // never overlap. Counted in edge order, deterministic per render.
+  const laneCounter = new Map<string, number>();
 
   const rfEdges: Edge[] = edges2.map((e) => {
     const core = e.core === true;
@@ -146,14 +152,18 @@ export async function layoutGraph(
     const via = e.viaAffordance;
     const sourceAffordanceId = via && !via.startsWith('edge:') ? 'aff_' + via : undefined;
     const reciprocalOffset = pair ? (e.source < (e.target as string) ? 40 : -40) : 0;
+    // Nth outgoing edge of this source → lane N (distinct gutter per wire).
+    const lane = laneCounter.get(e.source) ?? 0;
+    laneCounter.set(e.source, lane + 1);
     return {
       id: e.id,
       source: e.source,
       target: e.target as string,
-      type: isSelf ? 'selfloop' : 'floating',
+      type: isSelf ? 'selfloop' : 'orthogonal',
       data: {
         color,
         width: core || pair ? 2 : 1,
+        lane,
         reciprocalOffset,
         dashed: dangling || e.associative === true,
         dimmed: false,

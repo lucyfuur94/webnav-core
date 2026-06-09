@@ -6,11 +6,11 @@ import { layoutGraph, type LayoutEdge } from './layout.js';
 import { isForkEdge } from './forkEdge.js';
 import { StateNode } from './nodes/StateNode.js';
 import { UnexploredNode } from './nodes/UnexploredNode.js';
-import { FloatingEdge, SelfLoopEdge } from './edges/FloatingEdge.js';
+import { OrthogonalEdge, SelfLoopEdge } from './edges/OrthogonalEdge.js';
 import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
 
 const nodeTypes = { state: StateNode, unexplored: UnexploredNode };
-const edgeTypes = { floating: FloatingEdge, selfloop: SelfLoopEdge };
+const edgeTypes = { orthogonal: OrthogonalEdge, selfloop: SelfLoopEdge };
 const DIM = 0.18;   // opacity for nodes NOT adjacent to the hovered node
 
 export function InteriorView({ id, onBack }: { id: string; onBack: () => void }) {

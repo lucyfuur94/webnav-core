@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { layoutGraph } from './layout.js';
 
 describe('layoutGraph', () => {
-  it('positions every interior node and types non-self edges as floating', async () => {
+  it('positions every interior node and types non-self edges as orthogonal', async () => {
     const nodes = [
       { id: 'gh:search', label: 'search' },
       { id: 'gh:detail', label: 'detail' },
@@ -16,7 +16,20 @@ describe('layoutGraph', () => {
     }
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0].source).toBe('gh:search');
-    expect(out.edges[0].type).toBe('floating');
+    expect(out.edges[0].type).toBe('orthogonal');
+  });
+
+  it('assigns a per-source lane index to each outgoing edge', async () => {
+    const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
+    const edges = [
+      { id: 'e1', source: 'a', target: 'b', fork: false },
+      { id: 'e2', source: 'a', target: 'c', fork: false },
+    ];
+    const out = await layoutGraph(nodes, edges, 'interior');
+    const e1 = out.edges.find((e) => e.id === 'e1')!;
+    const e2 = out.edges.find((e) => e.id === 'e2')!;
+    expect((e1.data as any).lane).toBe(0);
+    expect((e2.data as any).lane).toBe(1);
   });
 
   it('types a self-edge (from===to) as a selfloop', async () => {
