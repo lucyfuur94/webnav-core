@@ -2,9 +2,14 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import { MarkerType, type Node, type Edge } from '@xyflow/react';
 
 export interface LayoutNode { id: string; label: string; parent?: string;
-  // number of affordances this node renders (top-level) — used to estimate its
-  // real height so elk spaces tall nodes correctly. Reveal children add a little.
+  // number of affordances this node renders (top-level) — used to ESTIMATE height
+  // on the FIRST layout pass (before React Flow has measured the rendered node).
   badges?: number;
+  // MEASURED size from React Flow (node.measured) — supplied on the SECOND pass so
+  // ELK lays out with the true rendered dimensions (the documented two-pass: render
+  // → measure → re-layout). When present these win over the badges estimate.
+  w?: number;
+  h?: number;
   // a synthetic "?" pill standing in for an unexplored (dangling) edge target.
   unexplored?: boolean;
   // a synthetic SUB-NODE materialised by the VIEWER for a reveal affordance's
@@ -58,12 +63,15 @@ const UNEXPLORED_W = 90;
 const UNEXPLORED_H = 36;
 const SUB_W = NODE_W - 24;       // sub-nodes render slightly narrower
 
+// Prefer the MEASURED size (two-pass) when present; else fall back to the estimate.
 function nodeW(n: LayoutNode): number {
+  if (n.w && n.w > 0) return n.w;
   if (n.unexplored) return UNEXPLORED_W;
   if (n.sub) return SUB_W;
   return NODE_W;
 }
 function nodeH(n: LayoutNode): number {
+  if (n.h && n.h > 0) return n.h;
   return n.unexplored ? UNEXPLORED_H : nodeHeight(n.badges);
 }
 
@@ -146,22 +154,23 @@ export async function layoutGraph(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': mode === 'clusters' ? 'RIGHT' : 'DOWN',
+      // Read ELK's orthogonal edge routes (sections/bendPoints) → edges go AROUND
+      // boxes (the documented way to avoid lines through nodes on a cyclic graph).
       'elk.edgeRouting': 'ORTHOGONAL',
-      // Tightened spacing (was 90/140 — too airy).
       'elk.spacing.nodeNode': mode === 'clusters' ? '60' : '45',
       'elk.layered.spacing.nodeNodeBetweenLayers': '70',
       'elk.layered.spacing.edgeNodeBetweenLayers': '24',
       'elk.spacing.edgeNode': '20',
       'elk.spacing.edgeEdge': '14',
-      // Placement: straighten one dominant chain + center single-parent/child nodes.
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-      // Within-layer ordering: honor array order (spine emitted first → stays centered).
-      'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+      // NETWORK_SIMPLEX minimises total weighted edge length → pulls one dominant
+      // chain (the spine) into a straight line (ELK ref: best for a spine; verified).
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      // Cycle-breaking that RESPECTS model order: only true back-edges get reversed
+      // for layering, the forward spine stays intact (saucedemo has 5 back-edges).
+      'elk.layered.cycleBreaking.strategy': 'GREEDY_MODEL_ORDER',
+      // Honor the order we feed nodes/edges (spine emitted first) for a deterministic
+      // layout, as a soft constraint (doesn't force extra crossings).
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-      // Back-edges: compact feedback routing (not full-height L-detours); bundle them.
-      'elk.layered.feedbackEdges': 'true',
-      'elk.layered.mergeEdges': 'true',
       // keep the spine a straight top-to-bottom column even with the full graph.
       ...(spine ? { 'elk.partitioning.activate': 'true' } : {}),
     },

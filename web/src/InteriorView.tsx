@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ReactFlow, Background, Controls, MiniMap, applyNodeChanges,
+  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, applyNodeChanges,
+  useNodesInitialized, useReactFlow,
   type Node, type Edge, type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -23,7 +24,9 @@ const SHAPE_LABEL: Record<ConnectorShape, string> = {
   step: 'Step', curved: 'Curved', straight: 'Straight',
 };
 
-export function InteriorView({ id, onBack }: { id: string; onBack: () => void }) {
+// Inner component — runs INSIDE a ReactFlowProvider so it can use useReactFlow /
+// useNodesInitialized for the measured two-pass layout.
+function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [empty, setEmpty] = useState(false);
@@ -42,6 +45,12 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
 
   // Keep the raw interior data so a reveal toggle can re-layout without re-fetching.
   const ivRef = useRef<NodeInteriorView | null>(null);
+  // True after an ESTIMATED-size layout, until the measured re-layout has run.
+  // Gates the measure-pass effect so it re-lays out exactly ONCE per data/expand.
+  const measurePending = useRef(false);
+
+  const nodesInitialized = useNodesInitialized();
+  const { getNodes, fitView } = useReactFlow();
 
   // Let the user DRAG nodes around: React Flow emits position/selection changes;
   // apply them back to our base `nodes` state.
@@ -64,7 +73,13 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
 
   // Build (or rebuild) the laid-out graph from the raw interior + current expanded
   // set. Re-runs whenever the interior loads or an overlay is toggled.
-  const buildGraph = useCallback(async (iv: NodeInteriorView) => {
+  //
+  // TWO-PASS (documented pattern): the first call has no `measured` map, so ELK
+  // lays out with ESTIMATED node sizes (badges) — good enough to render. Once React
+  // Flow has measured the rendered nodes, the measure-pass effect calls this again
+  // with a `measured` map of the true {w,h}, so ELK re-runs with exact sizes and its
+  // ports/edge-routes land precisely. `measurePending` gates the re-run to once.
+  const buildGraph = useCallback(async (iv: NodeInteriorView, measured?: Map<string, { w: number; h: number }>) => {
     const isExpanded = (ownerId: string, affId: string) => expanded.has(ownerId + '::' + affId);
 
     // ── Reveal sub-node synthesis (VIEWER-ONLY; see revealSubnodes.ts) ──
@@ -72,9 +87,14 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     // ONLY for an expanded reveal. Collapsed overlay child edges are dropped.
     const { subStates, revealEdges, childOwner, overlayChildIds } =
       synthesizeRevealSubNodes(iv.states, isExpanded);
-    const ln = buildLayoutNodes(iv.states, subStates);
+    const ln = buildLayoutNodes(iv.states, subStates).map((n) => {
+      const m = measured?.get(n.id);
+      return m ? { ...n, w: m.w, h: m.h } : n;
+    });
     const le = buildLayoutEdges(iv.edges, revealEdges, childOwner, isForkEdge, overlayChildIds);
 
+    // On the estimated (first) pass, a measured re-layout is still owed.
+    measurePending.current = !measured;
     const laid = await layoutGraph(ln, le, 'interior');
     const meta = new Map<string, { role: string; availableSignals: string[]; affordances: any[]; sub?: boolean }>(
       iv.states.map((s) => [s.id, { role: s.role, availableSignals: s.availableSignals, affordances: s.affordances }]),
@@ -123,6 +143,25 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     if (ivRef.current) void buildGraph(ivRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
+
+  // MEASURE PASS (documented two-pass): once React Flow has measured the rendered
+  // nodes, read their true sizes and re-run the layout ONCE with them so ELK's
+  // ports + edge routes land on the real borders. `measurePending` ensures this
+  // fires only after an estimated pass (not after the measured re-layout itself,
+  // which would loop).
+  useEffect(() => {
+    if (!nodesInitialized || !measurePending.current || !ivRef.current) return;
+    measurePending.current = false;   // consume — the re-layout below is the measured one
+    const measured = new Map<string, { w: number; h: number }>();
+    for (const n of getNodes()) {
+      const w = n.measured?.width, h = n.measured?.height;
+      if (w && h) measured.set(n.id, { w, h });
+    }
+    if (measured.size) {
+      void buildGraph(ivRef.current, measured).then(() => fitView({ padding: 0.18 }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodesInitialized, nodes]);
 
   // The two endpoints of the hovered edge (for node dimming when an edge is hovered).
   const edgeEndpoints = useMemo(() => {
@@ -205,5 +244,15 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
             <Background /><Controls /><MiniMap />
           </ReactFlow>}
     </div>
+  );
+}
+
+// Public component: wraps the inner view in a ReactFlowProvider so it can use
+// useReactFlow / useNodesInitialized for the measured two-pass layout.
+export function InteriorView(props: { id: string; onBack: () => void }): JSX.Element {
+  return (
+    <ReactFlowProvider>
+      <InteriorViewInner {...props} />
+    </ReactFlowProvider>
   );
 }
