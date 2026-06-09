@@ -21,27 +21,42 @@ import {
 } from '@xyflow/react';
 
 const CORNER_R = 8; // rounded-corner radius at each bend
+// How far the wire runs straight out of its source/target handle before bending.
+// A generous offset makes each edge step horizontally out of its OWN affordance
+// row (distinct Y) before turning, so you can see which row it came from and
+// parallel edges don't immediately bunch onto one track (Issue B).
+const STEP_OFFSET = 34;
+const HILITE = '#f59e0b'; // amber highlight for the hovered edge
 
 interface OrthogonalData {
   color?: string;
   width?: number;
   dashed?: boolean;
   dimmed?: boolean;
+  hovered?: boolean;
   label?: string;
+  fromLabel?: string;
+  toLabel?: string;
+  // where along the run the bend happens (0 = at source, 1 = at target). Staggered
+  // per-edge in layout.ts so edges sharing a target handle fan apart (Issue A).
+  stepPosition?: number;
 }
 
 function edgeStyle(d: OrthogonalData): React.CSSProperties {
+  const hovered = d.hovered === true;
   return {
-    stroke: d.color,
-    strokeWidth: d.dashed ? 1.4 : d.width,
-    strokeDasharray: d.dashed ? '5 4' : undefined,
-    opacity: d.dimmed ? 0.12 : d.dashed ? 0.7 : 1,
+    stroke: hovered ? HILITE : d.color,
+    strokeWidth: hovered ? (d.width ?? 1) + 1.5 : d.dashed ? 1.4 : d.width,
+    strokeDasharray: d.dashed && !hovered ? '5 4' : undefined,
+    opacity: d.dimmed ? 0.1 : hovered ? 1 : d.dashed ? 0.7 : 1,
     fill: 'none',
-    transition: 'opacity 120ms ease',
+    transition: 'opacity 120ms ease, stroke 120ms ease, stroke-width 120ms ease',
   };
 }
 
-function EdgeLabel({ x, y, text }: { x: number; y: number; text: string }): JSX.Element {
+function EdgeLabel({ x, y, text, caption }: {
+  x: number; y: number; text?: string; caption?: string;
+}): JSX.Element {
   return (
     <EdgeLabelRenderer>
       <div
@@ -51,18 +66,26 @@ function EdgeLabel({ x, y, text }: { x: number; y: number; text: string }): JSX.
           transform: `translate(-50%,-50%) translate(${x}px,${y}px)`,
           fontSize: 9,
           fontFamily: 'sans-serif',
-          background: 'rgba(248,250,252,0.9)',
+          background: caption ? 'rgba(255,251,235,0.97)' : 'rgba(248,250,252,0.9)',
           color: '#475569',
-          padding: '1px 4px',
+          padding: caption ? '3px 6px' : '1px 4px',
           borderRadius: 4,
+          border: caption ? `1px solid ${HILITE}` : 'none',
+          boxShadow: caption ? '0 1px 4px rgba(0,0,0,0.18)' : 'none',
           pointerEvents: 'none',
-          maxWidth: 160,
+          maxWidth: 220,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
+          zIndex: caption ? 5 : 1,
         }}
       >
-        {text}
+        {text ? <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</div> : null}
+        {caption ? (
+          <div style={{ fontSize: 9, color: '#92400e', fontWeight: 600, marginTop: text ? 2 : 0 }}>
+            {caption}
+          </div>
+        ) : null}
       </div>
     </EdgeLabelRenderer>
   );
@@ -71,17 +94,37 @@ function EdgeLabel({ x, y, text }: { x: number; y: number; text: string }): JSX.
 export function OrthogonalEdge(props: EdgeProps): JSX.Element {
   const {
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, id,
+    interactionWidth,
   } = props;
   const d = (props.data ?? {}) as OrthogonalData;
 
   const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: CORNER_R,
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+    borderRadius: CORNER_R, offset: STEP_OFFSET,
+    stepPosition: d.stepPosition ?? 0.5,
   });
 
+  const hovered = d.hovered === true;
+  // Always show the step label when present; on hover also show a "from → to"
+  // caption so you can read what the edge connects.
+  const showLabel = !d.dimmed && (d.label || hovered);
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={edgeStyle(d)} />
-      {!d.dimmed && d.label ? <EdgeLabel x={labelX} y={labelY} text={d.label} /> : null}
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={edgeStyle(d)}
+        interactionWidth={interactionWidth ?? 18}
+      />
+      {showLabel ? (
+        <EdgeLabel
+          x={labelX}
+          y={labelY}
+          text={d.label}
+          caption={hovered ? `${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}` : undefined}
+        />
+      ) : null}
     </>
   );
 }
@@ -125,7 +168,14 @@ export function SelfLoopEdge({ id, source, markerEnd, data }: EdgeProps): JSX.El
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={edgeStyle(d)} />
-      {!d.dimmed && d.label ? <EdgeLabel x={laneX + 6} y={midY} text={`↻ ${d.label}`} /> : null}
+      {!d.dimmed && d.label ? (
+        <EdgeLabel
+          x={laneX + 6}
+          y={midY}
+          text={`↻ ${d.label}`}
+          caption={d.hovered ? `${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}` : undefined}
+        />
+      ) : null}
     </>
   );
 }

@@ -69,9 +69,11 @@ function spinePartitions(edges: LayoutEdge[]): Map<string, number> {
  * are typed 'selfloop' (from===to) or 'orthogonal' (everything else). Orthogonal
  * edges attach to specific handles the canonical React Flow way: sourceHandle =
  * 'aff_'+via (the pink affordance PORT on that row) for real vias, and targetHandle
- * = 'in' (the node's top target handle). React Flow computes the endpoint coords
- * from those handles and the OrthogonalEdge feeds them to getSmoothStepPath — clean
- * right-angle wires whose arrowhead touches the target node, no hand-rolled lanes.
+ * = one of the node's three target handles ('in-top'/'in-left'/'in-bottom') chosen
+ * by geometry so reciprocal/back edges don't coincide. React Flow computes the
+ * endpoint coords from those handles and the OrthogonalEdge feeds them to
+ * getSmoothStepPath (with a per-edge offset/stepPosition) — clean right-angle wires
+ * whose arrowhead touches the target node, no hand-rolled lanes.
  */
 export async function layoutGraph(
   nodes: LayoutNode[], edges: LayoutEdge[], mode: LayoutMode,
@@ -134,10 +136,42 @@ export async function layoutGraph(
   }));
 
   // Reciprocal pairs (a→b AND b→a) are drawn slightly thicker so both directions
-  // read clearly. (They may visually overlap since both use top-target +
-  // right-source handles — acceptable for now; getSmoothStepPath does the routing.)
+  // read clearly. They no longer overlap: targetHandle is chosen by geometry below
+  // so the two directions land on DIFFERENT node sides.
   const present = new Set(edges2.map((e) => e.source + ' ' + e.target));
   const isPair = (e: LayoutEdge) => e.target != null && present.has(e.target + ' ' + e.source);
+
+  // node-id -> readable label, so a hovered edge can show "from → to".
+  const labelOf = new Map(allNodes.map((n) => [n.id, n.label]));
+
+  // Choose which TARGET handle an edge lands on, purely from post-layout geometry:
+  //   source clearly ABOVE target  → 'in-top'    (normal forward / spine flow)
+  //   source clearly BELOW target  → 'in-bottom' (a back-edge going UP the page)
+  //   roughly level                → 'in-left'   (side-by-side / branch siblings)
+  // Forward (a→b) and reverse (b→a) of a pair therefore differ in sign of (dy) and
+  // get opposite handles, so smoothstep routes them on separate tracks.
+  const LEVEL_BAND = 40; // |dy| below this counts as "level"
+  function targetHandle(e: LayoutEdge): string {
+    const s = positions[e.source];
+    const t = e.target != null ? positions[e.target as string] : undefined;
+    if (!s || !t) return 'in-top';
+    const dy = t.y - s.y; // >0 → target below source → forward/down
+    if (dy > LEVEL_BAND) return 'in-top';
+    if (dy < -LEVEL_BAND) return 'in-bottom';
+    return 'in-left';
+  }
+
+  // Edges that share the same (target, targetHandle) would otherwise stack on one
+  // approach track. Give each a distinct stepPosition so their vertical/horizontal
+  // turn happens at a different point along the run — fans them apart.
+  const trackKey = (e: LayoutEdge, th: string) => (e.target as string) + '|' + th;
+  const trackCount = new Map<string, number>();
+  for (const e of edges2) {
+    if (e.source === e.target) continue;
+    const k = trackKey(e, targetHandle(e));
+    trackCount.set(k, (trackCount.get(k) ?? 0) + 1);
+  }
+  const trackSeen = new Map<string, number>();
 
   const rfEdges: Edge[] = edges2.map((e) => {
     const core = e.core === true;
@@ -149,20 +183,35 @@ export async function layoutGraph(
     // row) for real via ids; synthetic 'edge:*' vias use the node default.
     const via = e.viaAffordance;
     const sourceHandle = via && !via.startsWith('edge:') ? 'aff_' + via : undefined;
+    const th = targetHandle(e);
+
+    // stagger stepPosition for edges sharing this approach track, spread across the
+    // run (e.g. 2 edges → 0.33 / 0.66; 1 edge → 0.5).
+    const total = trackCount.get(trackKey(e, th)) ?? 1;
+    const idx = trackSeen.get(trackKey(e, th)) ?? 0;
+    if (!isSelf) trackSeen.set(trackKey(e, th), idx + 1);
+    const stepPosition = total > 1 ? (idx + 1) / (total + 1) : 0.5;
+
     return {
       id: e.id,
       source: e.source,
       target: e.target as string,
-      // SOURCE = the affordance port (when known); TARGET = the node's top handle.
+      // SOURCE = the affordance port (when known); TARGET = a geometry-chosen handle.
       ...(sourceHandle ? { sourceHandle } : {}),
-      targetHandle: 'in',
+      targetHandle: isSelf ? 'in-top' : th,
       type: isSelf ? 'selfloop' : 'orthogonal',
       data: {
         color,
         width: core || pair ? 2 : 1,
         dashed: dangling || e.associative === true,
         dimmed: false,
+        hovered: false,
         label: e.label,
+        // from/to labels surfaced on hover (Issue C).
+        fromLabel: labelOf.get(e.source) ?? e.source,
+        toLabel: e.target != null ? (labelOf.get(e.target as string) ?? e.target) : '?',
+        // per-edge stepPosition so parallel approaches fan apart (Issue A/B).
+        stepPosition,
       },
       animated: e.fork,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },

@@ -19,6 +19,9 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
   const [empty, setEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  // id of the edge currently hovered (Issue C). When set, that edge is highlighted
+  // and everything else (other edges + non-endpoint nodes) is dimmed.
+  const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
 
   useEffect(() => {
     // A 404 (unknown node) throws in fetchInterior — distinguish that "no
@@ -57,21 +60,35 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     });
   }, [id]);
 
+  // The two endpoints of the hovered edge (for node dimming when an edge is hovered).
+  const edgeEndpoints = useMemo(() => {
+    if (!hoveredEdge) return null;
+    const e = edges.find((x) => x.id === hoveredEdge);
+    return e ? new Set<string>([e.source, e.target]) : null;
+  }, [hoveredEdge, edges]);
+
   // Hover highlight: when a node is hovered, fully show it + its neighbors + the
-  // edges touching it, and dim everything else. No hover → everything full.
+  // edges touching it, and dim everything else. When an EDGE is hovered, show only
+  // that edge + its two endpoint nodes. No hover → everything full.
   const neighbors = useMemo(() => neighborSet(hovered, edges.map((e) => ({ source: e.source, target: e.target }))), [hovered, edges]);
 
-  const shownNodes = useMemo(() => nodes.map((n) => ({
-    ...n,
-    style: { ...(n.style || {}), opacity: nodeOpacity(n.id, neighbors, DIM), transition: 'opacity 120ms' },
-  })), [nodes, neighbors]);
+  const shownNodes = useMemo(() => nodes.map((n) => {
+    const opacity = edgeEndpoints
+      ? (edgeEndpoints.has(n.id) ? 1 : DIM)
+      : nodeOpacity(n.id, neighbors, DIM);
+    return { ...n, style: { ...(n.style || {}), opacity, transition: 'opacity 120ms' } };
+  }), [nodes, neighbors, edgeEndpoints]);
 
-  // FloatingEdge/SelfLoopEdge read their opacity from data.dimmed (not style), so
-  // dimming is threaded through edge data here.
+  // OrthogonalEdge/SelfLoopEdge read opacity + the hovered flag from data (not
+  // style), so dimming + edge-hover state is threaded through edge data here.
   const shownEdges = useMemo(() => edges.map((e) => {
+    if (hoveredEdge) {
+      const isHovered = e.id === hoveredEdge;
+      return { ...e, data: { ...(e.data || {}), dimmed: !isHovered, hovered: isHovered } };
+    }
     const active = edgeActive({ source: e.source, target: e.target }, hovered);
-    return { ...e, data: { ...(e.data || {}), dimmed: !active } };
-  }), [edges, hovered]);
+    return { ...e, data: { ...(e.data || {}), dimmed: !active, hovered: false } };
+  }), [edges, hovered, hoveredEdge]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -84,7 +101,9 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
         : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             fitView fitViewOptions={{ padding: 0.18 }} minZoom={0.05}
             onNodeMouseEnter={(_, n) => setHovered(n.id)}
-            onNodeMouseLeave={() => setHovered(null)}>
+            onNodeMouseLeave={() => setHovered(null)}
+            onEdgeMouseEnter={(_, e) => setHoveredEdge(e.id)}
+            onEdgeMouseLeave={() => setHoveredEdge(null)}>
             <Background /><Controls /><MiniMap />
           </ReactFlow>}
     </div>
