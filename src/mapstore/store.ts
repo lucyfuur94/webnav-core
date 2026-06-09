@@ -158,7 +158,12 @@ export class MapStore implements IMapStore {
             kind: a.commit ? 'commit-point' : 'navigate',
             acceptsInput: a.acceptsInput,
             addressableUrl: a.addressableUrl,
-            requiresAffordances: a.needs,
+            // `needs` are preconditions. When the edge also declares acceptsInput, the
+            // live browser AUTO-FILLS those input affordances (credentials/shipping),
+            // so they are NOT a pause-gate. Only surface `needs` as a walk gate when
+            // there's no acceptsInput to satisfy them (a genuine in-page affordance the
+            // agent must fire first, e.g. a real add-to-cart-before-checkout gate).
+            requiresAffordances: a.acceptsInput ? [] : a.needs,
             cost: a.cost, reliability: a.reliability, successCount: a.successCount,
             failCount: a.failCount, lastVerified: a.lastVerified, confidence: a.confidence,
           }));

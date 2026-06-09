@@ -8,23 +8,29 @@ import { makeLiveWalkBrowser, seedSaucedemoForWalk } from '../../src/router/walk
 
 const live = process.env.WEBNAV_LIVE === '1';
 
-describe.skipIf(!live)('live: saucedemo walk pauses at the add-to-cart affordance', () => {
-  it('logs in, reaches inventory, then pauses for the required add-to-cart affordance', async () => {
+describe.skipIf(!live)('live: saucedemo walk traverses the full typed-affordance route', () => {
+  it('finds the path login->checkout-overview and walks it to completion (no escalation)', async () => {
     const store = MapStore.fromDatabase(new Database(':memory:'));
     seedSaucedemoForWalk(store);
+    // The path is PROJECTED from affordances (no stored edges seeded).
     const path = findPath(store, 'www.saucedemo.com:login', 'www.saucedemo.com:checkout-overview')!;
     expect(path[0]).toBe('www.saucedemo.com:login');
-    const adapter = new PlaywrightAdapter('aff-walk-' + Date.now());
+    expect(path[path.length - 1]).toBe('www.saucedemo.com:checkout-overview');
+    // Short session id: the playwright-cli unix-socket path has a ~104-char limit on
+    // macOS and a long temp-dir prefix, so a long session id overflows it (EINVAL).
+    const adapter = new PlaywrightAdapter('sda' + (Date.now() % 100000));
     await adapter.open('https://www.saucedemo.com/');
-    const browser = makeLiveWalkBrowser(adapter, { username: 'standard_user', password: 'secret_sauce' });
+    const browser = makeLiveWalkBrowser(adapter, {
+      username: 'standard_user', password: 'secret_sauce',
+      firstName: 'Test', lastName: 'User', zip: '12345',
+    });
     const res = await walkRoute({
       goalName: 'sd', startStateId: 'www.saucedemo.com:login', goalStateId: 'www.saucedemo.com:checkout-overview',
       store, states: store.statesForNode('www.saucedemo.com'), browser, path,
     });
     await adapter.close().catch(() => {});
-    // login resolves (needsInput credentials) then the walk pauses at the
-    // inventory->cart edge for the required add-to-cart affordance.
-    expect(res.status).toBe('needs-navigation');
-    expect((res as any).question).toMatch(/add/i);
+    // Auto-fill credentials, jump to the addressable cart, click Checkout, auto-fill
+    // shipping, click Continue → arrive at checkout-overview and halt before Finish.
+    expect(res.status).toBe('done');
   }, 120_000);
 });
