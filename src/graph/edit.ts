@@ -1,22 +1,49 @@
 import type { MapStore } from '../mapstore/store.js';
 import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind } from '../mapstore/types.js';
 
-// Teach API accepts affordances either as bare label strings (→ mutate, the safe
-// default for an in-page action with no declared transition) or as {label,kind,...}.
-export type EditAffordance = string | { label: string; kind?: AffordanceKind; toState?: string; commit?: boolean };
+// Teach API accepts an affordance either as a bare label string (→ mutate, the
+// safe default for an in-page action with no declared transition) or as the full
+// typed object. `id`/`to` are AUTHOR-FRIENDLY: `to` is the destination state's
+// LABEL (resolved to `node:label`); `needs` are affordance ids; `children` nest
+// for a `reveal`. This lets an agent author the complete affordance model via
+// `graph-edit` — the same shape the walk fixture uses.
+export interface EditAffordanceObj {
+  id?: string;                // stable id; auto-generated from the label if omitted
+  label: string;
+  kind?: AffordanceKind;      // default 'mutate'
+  to?: string;                // navigate/reveal destination STATE LABEL (→ node:label)
+  commit?: boolean;
+  needs?: string[];           // precondition affordance ids
+  addressableUrl?: string;    // tier-1 jump URL
+  acceptsInput?: string;      // runtime input slot
+  core?: boolean;             // on the main spine
+  children?: EditAffordance[];// reveal overlay's affordances
+}
+export type EditAffordance = string | EditAffordanceObj;
 export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
 
 let _affSeq = 0;
-function toAffordance(a: EditAffordance): Affordance {
+const slug = (s: string) => s.replace(/\W+/g, '_').slice(0, 24);
+// `stateId` maps an author's state LABEL to its full id (`node:label`); `to` in a
+// teach affordance is a label, so we resolve it here.
+function toAffordance(a: EditAffordance, stateId: (label: string) => string): Affordance {
   if (typeof a === 'string') {
-    return makeAffordance({ id: 'aff_' + (_affSeq++) + '_' + a.replace(/\W+/g, '_').slice(0, 24), label: a, kind: 'mutate' });
+    return makeAffordance({ id: 'aff_' + (_affSeq++) + '_' + slug(a), label: a, kind: 'mutate' });
   }
   return makeAffordance({
-    id: 'aff_' + (_affSeq++) + '_' + a.label.replace(/\W+/g, '_').slice(0, 24),
-    label: a.label, kind: a.kind ?? 'mutate', toState: a.toState ?? null, commit: a.commit ?? false,
+    id: a.id ?? 'aff_' + (_affSeq++) + '_' + slug(a.label),
+    label: a.label,
+    kind: a.kind ?? 'mutate',
+    toState: a.to ? stateId(a.to) : null,
+    commit: a.commit ?? false,
+    needs: a.needs ?? [],
+    addressableUrl: a.addressableUrl ?? null,
+    acceptsInput: a.acceptsInput ?? null,
+    core: a.core ?? false,
+    children: a.children ? a.children.map((c) => toAffordance(c, stateId)) : null,
   });
 }
 
@@ -50,7 +77,7 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
         id: stateId(s.label), nodeId: node, semanticName: s.label,
         urlPattern: s.urlPattern ?? '', role: 'detail',
         fingerprint: s.fingerprint ?? [],
-        affordances: (s.affordances ?? []).map(toAffordance),
+        affordances: (s.affordances ?? []).map((a) => toAffordance(a, stateId)),
       }));
       statesWritten++;
     }

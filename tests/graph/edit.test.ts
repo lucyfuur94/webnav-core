@@ -7,7 +7,46 @@ function freshStore(): MapStore {
   return MapStore.fromDatabase(new Database(':memory:'));
 }
 
-describe('editGraph', () => {
+describe('editGraph — full typed affordance authoring', () => {
+  it('authors navigate/reveal/mutate/input affordances incl. children, needs, core, addressableUrl', () => {
+    const store = freshStore();
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'login', affordances: [
+          { id: 'aff_user', label: 'enter Username', kind: 'input' },
+          { id: 'aff_login', label: 'click Login', kind: 'navigate', to: 'inventory',
+            needs: ['aff_user'], acceptsInput: 'credentials', core: true },
+        ] },
+        { label: 'inventory', affordances: [
+          { id: 'aff_cart', label: 'open cart', kind: 'navigate', to: 'cart',
+            addressableUrl: 'https://shop.example/cart', core: true },
+          { id: 'aff_menu', label: 'open menu', kind: 'reveal', children: [
+            { id: 'aff_logout', label: 'Logout', kind: 'navigate', to: 'login' },
+            { id: 'aff_about', label: 'About', kind: 'navigate' },        // unexplored (no `to`)
+          ] },
+          'sort products',   // bare string → mutate
+        ] },
+        { label: 'cart' },
+      ],
+      edges: [],
+    });
+    const inv = store.getState('shop.example:inventory')!.affordances;
+    const cart = inv.find((a) => a.id === 'aff_cart')!;
+    expect(cart.kind).toBe('navigate');
+    expect(cart.toState).toBe('shop.example:cart');        // `to` label resolved to full id
+    expect(cart.addressableUrl).toBe('https://shop.example/cart');
+    expect(cart.core).toBe(true);
+    const menu = inv.find((a) => a.id === 'aff_menu')!;
+    expect(menu.kind).toBe('reveal');
+    expect(menu.children!.map((c) => c.label)).toEqual(['Logout', 'About']);
+    expect(menu.children!.find((c) => c.id === 'aff_logout')!.toState).toBe('shop.example:login');
+    expect(menu.children!.find((c) => c.id === 'aff_about')!.toState).toBeNull();  // unexplored
+    expect(inv.find((a) => a.label === 'sort products')!.kind).toBe('mutate');
+    // login's navigate affordance carries needs + core; projection sees it as a core edge.
+    const loginEdges = store.edgesFrom('shop.example:login');
+    expect(loginEdges.find((e) => e.toState === 'shop.example:inventory')!.core).toBe(true);
+  });
+
   it('creates the node if new and upserts states + edges', () => {
     const store = freshStore();
     const r = editGraph(store, 'example.com', {
