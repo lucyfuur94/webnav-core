@@ -60,17 +60,28 @@ describe('layoutGraph', () => {
     expect((out.edges[0].data as any).points).toBeUndefined();
   });
 
-  it('attaches a real via-affordance to its source PORT handle but not a synthetic edge:* via', async () => {
+  it('anchors edges to the node-level src/in-top handles (not per-row aff_* ports)', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false, viaAffordance: 'aff_cart' },
-      { id: 'e2', source: 'a', target: 'b', fork: false, viaAffordance: 'edge:synthetic' },
     ];
     const out = await layoutGraph(nodes, edges, 'interior');
-    const real = out.edges.find((e) => e.id === 'e1')!;
-    const synth = out.edges.find((e) => e.id === 'e2')!;
-    expect(real.sourceHandle).toBe('aff_aff_cart');
-    expect(synth.sourceHandle).toBeUndefined();
+    const e = out.edges.find((x) => x.id === 'e1')!;
+    // Edges leave the node bottom-centre 'src' and enter top-centre 'in-top' —
+    // the per-row 'aff_*' source handle was dropped (ELK routes node-level ports).
+    expect(e.sourceHandle).toBe('src');
+    expect(e.targetHandle).toBe('in-top');
+  });
+
+  it('omits targetHandle when the target is a synthetic unexplored stub', async () => {
+    const nodes = [{ id: 'a', label: 'a' }];
+    const edges = [
+      { id: 'e1', source: 'a', target: null, fork: false, dangling: true, viaAffordance: 'aff_about' },
+    ];
+    const out = await layoutGraph(nodes, edges, 'interior');
+    // source is a real node → 'src'; target is the synthetic stub → no 'in-top'.
+    expect(out.edges[0].sourceHandle).toBe('src');
+    expect(out.edges[0].targetHandle).toBeUndefined();
   });
 
   it('materialises a synthetic "?" target node for a dangling edge', async () => {
@@ -98,31 +109,51 @@ describe('layoutGraph', () => {
     expect(out.edges).toHaveLength(2);
   });
 
-  it('keeps the core spine a vertical column (core nodes stacked top-to-bottom)', async () => {
+  it('snaps the core spine to an EXACT vertical column (no zig-zag) with branch to the side', async () => {
     const nodes = [
       { id: 'login', label: 'login' },
       { id: 'inv', label: 'inventory' },
       { id: 'cart', label: 'cart' },
+      { id: 'checkout', label: 'checkout' },
       { id: 'branch', label: 'branch' },
     ];
     const edges = [
       { id: 'e1', source: 'login', target: 'inv', fork: false, core: true },
       { id: 'e2', source: 'inv', target: 'cart', fork: false, core: true },
+      { id: 'e3', source: 'cart', target: 'checkout', fork: false, core: true },
       // a non-core back-edge + a branch off the spine
-      { id: 'e3', source: 'cart', target: 'inv', fork: false, core: false },
-      { id: 'e4', source: 'inv', target: 'branch', fork: false, core: false },
+      { id: 'e4', source: 'cart', target: 'inv', fork: false, core: false },
+      { id: 'e5', source: 'inv', target: 'branch', fork: false, core: false },
     ];
     const out = await layoutGraph(nodes, edges as any, 'interior');
     const pos = (id: string) => out.nodes.find((n) => n.id === id)!.position;
-    // spine descends: login above inventory above cart
+    // spine descends top-to-bottom
     expect(pos('login').y).toBeLessThan(pos('inv').y);
     expect(pos('inv').y).toBeLessThan(pos('cart').y);
-    // spine stays a column: the three core nodes share roughly the same x
-    // core nodes share roughly the same x (small ELK centering jitter allowed; the
-    // key point is they're a column, NOT spread horizontally like the branch).
-    expect(Math.abs(pos('login').x - pos('cart').x)).toBeLessThan(40);
-    // and the branch sits clearly to the SIDE of the spine, not in the column.
+    expect(pos('cart').y).toBeLessThan(pos('checkout').y);
+    // snapSpine pins all core nodes to one EXACT column x (the real zig-zag fix).
+    const spineXs = ['login', 'inv', 'cart', 'checkout'].map((id) => pos(id).x);
+    for (const x of spineXs) expect(Math.abs(x - spineXs[0])).toBeLessThan(1);
+    // the branch sits clearly to the SIDE of the spine column.
     expect(Math.abs(pos('branch').x - pos('inv').x)).toBeGreaterThan(100);
+  });
+
+  it('a core forward edge is recomputed as a clean 2-point vertical segment after snap', async () => {
+    const nodes = [
+      { id: 'login', label: 'login' }, { id: 'inv', label: 'inventory' },
+      { id: 'branch', label: 'branch' },
+    ];
+    const edges = [
+      { id: 'e1', source: 'login', target: 'inv', fork: false, core: true },
+      { id: 'e2', source: 'inv', target: 'branch', fork: false, core: false },
+    ];
+    const out = await layoutGraph(nodes, edges as any, 'interior');
+    const core = out.edges.find((e) => e.id === 'e1')!;
+    const pts = (core.data as any).points;
+    // snapSpine replaces the core forward edge with bottom-centre → top-centre.
+    expect(pts).toHaveLength(2);
+    expect(Math.abs(pts[0].x - pts[1].x)).toBeLessThan(1);  // perfectly vertical
+    expect(pts[1].y).toBeGreaterThan(pts[0].y);             // points downward
   });
 
   it('carries from/to labels + a core flag on each edge for hover + readability', async () => {
@@ -171,7 +202,7 @@ describe('layoutGraph', () => {
     const rev = out.edges.find((e) => e.id === 'rev0')!;
     expect((rev.data as any).color).toBe('#7c3aed');
     expect((rev.data as any).dashed).toBe(true);
-    expect(rev.sourceHandle).toBe('aff_aff_burger');
+    expect(rev.sourceHandle).toBe('src');
     // child edge leaves the sub-node
     expect(out.edges.find((e) => e.id === 'e0')!.source).toBe('inv::r');
     // both placed (positions are numbers)
