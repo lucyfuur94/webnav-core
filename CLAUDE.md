@@ -29,6 +29,17 @@ These look similar (both move through a site) but are **opposite in intent** —
 
 **Rule:** when "finishing the walk" or similar comes up, do NOT reduce `walk` to "just the `use` loop." That throws away walk's entire reason to exist (deterministic, low-token replay). `use` = explore/build (agent drives every step); `walk` = recall/travel (webnav drives, agent only acts at forks).
 
+## Affordance-primary state model (settled 2026-06-09 — `2026-06-09-affordance-model-design.md`)
+
+A state's **`affordances: Affordance[]` is the SOURCE OF TRUTH**, not a separate edges table. Each affordance has a `kind`:
+- **`navigate`** — leads to a different state (`toState`); the only kind that becomes a path edge. May carry `addressableUrl` (tier-1 coordinate: the walk JUMPS there via `goto` instead of resolving a ref — for icon-only/unstable links like saucedemo's cart).
+- **`reveal`** — opens an in-page overlay (hamburger menu/modal); its `children: Affordance[]` are the exposed affordances (nested INSIDE the node, NOT a separate node — an overlay has no coordinate). A reveal with children emits no edge itself; its children do.
+- **`mutate`** — same-page change (sort, add-to-cart). **Never routes.** add-to-cart is a `mutate`, NOT a gate on the cart edge (the empty cart is a valid state; whether to add first is the agent's judgment).
+- **`input`** — fills a field. Never routes; named in a navigate's `needs` (preconditions). When the navigate also has `acceptsInput`, the live browser auto-fills those inputs, so they do NOT pause the walk.
+- Cross-cutting: **`commit`** (irreversible → never auto-fired, #2) and explored-ness (`toState === null` ⇒ unexplored "dangling" stub).
+
+**Edges are PROJECTED, not stored:** `store.edgesFrom`/`allEdges` derive `Edge[]` from navigate/reveal affordances (so the router/walk interface is unchanged); `store.interiorEdges` adds `viaAffordance` (the affordance id, so the VIEWER anchors each arrow to its specific affordance row) + dangling stubs. A stored `edges` row still wins on duplicate (carries live reliability); legacy/explorer edges with no backing affordance still surface. The viewer renders the typed repertoire as a categorized list with per-affordance handles + collapsible reveals; floating edges (border-intersection + direction-invariant reciprocal bowing) are ported from `Mnet/process-map`.
+
 ## What this project is
 
 **"Google Maps for the agent-internet."** A web-navigation **memory** that lets agents recall cheap, reliable routes to goals on a website instead of re-exploring from scratch every time. The core win is **speed and cost**: the second time an agent needs to get somewhere, it recalls the route rather than re-discovering it.

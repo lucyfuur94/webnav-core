@@ -1,5 +1,13 @@
 # webnav — STATUS (live handoff)
 
+**Updated:** 2026-06-09 · **Branch:** `feat/affordance-model` (pending merge) · **Tests:** 328 unit + 14 web pass + 9 gated live e2e (2 live saucedemo walks pass with `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+
+> **2026-06-09 — Affordance-primary model + working saucedemo walk + readable graph (DONE; on `feat/affordance-model`).**
+> `State.affordances` is now `Affordance[]` (typed: `navigate`/`reveal`/`mutate`/`input`, + `commit`, `toState`, `addressableUrl`, `children`, `needs`, `acceptsInput`). Affordances are the SOURCE OF TRUTH; `store.edgesFrom`/`allEdges` PROJECT navigate/reveal affordances into the existing `Edge` shape so the router/walk are unchanged; `store.interiorEdges` adds `viaAffordance` + dangling stubs for the viewer.
+> - **Walk works perfectly, verified live:** the saucedemo walk now COMPLETES login→inventory→cart→checkout-info→checkout-overview and halts before the Finish commit (no escalation). add-to-cart is a same-page `mutate` (not a gate); the cart is reached via a tier-1 `addressableUrl` jump (the cart icon has no stable name). `walk.ts` gained an addressable-jump branch (`browser.goto`). Both gated live e2es rewritten to assert this and pass.
+> - **Graph is human-readable, visually verified** (playwright-cli headless): nodes render the typed repertoire as a categorized vertical list (NAVIGATE/REVEAL/MUTATE/INPUT), edges leave the SPECIFIC affordance row's handle, the burger menu is a collapsible `reveal` whose children nest inside the node, the Finish commit shows a "commit · never auto-fired" badge, mutate/input rows are muted with no handle, and one "? unexplored" stub shows the About exit. Floating edges (border-intersection + direction-invariant reciprocal bowing + outside self-loops) ported from `Mnet/process-map`; `BowEdge`/`RoutedEdge` removed.
+> - Spec `docs/superpowers/specs/2026-06-09-affordance-model-design.md`, plan `docs/superpowers/plans/2026-06-09-affordance-model.md`.
+
 **Updated:** 2026-06-08 · **Branch:** `main` · **Tests:** 322 unit pass + 9 gated live e2e (skipped without `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
 
 > This is the canonical "where are we / what's next / how to run" doc. Keep it
