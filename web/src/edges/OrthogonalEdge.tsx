@@ -129,19 +129,25 @@ export function OrthogonalEdge({ id, source, target, markerEnd, data }: EdgeProp
   let tp: Pt;
   let pts: Pt[];
   const ROUGH = sRect.height / 2 + 8;   // "roughly level" band
+  const GAP = 11;   // stop the wire short of the border so the ARROWHEAD sits clearly
+                    // OUTSIDE the node (otherwise the marker is clipped under the box).
 
+  // Each route's FINAL segment is perpendicular to the entered border (so the
+  // arrowhead points INTO the node), ending GAP px short so the marker is visible.
   if (Math.abs(tCenterY - sp.y) <= ROUGH && tLeft >= laneX - 1) {
-    // Target is roughly level and to the right → enter its LEFT border.
-    tp = { x: tLeft, y: tCenterY };
+    // Roughly level & to the right → approach the LEFT border horizontally.
+    tp = { x: tLeft - GAP, y: tCenterY };
     pts = [sp, { x: laneX, y: sp.y }, { x: laneX, y: tp.y }, tp];
   } else if (tCenterY > sp.y) {
-    // Target below → travel down the lane, enter the TOP border.
-    tp = { x: tCenterX, y: tTop };
-    pts = [sp, { x: laneX, y: sp.y }, { x: laneX, y: tp.y }, tp];
+    // Target below → drop the lane to just above the TOP border, turn to the
+    // target's X, then a short DOWNWARD segment into the top (arrow points down).
+    tp = { x: tCenterX, y: tTop - GAP };
+    pts = [sp, { x: laneX, y: sp.y }, { x: laneX, y: tTop - GAP - 18 }, { x: tCenterX, y: tTop - GAP - 18 }, tp];
   } else {
-    // Target above → travel up the lane, enter the BOTTOM border.
-    tp = { x: tCenterX, y: tBottom };
-    pts = [sp, { x: laneX, y: sp.y }, { x: laneX, y: tp.y }, tp];
+    // Target above → rise to just below the BOTTOM border, turn to the target's
+    // X, then a short UPWARD segment into the bottom (arrow points up).
+    tp = { x: tCenterX, y: tBottom + GAP };
+    pts = [sp, { x: laneX, y: sp.y }, { x: laneX, y: tBottom + GAP + 18 }, { x: tCenterX, y: tBottom + GAP + 18 }, tp];
   }
 
   const path = roundedPolyline(pts, CORNER_R);
