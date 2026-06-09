@@ -29,9 +29,12 @@ const KIND_COLOR: Record<Affordance['kind'], string> = {
   navigate: '#1d4ed8', reveal: '#7c3aed', mutate: '#b45309', input: '#0f766e',
 };
 
-// The incoming TARGET handle: a small, subtle dot on the node top where edges land.
+// The incoming TARGET handle: invisible (the arrowhead marks where edges land, so
+// the handle dot would just sit redundantly under the arrow). Still functional —
+// React Flow routes incoming edges into it; it's only hidden visually.
 const IN_PORT = {
-  top: -3, width: 7, height: 7, background: '#94a3b8', border: '1px solid #64748b',
+  top: 0, width: 1, height: 1, minWidth: 1, minHeight: 1,
+  background: 'transparent', border: 'none', opacity: 0,
 } as const;
 
 // The affordance PORT: a pink rectangle on the row's right edge marking where an
