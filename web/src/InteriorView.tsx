@@ -2,15 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { fetchInterior } from './api.js';
-import { layoutGraph } from './layout.js';
+import { layoutGraph, type LayoutEdge } from './layout.js';
 import { isForkEdge } from './forkEdge.js';
 import { StateNode } from './nodes/StateNode.js';
-import { BowEdge } from './edges/BowEdge.js';
+import { UnexploredNode } from './nodes/UnexploredNode.js';
+import { FloatingEdge, SelfLoopEdge } from './edges/FloatingEdge.js';
 import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
 
-const nodeTypes = { state: StateNode };
-const edgeTypes = { bow: BowEdge };
-const DIM = 0.18;   // opacity for nodes/edges NOT adjacent to the hovered node
+const nodeTypes = { state: StateNode, unexplored: UnexploredNode };
+const edgeTypes = { floating: FloatingEdge, selfloop: SelfLoopEdge };
+const DIM = 0.18;   // opacity for nodes NOT adjacent to the hovered node
 
 export function InteriorView({ id, onBack }: { id: string; onBack: () => void }) {
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -24,17 +25,33 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
     // interior yet" case from a real API failure so the message isn't misleading.
     fetchInterior(id).then(async (iv) => {
       if (!iv.states.length) { setEmpty(true); return; }
-      const ln = iv.states.map((s) => ({ id: s.id, label: s.semanticName, badges: (s as any).affordances?.length ?? 0 }));
-      const le = iv.edges.map((e, i) => ({ id: `e${i}`, source: e.from, target: e.to, fork: isForkEdge(e), core: (e as any).core === true }));
+      const ln = iv.states.map((s) => ({
+        id: s.id,
+        label: s.semanticName,
+        // height estimate: top-level affordances + a slack count for reveal children.
+        badges: (s.affordances?.length ?? 0)
+          + (s.affordances ?? []).reduce((sum, a) => sum + (a.children?.length ?? 0), 0) / 2,
+      }));
+      const le: LayoutEdge[] = iv.edges.map((e, i) => ({
+        id: `e${i}`,
+        source: e.from,
+        target: e.to,
+        fork: isForkEdge(e),
+        core: e.core === true,
+        viaAffordance: e.viaAffordance,
+        dangling: e.dangling === true,
+        label: e.semanticStep,
+      }));
       const laid = await layoutGraph(ln, le, 'interior');
       const meta = new Map(iv.states.map((s) => [s.id, s]));
       setNodes(laid.nodes.map((nd) => {
-        const s = meta.get(nd.id) as any;
-        return { ...nd, data: { ...nd.data, role: s?.role, signals: s?.availableSignals, affordances: s?.affordances } };
+        const s = meta.get(nd.id);
+        return s
+          ? { ...nd, data: { ...nd.data, role: s.role, signals: s.availableSignals, affordances: s.affordances } }
+          : nd;  // synthetic unexplored node — leave data as-is
       }));
       setEdges(laid.edges);
     }).catch((e) => {
-      // 404 → treat as "no interior yet"; any other failure → surface as an error.
       if (String(e).includes('404')) setEmpty(true);
       else setError(String(e));
     });
@@ -42,17 +59,18 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
 
   // Hover highlight: when a node is hovered, fully show it + its neighbors + the
   // edges touching it, and dim everything else. No hover → everything full.
-  const neighbors = useMemo(() => neighborSet(hovered, edges), [hovered, edges]);
+  const neighbors = useMemo(() => neighborSet(hovered, edges.map((e) => ({ source: e.source, target: e.target }))), [hovered, edges]);
 
   const shownNodes = useMemo(() => nodes.map((n) => ({
     ...n,
     style: { ...(n.style || {}), opacity: nodeOpacity(n.id, neighbors, DIM), transition: 'opacity 120ms' },
   })), [nodes, neighbors]);
 
+  // FloatingEdge/SelfLoopEdge read their opacity from data.dimmed (not style), so
+  // dimming is threaded through edge data here.
   const shownEdges = useMemo(() => edges.map((e) => {
-    const active = edgeActive(e, hovered);
-    return { ...e, style: { ...(e.style || {}), opacity: active ? (e.style as any)?.opacity ?? 1 : DIM,
-      transition: 'opacity 120ms' } };
+    const active = edgeActive({ source: e.source, target: e.target }, hovered);
+    return { ...e, data: { ...(e.data || {}), dimmed: !active } };
   }), [edges, hovered]);
 
   return (
