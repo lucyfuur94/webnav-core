@@ -142,7 +142,11 @@ export async function layoutGraph(
     for (const c of res.children ?? []) positions[c.id] = { x: c.x ?? 0, y: c.y ?? 0 };
     if (spine) placeBranches(allNodes, edges2, corePartition, positions);
     placeSubNodes(allNodes, positions);
-    if (Object.keys(positions).length < allNodes.length) positions = gridPositions(allNodes);
+    placeStragglers(allNodes, edges2, positions);
+    // Only fall back to a full grid if ELK produced NOTHING (genuine failure) —
+    // NOT when a few synthetic nodes lack a position (placeStragglers handles
+    // those). Gridding everything here is what flattened the spine into a grid.
+    if (Object.keys(positions).length === 0) positions = gridPositions(allNodes);
   } catch {
     positions = gridPositions(allNodes);
   }
@@ -321,6 +325,29 @@ function placeSubNodes(
       positions[n.id] = { x: base.x + GAP, y: base.y + k * (nodeHeight(n.badges) + 40) };
     }
     remaining = next;
+  }
+}
+
+/** Place any node STILL without a position (e.g. an 'unexplored' stub whose only
+ *  edge comes from a reveal sub-node, so placeBranches — which looks for a CORE
+ *  neighbor — missed it). Put it beside any already-positioned node it connects to,
+ *  else at the origin. This is a targeted catch so a stray synthetic node never
+ *  triggers a full-grid fallback that would flatten the spine. Mutates `positions`. */
+function placeStragglers(
+  nodes: LayoutNode[], edges: LayoutEdge[], positions: Record<string, { x: number; y: number }>,
+): void {
+  const GAP = NODE_W + 60;
+  for (const n of nodes) {
+    if (positions[n.id]) continue;
+    // find any neighbor (either direction) that already has a position
+    const e = edges.find((x) =>
+      (x.source === n.id && x.target != null && positions[x.target as string]) ||
+      (x.target === n.id && positions[x.source]));
+    const anchorId = e
+      ? (e.source === n.id ? (e.target as string) : e.source)
+      : undefined;
+    const base = anchorId ? positions[anchorId] : undefined;
+    positions[n.id] = base ? { x: base.x + GAP, y: base.y } : { x: 0, y: 0 };
   }
 }
 
