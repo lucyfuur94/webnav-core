@@ -69,6 +69,8 @@ interface StateNodeData {
   affordances?: Affordance[];
   // synthetic reveal SUB-NODE (an overlay's options): styled lighter/dashed.
   sub?: boolean;
+  // dark theme (threaded from InteriorView; colorMode only themes the canvas).
+  dark?: boolean;
   // set of reveal-affordance ids (scoped to THIS node, e.g. 'nodeId::affId') that
   // are currently EXPANDED — when expanded the overlay sub-node is materialised by
   // the viewer and this row shows ▾; collapsed (default) shows ▸ + a count chip.
@@ -91,7 +93,9 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
         padding: '2px 4px',
         paddingLeft: indent ? 16 : 4,
         fontSize: 11,
-        color: muted ? '#94a3b8' : '#1e293b',
+        // non-muted rows inherit the node's themed colour; muted (mutate/input)
+        // stay grey (readable on both light and dark).
+        color: muted ? '#94a3b8' : 'inherit',
         fontStyle: muted ? 'italic' : 'normal',
       }}
     >
@@ -136,7 +140,7 @@ function RevealRow({ aff, expanded, onToggle }: {
         onClick={collapsible ? (ev) => { ev.stopPropagation(); onToggle?.(aff.id); } : undefined}
         title={collapsible ? (expanded ? 'collapse overlay' : 'expand overlay') : undefined}
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', fontSize: 11,
-          color: '#1e293b', userSelect: 'none',
+          color: 'inherit', userSelect: 'none',
           cursor: collapsible ? 'pointer' : 'default',
           background: collapsible && !expanded ? '#f5f3ff' : undefined,
           borderRadius: collapsible ? 4 : undefined }}
@@ -170,17 +174,23 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   const d = data as unknown as StateNodeData;
   const affordances = d.affordances ?? [];
   const sub = d.sub === true;
+  const dark = d.dark === true;
   const expandedReveals = d.expandedReveals ?? new Set<string>();
 
-  // Uniform node border (no special "core spine" highlight): sub-node = dashed
-  // purple (an overlay, semantically distinct); everything else = the same slate.
-  const border = sub ? '1.5px dashed #7c3aed' : '1px solid #475569';
+  // Theme palette — dark mode themes the NODE too (React Flow's colorMode only
+  // themes the canvas/chrome, not custom nodes).
+  const bg = sub ? (dark ? '#2a213f' : '#faf5ff') : (dark ? '#1e293b' : '#f8fafc');
+  const titleColor = dark ? '#f1f5f9' : '#0f172a';
+  const dividerColor = dark ? '#334155' : '#e2e8f0';
+  // Uniform border: sub-node = dashed purple (an overlay); else slate.
+  const border = sub ? '1.5px dashed #a78bfa' : `1px solid ${dark ? '#475569' : '#475569'}`;
 
   return (
     <div style={{
       border,
       borderRadius: 8,
-      background: sub ? '#faf5ff' : '#f8fafc',
+      background: bg,
+      color: titleColor,
       width: sub ? WIDTH - 24 : WIDTH,
       boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       {/* TARGET handles: 'in-top' (top-centre) is where layout.ts points incoming
@@ -195,8 +205,8 @@ export function StateNode({ data }: NodeProps): JSX.Element {
       <Handle id="src" type="source" position={Position.Bottom} style={IN_PORT} />
 
       {/* Title block */}
-      <div style={{ padding: '8px 10px', borderBottom: affordances.length ? '1px solid #e2e8f0' : 'none' }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ padding: '8px 10px', borderBottom: affordances.length ? `1px solid ${dividerColor}` : 'none' }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: titleColor, display: 'flex', alignItems: 'center', gap: 6 }}>
           {sub ? (
             <span style={{ fontSize: 8, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd',
               borderRadius: 4, padding: '0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
