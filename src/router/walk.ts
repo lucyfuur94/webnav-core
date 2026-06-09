@@ -15,6 +15,10 @@ export interface WalkBrowser {
   // The live browser owns the `inputs` map and looks the slot up; the unit fake
   // ignores both and just advances the scripted snapshot.
   act(ref: string, inputSlot: string | null): Promise<void>;
+  // Jump to a tier-1 addressable URL (edge.addressableUrl) instead of resolving a
+  // ref — for icon-only/unstable links whose destination has a canonical URL. The
+  // unit fake just advances its scripted snapshot (ignores the url).
+  goto?(url: string, inputSlot: string | null): Promise<void>;
   callCount(): number;
 }
 
@@ -110,6 +114,25 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
       }
     }
     firstStep = false;
+
+    // Tier-1 addressable jump: the destination has a canonical URL, so the link
+    // need not be resolved as a ref (it may be icon-only / unstable). Jump, then
+    // verify by observation exactly like a resolved action. Commit points still
+    // never auto-fire — an addressableUrl on a commit edge would be a misconfig, so
+    // we still route commit/unclassified through replayStep's guard below.
+    if (browser.goto && edge.addressableUrl && edge.kind !== 'commit-point' && edge.kind !== 'unclassified') {
+      await browser.goto(edge.addressableUrl, edge.acceptsInput);
+      const afterYaml = await browser.snapshot();
+      const observed = matchState(parseSnapshot(afterYaml), states);
+      if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+        return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: afterYaml,
+          question: 'jumped to ' + edge.addressableUrl + ' but expected ' + edge.toState + ' — observed '
+            + (observed.status === 'matched' ? observed.state.id : observed.status) };
+      }
+      store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
+      current = edge.toState; at++;
+      continue;
+    }
 
     // Read the CURRENT page (before acting) so commit/drift checks see this page.
     const yaml = await browser.snapshot();

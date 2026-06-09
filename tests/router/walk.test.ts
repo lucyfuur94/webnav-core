@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { walkRoute, type WalkBrowser } from '../../src/router/walk.js';
 import { MapStore } from '../../src/mapstore/store.js';
-import { makeState, makeEdge } from '../../src/mapstore/types.js';
+import { makeState, makeEdge, makeAffordance } from '../../src/mapstore/types.js';
 
 // Self-contained inline fixture (no external skeleton): a small checkout-shaped
 // chain of states+edges that mirrors the affordance-gated multi-step walk. The
@@ -11,7 +11,7 @@ const STATES = [
     role: 'search-entry', fingerprint: ['textbox:Username', 'button:Login'] }),
   makeState({ id: 't:inventory', nodeId: 'n', semanticName: 't:inventory', urlPattern: '',
     role: 'detail', fingerprint: ['button:Add to cart'],
-    affordances: ['add an item to the cart'] }),
+    affordances: [makeAffordance({ id: 'aff_add', label: 'add an item to the cart', kind: 'mutate' })] }),
   makeState({ id: 't:cart', nodeId: 'n', semanticName: 't:cart', urlPattern: '',
     role: 'detail', fingerprint: ['button:Checkout'] }),
   makeState({ id: 't:checkout-info', nodeId: 'n', semanticName: 't:checkout-info', urlPattern: '',
@@ -94,6 +94,28 @@ describe('walkRoute (interactive multi-step walk)', () => {
     });
     expect(r.status).toBe('needs-navigation');
     if (r.status === 'needs-navigation') expect(r.question).toMatch(/add/i);
+  });
+
+  it('uses goto() for an addressableUrl edge instead of resolving a ref', async () => {
+    const store = new MapStore(':memory:');
+    store.upsertState(makeState({ id: 'x:b', nodeId: 'x', semanticName: 'x:b', urlPattern: '', role: 'detail', fingerprint: ['link:on-b'] }));
+    // 'a' has an icon-only navigate to 'b' that is URL-addressable: the semanticStep
+    // has no quoted name (resolveStep would fail), so the walk MUST jump via goto.
+    store.upsertState(makeState({ id: 'x:a', nodeId: 'x', semanticName: 'x:a', urlPattern: '', role: 'detail', fingerprint: ['link:on-a'],
+      affordances: [makeAffordance({ id: 'aff_go', label: 'open the cart', kind: 'navigate', toState: 'x:b',
+        addressableUrl: 'https://example.test/b' })] }));
+    let gotoUrl: string | null = null;
+    const seq = ['- link "on-a" [ref=e1]', '- link "on-b" [ref=e2]'];
+    let i = 0;
+    const browser: WalkBrowser = {
+      snapshot: async () => seq[Math.min(i, 1)],
+      act: async () => { throw new Error('act() must NOT be called for an addressable jump'); },
+      goto: async (url: string) => { gotoUrl = url; i = 1; },
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'x:a', goalStateId: 'x:b', store, states: store.allStates(), browser });
+    expect(r.status).toBe('done');
+    expect(gotoUrl).toBe('https://example.test/b');
   });
 
   it('escalates needs-navigation when a step lands on an unexpected state', async () => {

@@ -18,6 +18,9 @@ export interface Affordance {
   kind: AffordanceKind;
   commit: boolean;              // irreversible (Place Order/Pay/Delete) — NEVER auto-fired (#2)
   toState: string | null;       // navigate/reveal destination; null = unexplored or n/a
+  addressableUrl: string | null;// tier-1 coordinate: if the destination has a stable
+                                // canonical URL, the walk JUMPS there (goto) instead of
+                                // resolving a ref — for icon-only/unstable links. null = resolve a ref.
   children: Affordance[] | null;// reveal: affordances the overlay exposes; else null
   needs: string[];              // affordance ids that should fire first (preconditions); [] = none
   acceptsInput: string | null;  // runtime input slot the live browser fills (e.g. 'credentials')
@@ -36,7 +39,7 @@ export function makeAffordance(
   init: Pick<Affordance, 'id' | 'label' | 'kind'> & Partial<Affordance>,
 ): Affordance {
   return {
-    commit: false, toState: null, children: null, needs: [], acceptsInput: null,
+    commit: false, toState: null, addressableUrl: null, children: null, needs: [], acceptsInput: null,
     semanticStep: init.label, selectorCache: null, cost: 0, reliability: 1,
     successCount: 0, failCount: 0, lastVerified: null, confidence: 1,
     ...init,
@@ -73,6 +76,7 @@ export interface Edge {
   selectorCache: string | null; // DISPOSABLE last-known ref/selector
   kind: EdgeKind;
   acceptsInput: string | null;  // runtime slot name, e.g. "query"
+  addressableUrl: string | null; // tier-1 coordinate: jump here (goto) instead of resolving a ref; null = resolve
   requiresAffordances: string[];  // in-page affordances to fire before traversing this edge; [] = none
   core: boolean;                // on the main/core path (agent-declared); default false
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
@@ -110,7 +114,7 @@ export function makeEdge(
   init: Pick<Edge, 'fromState' | 'toState' | 'semanticStep' | 'kind'> & Partial<Edge>,
 ): Edge {
   return {
-    selectorCache: null, acceptsInput: null, requiresAffordances: [], core: false, cost: 0,
+    selectorCache: null, acceptsInput: null, addressableUrl: null, requiresAffordances: [], core: false, cost: 0,
     reliability: 1, successCount: 0, failCount: 0,
     lastVerified: null, confidence: 1,
     ...init,

@@ -1,7 +1,7 @@
 import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { MapStore } from '../mapstore/store.js';
 import { parseSnapshot, findByRoleAndName } from '../playwright/snapshot.js';
-import { makeState, makeEdge } from '../mapstore/types.js';
+import { makeState, makeAffordance } from '../mapstore/types.js';
 import { walkRoute, type WalkBrowser } from './walk.js';
 import type { RecallResponse } from '../protocol.js';
 
@@ -15,40 +15,61 @@ import type { RecallResponse } from '../protocol.js';
  * Idempotent: upsertState (ON CONFLICT id) and upsertEdge (UNIQUE from,to,step).
  */
 export function seedSaucedemoForWalk(store: MapStore): void {
+  const N = 'www.saucedemo.com';
   store.transaction(() => {
+    // Each state's REPERTOIRE is the source of truth (spec §8). navigate/reveal
+    // affordances with a toState project into the walk's edges; mutate/input never
+    // route (they're fired by the agent at a pause if it wants them). The "Finish"
+    // affordance is commit:true → it projects as a commit-point and is NEVER fired (#2).
     const states = [
-      makeState({ id: 'www.saucedemo.com:login', nodeId: 'www.saucedemo.com',
-        semanticName: 'www.saucedemo.com:login', urlPattern: 'https://www.saucedemo.com/',
-        role: 'detail', fingerprint: ['textbox:Username', 'button:Login'] }),
-      makeState({ id: 'www.saucedemo.com:inventory', nodeId: 'www.saucedemo.com',
-        semanticName: 'www.saucedemo.com:inventory', urlPattern: '*inventory*',
-        role: 'detail', fingerprint: ['button:Add to cart'] }),
-      makeState({ id: 'www.saucedemo.com:cart', nodeId: 'www.saucedemo.com',
-        semanticName: 'www.saucedemo.com:cart', urlPattern: '*cart*',
-        role: 'detail', fingerprint: ['button:Checkout'] }),
-      makeState({ id: 'www.saucedemo.com:checkout-info', nodeId: 'www.saucedemo.com',
-        semanticName: 'www.saucedemo.com:checkout-info', urlPattern: '*checkout-step-one*',
-        role: 'detail', fingerprint: ['textbox:First Name', 'button:Continue'] }),
-      makeState({ id: 'www.saucedemo.com:checkout-overview', nodeId: 'www.saucedemo.com',
-        semanticName: 'www.saucedemo.com:checkout-overview', urlPattern: '*checkout-step-two*',
-        role: 'detail', fingerprint: ['button:Finish'] }),
-    ];
-    const edges = [
-      makeEdge({ fromState: 'www.saucedemo.com:login', toState: 'www.saucedemo.com:inventory',
-        semanticStep: 'log in by clicking "Login"', kind: 'safe-reversible', acceptsInput: 'credentials' }),
-      makeEdge({ fromState: 'www.saucedemo.com:inventory', toState: 'www.saucedemo.com:cart',
-        semanticStep: 'open the shopping cart', kind: 'safe-reversible',
-        requiresAffordances: ['add an item to the cart'] }),
-      makeEdge({ fromState: 'www.saucedemo.com:cart', toState: 'www.saucedemo.com:checkout-info',
-        semanticStep: 'click "Checkout"', kind: 'safe-reversible' }),
-      makeEdge({ fromState: 'www.saucedemo.com:checkout-info', toState: 'www.saucedemo.com:checkout-overview',
-        semanticStep: 'click "Continue"', kind: 'safe-reversible',
-        requiresAffordances: ['enter First Name', 'enter Last Name', 'enter Zip/Postal Code'] }),
-      makeEdge({ fromState: 'www.saucedemo.com:checkout-overview', toState: 'www.saucedemo.com:purchase-complete',
-        semanticStep: 'click "Finish"', kind: 'unclassified' }),
+      makeState({ id: `${N}:login`, nodeId: N, semanticName: `${N}:login`,
+        urlPattern: 'https://www.saucedemo.com/', role: 'detail',
+        fingerprint: ['textbox:Username', 'button:Login'],
+        affordances: [
+          makeAffordance({ id: 'aff_username', label: 'enter Username', kind: 'input' }),
+          makeAffordance({ id: 'aff_password', label: 'enter Password', kind: 'input' }),
+          makeAffordance({ id: 'aff_login', label: 'log in by clicking "Login"', kind: 'navigate',
+            toState: `${N}:inventory`, needs: ['aff_username', 'aff_password'], acceptsInput: 'credentials' }),
+        ] }),
+      makeState({ id: `${N}:inventory`, nodeId: N, semanticName: `${N}:inventory`,
+        urlPattern: '*inventory*', role: 'detail', fingerprint: ['button:Add to cart'],
+        affordances: [
+          makeAffordance({ id: 'aff_cart', label: 'open the shopping cart', kind: 'navigate',
+            toState: `${N}:cart`, addressableUrl: 'https://www.saucedemo.com/cart.html' }),
+          makeAffordance({ id: 'aff_sort', label: 'sort products', kind: 'mutate' }),
+          makeAffordance({ id: 'aff_addcart', label: 'add an item to the cart', kind: 'mutate' }),
+          makeAffordance({ id: 'aff_menu', label: 'open the burger menu', kind: 'reveal', children: [
+            makeAffordance({ id: 'aff_allitems', label: 'All Items', kind: 'navigate', toState: `${N}:inventory` }),
+            makeAffordance({ id: 'aff_about', label: 'About', kind: 'navigate', toState: null }), // unexplored (offsite)
+            makeAffordance({ id: 'aff_logout', label: 'Logout', kind: 'navigate', toState: `${N}:login` }),
+            makeAffordance({ id: 'aff_reset', label: 'Reset App State', kind: 'mutate' }),
+          ] }),
+        ] }),
+      makeState({ id: `${N}:cart`, nodeId: N, semanticName: `${N}:cart`,
+        urlPattern: '*cart*', role: 'detail', fingerprint: ['button:Checkout'],
+        affordances: [
+          makeAffordance({ id: 'aff_checkout', label: 'click "Checkout"', kind: 'navigate',
+            toState: `${N}:checkout-info` }),
+          makeAffordance({ id: 'aff_continue_shopping', label: 'Continue Shopping', kind: 'navigate',
+            toState: `${N}:inventory` }),
+        ] }),
+      makeState({ id: `${N}:checkout-info`, nodeId: N, semanticName: `${N}:checkout-info`,
+        urlPattern: '*checkout-step-one*', role: 'detail', fingerprint: ['textbox:First Name', 'button:Continue'],
+        affordances: [
+          makeAffordance({ id: 'aff_first', label: 'enter First Name', kind: 'input' }),
+          makeAffordance({ id: 'aff_last', label: 'enter Last Name', kind: 'input' }),
+          makeAffordance({ id: 'aff_zip', label: 'enter Zip/Postal Code', kind: 'input' }),
+          makeAffordance({ id: 'aff_continue', label: 'click "Continue"', kind: 'navigate',
+            toState: `${N}:checkout-overview`, needs: ['aff_first', 'aff_last', 'aff_zip'], acceptsInput: 'shipping' }),
+        ] }),
+      makeState({ id: `${N}:checkout-overview`, nodeId: N, semanticName: `${N}:checkout-overview`,
+        urlPattern: '*checkout-step-two*', role: 'detail', fingerprint: ['button:Finish'],
+        affordances: [
+          makeAffordance({ id: 'aff_finish', label: 'click "Finish"', kind: 'navigate',
+            toState: `${N}:purchase-complete`, commit: true }),
+        ] }),
     ];
     for (const s of states) store.upsertState(s);
-    for (const e of edges) store.upsertEdge(e);
   });
 }
 
@@ -79,6 +100,7 @@ export function makeLiveWalkBrowser(
       return lastSnapshot;
     },
     callCount: () => adapter.callCount,
+    goto: async (url: string) => { await adapter.goto(url); },
     act: async (ref: string, inputSlot: string | null) => {
       if (inputSlot === 'credentials') {
         await adapter.fill(await fieldRef('Username'), inputs.username);
@@ -158,10 +180,13 @@ export async function runWalkLive(
       return lastSnapshot;
     },
     callCount: () => adapter.callCount,
+    // Tier-1 addressable jump: the walk calls this for an edge with addressableUrl
+    // (the cart link is icon-only / unstable on saucedemo, but cart.html is canonical).
+    goto: async (url: string) => { await adapter.goto(url); },
     act: async (ref: string, inputSlot: string | null) => {
       if (inputSlot === 'credentials') {
-        // LOGIN edge: replayStep resolved `ref` to the "Login" button (the W1
-        // semanticStep quotes "Login"). Fill Username + Password first, then click.
+        // LOGIN edge: replayStep resolved `ref` to the "Login" button. Fill
+        // Username + Password first, then click.
         const userRef = await fieldRef('Username');
         const passRef = await fieldRef('Password');
         await adapter.fill(userRef, inputs.username);
@@ -181,27 +206,8 @@ export async function runWalkLive(
         await adapter.click(ref);
         return;
       }
-      // Null-input edges:
-      //  - inventory -> cart: the edge's semanticStep targets a SPECIFIC product
-      //    ("Sauce Labs Backpack"), so `ref` is that unique product LINK. But the
-      //    action we want is its "Add to cart" BUTTON. On saucedemo each product
-      //    card has its own "Add to cart"; we click the FIRST one (the Backpack is
-      //    the first card), then reach the cart. TWO-ACTION SIMPLIFICATION (honest
-      //    seam): add-to-cart doesn't navigate, and cart IS url-addressable, so we
-      //    goto cart.html rather than hunt the cart-badge link (more robust). Per
-      //    the coordinate system an addressable state may be jumped to — acceptable.
-      //  - cart -> checkout-info: `ref` is the "Checkout" button — just click it.
-      const addBtn = parseSnapshot(lastSnapshot).find(
-        (n) => n.role === 'button' && n.name === 'Add to cart' && n.ref,
-      );
-      if (addBtn?.ref) {
-        // inventory -> cart: click the (first) Add-to-cart button, then go to cart.
-        await adapter.click(addBtn.ref);
-        await adapter.goto('https://www.saucedemo.com/cart.html');
-      } else {
-        // cart -> checkout-info (or any other plain-click edge): click the resolved ref.
-        await adapter.click(ref);
-      }
+      // Plain-click edge (e.g. cart -> checkout-info "Checkout"): click the resolved ref.
+      await adapter.click(ref);
     },
   };
 
