@@ -53,39 +53,58 @@ export interface RevealSynthesis {
   subStates: SubState[];
   /** parent → sub-node edges (purple "opens overlay"); ids 'rev0', 'rev1', … */
   revealEdges: LayoutEdge[];
-  /** childAffId → owning sub-node id, used to re-point child edges' source. */
+  /** childAffId → owning sub-node id, used to re-point child edges' source.
+   *  Contains ONLY children of EXPANDED overlays. */
   childOwner: Map<string, string>;
+  /** every affordance id that is a child of SOME overlay (expanded or not). An
+   *  edge via one of these whose child is NOT in childOwner belongs to a COLLAPSED
+   *  overlay and is dropped from the graph (Change 3: less up-front clutter). */
+  overlayChildIds: Set<string>;
 }
 
 function opensSubNode(a: AffLike): boolean {
   return a.kind === 'reveal' && Array.isArray(a.children) && a.children.length > 0;
 }
 
-/** Walk every state's affordance tree and synthesise the reveal sub-nodes. */
-export function synthesizeRevealSubNodes(states: StateLike[]): RevealSynthesis {
+/** Walk every state's affordance tree and synthesise the reveal sub-nodes.
+ *
+ *  `isExpanded(ownerId, affId)` gates COLLAPSE-BY-DEFAULT (Change 3): an overlay's
+ *  sub-node (and its child edges) is materialised ONLY when the user has expanded
+ *  that reveal chip. A collapsed reveal produces no sub-node, no reveal edge, and
+ *  its children stay owned by the parent row (so the parent shows just the chip).
+ *  Defaults to "all collapsed" when no predicate is supplied. */
+export function synthesizeRevealSubNodes(
+  states: StateLike[],
+  isExpanded: (ownerId: string, affId: string) => boolean = () => false,
+): RevealSynthesis {
   const subStates: SubState[] = [];
   const revealEdges: LayoutEdge[] = [];
   const childOwner = new Map<string, string>();
+  const overlayChildIds = new Set<string>();
   let revSeq = 0;
 
   const harvest = (ownerId: string, role: string, affs: AffLike[] | undefined): void => {
     for (const a of affs ?? []) {
-      if (opensSubNode(a)) {
+      if (!opensSubNode(a)) continue;
+      const children = a.children as AffLike[];
+      for (const c of children) overlayChildIds.add(c.id);
+      // Only expand an overlay whose chip the user has opened (collapsed default).
+      if (isExpanded(ownerId, a.id)) {
         const subId = ownerId + '::' + a.id;
-        const children = a.children as AffLike[];
         subStates.push({ id: subId, semanticName: a.label, role,
           availableSignals: [], affordances: children, parent: ownerId });
         revealEdges.push({ id: `rev${revSeq++}`, source: ownerId, target: subId,
           fork: false, viaAffordance: a.id, label: a.label, reveal: true });
         for (const c of children) childOwner.set(c.id, subId);
-        // nested overlay: a child that is itself a reveal-with-children.
+        // nested overlay: a child that is itself a reveal-with-children. Nested
+        // chips are scoped under the SUB-NODE id, so they expand independently.
         harvest(subId, role, children);
       }
     }
   };
   for (const s of states) harvest(s.id, s.role, s.affordances);
 
-  return { subStates, revealEdges, childOwner };
+  return { subStates, revealEdges, childOwner, overlayChildIds };
 }
 
 /** Build the LayoutNode list: real states + synthetic reveal sub-nodes. */
@@ -100,24 +119,34 @@ export function buildLayoutNodes(states: StateLike[], subStates: SubState[]): La
 }
 
 /** Build the LayoutEdge list: interior edges (child edges re-pointed to their
- *  sub-node) + the synthetic reveal edges. */
+ *  sub-node) + the synthetic reveal edges.
+ *
+ *  Edges whose `viaAffordance` is a child of a COLLAPSED overlay (an overlay
+ *  child id present in `overlayChildIds` but NOT in `childOwner`) are DROPPED —
+ *  a collapsed chip shows no child edges (Change 3). Pass an empty set to keep
+ *  the old "always show" behaviour. */
 export function buildLayoutEdges(
   edges: InteriorEdgeLike[], revealEdges: LayoutEdge[], childOwner: Map<string, string>,
   isFork: (e: InteriorEdgeLike) => boolean,
+  overlayChildIds: Set<string> = new Set(),
 ): LayoutEdge[] {
+  const collapsed = (via: string | undefined): boolean =>
+    !!via && overlayChildIds.has(via) && !childOwner.has(via);
   return [
-    ...edges.map((e, i) => ({
-      id: `e${i}`,
-      // a child-of-reveal edge is emitted as {from:S, viaAffordance:childId};
-      // re-point its source to the SUB-NODE that now owns that child.
-      source: (e.viaAffordance && childOwner.get(e.viaAffordance)) || e.from,
-      target: e.to,
-      fork: isFork(e),
-      core: e.core === true,
-      viaAffordance: e.viaAffordance,
-      dangling: e.dangling === true,
-      label: e.semanticStep,
-    })),
+    ...edges
+      .filter((e) => !collapsed(e.viaAffordance))
+      .map((e, i) => ({
+        id: `e${i}`,
+        // a child-of-reveal edge is emitted as {from:S, viaAffordance:childId};
+        // re-point its source to the SUB-NODE that now owns that child.
+        source: (e.viaAffordance && childOwner.get(e.viaAffordance)) || e.from,
+        target: e.to,
+        fork: isFork(e),
+        core: e.core === true,
+        viaAffordance: e.viaAffordance,
+        dangling: e.dangling === true,
+        label: e.semanticStep,
+      })),
     ...revealEdges,
   ];
 }

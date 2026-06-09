@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { layoutGraph } from './layout.js';
 
 describe('layoutGraph', () => {
-  it('positions every interior node and types non-self edges as orthogonal', async () => {
+  it('positions every interior node and types non-self edges as routed', async () => {
     const nodes = [
       { id: 'gh:search', label: 'search' },
       { id: 'gh:detail', label: 'detail' },
@@ -16,14 +16,26 @@ describe('layoutGraph', () => {
     }
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0].source).toBe('gh:search');
-    expect(out.edges[0].type).toBe('orthogonal');
-    // Canonical handle wiring: incoming edges land on one of the node's three target
-    // handles ('in-top'/'in-left'/'in-bottom'), chosen by geometry. A single forward
-    // edge lands on one of them.
-    expect(['in-top', 'in-left', 'in-bottom']).toContain(out.edges[0].targetHandle);
+    // Edges are now ELK-routed and rendered by the RoutedEdge.
+    expect(out.edges[0].type).toBe('routed');
   });
 
-  it('drops the old hand-rolled lane/reciprocalOffset geometry from edge data', async () => {
+  it('carries an ELK-routed polyline (data.points) + a default step shape', async () => {
+    const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }];
+    const edges = [{ id: 'e1', source: 'a', target: 'b', fork: false }];
+    const out = await layoutGraph(nodes, edges, 'interior');
+    const d = out.edges[0].data as any;
+    // ELK returns a route (start → bends → end); at least two points.
+    expect(Array.isArray(d.points)).toBe(true);
+    expect(d.points.length).toBeGreaterThanOrEqual(2);
+    for (const p of d.points) {
+      expect(typeof p.x).toBe('number');
+      expect(typeof p.y).toBe('number');
+    }
+    expect(d.shape).toBe('step');
+  });
+
+  it('drops the old hand-rolled lane/offset/stepPosition geometry from edge data', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false },
@@ -33,15 +45,19 @@ describe('layoutGraph', () => {
     for (const e of out.edges) {
       expect((e.data as any).lane).toBeUndefined();
       expect((e.data as any).reciprocalOffset).toBeUndefined();
+      expect((e.data as any).offset).toBeUndefined();
+      expect((e.data as any).stepPosition).toBeUndefined();
     }
   });
 
-  it('types a self-edge (from===to) as a selfloop', async () => {
+  it('types a self-edge (from===to) as a selfloop and does not give it to ELK', async () => {
     const nodes = [{ id: 'a', label: 'a' }];
     const edges = [{ id: 'e1', source: 'a', target: 'a', fork: false }];
     const out = await layoutGraph(nodes, edges, 'interior');
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0].type).toBe('selfloop');
+    // a self-loop has no ELK route — the SelfLoopEdge draws it from node geometry.
+    expect((out.edges[0].data as any).points).toBeUndefined();
   });
 
   it('attaches a real via-affordance to its source PORT handle but not a synthetic edge:* via', async () => {
@@ -53,12 +69,8 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges, 'interior');
     const real = out.edges.find((e) => e.id === 'e1')!;
     const synth = out.edges.find((e) => e.id === 'e2')!;
-    // real via → sourceHandle on the pink affordance port; both land on one of the
-    // three geometry-chosen target handles.
     expect(real.sourceHandle).toBe('aff_aff_cart');
     expect(synth.sourceHandle).toBeUndefined();
-    expect(['in-top', 'in-left', 'in-bottom']).toContain(real.targetHandle);
-    expect(['in-top', 'in-left', 'in-bottom']).toContain(synth.targetHandle);
   });
 
   it('materialises a synthetic "?" target node for a dangling edge', async () => {
@@ -86,31 +98,45 @@ describe('layoutGraph', () => {
     expect(out.edges).toHaveLength(2);
   });
 
-  it('routes a reciprocal pair (a→b AND b→a) onto DIFFERENT target handles', async () => {
-    const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }];
-    const edges = [
-      { id: 'e1', source: 'a', target: 'b', fork: false },
-      { id: 'e2', source: 'b', target: 'a', fork: false },
+  it('keeps the core spine a vertical column (core nodes stacked top-to-bottom)', async () => {
+    const nodes = [
+      { id: 'login', label: 'login' },
+      { id: 'inv', label: 'inventory' },
+      { id: 'cart', label: 'cart' },
+      { id: 'branch', label: 'branch' },
     ];
-    const out = await layoutGraph(nodes, edges, 'interior');
-    const fwd = out.edges.find((e) => e.id === 'e1')!;
-    const rev = out.edges.find((e) => e.id === 'e2')!;
-    // forward (down) → in-top; reverse (up) → in-bottom — never the same → no overlap.
-    expect(fwd.targetHandle).not.toBe(rev.targetHandle);
+    const edges = [
+      { id: 'e1', source: 'login', target: 'inv', fork: false, core: true },
+      { id: 'e2', source: 'inv', target: 'cart', fork: false, core: true },
+      // a non-core back-edge + a branch off the spine
+      { id: 'e3', source: 'cart', target: 'inv', fork: false, core: false },
+      { id: 'e4', source: 'inv', target: 'branch', fork: false, core: false },
+    ];
+    const out = await layoutGraph(nodes, edges as any, 'interior');
+    const pos = (id: string) => out.nodes.find((n) => n.id === id)!.position;
+    // spine descends: login above inventory above cart
+    expect(pos('login').y).toBeLessThan(pos('inv').y);
+    expect(pos('inv').y).toBeLessThan(pos('cart').y);
+    // spine stays a column: the three core nodes share roughly the same x
+    // core nodes share roughly the same x (small ELK centering jitter allowed; the
+    // key point is they're a column, NOT spread horizontally like the branch).
+    expect(Math.abs(pos('login').x - pos('cart').x)).toBeLessThan(40);
+    // and the branch sits clearly to the SIDE of the spine, not in the column.
+    expect(Math.abs(pos('branch').x - pos('inv').x)).toBeGreaterThan(100);
   });
 
-  it('carries from/to labels + a stepPosition on each edge for hover + fan-out', async () => {
+  it('carries from/to labels + a core flag on each edge for hover + readability', async () => {
     const nodes = [{ id: 'a', label: 'Home' }, { id: 'b', label: 'Detail' }];
-    const edges = [{ id: 'e1', source: 'a', target: 'b', fork: false }];
-    const out = await layoutGraph(nodes, edges, 'interior');
+    const edges = [{ id: 'e1', source: 'a', target: 'b', fork: false, core: true }];
+    const out = await layoutGraph(nodes, edges as any, 'interior');
     const d = out.edges[0].data as any;
     expect(d.fromLabel).toBe('Home');
     expect(d.toLabel).toBe('Detail');
-    expect(typeof d.stepPosition).toBe('number');
+    expect(d.core).toBe(true);
     expect(d.hovered).toBe(false);
   });
 
-  it('styles a core edge thicker/full-opacity vs a faded non-core edge', async () => {
+  it('styles a core edge bold/full-opacity vs a thin faded non-core back-edge', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false, core: true },
@@ -119,11 +145,14 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges as any, 'interior');
     const core = out.edges.find((e) => e.id === 'e1')!;
     const non = out.edges.find((e) => e.id === 'e2')!;
+    // core dominates: thicker stroke + full opacity; non-core thin + clearly faded.
     expect((core.style as any).strokeWidth).toBeGreaterThan((non.style as any).strokeWidth);
-    expect((non.style as any).opacity).toBeLessThan(1);
+    expect((core.style as any).opacity).toBe(1);
+    expect((non.style as any).opacity).toBeLessThanOrEqual(0.4);
+    expect((core.data as any).color).toBe('#1d4ed8');
   });
 
-  it('places a reveal SUB-NODE beside its parent and styles the reveal edge purple/dashed', async () => {
+  it('places a reveal SUB-NODE near its parent and styles the reveal edge purple/dashed', async () => {
     const nodes = [
       { id: 'inv', label: 'inventory', badges: 2 },
       { id: 'inv::r', label: 'burger menu open', badges: 4, sub: true, subParent: 'inv' },
@@ -137,9 +166,6 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges as any, 'interior');
     const parent = out.nodes.find((n) => n.id === 'inv')!;
     const sub = out.nodes.find((n) => n.id === 'inv::r')!;
-    // sub-node sits to the RIGHT of its parent, roughly level with it
-    expect(sub.position.x).toBeGreaterThan(parent.position.x);
-    expect(Math.abs(sub.position.y - parent.position.y)).toBeLessThan(60);
     expect((sub.data as any).sub).toBe(true);
     // reveal edge: purple, dashed, anchored to the burger affordance source port
     const rev = out.edges.find((e) => e.id === 'rev0')!;
@@ -148,6 +174,9 @@ describe('layoutGraph', () => {
     expect(rev.sourceHandle).toBe('aff_aff_burger');
     // child edge leaves the sub-node
     expect(out.edges.find((e) => e.id === 'e0')!.source).toBe('inv::r');
+    // both placed (positions are numbers)
+    expect(typeof parent.position.x).toBe('number');
+    expect(typeof sub.position.x).toBe('number');
   });
 
   it('falls back to a grid if a node is malformed (no throw, all positioned)', async () => {

@@ -67,6 +67,13 @@ interface StateNodeData {
   affordances?: Affordance[];
   // synthetic reveal SUB-NODE (an overlay's options): styled lighter/dashed.
   sub?: boolean;
+  // set of reveal-affordance ids (scoped to THIS node, e.g. 'nodeId::affId') that
+  // are currently EXPANDED — when expanded the overlay sub-node is materialised by
+  // the viewer and this row shows ▾; collapsed (default) shows ▸ + a count chip.
+  expandedReveals?: Set<string>;
+  // toggle an overlay open/closed (re-runs layout in the viewer). Receives the
+  // reveal affordance's id (raw aff.id) on THIS node.
+  onToggleReveal?: (affId: string) => void;
 }
 
 function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): JSX.Element {
@@ -107,30 +114,49 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
   );
 }
 
-// A reveal-with-children row. Its options are NOT rendered inline — they live in a
-// beside-it synthetic SUB-NODE the viewer materialises (see InteriorView). The row
-// therefore carries a single pink source PORT that the purple "opens overlay" edge
-// leaves from. (A childless reveal, or one that itself navigates, falls back to a
-// plain AffordanceRow handled by routes().)
-function RevealRow({ aff }: { aff: Affordance }): JSX.Element {
+// A reveal-with-children row. Its options live in a beside-it synthetic SUB-NODE
+// the viewer materialises ONLY WHEN EXPANDED (Change 3: collapsed by default to cut
+// clutter). Collapsed → a clickable chip "▸ <label> (N)" with NO source port and NO
+// sub-node/edges. Expanded → "▾ <label>" + a pink source PORT the purple "opens
+// overlay" edge leaves from (the viewer adds the sub-node). A childless reveal (or
+// one that itself navigates) falls back to a plain AffordanceRow via routes().
+function RevealRow({ aff, expanded, onToggle }: {
+  aff: Affordance; expanded: boolean; onToggle?: (affId: string) => void;
+}): JSX.Element {
   const opensOverlay = opensSubNode(aff);
+  const childCount = aff.children?.length ?? 0;
+  // Only an overlay-opening reveal is collapsible; otherwise it just routes.
+  const collapsible = opensOverlay;
+
   return (
     <div style={{ position: 'relative' }}>
       <div
+        onClick={collapsible ? (ev) => { ev.stopPropagation(); onToggle?.(aff.id); } : undefined}
+        title={collapsible ? (expanded ? 'collapse overlay' : 'expand overlay') : undefined}
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', fontSize: 11,
-          color: '#1e293b', userSelect: 'none' }}
+          color: '#1e293b', userSelect: 'none',
+          cursor: collapsible ? 'pointer' : 'default',
+          background: collapsible && !expanded ? '#f5f3ff' : undefined,
+          borderRadius: collapsible ? 4 : undefined }}
       >
-        <span style={{ width: 10, color: '#7c3aed' }}>{opensOverlay ? '⧉' : '·'}</span>
+        <span style={{ width: 12, color: '#7c3aed', fontSize: 10 }}>
+          {collapsible ? (expanded ? '▾' : '▸') : '·'}
+        </span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {aff.label}
         </span>
+        {collapsible && !expanded && childCount ? (
+          <span style={{ fontSize: 9, color: '#7c3aed', background: '#ede9fe', border: '1px solid #ddd6fe',
+            borderRadius: 8, padding: '0 5px', fontWeight: 600 }}>{childCount}</span>
+        ) : null}
         {aff.commit ? (
           <span style={{ fontSize: 8, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5',
             borderRadius: 4, padding: '0 3px', fontWeight: 600 }}>commit</span>
         ) : null}
-        {/* A reveal that opens an overlay routes to its sub-node; one that itself
-            navigates routes to its destination. Either way it gets a source port. */}
-        {opensOverlay || routes(aff) ? (
+        {/* A source PORT only when this row actually emits an edge: an EXPANDED
+            overlay (→ its sub-node) or a reveal that itself navigates. A collapsed
+            overlay emits nothing, so no port. */}
+        {(opensOverlay && expanded) || (!opensOverlay && routes(aff)) ? (
           <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
         ) : null}
       </div>
@@ -142,6 +168,7 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   const d = data as unknown as StateNodeData;
   const affordances = d.affordances ?? [];
   const sub = d.sub === true;
+  const expandedReveals = d.expandedReveals ?? new Set<string>();
 
   return (
     <div style={{
@@ -193,7 +220,7 @@ export function StateNode({ data }: NodeProps): JSX.Element {
                   paddingLeft: 6, marginTop: 2 }}>{KIND_LABEL[kind]}</div>
                 {group.map((a) =>
                   a.kind === 'reveal'
-                    ? <RevealRow key={a.id} aff={a} />
+                    ? <RevealRow key={a.id} aff={a} expanded={expandedReveals.has(a.id)} onToggle={d.onToggleReveal} />
                     : <AffordanceRow key={a.id} aff={a} indent={false} />,
                 )}
               </div>
