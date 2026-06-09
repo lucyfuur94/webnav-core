@@ -81,7 +81,8 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif', color: '#334155' }}>Couldn't load the interior for <b>{id}</b>: {error}</div>
         : empty
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif' }}>No interior recorded for <b>{id}</b> yet. Map it with a record session.</div>
-        : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView
+        : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+            fitView fitViewOptions={{ padding: 0.18 }} minZoom={0.05}
             onNodeMouseEnter={(_, n) => setHovered(n.id)}
             onNodeMouseLeave={() => setHovered(null)}>
             <Background /><Controls /><MiniMap />

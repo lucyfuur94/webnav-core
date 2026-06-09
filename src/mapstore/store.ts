@@ -223,7 +223,10 @@ export class MapStore implements IMapStore {
                 kind: a.commit ? 'commit-point' : 'navigate', viaAffordance: a.id,
                 core: live?.core ?? false });
               seen.add(s.id + ' ' + a.toState + ' ' + a.semanticStep);
-            } else {
+            } else if (!(a.kind === 'reveal' && a.children && a.children.length)) {
+              // A reveal that exposes children does NOT itself navigate — its CHILDREN
+              // carry the real transitions, so it gets no dangling stub. Only an
+              // unexplored navigate (or a childless reveal) surfaces as "unexplored".
               out.push({ from: s.id, to: null, semanticStep: a.semanticStep,
                 kind: a.commit ? 'commit-point' : 'navigate', viaAffordance: a.id,
                 core: false, dangling: true });
