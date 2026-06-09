@@ -126,13 +126,18 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
 // sub-node/edges. Expanded → "▾ <label>" + a pink source PORT the purple "opens
 // overlay" edge leaves from (the viewer adds the sub-node). A childless reveal (or
 // one that itself navigates) falls back to a plain AffordanceRow via routes().
-function RevealRow({ aff, expanded, onToggle }: {
-  aff: Affordance; expanded: boolean; onToggle?: (affId: string) => void;
+function RevealRow({ aff, expanded, onToggle, dark }: {
+  aff: Affordance; expanded: boolean; onToggle?: (affId: string) => void; dark: boolean;
 }): JSX.Element {
   const opensOverlay = opensSubNode(aff);
   const childCount = aff.children?.length ?? 0;
   // Only an overlay-opening reveal is collapsible; otherwise it just routes.
   const collapsible = opensOverlay;
+  // themed purple accents for the reveal chip (the white box bug in dark mode).
+  const chipBg = collapsible && !expanded ? (dark ? '#3b2f63' : '#f5f3ff') : undefined;
+  const purpleText = dark ? '#c4b5fd' : '#7c3aed';
+  const countBg = dark ? '#4c3a78' : '#ede9fe';
+  const countBorder = dark ? '#6d28d9' : '#ddd6fe';
 
   return (
     <div style={{ position: 'relative' }}>
@@ -142,17 +147,17 @@ function RevealRow({ aff, expanded, onToggle }: {
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', fontSize: 11,
           color: 'inherit', userSelect: 'none',
           cursor: collapsible ? 'pointer' : 'default',
-          background: collapsible && !expanded ? '#f5f3ff' : undefined,
+          background: chipBg,
           borderRadius: collapsible ? 4 : undefined }}
       >
-        <span style={{ width: 12, color: '#7c3aed', fontSize: 10 }}>
+        <span style={{ width: 12, color: purpleText, fontSize: 10 }}>
           {collapsible ? (expanded ? '▾' : '▸') : '·'}
         </span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {aff.label}
         </span>
         {collapsible && !expanded && childCount ? (
-          <span style={{ fontSize: 9, color: '#7c3aed', background: '#ede9fe', border: '1px solid #ddd6fe',
+          <span style={{ fontSize: 9, color: purpleText, background: countBg, border: `1px solid ${countBorder}`,
             borderRadius: 8, padding: '0 5px', fontWeight: 600 }}>{childCount}</span>
         ) : null}
         {aff.commit ? (
@@ -179,11 +184,13 @@ export function StateNode({ data }: NodeProps): JSX.Element {
 
   // Theme palette — dark mode themes the NODE too (React Flow's colorMode only
   // themes the canvas/chrome, not custom nodes).
-  const bg = sub ? (dark ? '#2a213f' : '#faf5ff') : (dark ? '#1e293b' : '#f8fafc');
-  const titleColor = dark ? '#f1f5f9' : '#0f172a';
-  const dividerColor = dark ? '#334155' : '#e2e8f0';
+  // Lighter, softer dark palette (was too dark): a mid slate card on a near-black
+  // canvas, with a clearer border so cards read as distinct surfaces.
+  const bg = sub ? (dark ? '#3a3357' : '#faf5ff') : (dark ? '#334155' : '#f8fafc');
+  const titleColor = dark ? '#f8fafc' : '#0f172a';
+  const dividerColor = dark ? '#475569' : '#e2e8f0';
   // Uniform border: sub-node = dashed purple (an overlay); else slate.
-  const border = sub ? '1.5px dashed #a78bfa' : `1px solid ${dark ? '#475569' : '#475569'}`;
+  const border = sub ? '1.5px dashed #a78bfa' : `1px solid ${dark ? '#64748b' : '#475569'}`;
 
   return (
     <div style={{
@@ -236,7 +243,7 @@ export function StateNode({ data }: NodeProps): JSX.Element {
                   paddingLeft: 6, marginTop: 2 }}>{KIND_LABEL[kind]}</div>
                 {group.map((a) =>
                   a.kind === 'reveal'
-                    ? <RevealRow key={a.id} aff={a} expanded={expandedReveals.has(a.id)} onToggle={d.onToggleReveal} />
+                    ? <RevealRow key={a.id} aff={a} expanded={expandedReveals.has(a.id)} onToggle={d.onToggleReveal} dark={dark} />
                     : <AffordanceRow key={a.id} aff={a} indent={false} />,
                 )}
               </div>

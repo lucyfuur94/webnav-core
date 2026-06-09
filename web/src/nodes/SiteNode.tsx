@@ -9,17 +9,22 @@ const SIDES = [
 ] as const;
 
 export function SiteNode({ data }: NodeProps) {
-  const d = data as { label: string; capabilities?: string[] };
+  const d = data as { label: string; capabilities?: string[]; dark?: boolean };
+  const dark = d.dark === true;
+  const bg = dark ? '#334155' : '#fff';
+  const text = dark ? '#f8fafc' : '#0f172a';
+  const chipBg = dark ? '#475569' : '#e2e8f0';
+  const chipText = dark ? '#e2e8f0' : '#334155';
   return (
-    <div style={{ border: '1px solid #334155', borderRadius: 8, background: '#fff',
-      padding: '8px 12px', width: 200, boxSizing: 'border-box', fontFamily: 'sans-serif' }}>
+    <div style={{ border: `1px solid ${dark ? '#64748b' : '#334155'}`, borderRadius: 8, background: bg,
+      color: text, padding: '8px 12px', width: 200, boxSizing: 'border-box', fontFamily: 'sans-serif' }}>
       {SIDES.map(([k, pos]) => (<Handle key={'s' + k} id={'s-' + k} type="source" position={pos} style={HIDDEN} />))}
       {SIDES.map(([k, pos]) => (<Handle key={'t' + k} id={'t-' + k} type="target" position={pos} style={HIDDEN} />))}
       <div style={{ fontWeight: 600, fontSize: 13 }}>{d.label}</div>
       {d.capabilities?.length ? (
         <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {d.capabilities.map((c) => (
-            <span key={c} style={{ fontSize: 10, background: '#e2e8f0', borderRadius: 4, padding: '1px 5px' }}>{c}</span>
+            <span key={c} style={{ fontSize: 10, background: chipBg, color: chipText, borderRadius: 4, padding: '1px 5px' }}>{c}</span>
           ))}
         </div>
       ) : null}

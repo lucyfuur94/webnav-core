@@ -13,6 +13,7 @@ import { StateNode } from './nodes/StateNode.js';
 import { UnexploredNode } from './nodes/UnexploredNode.js';
 import { RoutedEdge, SelfLoopEdge } from './edges/RoutedEdge.js';
 import { neighborSet, nodeOpacity, edgeActive } from './highlight.js';
+import { useTheme } from './useTheme.js';
 import type { NodeInteriorView } from './types.js';
 
 const nodeTypes = { state: StateNode, unexplored: UnexploredNode };
@@ -35,8 +36,9 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
   // every overlay collapsed (default). Toggling re-runs layout so the overlay
   // sub-node + its edges appear/disappear.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Light/dark theme — drives React Flow's colorMode + our chrome colors.
-  const [dark, setDark] = useState(false);
+  // Light/dark theme — shared + persisted (survives navigation / reload / session)
+  // via the useTheme hook; drives React Flow colorMode + our chrome/node colors.
+  const { dark, toggle: toggleDark } = useTheme();
 
   // Keep the raw interior data so a reveal toggle can re-layout without re-fetching.
   const ivRef = useRef<NodeInteriorView | null>(null);
@@ -208,7 +210,7 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
         <div style={{ position: 'absolute', zIndex: 10, top: 12, right: 12, display: 'flex',
           alignItems: 'center', gap: 10, fontFamily: 'sans-serif' }}>
           <button
-            aria-label="toggle dark mode" aria-pressed={dark} onClick={() => setDark((v) => !v)}
+            aria-label="toggle dark mode" aria-pressed={dark} onClick={toggleDark}
             title={dark ? 'Switch to light' : 'Switch to dark'}
             style={{ padding: '5px 10px', fontSize: 14, cursor: 'pointer', borderRadius: 8,
               border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`,
