@@ -173,6 +173,23 @@ export async function layoutGraph(
   }
   const trackSeen = new Map<string, number>();
 
+  // The smoothstep `offset` sets how far a wire runs out of its source before the
+  // first 90° turn — i.e. WHICH vertical gutter it travels in. Two edges with the
+  // SAME offset share a gutter and overlap (the inventory↔cart pair bug). So give
+  // each edge a DISTINCT offset. We group by the unordered node pair so the two
+  // directions of a reciprocal pair (and any parallel multi-edges between the same
+  // two nodes) get pushed into clearly separate gutters.
+  const OFFSET_BASE = 26;   // first gutter distance
+  const OFFSET_STEP = 22;   // each extra wire between the same pair steps out further
+  const pairKey = (a: string, b: string) => (a < b ? a + '|' + b : b + '|' + a);
+  const pairCount = new Map<string, number>();
+  for (const e of edges2) {
+    if (e.source === e.target || e.target == null) continue;
+    const k = pairKey(e.source, e.target as string);
+    pairCount.set(k, (pairCount.get(k) ?? 0) + 1);
+  }
+  const pairSeen = new Map<string, number>();
+
   const rfEdges: Edge[] = edges2.map((e) => {
     const core = e.core === true;
     const dangling = e.dangling === true;
@@ -191,6 +208,13 @@ export async function layoutGraph(
     const idx = trackSeen.get(trackKey(e, th)) ?? 0;
     if (!isSelf) trackSeen.set(trackKey(e, th), idx + 1);
     const stepPosition = total > 1 ? (idx + 1) / (total + 1) : 0.5;
+
+    // Distinct gutter per edge between the same node pair → reciprocal/parallel
+    // wires no longer share a vertical track (the main overlap fix).
+    const pk = pairKey(e.source, (e.target as string) ?? e.id);
+    const pIdx = isSelf ? 0 : (pairSeen.get(pk) ?? 0);
+    if (!isSelf) pairSeen.set(pk, pIdx + 1);
+    const offset = OFFSET_BASE + pIdx * OFFSET_STEP;
 
     return {
       id: e.id,
@@ -212,6 +236,9 @@ export async function layoutGraph(
         toLabel: e.target != null ? (labelOf.get(e.target as string) ?? e.target) : '?',
         // per-edge stepPosition so parallel approaches fan apart (Issue A/B).
         stepPosition,
+        // per-edge gutter distance so reciprocal/parallel wires use SEPARATE
+        // vertical tracks instead of overlapping (Issue A).
+        offset,
       },
       animated: e.fork,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
