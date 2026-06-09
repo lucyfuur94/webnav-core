@@ -39,13 +39,15 @@ const IN_PORT = {
   background: 'transparent', border: 'none', opacity: 0,
 } as const;
 
-// The affordance PORT: a pink rectangle on the row's right edge marking where an
-// edge leaves. A rectangle (not a dot) reads as a labeled "this is an affordance
-// exit" tag. One element only — it IS the React Flow source <Handle>.
-const PORT = {
-  right: -1, width: 12, height: 9, borderRadius: 2,
+// The affordance PORT MARKER: a pink rectangle on the row's right edge showing
+// "this row is an edge exit". It is now DECORATIVE (a plain span, not a Handle) —
+// edges leave the node's single bottom-centre source handle ('src'), because ELK
+// routes from a node-level SOUTH port (per-row anchoring would need a measured
+// two-pass; deferred). The marker still tells you which rows are navigations.
+const PORT_MARK: React.CSSProperties = {
+  position: 'absolute', right: -1, width: 12, height: 9, borderRadius: 2,
   background: '#ec4899', border: '1px solid #be185d',
-} as const;
+};
 
 // A navigate affordance routes; a reveal CHILD that itself navigates also routes.
 function routes(a: Affordance): boolean {
@@ -67,6 +69,8 @@ interface StateNodeData {
   affordances?: Affordance[];
   // synthetic reveal SUB-NODE (an overlay's options): styled lighter/dashed.
   sub?: boolean;
+  // on the core spine → heavier blue border so the trunk pops (§8 visual ladder).
+  isSpine?: boolean;
   // set of reveal-affordance ids (scoped to THIS node, e.g. 'nodeId::affId') that
   // are currently EXPANDED — when expanded the overlay sub-node is materialised by
   // the viewer and this row shows ▾; collapsed (default) shows ▸ + a count chip.
@@ -106,9 +110,9 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
         <span style={{ fontSize: 8, color: '#94a3b8' }}>?</span>
       ) : null}
       {routable ? (
-        /* Pink rectangle PORT — the single element marking this affordance's edge
-           exit (it IS the source handle the orthogonal edge anchors to). */
-        <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
+        /* Decorative pink marker: "this row is an edge exit". The actual edge
+           leaves the node's bottom-centre 'src' handle (see node footer). */
+        <span style={PORT_MARK} />
       ) : null}
     </div>
   );
@@ -157,7 +161,7 @@ function RevealRow({ aff, expanded, onToggle }: {
             overlay (→ its sub-node) or a reveal that itself navigates. A collapsed
             overlay emits nothing, so no port. */}
         {(opensOverlay && expanded) || (!opensOverlay && routes(aff)) ? (
-          <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
+          <span style={PORT_MARK} />
         ) : null}
       </div>
     </div>
@@ -168,25 +172,32 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   const d = data as unknown as StateNodeData;
   const affordances = d.affordances ?? [];
   const sub = d.sub === true;
+  const isSpine = d.isSpine === true;
   const expandedReveals = d.expandedReveals ?? new Set<string>();
+
+  // Border ladder (§8): sub-node = dashed purple; core-spine = heavy blue (the
+  // trunk pops); branch/leaf = hairline grey.
+  const border = sub ? '1.5px dashed #7c3aed'
+    : isSpine ? '2px solid #1d4ed8'
+    : '1px solid #94a3b8';
 
   return (
     <div style={{
-      // A synthetic reveal SUB-NODE (an overlay's options) reads as a lighter,
-      // dashed, slightly narrower box hanging off its parent — distinct from a
-      // real navigable state.
-      border: sub ? '1.5px dashed #7c3aed' : '1px solid #475569',
+      border,
       borderRadius: 8,
       background: sub ? '#faf5ff' : '#f8fafc',
       width: sub ? WIDTH - 24 : WIDTH,
       boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
-      {/* Three TARGET handles (top / left / bottom). layout.ts chooses which one
-          each incoming edge lands on by geometry, so forward and reverse edges of a
-          reciprocal pair don't coincide. React Flow routes the smoothstep wire into
-          the chosen handle (arrow touches the border). */}
+      {/* TARGET handles: 'in-top' (top-centre) is where layout.ts points incoming
+          edges (mirrors ELK's NORTH port). The left/bottom handles remain so RF
+          never errors on a stray targetHandle, but the routed edges all use in-top. */}
       <Handle id="in-top" type="target" position={Position.Top} style={IN_PORT} />
       <Handle id="in-left" type="target" position={Position.Left} style={IN_PORT} />
       <Handle id="in-bottom" type="target" position={Position.Bottom} style={IN_PORT} />
+      {/* SOURCE handle: bottom-centre (mirrors ELK's SOUTH port). ALL outgoing edges
+          leave here — curved/straight modes anchor their bezier/line to it; 'step'
+          uses ELK's routed points (which also start at this port). */}
+      <Handle id="src" type="source" position={Position.Bottom} style={IN_PORT} />
 
       {/* Title block */}
       <div style={{ padding: '8px 10px', borderBottom: affordances.length ? '1px solid #e2e8f0' : 'none' }}>

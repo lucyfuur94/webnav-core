@@ -126,10 +126,20 @@ export async function layoutGraph(
 
   const corePartition = spinePartitions(edges2);
   const spine = corePartition.size > 0 && mode === 'interior';
+  const unexploredIds = new Set(allNodes.filter((n) => n.unexplored).map((n) => n.id));
+  const isReal = (id: string) => !unexploredIds.has(id);
 
   // ── Build the FULL elk graph: every node + every edge, and let elk ROUTE. ──
   // Self edges aren't given to elk (it can't route a node→itself loop sensibly);
   // the SelfLoopEdge draws those from node geometry. Everything else is routed.
+  //
+  // Each real node declares TWO ports (FIXED_POS): a SOUTH source at bottom-centre
+  // and a NORTH target at top-centre. So every outgoing edge leaves bottom-centre,
+  // every incoming edge enters top-centre — ELK's start/end points are exact and
+  // in the SAME coord space React Flow uses, so the 'step' polyline (drawn purely
+  // from data.points) connects to the box with no gap. We DON'T anchor per-row
+  // (that needs measured pixel-y + a two-pass render — deferred); "which affordance"
+  // is read from the edge label instead.
   const routableEdges = edges2.filter((e) => e.source !== e.target && e.target != null);
   const elkGraph = {
     id: 'root',
@@ -137,27 +147,51 @@ export async function layoutGraph(
       'elk.algorithm': 'layered',
       'elk.direction': mode === 'clusters' ? 'RIGHT' : 'DOWN',
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': mode === 'clusters' ? '80' : '90',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '140',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-      'elk.spacing.edgeNode': '30',
-      'elk.spacing.edgeEdge': '20',
+      // Tightened spacing (was 90/140 — too airy).
+      'elk.spacing.nodeNode': mode === 'clusters' ? '60' : '45',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '70',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+      'elk.spacing.edgeNode': '20',
+      'elk.spacing.edgeEdge': '14',
+      // Placement: straighten one dominant chain + center single-parent/child nodes.
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      // Within-layer ordering: honor array order (spine emitted first → stays centered).
+      'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      // Back-edges: compact feedback routing (not full-height L-detours); bundle them.
+      'elk.layered.feedbackEdges': 'true',
+      'elk.layered.mergeEdges': 'true',
       // keep the spine a straight top-to-bottom column even with the full graph.
       ...(spine ? { 'elk.partitioning.activate': 'true' } : {}),
     },
     children: allNodes.map((n) => {
       const p = corePartition.get(n.id);
+      const w = nodeW(n), h = nodeH(n);
+      const opts: Record<string, string> = {};
+      if (isReal(n.id)) opts['elk.portConstraints'] = 'FIXED_POS';
+      if (spine && p !== undefined) opts['elk.partitioning.partition'] = String(p);
       return {
         id: n.id,
-        width: nodeW(n),
-        height: nodeH(n),
-        ...(spine && p !== undefined
-          ? { layoutOptions: { 'elk.partitioning.partition': String(p) } }
+        width: w,
+        height: h,
+        ...(Object.keys(opts).length ? { layoutOptions: opts } : {}),
+        ...(isReal(n.id)
+          ? {
+              ports: [
+                { id: 'src_' + n.id, x: w / 2, y: h, width: 1, height: 1,
+                  layoutOptions: { 'elk.port.side': 'SOUTH' } },
+                { id: 'in_' + n.id, x: w / 2, y: 0, width: 1, height: 1,
+                  layoutOptions: { 'elk.port.side': 'NORTH' } },
+              ],
+            }
           : {}),
       };
     }),
     edges: routableEdges.map((e) => ({
-      id: e.id, sources: [e.source], targets: [e.target as string],
+      id: e.id,
+      sources: [isReal(e.source) ? 'src_' + e.source : e.source],
+      targets: [isReal(e.target as string) ? 'in_' + (e.target as string) : (e.target as string)],
     })),
   };
 
@@ -179,6 +213,7 @@ export async function layoutGraph(
     }
     // Only fall back to a full grid if ELK produced NOTHING (genuine failure).
     if (Object.keys(positions).length === 0) positions = gridPositions(allNodes);
+    else snapSpine(allNodes, edges2, corePartition, positions, routes, spine);
   } catch {
     positions = gridPositions(allNodes);
   }
@@ -186,7 +221,9 @@ export async function layoutGraph(
   const rfNodes: Node[] = allNodes.map((n) => ({
     id: n.id,
     position: positions[n.id] ?? { x: 0, y: 0 },
-    data: { label: n.label, unexplored: n.unexplored === true, sub: n.sub === true },
+    // isSpine → StateNode draws a heavier blue border so the trunk pops (§8).
+    data: { label: n.label, unexplored: n.unexplored === true, sub: n.sub === true,
+      isSpine: corePartition.has(n.id) },
     type: n.unexplored ? 'unexplored' : mode === 'clusters' ? 'site' : 'state',
   }));
 
@@ -212,25 +249,33 @@ export async function layoutGraph(
       : core ? '#1d4ed8'
       : '#94a3b8';
 
-    // Attach the edge's SOURCE to a specific affordance PORT (the pink rect on that
-    // row) for real via ids; synthetic 'edge:*' vias use the node default.
-    const via = e.viaAffordance;
-    const sourceHandle = via && !via.startsWith('edge:') ? 'aff_' + via : undefined;
+    // Connect to the node-level handles: bottom-centre source 'src', top-centre
+    // target 'in-top' — these mirror the ELK SOUTH/NORTH ports, so 'step'
+    // (ELK-routed) AND curved/straight (RF handle-derived) all enter top-centre /
+    // leave bottom-centre consistently. Synthetic 'unexplored' targets have no
+    // 'in-top' handle, so omit targetHandle for them (RF default).
+    const srcHandle = isReal(e.source) ? 'src' : undefined;
+    const tgtHandle = isReal(e.target as string) ? 'in-top' : undefined;
 
-    // Stroke weight + opacity: core dominates; non-core back-edges thin + faded.
-    const width = core ? 2.5 : reveal ? 1.6 : dangling ? 1 : 1;
+    // Stroke weight + opacity: core dominates hard; non-core back-edges thin + faded (§8).
+    const width = core ? 3.5 : reveal ? 1.6 : 1;
     const opacity = core ? 1
       : reveal ? 0.85
       : e.fork ? 0.8
-      : dangling ? 0.45
-      : 0.4;
+      : dangling ? 0.4
+      : 0.3;
+    // z-order: core spine on top, then reveal/fork, back-edges underneath — so a
+    // faded back-edge never paints over the spine (React Flow honors zIndex).
+    const zIndex = core ? 10 : reveal || e.fork ? 5 : 0;
 
     return {
       id: e.id,
       source: e.source,
       target: e.target as string,
-      ...(sourceHandle ? { sourceHandle } : {}),
+      ...(srcHandle ? { sourceHandle: srcHandle } : {}),
+      ...(tgtHandle ? { targetHandle: tgtHandle } : {}),
       type: isSelf ? 'selfloop' : 'routed',
+      zIndex,
       data: {
         color,
         width,
@@ -253,7 +298,46 @@ export async function layoutGraph(
       style: { stroke: color, strokeWidth: width, opacity },
     };
   });
+  // Draw core edges LAST (on top) so they never render under faded clutter.
+  rfEdges.sort((a, b) => ((a.zIndex ?? 0) - (b.zIndex ?? 0)));
   return { nodes: rfNodes, edges: rfEdges };
+}
+
+/**
+ * Deterministic post-ELK spine straightener. ELK's BALANCED placement gets the
+ * core column CLOSE but a side branch still pulls each spine node to a different
+ * x (verified empirically — see the design spec). So after ELK returns we snap
+ * every core node to the MEDIAN spine x (robust to one outlier branch) and
+ * recompute the core FORWARD edges as a clean vertical 2-point segment
+ * (bottom-centre → top-centre). Branch / back-edges keep ELK's around-box routes.
+ */
+function snapSpine(
+  allNodes: LayoutNode[], edges: LayoutEdge[], corePartition: Map<string, number>,
+  positions: Record<string, { x: number; y: number }>, routes: Record<string, RoutePoint[]>,
+  spine: boolean,
+): void {
+  if (!spine || corePartition.size === 0) return;
+  const byId = new Map(allNodes.map((n) => [n.id, n]));
+  const coreIds = [...corePartition.keys()];
+  const xs = coreIds.map((id) => positions[id]?.x ?? 0).sort((a, b) => a - b);
+  const colX = xs[Math.floor(xs.length / 2)];   // median column x
+  for (const id of coreIds) {
+    if (positions[id]) positions[id] = { x: colX, y: positions[id].y };
+  }
+  // Recompute core forward edges (target in a LATER partition) as a vertical line
+  // centred on each box (widths may differ, so centre = x + width/2).
+  for (const e of edges) {
+    if (!e.core || e.target == null) continue;
+    const sp = corePartition.get(e.source), tp = corePartition.get(e.target as string);
+    if (sp === undefined || tp === undefined || tp <= sp) continue;
+    const sN = byId.get(e.source), tN = byId.get(e.target as string);
+    const sPos = positions[e.source], tPos = positions[e.target as string];
+    if (!sN || !tN || !sPos || !tPos) continue;
+    routes[e.id] = [
+      { x: sPos.x + nodeW(sN) / 2, y: sPos.y + nodeH(sN) },  // source bottom-centre
+      { x: tPos.x + nodeW(tN) / 2, y: tPos.y },              // target top-centre
+    ];
+  }
 }
 
 function gridPositions(nodes: LayoutNode[]): Record<string, { x: number; y: number }> {

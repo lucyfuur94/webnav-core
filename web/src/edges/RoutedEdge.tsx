@@ -116,11 +116,18 @@ function shorten(from: { x: number; y: number }, to: { x: number; y: number }, r
   return { x: from.x + dx * k, y: from.y + dy * k };
 }
 
-/** Midpoint along a polyline (for placing the label) — picks the mid segment. */
-function midOfPolyline(pts: { x: number; y: number }[]): { x: number; y: number } {
+/** Label anchor = midpoint of the single LONGEST segment of the polyline. On a
+ *  top-down flow this reliably lands on a long run that visibly belongs to the
+ *  line, never on a short corner jog (the old mid-INDEX pick floated labels). */
+function labelAnchor(pts: { x: number; y: number }[]): { x: number; y: number } {
   if (pts.length === 0) return { x: 0, y: 0 };
-  const mid = Math.floor((pts.length - 1) / 2);
-  const a = pts[mid], b = pts[mid + 1] ?? pts[mid];
+  if (pts.length === 1) return pts[0];
+  let best = 0, bestLen = -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    if (len > bestLen) { bestLen = len; best = i; }
+  }
+  const a = pts[best], b = pts[best + 1];
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
@@ -149,7 +156,7 @@ export function RoutedEdge(props: EdgeProps): JSX.Element {
     const pts = d.points;
     if (pts && pts.length >= 2) {
       path = roundedPolyline(pts, CORNER_R);
-      const m = midOfPolyline(pts);
+      const m = labelAnchor(pts);
       labelX = m.x; labelY = m.y;
     } else {
       // no route from ELK — fall back to a straight line between endpoints.
@@ -159,7 +166,9 @@ export function RoutedEdge(props: EdgeProps): JSX.Element {
   }
 
   const hovered = d.hovered === true;
-  const showLabel = !d.dimmed && (d.label || hovered);
+  // Show a static label only on CORE (spine) edges; branch/back-edge labels appear
+  // on hover only — cuts clutter (§5).
+  const showLabel = !d.dimmed && ((d.label && d.core) || hovered);
   return (
     <>
       <BaseEdge
