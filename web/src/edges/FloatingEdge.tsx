@@ -50,19 +50,15 @@ function handleCenter(n: InternalNode | undefined, handleId: string): Pt | null 
   };
 }
 
-// The point where an edge should LEAVE the source node toward `toward`, exiting
-// the border SIDE that faces the target. When an affordance row is given, the
-// edge keeps that row's vertical position if it exits left/right (so the arrow
-// visibly leaves that row), but exits the bottom/top centre when the target is
-// above/below — which keeps stacked-node edges straight instead of looping out
-// the right side and back through the box.
-function exitPoint(rect: Rect, toward: Pt, aff: Pt | null): { pt: Pt; side: Position } {
+// The point where an edge with NO affordance anchor should leave the source node
+// toward `toward` — the centre of the border SIDE that faces the target. (Edges
+// that DO carry an affordance anchor start at that row's handle instead.)
+function exitPoint(rect: Rect, toward: Pt): { pt: Pt; side: Position } {
   const side = sideOf(rect, toward);
   const cx = rect.x + rect.width / 2;
   if (side === Position.Bottom) return { pt: { x: cx, y: rect.y + rect.height }, side };
   if (side === Position.Top) return { pt: { x: cx, y: rect.y }, side };
-  // Left/Right: leave from the affordance row's Y when we have one, else centre.
-  const y = aff ? aff.y : rect.y + rect.height / 2;
+  const y = rect.y + rect.height / 2;
   const x = side === Position.Right ? rect.x + rect.width : rect.x;
   return { pt: { x, y }, side };
 }
@@ -141,9 +137,10 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     const py = dxc / lenc;
     // Gentle, capped bow so the two arcs separate WITHOUT ballooning over the boxes.
     const a = Math.sign(reciprocalOffset) * Math.min(46, Math.max(24, lenc * 0.10));
-    // Endpoints sit ON the border facing the other node (shifted toward this arc's
-    // side), so arrowheads land on the border and the arc never starts inside a box.
-    const sp = intersect(sRect, { x: tCenter.x + px * a, y: tCenter.y + py * a });
+    // START at the affordance ROW's handle when present (the arrow leaves THAT
+    // row); else sit on the source border shifted toward this arc's side. END on
+    // the target border. Arrowheads land on the border; the arc bows by `a`.
+    const sp = affAnchor ?? intersect(sRect, { x: tCenter.x + px * a, y: tCenter.y + py * a });
     const tp = intersect(tRect, { x: sCenter.x + px * a, y: sCenter.y + py * a });
     // Single control point at the midpoint pushed out by `a` (not 1.7×) → a shallow,
     // even arc that clears the nodes without the old over-curl.
@@ -157,17 +154,28 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
     labelX = (sp.x + tp.x) / 2 + px * labelPush;
     labelY = (sp.y + tp.y) / 2 + py * labelPush;
   } else {
-    // Leave the source from the border SIDE facing the target (keeping the
-    // affordance row's Y only when exiting left/right); enter the target on the
-    // border facing the source. This stops the edge from cutting across the box.
-    const { pt: sp, side: sSide } = exitPoint(sRect, tCenter, affAnchor);
+    // START at the affordance ROW's handle when present (so the arrow visibly
+    // leaves THAT row) — the handle sits on the row's right edge. Without one,
+    // leave from the border side facing the target. END on the target border
+    // facing the source.
+    let sp: Pt;
+    let sSide: Position;
+    if (affAnchor) {
+      sp = affAnchor;
+      sSide = Position.Right;          // handles are on the row's right edge
+    } else {
+      const ex = exitPoint(sRect, tCenter);
+      sp = ex.pt;
+      sSide = ex.side;
+    }
     const tp = intersect(tRect, sp);
     const tSide = sideOf(tRect, sp);
-    // STRAIGHT line when the two endpoints are essentially axis-aligned (a stacked
-    // spine, or a side-by-side pair) — a curve there only adds noise.
+    // STRAIGHT line only when there's no affordance anchor AND the endpoints are
+    // axis-aligned (e.g. a synthetic-source spine edge). An affordance-anchored
+    // edge always curves out of the row's right side to its target.
     const dx = Math.abs(tp.x - sp.x);
     const dy = Math.abs(tp.y - sp.y);
-    const aligned = dx < 8 || dy < 8;
+    const aligned = !affAnchor && (dx < 8 || dy < 8);
     if (aligned) {
       path = `M ${sp.x},${sp.y} L ${tp.x},${tp.y}`;
       labelX = (sp.x + tp.x) / 2;
@@ -176,7 +184,7 @@ export function FloatingEdge({ id, source, target, markerEnd, data }: EdgeProps)
       const [p, lx, ly] = getBezierPath({
         sourceX: sp.x, sourceY: sp.y, targetX: tp.x, targetY: tp.y,
         sourcePosition: sSide, targetPosition: tSide,
-        curvature: d.curvature ?? 0.2,
+        curvature: d.curvature ?? 0.25,
       });
       path = p;
       labelX = lx;
