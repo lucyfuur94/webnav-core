@@ -40,6 +40,10 @@ interface OrthogonalData {
   // where along the run the bend happens (0 = at source, 1 = at target). Staggered
   // per-edge in layout.ts so edges sharing a target handle fan apart (Issue A).
   stepPosition?: number;
+  // how far the wire runs out of its source before the first 90° turn = which
+  // vertical GUTTER it uses. Distinct per edge between the same node pair so
+  // reciprocal/parallel wires never share a track (Issue A).
+  offset?: number;
 }
 
 function edgeStyle(d: OrthogonalData): React.CSSProperties {
@@ -100,7 +104,7 @@ export function OrthogonalEdge(props: EdgeProps): JSX.Element {
 
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
-    borderRadius: CORNER_R, offset: STEP_OFFSET,
+    borderRadius: CORNER_R, offset: d.offset ?? STEP_OFFSET,
     stepPosition: d.stepPosition ?? 0.5,
   });
 
