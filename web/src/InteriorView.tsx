@@ -19,7 +19,9 @@ const nodeTypes = { state: StateNode, unexplored: UnexploredNode };
 const edgeTypes = { routed: RoutedEdge, selfloop: SelfLoopEdge };
 const DIM = 0.18;   // opacity for nodes NOT adjacent to the hovered node
 
-const SHAPES: ConnectorShape[] = ['step', 'curved', 'straight'];
+// Offered connector shapes. 'straight' is still supported by RoutedEdge but not
+// exposed (it doesn't route around boxes, so it's not useful on a cyclic graph).
+const SHAPES: ConnectorShape[] = ['step', 'curved'];
 const SHAPE_LABEL: Record<ConnectorShape, string> = {
   step: 'Step', curved: 'Curved', straight: 'Straight',
 };
