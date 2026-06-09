@@ -6,3 +6,7 @@ dist/
 *.db-journal
 tests/tmp/
 .playwright-mcp/
+
+# dev graph-screenshot artifacts
+*-graph.html
+.playwright-cli/
