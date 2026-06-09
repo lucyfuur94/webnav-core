@@ -334,6 +334,16 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
     example: 'webnav dev mermaid www.saucedemo.com',
   },
+  {
+    name: 'standalone',
+    summary: 'Write a SINGLE self-contained HTML file that renders a site\'s interior graph offline (inlines the React Flow bundle + the graph data) — open it by double-clicking, no server. Requires `npm --prefix web run build` first.',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
+    flags: [
+      { name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' },
+      { name: '--out', takesValue: true, description: 'Output HTML path (default: <site>-graph.html in cwd).' },
+    ],
+    example: 'webnav dev standalone www.saucedemo.com --out saucedemo.html',
+  },
 ];
 
 export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];

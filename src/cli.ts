@@ -28,6 +28,7 @@ export type ParsedArgs =
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
+  | { cmd: 'standalone'; node: string; out: string | undefined }
   | { cmd: 'navigate'; url: string; session: string }
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
@@ -163,6 +164,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
+  if (cmd === 'standalone') return { cmd, node: flagValue(rest, '--node') ?? rest.find((r) => !r.startsWith('--')) ?? '', out: flagValue(rest, '--out') };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest) };
@@ -420,6 +422,35 @@ async function main() {
     const coverage = analyseCoverage(args.node, states);
     const text = args.cmd === 'outline' ? toOutline(args.node, states) : toMermaid(args.node, states);
     console.log(JSON.stringify({ status: 'ok', node: args.node, coverage, text }, null, 2));
+    return;
+  }
+  if (args.cmd === 'standalone') {
+    // Build a SINGLE self-contained HTML (inlined bundle + data) that renders the
+    // site's interior graph offline — open by double-clicking, no server needed.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { buildStandaloneHtml } = await import('./graph/standalone.js');
+    const { writeFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    if (!store.statesForNode(args.node).length) {
+      console.log(JSON.stringify({ status: 'empty', node: args.node,
+        hint: `no interior captured for "${args.node}"` }, null, 2));
+      process.exitCode = 3;
+      return;
+    }
+    let html: string;
+    try {
+      html = buildStandaloneHtml(store, args.node);
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'error', error: String((e as Error).message),
+        hint: 'run `npm --prefix web run build` first' }, null, 2));
+      process.exitCode = 2;
+      return;
+    }
+    const out = resolve(args.out ?? `${args.node}-graph.html`);
+    writeFileSync(out, html, 'utf8');
+    console.log(JSON.stringify({ status: 'ok', node: args.node, file: out,
+      open: `file://${out}` }, null, 2));
     return;
   }
   if (args.cmd === 'walk') {
