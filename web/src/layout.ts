@@ -312,13 +312,17 @@ export async function layoutGraph(
   return { nodes: rfNodes, edges: rfEdges };
 }
 
+const SPINE_GAP = 90;   // vertical gap between consecutive spine nodes
+
 /**
- * Deterministic post-ELK spine straightener. ELK's BALANCED placement gets the
- * core column CLOSE but a side branch still pulls each spine node to a different
- * x (verified empirically — see the design spec). So after ELK returns we snap
- * every core node to the MEDIAN spine x (robust to one outlier branch) and
- * recompute the core FORWARD edges as a clean vertical 2-point segment
- * (bottom-centre → top-centre). Branch / back-edges keep ELK's around-box routes.
+ * Deterministic spine LAYOUT — pins the core path to a clean vertical column in
+ * PARTITION ORDER, independent of what ELK did. ELK's placement drifts (different
+ * x per node) and, worse, EXPANDING an overlay adds nodes/edges that make ELK
+ * reorder the spine's y (verified: login slid below cart, boxes overlapped). So
+ * we OWN the spine's geometry: stack the core nodes top-to-bottom by partition
+ * index at one shared x, with gaps sized to each node's real height, and recompute
+ * the core forward edges as clean vertical segments. Branches / sub-nodes / back-
+ * edges keep ELK's positions + around-box routes (they hang off this fixed spine).
  */
 function snapSpine(
   allNodes: LayoutNode[], edges: LayoutEdge[], corePartition: Map<string, number>,
@@ -327,14 +331,23 @@ function snapSpine(
 ): void {
   if (!spine || corePartition.size === 0) return;
   const byId = new Map(allNodes.map((n) => [n.id, n]));
-  const coreIds = [...corePartition.keys()];
-  const xs = coreIds.map((id) => positions[id]?.x ?? 0).sort((a, b) => a - b);
-  const colX = xs[Math.floor(xs.length / 2)];   // median column x
-  for (const id of coreIds) {
-    if (positions[id]) positions[id] = { x: colX, y: positions[id].y };
+  // spine node ids in partition order (0,1,2,…) = the flow sequence.
+  const ordered = [...corePartition.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+
+  // Shared column x = median of ELK's core x's (keeps the column near where ELK
+  // put it relative to branches); y = sequential stack by partition.
+  const xs = ordered.map((id) => positions[id]?.x ?? 0).sort((a, b) => a - b);
+  const colX = xs[Math.floor(xs.length / 2)] ?? 0;
+  const topY = Math.min(...ordered.map((id) => positions[id]?.y ?? 0));
+  let y = Number.isFinite(topY) ? topY : 0;
+  for (const id of ordered) {
+    const n = byId.get(id);
+    positions[id] = { x: colX, y };
+    y += (n ? nodeH(n) : NODE_H_BASE) + SPINE_GAP;
   }
-  // Recompute core forward edges (target in a LATER partition) as a vertical line
-  // centred on each box (widths may differ, so centre = x + width/2).
+
+  // Recompute core FORWARD edges (target in a later partition) as a clean vertical
+  // 2-point segment, centred on each box (widths may differ).
   for (const e of edges) {
     if (!e.core || e.target == null) continue;
     const sp = corePartition.get(e.source), tp = corePartition.get(e.target as string);

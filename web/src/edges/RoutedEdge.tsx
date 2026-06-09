@@ -21,7 +21,8 @@ import {
   type InternalNode,
 } from '@xyflow/react';
 
-const CORNER_R = 12; // rounded-corner radius at each bend (Change 3: bigger)
+const CORNER_R = 12; // rounded-corner radius at interior bends
+const END_R = 24;    // larger radius on the first/last bend → curved lead-in/out (Fix 5)
 const HILITE = '#f59e0b'; // amber highlight for the hovered edge
 
 export type ConnectorShape = 'step' | 'curved' | 'straight';
@@ -64,7 +65,9 @@ function EdgeLabel({ x, y, text, caption }: {
         className="wn-edge-label"
         style={{
           position: 'absolute',
-          transform: `translate(-50%,-50%) translate(${x}px,${y}px)`,
+          // Sit ABOVE the edge (lift the chip clear of the line) rather than centred
+          // on it, so the wire stays unobscured.
+          transform: `translate(-50%,-100%) translate(${x}px,${y - 6}px)`,
           fontSize: 9,
           fontFamily: 'sans-serif',
           background: caption ? 'rgba(255,251,235,0.97)' : 'rgba(248,250,252,0.9)',
@@ -92,15 +95,21 @@ function EdgeLabel({ x, y, text, caption }: {
   );
 }
 
-/** SVG path through the points with rounded corners of radius r. */
-function roundedPolyline(pts: { x: number; y: number }[], r: number): string {
+/** SVG path through the points with rounded corners. The FIRST and LAST corners
+ *  use a LARGER radius (`endR`) so the wire eases out of its source and into its
+ *  target with a gentle curve instead of a sharp right-angle — this visually
+ *  separates several edges that emerge from / merge into the same node (Fix 5). */
+function roundedPolyline(pts: { x: number; y: number }[], r: number, endR: number): string {
   if (pts.length < 2) return '';
   if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  const corners = pts.length - 2;   // number of interior bend points
   let d = `M ${pts[0].x} ${pts[0].y}`;
   for (let i = 1; i < pts.length - 1; i++) {
     const prev = pts[i - 1], cur = pts[i], next = pts[i + 1];
-    const p1 = shorten(cur, prev, r);   // point r before the corner
-    const p2 = shorten(cur, next, r);   // point r after the corner
+    // bigger radius on the first corner (leaving source) and last (entering target)
+    const rr = (i === 1 || i === corners) ? endR : r;
+    const p1 = shorten(cur, prev, rr);
+    const p2 = shorten(cur, next, rr);
     d += ` L ${p1.x} ${p1.y} Q ${cur.x} ${cur.y} ${p2.x} ${p2.y}`;
   }
   const last = pts[pts.length - 1];
@@ -155,7 +164,7 @@ export function RoutedEdge(props: EdgeProps): JSX.Element {
     // 'step' — the ELK-routed orthogonal polyline (around the boxes).
     const pts = d.points;
     if (pts && pts.length >= 2) {
-      path = roundedPolyline(pts, CORNER_R);
+      path = roundedPolyline(pts, CORNER_R, END_R);
       const m = labelAnchor(pts);
       labelX = m.x; labelY = m.y;
     } else {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, applyNodeChanges,
+  ReactFlow, ReactFlowProvider, Controls, MiniMap, applyNodeChanges,
   useNodesInitialized, useReactFlow,
   type Node, type Edge, type NodeChange,
 } from '@xyflow/react';
@@ -44,12 +44,19 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
   // every overlay collapsed (default). Toggling re-runs layout so the overlay
   // sub-node + its edges appear/disappear.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Light/dark theme — drives React Flow's colorMode + our chrome colors.
+  const [dark, setDark] = useState(false);
 
   // Keep the raw interior data so a reveal toggle can re-layout without re-fetching.
   const ivRef = useRef<NodeInteriorView | null>(null);
-  // True after an ESTIMATED-size layout, until the measured re-layout has run.
-  // Gates the measure-pass effect so it re-lays out exactly ONCE per data/expand.
-  const measurePending = useRef(false);
+  // Layout "generation": bumped on every ESTIMATED-size pass (initial load OR an
+  // expand/collapse). The measure-pass effect re-lays out a generation exactly
+  // ONCE — once React Flow has measured ALL of that generation's nodes — by
+  // recording the last generation it measured. This is what makes expand work:
+  // a new overlay sub-node forces a fresh generation, so its true size is fed back
+  // to ELK before final placement (no stale-size overlap).
+  const layoutGen = useRef(0);
+  const measuredGen = useRef(-1);
 
   const nodesInitialized = useNodesInitialized();
   const { getNodes, fitView } = useReactFlow();
@@ -95,8 +102,9 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
     });
     const le = buildLayoutEdges(iv.edges, revealEdges, childOwner, isForkEdge, overlayChildIds);
 
-    // On the estimated (first) pass, a measured re-layout is still owed.
-    measurePending.current = !measured;
+    // An estimated pass (no measured map) starts a NEW generation that still owes a
+    // measured re-layout; a measured pass does not bump the generation.
+    if (!measured) layoutGen.current += 1;
     const laid = await layoutGraph(ln, le, 'interior');
     const meta = new Map<string, { role: string; availableSignals: string[]; affordances: any[]; sub?: boolean }>(
       iv.states.map((s) => [s.id, { role: s.role, availableSignals: s.availableSignals, affordances: s.affordances }]),
@@ -146,21 +154,23 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
-  // MEASURE PASS (documented two-pass): once React Flow has measured the rendered
-  // nodes, read their true sizes and re-run the layout ONCE with them so ELK's
-  // ports + edge routes land on the real borders. `measurePending` ensures this
-  // fires only after an estimated pass (not after the measured re-layout itself,
-  // which would loop).
+  // MEASURE PASS (documented two-pass): once React Flow reports ALL current nodes
+  // measured (useNodesInitialized) AND this generation hasn't been measured yet,
+  // read the true sizes and re-run the layout ONCE with them so ELK's ports + edge
+  // routes land on the real borders. Keying on the generation (not a one-shot flag)
+  // is what makes EXPAND correct: each expand bumps the generation, so the new
+  // overlay sub-node's true size is measured and fed back before final placement.
   useEffect(() => {
-    if (!nodesInitialized || !measurePending.current || !ivRef.current) return;
-    measurePending.current = false;   // consume — the re-layout below is the measured one
+    if (!nodesInitialized || !ivRef.current) return;
+    if (measuredGen.current >= layoutGen.current) return;  // already measured this gen
+    measuredGen.current = layoutGen.current;               // claim it (prevents loop)
     const measured = new Map<string, { w: number; h: number }>();
     for (const n of getNodes()) {
       const w = n.measured?.width, h = n.measured?.height;
       if (w && h) measured.set(n.id, { w, h });
     }
     if (measured.size) {
-      void buildGraph(ivRef.current, measured).then(() => fitView({ padding: 0.18 }));
+      void buildGraph(ivRef.current, measured).then(() => fitView({ padding: 0.18, duration: 200 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesInitialized, nodes]);
@@ -197,14 +207,13 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
       <button onClick={onBack} style={{ position: 'absolute', zIndex: 10, top: 12, left: 12,
         padding: '6px 10px', fontFamily: 'sans-serif', cursor: 'pointer' }}>← back to map</button>
 
-      {/* Connector-shape toggle (Change 2): segmented control, top-right. */}
+      {/* Top-right controls: connector-shape toggle + dark-mode toggle. */}
       {!error && !empty ? (
         <div style={{ position: 'absolute', zIndex: 10, top: 12, right: 12, display: 'flex',
-          alignItems: 'center', gap: 6, fontFamily: 'sans-serif' }}>
-          <span style={{ fontSize: 11, color: '#64748b' }}>connector</span>
+          alignItems: 'center', gap: 10, fontFamily: 'sans-serif' }}>
           <div role="group" aria-label="connector shape" style={{ display: 'inline-flex',
-            border: '1px solid #cbd5e1', borderRadius: 8, overflow: 'hidden', background: '#fff',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+            border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`, borderRadius: 8, overflow: 'hidden',
+            background: dark ? '#1e293b' : '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             {SHAPES.map((s, i) => {
               const active = s === shape;
               return (
@@ -214,9 +223,9 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
                   onClick={() => setShape(s)}
                   style={{
                     padding: '5px 12px', fontSize: 12, cursor: 'pointer', border: 'none',
-                    borderLeft: i === 0 ? 'none' : '1px solid #e2e8f0',
-                    background: active ? '#1d4ed8' : 'transparent',
-                    color: active ? '#fff' : '#334155',
+                    borderLeft: i === 0 ? 'none' : `1px solid ${dark ? '#334155' : '#e2e8f0'}`,
+                    background: active ? '#2563eb' : 'transparent',
+                    color: active ? '#fff' : (dark ? '#cbd5e1' : '#334155'),
                     fontWeight: active ? 600 : 400,
                   }}
                 >
@@ -225,6 +234,16 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
               );
             })}
           </div>
+          <button
+            aria-label="toggle dark mode" aria-pressed={dark} onClick={() => setDark((v) => !v)}
+            title={dark ? 'Switch to light' : 'Switch to dark'}
+            style={{ padding: '5px 10px', fontSize: 14, cursor: 'pointer', borderRadius: 8,
+              border: `1px solid ${dark ? '#334155' : '#cbd5e1'}`,
+              background: dark ? '#1e293b' : '#fff', color: dark ? '#fbbf24' : '#334155',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.06)', lineHeight: 1 }}
+          >
+            {dark ? '☀' : '☾'}
+          </button>
         </div>
       ) : null}
 
@@ -233,17 +252,21 @@ function InteriorViewInner({ id, onBack }: { id: string; onBack: () => void }) {
         : empty
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif' }}>No interior recorded for <b>{id}</b> yet. Map it with a record session.</div>
         : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+            colorMode={dark ? 'dark' : 'light'}
             fitView fitViewOptions={{ padding: 0.18 }} minZoom={0.05}
             onNodesChange={onNodesChange}
             onNodeMouseEnter={(_, n) => { setHovered(n.id); setHoveredEdge(null); }}
             onNodeMouseLeave={() => setHovered(null)}
             onEdgeMouseEnter={(_, e) => setHoveredEdge(e.id)}
             onEdgeMouseLeave={() => setHoveredEdge(null)}
-            // Catch-all: edges' interaction bands overlap, so onEdgeMouseLeave can
-            // miss when the cursor slides onto empty canvas. Clearing on pane move
-            // guarantees the highlight releases as soon as you're off an edge.
-            onPaneMouseMove={() => { if (hoveredEdge) setHoveredEdge(null); }}>
-            <Background /><Controls /><MiniMap />
+            // Clear an edge-hover only when the cursor lands on the empty pane (a
+            // genuine "left all edges" signal). onPaneMouseMove fires for the
+            // background, NOT while over an edge's hit-area, so it no longer races
+            // with edge hover the way a global mousemove would.
+            onPaneMouseEnter={() => setHoveredEdge(null)}>
+            {/* No <Background> → a clean flat canvas (no dot grid). React Flow's
+                colorMode handles the canvas/controls/minimap theming. */}
+            <Controls /><MiniMap pannable zoomable />
           </ReactFlow>}
     </div>
   );
