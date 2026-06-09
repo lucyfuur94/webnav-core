@@ -159,18 +159,19 @@ describe('layoutGraph', () => {
     expect(pts[1].y).toBeGreaterThan(pts[0].y);             // points downward
   });
 
-  it('carries from/to labels + a core flag on each edge for hover + readability', async () => {
+  it('carries from/to labels on each edge (surfaced on hover) and no static label', async () => {
     const nodes = [{ id: 'a', label: 'Home' }, { id: 'b', label: 'Detail' }];
     const edges = [{ id: 'e1', source: 'a', target: 'b', fork: false, core: true }];
     const out = await layoutGraph(nodes, edges as any, 'interior');
     const d = out.edges[0].data as any;
     expect(d.fromLabel).toBe('Home');
     expect(d.toLabel).toBe('Detail');
-    expect(d.core).toBe(true);
     expect(d.hovered).toBe(false);
+    // no static edge text any more (labels are hover-only) — `label` isn't set.
+    expect(d.label).toBeUndefined();
   });
 
-  it('styles a core edge bold/full-opacity vs a thin faded non-core back-edge', async () => {
+  it('styles all navigation edges UNIFORMLY (no special core-path colour)', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false, core: true },
@@ -179,11 +180,10 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges as any, 'interior');
     const core = out.edges.find((e) => e.id === 'e1')!;
     const non = out.edges.find((e) => e.id === 'e2')!;
-    // core dominates: thicker stroke + full opacity; non-core thin + clearly faded.
-    expect((core.style as any).strokeWidth).toBeGreaterThan((non.style as any).strokeWidth);
-    expect((core.style as any).opacity).toBe(1);
-    expect((non.style as any).opacity).toBeLessThanOrEqual(0.4);
-    expect((core.data as any).color).toBe('#1d4ed8');
+    // same colour + width regardless of the core flag (no blue spine).
+    expect((core.data as any).color).toBe((non.data as any).color);
+    expect((core.style as any).strokeWidth).toBe((non.style as any).strokeWidth);
+    expect((core.data as any).color).not.toBe('#1d4ed8');
   });
 
   it('places a reveal SUB-NODE near its parent and styles the reveal edge purple/dashed', async () => {

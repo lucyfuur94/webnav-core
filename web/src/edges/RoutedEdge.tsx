@@ -175,9 +175,7 @@ export function RoutedEdge(props: EdgeProps): JSX.Element {
   }
 
   const hovered = d.hovered === true;
-  // Show a static label only on CORE (spine) edges; branch/back-edge labels appear
-  // on hover only — cuts clutter (§5).
-  const showLabel = !d.dimmed && ((d.label && d.core) || hovered);
+  // No static edge text — labels appear ONLY on hover (the from→to caption).
   return (
     <>
       <BaseEdge
@@ -187,12 +185,11 @@ export function RoutedEdge(props: EdgeProps): JSX.Element {
         style={edgeStyle(d)}
         interactionWidth={interactionWidth ?? 10}
       />
-      {showLabel ? (
+      {hovered && !d.dimmed ? (
         <EdgeLabel
           x={labelX}
           y={labelY}
-          text={d.label}
-          caption={hovered ? `${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}` : undefined}
+          caption={`${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}`}
         />
       ) : null}
     </>
@@ -238,12 +235,11 @@ export function SelfLoopEdge({ id, source, markerEnd, data }: EdgeProps): JSX.El
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={edgeStyle(d)} />
-      {!d.dimmed && d.label ? (
+      {d.hovered && !d.dimmed ? (
         <EdgeLabel
           x={laneX + 6}
           y={midY}
-          text={`↻ ${d.label}`}
-          caption={d.hovered ? `${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}` : undefined}
+          caption={`↻ ${d.fromLabel ?? '?'} → ${d.toLabel ?? '?'}`}
         />
       ) : null}
     </>

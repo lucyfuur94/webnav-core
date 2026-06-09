@@ -69,8 +69,6 @@ interface StateNodeData {
   affordances?: Affordance[];
   // synthetic reveal SUB-NODE (an overlay's options): styled lighter/dashed.
   sub?: boolean;
-  // on the core spine → heavier blue border so the trunk pops (§8 visual ladder).
-  isSpine?: boolean;
   // set of reveal-affordance ids (scoped to THIS node, e.g. 'nodeId::affId') that
   // are currently EXPANDED — when expanded the overlay sub-node is materialised by
   // the viewer and this row shows ▾; collapsed (default) shows ▸ + a count chip.
@@ -172,14 +170,11 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   const d = data as unknown as StateNodeData;
   const affordances = d.affordances ?? [];
   const sub = d.sub === true;
-  const isSpine = d.isSpine === true;
   const expandedReveals = d.expandedReveals ?? new Set<string>();
 
-  // Border ladder (§8): sub-node = dashed purple; core-spine = heavy blue (the
-  // trunk pops); branch/leaf = hairline grey.
-  const border = sub ? '1.5px dashed #7c3aed'
-    : isSpine ? '2px solid #1d4ed8'
-    : '1px solid #94a3b8';
+  // Uniform node border (no special "core spine" highlight): sub-node = dashed
+  // purple (an overlay, semantically distinct); everything else = the same slate.
+  const border = sub ? '1.5px dashed #7c3aed' : '1px solid #475569';
 
   return (
     <div style={{

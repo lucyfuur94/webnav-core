@@ -230,52 +230,32 @@ export async function layoutGraph(
   const rfNodes: Node[] = allNodes.map((n) => ({
     id: n.id,
     position: positions[n.id] ?? { x: 0, y: 0 },
-    // isSpine → StateNode draws a heavier blue border so the trunk pops (§8).
-    data: { label: n.label, unexplored: n.unexplored === true, sub: n.sub === true,
-      isSpine: corePartition.has(n.id) },
+    data: { label: n.label, unexplored: n.unexplored === true, sub: n.sub === true },
     type: n.unexplored ? 'unexplored' : mode === 'clusters' ? 'site' : 'state',
   }));
-
-  // Reciprocal pairs (a→b AND b→a) so both directions can be styled to read.
-  const present = new Set(edges2.map((e) => e.source + ' ' + e.target));
-  const isPair = (e: LayoutEdge) => e.target != null && present.has(e.target + ' ' + e.source);
 
   // node-id -> readable label, so a hovered edge can show "from → to".
   const labelOf = new Map(allNodes.map((n) => [n.id, n.label]));
 
   const rfEdges: Edge[] = edges2.map((e) => {
-    const core = e.core === true;
     const dangling = e.dangling === true;
     const reveal = e.reveal === true;
     const isSelf = e.source === e.target;
-    const pair = isPair(e);
-    // ── Readability colour scheme (Change 3) ──
-    //   core spine → bold blue; reveal → purple dashed; dangling → light grey
-    //   dashed; fork → orange; everything else (back-edges) → faded grey.
+    // UNIFORM edge styling — no special "core path" colour. Every navigation edge
+    // is the same neutral slate; only REVEAL (opens an overlay) and DANGLING
+    // (unexplored exit) stay visually distinct because they mean something different.
     const color = reveal ? '#7c3aed'
       : dangling ? '#cbd5e1'
       : e.fork ? '#c2410c'
-      : core ? '#1d4ed8'
-      : '#94a3b8';
+      : '#64748b';
 
-    // Connect to the node-level handles: bottom-centre source 'src', top-centre
-    // target 'in-top' — these mirror the ELK SOUTH/NORTH ports, so 'step'
-    // (ELK-routed) AND curved/straight (RF handle-derived) all enter top-centre /
-    // leave bottom-centre consistently. Synthetic 'unexplored' targets have no
-    // 'in-top' handle, so omit targetHandle for them (RF default).
+    // Node-level handles: bottom-centre source 'src', top-centre target 'in-top'
+    // (mirror the ELK SOUTH/NORTH ports). Unexplored targets have no 'in-top'.
     const srcHandle = isReal(e.source) ? 'src' : undefined;
     const tgtHandle = isReal(e.target as string) ? 'in-top' : undefined;
 
-    // Stroke weight + opacity: core dominates hard; non-core back-edges thin + faded (§8).
-    const width = core ? 3.5 : reveal ? 1.6 : 1;
-    const opacity = core ? 1
-      : reveal ? 0.85
-      : e.fork ? 0.8
-      : dangling ? 0.4
-      : 0.3;
-    // z-order: core spine on top, then reveal/fork, back-edges underneath — so a
-    // faded back-edge never paints over the spine (React Flow honors zIndex).
-    const zIndex = core ? 10 : reveal || e.fork ? 5 : 0;
+    const width = reveal ? 1.6 : 1.6;
+    const opacity = reveal ? 0.85 : e.fork ? 0.85 : dangling ? 0.4 : 0.85;
 
     return {
       id: e.id,
@@ -284,22 +264,18 @@ export async function layoutGraph(
       ...(srcHandle ? { sourceHandle: srcHandle } : {}),
       ...(tgtHandle ? { targetHandle: tgtHandle } : {}),
       type: isSelf ? 'selfloop' : 'routed',
-      zIndex,
       data: {
         color,
         width,
         dashed: dangling || reveal || e.associative === true,
         dimmed: false,
         hovered: false,
-        label: e.label,
-        core,
-        // from/to labels surfaced on hover.
+        // No static label on edges (Fix: remove edge text); the from→to is still
+        // surfaced on HOVER via fromLabel/toLabel.
         fromLabel: labelOf.get(e.source) ?? e.source,
         toLabel: e.target != null ? (labelOf.get(e.target as string) ?? e.target) : '?',
-        // ELK-routed polyline (absolute coords) for 'step' mode — routes around
-        // boxes. Curved/straight modes ignore it and use the endpoint coords.
+        // ELK-routed polyline (absolute coords) for 'step' mode.
         points: routes[e.id],
-        // connector shape, threaded from InteriorView; the edge picks the helper.
         shape: 'step' as const,
       },
       animated: e.fork,
@@ -307,8 +283,6 @@ export async function layoutGraph(
       style: { stroke: color, strokeWidth: width, opacity },
     };
   });
-  // Draw core edges LAST (on top) so they never render under faded clutter.
-  rfEdges.sort((a, b) => ((a.zIndex ?? 0) - (b.zIndex ?? 0)));
   return { nodes: rfNodes, edges: rfEdges };
 }
 
@@ -346,20 +320,47 @@ function snapSpine(
     y += (n ? nodeH(n) : NODE_H_BASE) + SPINE_GAP;
   }
 
-  // Recompute core FORWARD edges (target in a later partition) as a clean vertical
-  // 2-point segment, centred on each box (widths may differ).
+  // Because we MOVED the spine nodes, ELK's routes for any edge touching them are
+  // now stale (that's the giant box-shaped detours wrapping the whole spine). So we
+  // re-route every edge that touches a spine node:
+  //   • core FORWARD edge (down the flow): a clean vertical 2-point segment.
+  //   • everything else touching the spine (back-edges, overlay→spine, branch→spine):
+  //     a LEFT-gutter return lane — out the left border, down/up a lane to the left
+  //     of the column, into the target's left border. Orthogonal, clear of the spine.
+  const onSpine = (id: string | null) => id != null && corePartition.has(id);
+  const cx = (id: string) => positions[id].x + nodeW(byId.get(id)!) / 2;
+  const cyTop = (id: string) => positions[id].y;
+  const cyBot = (id: string) => positions[id].y + nodeH(byId.get(id)!);
+  const leftMid = (id: string) => ({ x: positions[id].x, y: positions[id].y + nodeH(byId.get(id)!) / 2 });
+
+  // Collect the spine-touching NON-forward edges so each gets its OWN return lane
+  // (otherwise they'd stack on one x and overlap — the wrapping-box look).
+  const returns: typeof edges = [];
   for (const e of edges) {
-    if (!e.core || e.target == null) continue;
-    const sp = corePartition.get(e.source), tp = corePartition.get(e.target as string);
-    if (sp === undefined || tp === undefined || tp <= sp) continue;
-    const sN = byId.get(e.source), tN = byId.get(e.target as string);
-    const sPos = positions[e.source], tPos = positions[e.target as string];
-    if (!sN || !tN || !sPos || !tPos) continue;
-    routes[e.id] = [
-      { x: sPos.x + nodeW(sN) / 2, y: sPos.y + nodeH(sN) },  // source bottom-centre
-      { x: tPos.x + nodeW(tN) / 2, y: tPos.y },              // target top-centre
-    ];
+    if (e.target == null) continue;
+    const s = e.source, t = e.target as string;
+    if (!onSpine(s) && !onSpine(t)) continue;          // doesn't touch the spine → keep ELK's route
+    if (!byId.get(s) || !byId.get(t) || !positions[s] || !positions[t]) continue;
+    const sp = corePartition.get(s), tp = corePartition.get(t);
+    if (e.core && sp !== undefined && tp !== undefined && tp > sp) {
+      // forward spine edge → straight vertical, centre-bottom to centre-top.
+      routes[e.id] = [{ x: cx(s), y: cyBot(s) }, { x: cx(t), y: cyTop(t) }];
+    } else {
+      returns.push(e);
+    }
   }
+  // Each return edge gets a distinct lane just LEFT of the column. Lanes hug the
+  // node (start close, step out only slightly per edge) so the in/out lines
+  // originate/merge near the node rather than via a far detour.
+  const LANE_STEP = 16;
+  returns
+    .sort((a, b) => Math.abs(positions[a.source].y - positions[a.target as string].y)
+      - Math.abs(positions[b.source].y - positions[b.target as string].y))
+    .forEach((e, i) => {
+      const a = leftMid(e.source), b = leftMid(e.target as string);
+      const laneX = colX - 18 - i * LANE_STEP;
+      routes[e.id] = [a, { x: laneX, y: a.y }, { x: laneX, y: b.y }, b];
+    });
 }
 
 function gridPositions(nodes: LayoutNode[]): Record<string, { x: number; y: number }> {
