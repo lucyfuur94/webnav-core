@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ReactFlow, Background, Controls, MiniMap, applyNodeChanges,
+  type Node, type Edge, type NodeChange,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { fetchInterior } from './api.js';
 import { layoutGraph } from './layout.js';
@@ -23,6 +26,14 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
   // id of the edge currently hovered (Issue C). When set, that edge is highlighted
   // and everything else (other edges + non-endpoint nodes) is dimmed.
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+
+  // Let the user DRAG nodes around: React Flow emits position/selection changes;
+  // apply them back to our base `nodes` state (the derived shownNodes flow through
+  // it). Without this handler nodes are static.
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    [],
+  );
 
   useEffect(() => {
     // A 404 (unknown node) throws in fetchInterior — distinguish that "no
@@ -97,6 +108,7 @@ export function InteriorView({ id, onBack }: { id: string; onBack: () => void })
         ? <div style={{ padding: 24, paddingTop: 56, fontFamily: 'sans-serif' }}>No interior recorded for <b>{id}</b> yet. Map it with a record session.</div>
         : <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
             fitView fitViewOptions={{ padding: 0.18 }} minZoom={0.05}
+            onNodesChange={onNodesChange}
             onNodeMouseEnter={(_, n) => { setHovered(n.id); setHoveredEdge(null); }}
             onNodeMouseLeave={() => setHovered(null)}
             onEdgeMouseEnter={(_, e) => setHoveredEdge(e.id)}
