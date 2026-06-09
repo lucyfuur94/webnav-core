@@ -119,7 +119,7 @@ export function OrthogonalEdge(props: EdgeProps): JSX.Element {
         path={path}
         markerEnd={markerEnd}
         style={edgeStyle(d)}
-        interactionWidth={interactionWidth ?? 18}
+        interactionWidth={interactionWidth ?? 10}
       />
       {showLabel ? (
         <EdgeLabel

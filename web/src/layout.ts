@@ -7,6 +7,14 @@ export interface LayoutNode { id: string; label: string; parent?: string;
   badges?: number;
   // a synthetic "?" pill standing in for an unexplored (dangling) edge target.
   unexplored?: boolean;
+  // a synthetic SUB-NODE materialised by the VIEWER for a reveal affordance's
+  // overlay (e.g. "burger menu open") — its options live here, not nested in the
+  // parent. Placed BESIDE its parent and styled as a sub-state. Backend never
+  // emits these; the data model keeps overlays as nested affordances.
+  sub?: boolean;
+  // for a sub-node: the id of the parent state it hangs off (so layout can place
+  // it beside the parent even when no core spine exists).
+  subParent?: string;
 }
 export interface LayoutEdge {
   id: string; source: string; target: string | null; fork: boolean;
@@ -22,6 +30,9 @@ export interface LayoutEdge {
   dangling?: boolean;
   // optional human label drawn on the edge.
   label?: string;
+  // a synthetic VIEWER edge "opens the overlay": parent state → its reveal sub-node.
+  // Drawn purple/dashed so it reads as "opens overlay", not "navigates away".
+  reveal?: boolean;
 }
 export type LayoutMode = 'clusters' | 'interior';
 
@@ -95,7 +106,12 @@ export async function layoutGraph(
   const spine = corePartition.size > 0 && mode === 'interior';
   const isCore = (id: string) => corePartition.has(id);
 
-  const layoutNodes = spine ? allNodes.filter((n) => isCore(n.id)) : allNodes;
+  // Reveal SUB-NODES are always placed BESIDE their parent (never by elk) so the
+  // overlay reads as "hangs off this state". Exclude them from the elk graph in
+  // every mode; position them in placeSubNodes after the main layout.
+  const subIds = new Set(allNodes.filter((n) => n.sub).map((n) => n.id));
+  const layoutNodes = (spine ? allNodes.filter((n) => isCore(n.id)) : allNodes)
+    .filter((n) => !n.sub);
   const elkGraph = {
     id: 'root',
     layoutOptions: {
@@ -115,6 +131,8 @@ export async function layoutGraph(
       };
     }),
     edges: (spine ? edges2.filter((e) => e.core) : edges2)
+      // drop any edge touching a sub-node — those nodes aren't in the elk graph.
+      .filter((e) => !subIds.has(e.source) && !(e.target != null && subIds.has(e.target as string)))
       .map((e) => ({ id: e.id, sources: [e.source], targets: [e.target as string] })),
   };
 
@@ -123,6 +141,7 @@ export async function layoutGraph(
     const res = await elk.layout(elkGraph);
     for (const c of res.children ?? []) positions[c.id] = { x: c.x ?? 0, y: c.y ?? 0 };
     if (spine) placeBranches(allNodes, edges2, corePartition, positions);
+    placeSubNodes(allNodes, positions);
     if (Object.keys(positions).length < allNodes.length) positions = gridPositions(allNodes);
   } catch {
     positions = gridPositions(allNodes);
@@ -131,7 +150,7 @@ export async function layoutGraph(
   const rfNodes: Node[] = allNodes.map((n) => ({
     id: n.id,
     position: positions[n.id] ?? { x: 0, y: 0 },
-    data: { label: n.label, unexplored: n.unexplored === true },
+    data: { label: n.label, unexplored: n.unexplored === true, sub: n.sub === true },
     type: n.unexplored ? 'unexplored' : mode === 'clusters' ? 'site' : 'state',
   }));
 
@@ -193,7 +212,8 @@ export async function layoutGraph(
   const rfEdges: Edge[] = edges2.map((e) => {
     const core = e.core === true;
     const dangling = e.dangling === true;
-    const color = dangling ? '#cbd5e1' : e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
+    const reveal = e.reveal === true;
+    const color = reveal ? '#7c3aed' : dangling ? '#cbd5e1' : e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
     const isSelf = e.source === e.target;
     const pair = isPair(e);
     // Attach the edge's SOURCE to a specific affordance PORT (the pink rect on that
@@ -227,7 +247,7 @@ export async function layoutGraph(
       data: {
         color,
         width: core || pair ? 2 : 1,
-        dashed: dangling || e.associative === true,
+        dashed: dangling || reveal || e.associative === true,
         dimmed: false,
         hovered: false,
         label: e.label,
@@ -244,8 +264,8 @@ export async function layoutGraph(
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
       style: {
         stroke: color,
-        strokeWidth: core || pair ? 2 : 1,
-        opacity: dangling ? 0.6 : core || e.fork || pair ? 1 : 0.6,
+        strokeWidth: reveal ? 2 : core || pair ? 2 : 1,
+        opacity: dangling ? 0.6 : reveal || core || e.fork || pair ? 1 : 0.6,
       },
     };
   });
@@ -274,6 +294,33 @@ function placeBranches(
     const side = k % 2 === 0 ? 1 : -1;
     const ring = Math.floor(k / 2) + 1;
     positions[n.id] = { x: base.x + side * GAP * ring, y: base.y };
+  }
+}
+
+/** Place each reveal SUB-NODE just to the RIGHT of its parent state (ports are on
+ *  the right, so the overlay reads as opening sideways). Stacks multiple sub-nodes
+ *  of the same parent vertically. Handles nested sub-nodes by resolving parents
+ *  first (a sub-node whose parent is itself a sub-node steps further right).
+ *  Mutates `positions`. */
+function placeSubNodes(
+  nodes: LayoutNode[], positions: Record<string, { x: number; y: number }>,
+): void {
+  const GAP = NODE_W + 80;
+  const subs = nodes.filter((n) => n.sub && n.subParent);
+  const usedByParent = new Map<string, number>();
+  // Resolve in dependency order so a sub-node hanging off another sub-node lands
+  // after its parent has a position (a few passes suffice for shallow nesting).
+  let remaining = subs.slice();
+  for (let pass = 0; pass < 8 && remaining.length; pass++) {
+    const next: LayoutNode[] = [];
+    for (const n of remaining) {
+      const base = positions[n.subParent as string];
+      if (!base) { next.push(n); continue; }
+      const k = usedByParent.get(n.subParent as string) ?? 0;
+      usedByParent.set(n.subParent as string, k + 1);
+      positions[n.id] = { x: base.x + GAP, y: base.y + k * (nodeHeight(n.badges) + 40) };
+    }
+    remaining = next;
   }
 }
 

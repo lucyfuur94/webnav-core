@@ -15,7 +15,6 @@
 // A single TARGET handle on the node TOP (id="in") is where all incoming edges
 // land — React Flow routes the smoothstep edge into it. Width is fixed (~240px);
 // height grows with content.
-import { useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { Affordance } from '@server/mapstore/types.js';
 
@@ -53,11 +52,21 @@ function routes(a: Affordance): boolean {
   return a.kind === 'navigate';
 }
 
+// A reveal that EXPOSES options is rendered as an edge to a beside-it SUB-NODE
+// (synthesised by the viewer), so its row gets a source PORT here and its children
+// live in that sub-node — NOT inline. A childless reveal (or one that itself
+// navigates) still just routes from its own row.
+function opensSubNode(a: Affordance): boolean {
+  return a.kind === 'reveal' && Array.isArray(a.children) && a.children.length > 0;
+}
+
 interface StateNodeData {
   label: string;
   role?: string;
   signals?: string[];
   affordances?: Affordance[];
+  // synthetic reveal SUB-NODE (an overlay's options): styled lighter/dashed.
+  sub?: boolean;
 }
 
 function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): JSX.Element {
@@ -98,17 +107,20 @@ function AffordanceRow({ aff, indent }: { aff: Affordance; indent: boolean }): J
   );
 }
 
+// A reveal-with-children row. Its options are NOT rendered inline — they live in a
+// beside-it synthetic SUB-NODE the viewer materialises (see InteriorView). The row
+// therefore carries a single pink source PORT that the purple "opens overlay" edge
+// leaves from. (A childless reveal, or one that itself navigates, falls back to a
+// plain AffordanceRow handled by routes().)
 function RevealRow({ aff }: { aff: Affordance }): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const children = aff.children ?? [];
+  const opensOverlay = opensSubNode(aff);
   return (
     <div style={{ position: 'relative' }}>
       <div
-        onClick={() => setOpen((v) => !v)}
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', fontSize: 11,
-          color: '#1e293b', cursor: children.length ? 'pointer' : 'default', userSelect: 'none' }}
+          color: '#1e293b', userSelect: 'none' }}
       >
-        <span style={{ width: 10, color: '#7c3aed' }}>{children.length ? (open ? '▾' : '▸') : '·'}</span>
+        <span style={{ width: 10, color: '#7c3aed' }}>{opensOverlay ? '⧉' : '·'}</span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {aff.label}
         </span>
@@ -116,26 +128,12 @@ function RevealRow({ aff }: { aff: Affordance }): JSX.Element {
           <span style={{ fontSize: 8, background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5',
             borderRadius: 4, padding: '0 3px', fontWeight: 600 }}>commit</span>
         ) : null}
-        {/* A reveal that itself navigates can route too. */}
-        {routes(aff) ? (
+        {/* A reveal that opens an overlay routes to its sub-node; one that itself
+            navigates routes to its destination. Either way it gets a source port. */}
+        {opensOverlay || routes(aff) ? (
           <Handle id={'aff_' + aff.id} type="source" position={Position.Right} style={PORT} />
         ) : null}
       </div>
-      {open && children.length ? (
-        <div>
-          {KIND_ORDER.map((kind) => {
-            const group = children.filter((c) => c.kind === kind);
-            if (!group.length) return null;
-            return (
-              <div key={kind}>
-                <div style={{ fontSize: 8, letterSpacing: 0.5, textTransform: 'uppercase', color: KIND_COLOR[kind],
-                  paddingLeft: 16, marginTop: 2 }}>{KIND_LABEL[kind]}</div>
-                {group.map((c) => <AffordanceRow key={c.id} aff={c} indent />)}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -143,10 +141,18 @@ function RevealRow({ aff }: { aff: Affordance }): JSX.Element {
 export function StateNode({ data }: NodeProps): JSX.Element {
   const d = data as unknown as StateNodeData;
   const affordances = d.affordances ?? [];
+  const sub = d.sub === true;
 
   return (
-    <div style={{ border: '1px solid #475569', borderRadius: 8, background: '#f8fafc',
-      width: WIDTH, boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{
+      // A synthetic reveal SUB-NODE (an overlay's options) reads as a lighter,
+      // dashed, slightly narrower box hanging off its parent — distinct from a
+      // real navigable state.
+      border: sub ? '1.5px dashed #7c3aed' : '1px solid #475569',
+      borderRadius: 8,
+      background: sub ? '#faf5ff' : '#f8fafc',
+      width: sub ? WIDTH - 24 : WIDTH,
+      boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
       {/* Three TARGET handles (top / left / bottom). layout.ts chooses which one
           each incoming edge lands on by geometry, so forward and reverse edges of a
           reciprocal pair don't coincide. React Flow routes the smoothstep wire into
@@ -157,7 +163,15 @@ export function StateNode({ data }: NodeProps): JSX.Element {
 
       {/* Title block */}
       <div style={{ padding: '8px 10px', borderBottom: affordances.length ? '1px solid #e2e8f0' : 'none' }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{d.label}</div>
+        <div style={{ fontWeight: 600, fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {sub ? (
+            <span style={{ fontSize: 8, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd',
+              borderRadius: 4, padding: '0 4px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              overlay
+            </span>
+          ) : null}
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+        </div>
         {d.role ? <div style={{ fontSize: 10, color: '#64748b' }}>{d.role}</div> : null}
         {d.signals?.length ? (
           <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2, overflow: 'hidden',

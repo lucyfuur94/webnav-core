@@ -123,6 +123,33 @@ describe('layoutGraph', () => {
     expect((non.style as any).opacity).toBeLessThan(1);
   });
 
+  it('places a reveal SUB-NODE beside its parent and styles the reveal edge purple/dashed', async () => {
+    const nodes = [
+      { id: 'inv', label: 'inventory', badges: 2 },
+      { id: 'inv::r', label: 'burger menu open', badges: 4, sub: true, subParent: 'inv' },
+    ];
+    const edges = [
+      // parent → sub reveal edge, anchored to the burger affordance port
+      { id: 'rev0', source: 'inv', target: 'inv::r', fork: false, reveal: true, viaAffordance: 'aff_burger' },
+      // a child option leaving the SUB-NODE
+      { id: 'e0', source: 'inv::r', target: 'inv', fork: false, viaAffordance: 'aff_all' },
+    ];
+    const out = await layoutGraph(nodes, edges as any, 'interior');
+    const parent = out.nodes.find((n) => n.id === 'inv')!;
+    const sub = out.nodes.find((n) => n.id === 'inv::r')!;
+    // sub-node sits to the RIGHT of its parent, roughly level with it
+    expect(sub.position.x).toBeGreaterThan(parent.position.x);
+    expect(Math.abs(sub.position.y - parent.position.y)).toBeLessThan(60);
+    expect((sub.data as any).sub).toBe(true);
+    // reveal edge: purple, dashed, anchored to the burger affordance source port
+    const rev = out.edges.find((e) => e.id === 'rev0')!;
+    expect((rev.data as any).color).toBe('#7c3aed');
+    expect((rev.data as any).dashed).toBe(true);
+    expect(rev.sourceHandle).toBe('aff_aff_burger');
+    // child edge leaves the sub-node
+    expect(out.edges.find((e) => e.id === 'e0')!.source).toBe('inv::r');
+  });
+
   it('falls back to a grid if a node is malformed (no throw, all positioned)', async () => {
     const nodes = [{ id: 'x', label: 'x' }, { id: 'x', label: 'x-dup' }];
     const edges: { id: string; source: string; target: string; fork: boolean }[] = [];
