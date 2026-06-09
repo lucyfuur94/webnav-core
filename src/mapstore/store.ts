@@ -157,6 +157,7 @@ export class MapStore implements IMapStore {
             selectorCache: a.selectorCache,
             kind: a.commit ? 'commit-point' : 'navigate',
             acceptsInput: a.acceptsInput,
+            addressableUrl: a.addressableUrl,
             requiresAffordances: a.needs,
             cost: a.cost, reliability: a.reliability, successCount: a.successCount,
             failCount: a.failCount, lastVerified: a.lastVerified, confidence: a.confidence,
