@@ -10,8 +10,9 @@ export function UnexploredNode(_props: NodeProps): JSX.Element {
     <div style={{ border: '1px dashed #94a3b8', borderRadius: 999, background: '#f1f5f9',
       padding: '4px 12px', fontFamily: 'sans-serif', fontSize: 10, color: '#64748b',
       display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}>
-      <Handle id="t-l" type="target" position={Position.Left} style={HIDDEN} />
-      <Handle id="t-t" type="target" position={Position.Top} style={HIDDEN} />
+      {/* id="in" matches the targetHandle every interior edge sets, so dangling
+          edges land here the same canonical way as on a StateNode. */}
+      <Handle id="in" type="target" position={Position.Top} style={HIDDEN} />
       <span style={{ fontWeight: 700 }}>?</span>
       <span>unexplored</span>
     </div>

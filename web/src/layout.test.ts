@@ -17,19 +17,21 @@ describe('layoutGraph', () => {
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0].source).toBe('gh:search');
     expect(out.edges[0].type).toBe('orthogonal');
+    // Canonical handle wiring: incoming edges land on the node's top target handle.
+    expect(out.edges[0].targetHandle).toBe('in');
   });
 
-  it('assigns a per-source lane index to each outgoing edge', async () => {
+  it('drops the old hand-rolled lane/reciprocalOffset geometry from edge data', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }, { id: 'c', label: 'c' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false },
       { id: 'e2', source: 'a', target: 'c', fork: false },
     ];
     const out = await layoutGraph(nodes, edges, 'interior');
-    const e1 = out.edges.find((e) => e.id === 'e1')!;
-    const e2 = out.edges.find((e) => e.id === 'e2')!;
-    expect((e1.data as any).lane).toBe(0);
-    expect((e2.data as any).lane).toBe(1);
+    for (const e of out.edges) {
+      expect((e.data as any).lane).toBeUndefined();
+      expect((e.data as any).reciprocalOffset).toBeUndefined();
+    }
   });
 
   it('types a self-edge (from===to) as a selfloop', async () => {
@@ -40,7 +42,7 @@ describe('layoutGraph', () => {
     expect(out.edges[0].type).toBe('selfloop');
   });
 
-  it('anchors a real via-affordance to its row but not a synthetic edge:* via', async () => {
+  it('attaches a real via-affordance to its source PORT handle but not a synthetic edge:* via', async () => {
     const nodes = [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }];
     const edges = [
       { id: 'e1', source: 'a', target: 'b', fork: false, viaAffordance: 'aff_cart' },
@@ -49,8 +51,11 @@ describe('layoutGraph', () => {
     const out = await layoutGraph(nodes, edges, 'interior');
     const real = out.edges.find((e) => e.id === 'e1')!;
     const synth = out.edges.find((e) => e.id === 'e2')!;
-    expect((real.data as any).sourceAffordanceId).toBe('aff_aff_cart');
-    expect((synth.data as any).sourceAffordanceId).toBeUndefined();
+    // real via → sourceHandle on the pink affordance port; both land on 'in'.
+    expect(real.sourceHandle).toBe('aff_aff_cart');
+    expect(synth.sourceHandle).toBeUndefined();
+    expect(real.targetHandle).toBe('in');
+    expect(synth.targetHandle).toBe('in');
   });
 
   it('materialises a synthetic "?" target node for a dangling edge', async () => {

@@ -12,9 +12,9 @@
 //  - mutate / input rows: muted, NO handle (they never route).
 //  - commit affordances: a red "commit" badge — never auto-fired (#2).
 //
-// One generic target handle per side + a single hidden centre target lets
-// incoming floating edges land regardless of approach side. Width is fixed
-// (~240px); height grows with content.
+// A single TARGET handle on the node TOP (id="in") is where all incoming edges
+// land — React Flow routes the smoothstep edge into it. Width is fixed (~240px);
+// height grows with content.
 import { useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { Affordance } from '@server/mapstore/types.js';
@@ -29,7 +29,10 @@ const KIND_COLOR: Record<Affordance['kind'], string> = {
   navigate: '#1d4ed8', reveal: '#7c3aed', mutate: '#b45309', input: '#0f766e',
 };
 
-const HIDDEN = { opacity: 0, width: 1, height: 1, minWidth: 1, border: 'none', background: 'transparent' } as const;
+// The incoming TARGET handle: a small, subtle dot on the node top where edges land.
+const IN_PORT = {
+  top: -3, width: 7, height: 7, background: '#94a3b8', border: '1px solid #64748b',
+} as const;
 
 // The affordance PORT: a pink rectangle on the row's right edge marking where an
 // edge leaves. A rectangle (not a dot) reads as a labeled "this is an affordance
@@ -138,12 +141,9 @@ export function StateNode({ data }: NodeProps): JSX.Element {
   return (
     <div style={{ border: '1px solid #475569', borderRadius: 8, background: '#f8fafc',
       width: WIDTH, boxSizing: 'border-box', fontFamily: 'sans-serif', overflow: 'hidden' }}>
-      {/* One generic target handle per side + a hidden centre — incoming edges land
-          regardless of the approach side; floating edges read the border anyway. */}
-      <Handle id="t-t" type="target" position={Position.Top} style={HIDDEN} />
-      <Handle id="t-b" type="target" position={Position.Bottom} style={HIDDEN} />
-      <Handle id="t-l" type="target" position={Position.Left} style={HIDDEN} />
-      <Handle id="t-r" type="target" position={Position.Right} style={HIDDEN} />
+      {/* Single TARGET handle on the node top — all incoming edges land here and
+          React Flow routes the smoothstep wire into it (arrow touches the border). */}
+      <Handle id="in" type="target" position={Position.Top} style={IN_PORT} />
 
       {/* Title block */}
       <div style={{ padding: '8px 10px', borderBottom: affordances.length ? '1px solid #e2e8f0' : 'none' }}>

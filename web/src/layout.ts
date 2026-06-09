@@ -66,10 +66,12 @@ function spinePartitions(edges: LayoutEdge[]): Map<string, number> {
  *
  * DANGLING edges (target===null, dangling:true) get a synthetic faded "?" target
  * node so the unexplored exit reads as "leads somewhere unmapped". Interior edges
- * are typed 'selfloop' (from===to) or 'orthogonal' (everything else); orthogonal
- * edges anchor their start at the source affordance ROW via data.sourceAffordanceId,
- * run into a per-edge vertical routing lane (data.lane = the Nth outgoing edge of
- * the source) and turn into the target border — clean right-angle wires, no arcs.
+ * are typed 'selfloop' (from===to) or 'orthogonal' (everything else). Orthogonal
+ * edges attach to specific handles the canonical React Flow way: sourceHandle =
+ * 'aff_'+via (the pink affordance PORT on that row) for real vias, and targetHandle
+ * = 'in' (the node's top target handle). React Flow computes the endpoint coords
+ * from those handles and the OrthogonalEdge feeds them to getSmoothStepPath — clean
+ * right-angle wires whose arrowhead touches the target node, no hand-rolled lanes.
  */
 export async function layoutGraph(
   nodes: LayoutNode[], edges: LayoutEdge[], mode: LayoutMode,
@@ -131,16 +133,11 @@ export async function layoutGraph(
     type: n.unexplored ? 'unexplored' : mode === 'clusters' ? 'site' : 'state',
   }));
 
-  // Reciprocal pairs (a→b AND b→a): each direction routes through its OWN gutter.
-  // The OrthogonalEdge reads the sign of reciprocalOffset to push the reverse
-  // direction's lane further right, so the two wires run parallel, not overlapping.
+  // Reciprocal pairs (a→b AND b→a) are drawn slightly thicker so both directions
+  // read clearly. (They may visually overlap since both use top-target +
+  // right-source handles — acceptable for now; getSmoothStepPath does the routing.)
   const present = new Set(edges2.map((e) => e.source + ' ' + e.target));
   const isPair = (e: LayoutEdge) => e.target != null && present.has(e.target + ' ' + e.source);
-
-  // Lane assignment: the Nth outgoing edge of a source node gets lane N, so
-  // multiple wires leaving the same node occupy distinct vertical gutters and
-  // never overlap. Counted in edge order, deterministic per render.
-  const laneCounter = new Map<string, number>();
 
   const rfEdges: Edge[] = edges2.map((e) => {
     const core = e.core === true;
@@ -148,26 +145,23 @@ export async function layoutGraph(
     const color = dangling ? '#cbd5e1' : e.fork ? '#c2410c' : core ? '#1d4ed8' : '#94a3b8';
     const isSelf = e.source === e.target;
     const pair = isPair(e);
-    // Anchor to a specific affordance row only for real (non-synthetic) via ids.
+    // Attach the edge's SOURCE to a specific affordance PORT (the pink rect on that
+    // row) for real via ids; synthetic 'edge:*' vias use the node default.
     const via = e.viaAffordance;
-    const sourceAffordanceId = via && !via.startsWith('edge:') ? 'aff_' + via : undefined;
-    const reciprocalOffset = pair ? (e.source < (e.target as string) ? 40 : -40) : 0;
-    // Nth outgoing edge of this source → lane N (distinct gutter per wire).
-    const lane = laneCounter.get(e.source) ?? 0;
-    laneCounter.set(e.source, lane + 1);
+    const sourceHandle = via && !via.startsWith('edge:') ? 'aff_' + via : undefined;
     return {
       id: e.id,
       source: e.source,
       target: e.target as string,
+      // SOURCE = the affordance port (when known); TARGET = the node's top handle.
+      ...(sourceHandle ? { sourceHandle } : {}),
+      targetHandle: 'in',
       type: isSelf ? 'selfloop' : 'orthogonal',
       data: {
         color,
         width: core || pair ? 2 : 1,
-        lane,
-        reciprocalOffset,
         dashed: dangling || e.associative === true,
         dimmed: false,
-        sourceAffordanceId,
         label: e.label,
       },
       animated: e.fork,
