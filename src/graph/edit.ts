@@ -29,9 +29,20 @@ let _affSeq = 0;
 const slug = (s: string) => s.replace(/\W+/g, '_').slice(0, 24);
 // `stateId` maps an author's state LABEL to its full id (`node:label`); `to` in a
 // teach affordance is a label, so we resolve it here.
+const VALID_KINDS = new Set<AffordanceKind>(['navigate', 'reveal', 'mutate', 'input']);
 function toAffordance(a: EditAffordance, stateId: (label: string) => string): Affordance {
   if (typeof a === 'string') {
     return makeAffordance({ id: 'aff_' + (_affSeq++) + '_' + slug(a), label: a, kind: 'mutate' });
+  }
+  // Validate LOUDLY — a teach payload using the wrong field names (e.g. `type`
+  // instead of `kind`, `name` instead of `label`) must fail, not silently store
+  // a `mutate:undefined` affordance. (Found via dogfooding: an agent invented its
+  // own schema and editGraph happily stored garbage.)
+  if (typeof a.label !== 'string' || !a.label) {
+    throw new Error(`editGraph: affordance is missing a string "label" (got keys: ${Object.keys(a).join(',')})`);
+  }
+  if (a.kind !== undefined && !VALID_KINDS.has(a.kind)) {
+    throw new Error(`editGraph: affordance "${a.label}" has invalid kind "${a.kind}" (expected navigate|reveal|mutate|input)`);
   }
   return makeAffordance({
     id: a.id ?? 'aff_' + (_affSeq++) + '_' + slug(a.label),
