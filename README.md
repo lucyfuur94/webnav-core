@@ -1,5 +1,11 @@
 # webnav
 
+[![CI](https://github.com/lucyfuur94/webnav/actions/workflows/ci.yml/badge.svg)](https://github.com/lucyfuur94/webnav/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+![zero-LLM](https://img.shields.io/badge/runtime-zero--LLM-7c4dff.svg)
+
 **A navigation memory for AI agents.** A zero-LLM web-navigation **memory + map**: an
 LLM agent shells out to the `webnav` CLI to navigate websites reliably, recall routes it's
 learned, search the open web, and get back compact **evidence** — while the agent itself does
@@ -158,6 +164,12 @@ navigation skeleton; goals declare signal interests. **Never evade bot-walls** �
 
 All current work is merged to `main`, tests green. See **`docs/STATUS.md`** for the live
 checklist, pending work, and known limitations.
+
+## Contributing
+
+PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (the settled principles, dev setup, and how
+to contribute a **site map** — the highest-leverage contribution). Report security issues privately
+per [`SECURITY.md`](SECURITY.md). Be excellent to each other: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 
