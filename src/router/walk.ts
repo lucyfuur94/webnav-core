@@ -105,7 +105,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         // (the R5 resume bug). This is the ONLY path that fires a commit edge, and
         // only on an explicit agent "safe" verdict.
         const yaml = await browser.snapshot();
-        const ref = resolveStep(edge.semanticStep, parseSnapshot(yaml));
+        const ref = resolveStep(edge.semanticStep, parseSnapshot(yaml), edge.selectorCache);
         if (!ref) {
           return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: yaml,
             question: 'classified safe, but cannot resolve "' + edge.semanticStep + '" on the current page' };
@@ -123,6 +123,15 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         continue;
       } else {
         // 'ref': act on the agent-chosen element, skip replayStep for THIS step.
+        // SELF-HEAL: before acting, recover the chosen element's durable NAME
+        // from the current page (the raw ref `e42` is ephemeral — reassigned per
+        // snapshot — so we never persist it; the NAME is what re-resolves next
+        // time). We only reach here because deterministic resolution MISSED, so
+        // the page name differs from the step's quoted name (drift / icon-only /
+        // renamed). On success we write that name back as the edge's selector
+        // cache, so the next walk resolves this step deterministically (#3).
+        const beforeNodes = parseSnapshot(await browser.snapshot());
+        const chosen = beforeNodes.find((n) => n.ref === ans.ref);
         await browser.act(ans.ref, edge.acceptsInput);
         const afterYaml = await browser.snapshot();
         const observed = matchState(parseSnapshot(afterYaml), states);
@@ -132,6 +141,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
               + (observed.status === 'matched' ? observed.state.id : observed.status) };
         }
         store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
+        if (chosen?.name) store.recordSelector(edge.fromState, edge.toState, edge.semanticStep, chosen.name);
         current = edge.toState; at++;
         continue;
       }

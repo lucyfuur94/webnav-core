@@ -31,6 +31,19 @@ describe('MapStore', () => {
     expect(e.lastVerified).not.toBeNull();
   });
 
+  it('recordSelector writes back the self-heal name onto the edge', () => {
+    const s = freshStore();
+    s.upsertEdge(makeEdge({ fromState: 'a', toState: 'b', semanticStep: 'click "Open Cart"', kind: 'safe-reversible' }));
+    expect(s.edgesFrom('a')[0].selectorCache).toBeNull();
+    s.recordSelector('a', 'b', 'click "Open Cart"', 'Shopping cart');
+    expect(s.edgesFrom('a')[0].selectorCache).toBe('Shopping cart');
+  });
+
+  it('recordSelector is a no-op for an unknown edge (no throw)', () => {
+    const s = freshStore();
+    expect(() => s.recordSelector('nope', 'x', 'y', 'z')).not.toThrow();
+  });
+
   it('decayConfidence lowers confidence for old edges', () => {
     const s = freshStore();
     s.upsertEdge(makeEdge({ fromState: 'a', toState: 'b', semanticStep: 'go', kind: 'navigate',

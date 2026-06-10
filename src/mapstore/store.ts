@@ -23,6 +23,7 @@ export interface IMapStore {
   allEdges(): Edge[];
   interiorEdges(nodeId: string): InteriorEdge[];
   recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void;
+  recordSelector(fromState: string, toState: string, semanticStep: string, selector: string): void;
   decayConfidence(nowMs?: number, halfLifeMs?: number): void;
   upsertGoal(g: Goal): void;
   getGoal(name: string): Goal | null;
@@ -267,6 +268,19 @@ export class MapStore implements IMapStore {
     this.db.prepare(`UPDATE edges SET success_count=?, fail_count=?, reliability=?,
       last_verified=?, confidence=1 WHERE id=?`)
       .run(sc, fc, reliability, Date.now(), row.id);
+  }
+
+  /** SELF-HEAL write-back (principle #3): record the durable name an agent's ref
+   *  resolved to on a step that deterministic resolution had MISSED, so the next
+   *  walk re-resolves it without re-asking. Stored as the edge's selector_cache.
+   *  A no-op if the edge isn't a stored row (a purely affordance-projected edge
+   *  with no edges-table backing); upserting one here is out of scope. */
+  recordSelector(fromState: string, toState: string, semanticStep: string, selector: string): void {
+    const row: any = this.db.prepare(
+      'SELECT id FROM edges WHERE from_state=? AND to_state=? AND semantic_step=?')
+      .get(fromState, toState, semanticStep);
+    if (!row) return;
+    this.db.prepare('UPDATE edges SET selector_cache=? WHERE id=?').run(selector, row.id);
   }
 
   /** Halve confidence per `halfLifeMs` of age since last_verified. */

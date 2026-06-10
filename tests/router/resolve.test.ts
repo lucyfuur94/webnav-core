@@ -15,4 +15,20 @@ describe('resolveStep (deterministic)', () => {
     const nodes = parseSnapshot('- paragraph "nothing"');
     expect(resolveStep('click "Insights"', nodes)).toBeNull();
   });
+
+  it('falls back to the cached selector NAME when the step name does not match', () => {
+    // step name "Open Cart" is absent; the cached healed name "Shopping cart" hits.
+    const nodes = parseSnapshot('- button "Shopping cart" [ref=e3]');
+    expect(resolveStep('click "Open Cart"', nodes, 'Shopping cart')).toBe('e3');
+  });
+
+  it('prefers the step name over the cache when BOTH match', () => {
+    const nodes = parseSnapshot('- button "Go" [ref=e1]\n- button "Cached" [ref=e2]');
+    expect(resolveStep('click "Go"', nodes, 'Cached')).toBe('e1');
+  });
+
+  it('ignores the cache when it is null/empty', () => {
+    const nodes = parseSnapshot('- button "Shopping cart" [ref=e3]');
+    expect(resolveStep('click "Open Cart"', nodes, null)).toBeNull();
+  });
 });

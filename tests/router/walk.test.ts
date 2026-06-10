@@ -128,4 +128,54 @@ describe('walkRoute (interactive multi-step walk)', () => {
     });
     expect(r.status).toBe('needs-navigation');
   });
+
+  // SELF-HEAL end-to-end (principle #3): a step whose quoted name no longer
+  // matches the live page escalates; the agent supplies a ref; webnav writes the
+  // chosen element's NAME back to the edge; a SECOND walk then resolves the step
+  // deterministically from that cached name — no second escalation.
+  it('writes back the agent ref name on resume, then re-resolves it deterministically', async () => {
+    const store = new MapStore(':memory:');
+    // Two-state route a->b. The step says click "Open Cart", but the live page's
+    // button is named "Shopping cart" (drift), so resolveStep MISSES first.
+    store.upsertState(makeState({ id: 'h:a', nodeId: 'h', semanticName: 'h:a', urlPattern: '', role: 'detail', fingerprint: ['button:Shopping cart'] }));
+    store.upsertState(makeState({ id: 'h:b', nodeId: 'h', semanticName: 'h:b', urlPattern: '', role: 'detail', fingerprint: ['heading:Cart'] }));
+    store.upsertEdge(makeEdge({ fromState: 'h:a', toState: 'h:b', semanticStep: 'click "Open Cart"', kind: 'safe-reversible' }));
+    const st = store.allStates();
+
+    const PAGE_A = '- button "Shopping cart" [ref=e7]';
+    const PAGE_B = '- heading "Cart" [ref=e8]';
+
+    // First walk: on page A, step name "Open Cart" doesn't match -> escalate.
+    let onB = false;
+    const browser1: WalkBrowser = {
+      snapshot: async () => (onB ? PAGE_B : PAGE_A),
+      act: async () => { throw new Error('should not act — first walk escalates before acting'); },
+      callCount: () => 0,
+    };
+    const r1 = await walkRoute({ goalName: 'g', startStateId: 'h:a', goalStateId: 'h:b', store, states: st, browser: browser1 });
+    expect(r1.status).toBe('needs-navigation');
+
+    // RESUME: the agent picks the real button ref e7. webnav should act + write
+    // back the chosen element's NAME ("Shopping cart") as the edge selectorCache.
+    const browser2: WalkBrowser = {
+      snapshot: async () => (onB ? PAGE_B : PAGE_A),
+      act: async () => { onB = true; },
+      callCount: () => 0,
+    };
+    const r2 = await walkRoute({ goalName: 'g', startStateId: 'h:a', goalStateId: 'h:b', store, states: st,
+      browser: browser2, answer: { kind: 'ref', ref: 'e7' } });
+    expect(r2.status).toBe('done');
+    expect(store.edgesFrom('h:a')[0].selectorCache).toBe('Shopping cart');
+
+    // SECOND walk: no answer supplied. The cached name now resolves the step
+    // deterministically — it must reach the goal WITHOUT escalating.
+    onB = false;
+    const browser3: WalkBrowser = {
+      snapshot: async () => (onB ? PAGE_B : PAGE_A),
+      act: async () => { onB = true; },
+      callCount: () => 0,
+    };
+    const r3 = await walkRoute({ goalName: 'g', startStateId: 'h:a', goalStateId: 'h:b', store, states: st, browser: browser3 });
+    expect(r3.status).toBe('done');
+  });
 });
