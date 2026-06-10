@@ -183,9 +183,17 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
       { name: '--start', takesValue: true, description: 'Start state id (from `dev graph-show`).' },
       { name: '--goal', takesValue: true, description: 'Goal state id to reach.' },
       { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored). Stored creds are used if set.' },
+      { name: '--hosted', takesValue: false, description: 'Use the HOSTED shared map: fetch this site\'s map live from the webnav service (needs `webnav login <key>`) instead of the local map. Credentials still stay local.' },
       ...BROWSER_FLAGS,
     ],
     example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --headed',
+  },
+  {
+    name: 'login', group: 'navigate',
+    summary: 'Save your hosted-route API key (from the webnav site) to ~/.webnav/config.json so `walk --hosted` can fetch shared maps. The key is NOT a credential and is stored separately from site logins.',
+    args: [{ name: 'key', required: true, description: 'The API key issued on the webnav website.' }],
+    flags: [],
+    example: 'webnav login wn_live_xxx',
   },
   {
     name: 'walk-resume', group: 'navigate',

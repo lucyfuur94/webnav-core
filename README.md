@@ -5,8 +5,13 @@ LLM agent shells out to the `webnav` CLI to navigate websites reliably, recall r
 learned, search the open web, and get back compact **evidence** — while the agent itself does
 all the judgment. webnav is the honest map and mechanics; the agent is the driver.
 
+> **Website:** <https://webnav.dpdns.org> · **Two ways to use it:** self-host (free, this repo) or
+> the **hosted shared-knowledge route** (a maintained central map you fetch over the network — your
+> credentials still stay local). See [Two routes](#two-routes-self-host-vs-hosted) below.
+
 > New here? Read **`docs/STATUS.md`** (current state + what's next + how to run) and
 > **`CLAUDE.md`** (settled design, mental model, and principles). Design docs: `docs/superpowers/specs/`.
+> Deploying the site + hosted backend: **`DEPLOY.md`**.
 
 ## Why
 
@@ -61,7 +66,25 @@ honestly what you get and how it grows, so there are no surprises:
 
 **TL;DR:** out of the box you can `walk` saucedemo; everything else you map yourself. Same
 machine + a mapped site → instant, cached, self-healing. A brand-new site → you (or your
-agent) record it once first. Maps don't yet travel between users.
+agent) record it once first.
+
+## Two routes: self-host vs hosted
+
+There are two ways to get maps — and **both keep your credentials 100% local** (the hosted route
+moves only the map skeleton, never logins).
+
+- **Self-host (this repo, free forever, Apache-2.0):** build/own your maps in the local
+  `~/.webnav/webnav.db`. No account, no key, no limits.
+- **Hosted shared-knowledge route:** instead of building maps, fetch a maintained central map over
+  the network — always the latest. Get a free API key from the website, then:
+  ```bash
+  webnav login wn_live_xxx        # free key from https://webnav.dpdns.org/keys
+  webnav walk --hosted --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-complete
+  ```
+  The map is fetched live and metered per key (free tier + usage-based paid tiers); your site
+  credentials are still loaded locally by `CredStore`. The key lives in `~/.webnav/config.json`,
+  separate from credentials. The marketing/docs/pricing site + this API live in [`site/`](site/)
+  (Next.js on Vercel) backed by Turso; deploy with **`DEPLOY.md`**.
 
 ## Verbs
 

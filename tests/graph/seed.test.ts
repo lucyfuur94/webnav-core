@@ -13,6 +13,14 @@ describe('seedGraph (default — saucedemo only)', () => {
     expect(s.statesForNode('www.saucedemo.com').length).toBeGreaterThan(0);
   });
 
+  it('seeds the saucedemo NODE row too (getNode works — needed by dashboard + hosted pack)', () => {
+    const s = new MapStore(':memory:');
+    seedGraph(s);
+    const n = s.getNode('www.saucedemo.com');
+    expect(n).not.toBeNull();
+    expect(n!.homeUrl).toBe('https://www.saucedemo.com/');
+  });
+
   it('does NOT seed GitHub or the internet-graph nodes by default', () => {
     const s = new MapStore(':memory:');
     seedGraph(s);
