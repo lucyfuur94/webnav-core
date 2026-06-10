@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { MapStore } from '../../src/mapstore/store.js';
-import { seedGraph } from '../../src/graph/seed.js';
+import { seedGitHubAndGraph } from '../../src/graph/seed.js';
 import { hop } from '../../src/graph/hop.js';
 
 function freshSeeded() {
   const s = new MapStore(':memory:');
-  seedGraph(s);
+  seedGitHubAndGraph(s);
   return s;
 }
 

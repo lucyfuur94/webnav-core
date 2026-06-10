@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server, AddressInfo } from 'node:net';
 import { MapStore } from '../../src/mapstore/store.js';
-import { seedGraph } from '../../src/graph/seed.js';
-import { exploreGitHub } from '../../src/explorer/github-skeleton.js';
+import { seedGraph, seedGitHubAndGraph } from '../../src/graph/seed.js';
 import { CredStore } from '../../src/creds.js';
 import { startDashboard } from '../../src/dashboard/server.js';
 
@@ -19,8 +18,8 @@ describe('startDashboard', () => {
 
   beforeAll(async () => {
     const store = new MapStore(':memory:');
-    seedGraph(store);
-    exploreGitHub(store);
+    seedGraph(store);            // default: saucedemo
+    seedGitHubAndGraph(store);   // + GitHub interior + internet-graph nodes (this test asserts on github.com)
     tmp = mkdtempSync(join(tmpdir(), 'webnav-dash-'));
     credsFile = join(tmp, 'credentials.json');
     const creds = new CredStore(credsFile);

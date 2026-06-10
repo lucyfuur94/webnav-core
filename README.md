@@ -34,14 +34,16 @@ honestly what you get and how it grows, so there are no surprises:
 
 - **What ships, out of the box.** The first time you run any verb, webnav seeds a shared
   map at **`~/.webnav/webnav.db`** (per-user, shared across every terminal/folder on the
-  machine — *not* a per-directory file). It comes pre-seeded with two site maps: **GitHub**
-  (the `recall` repo-evidence skeleton) and **saucedemo.com** (a full login→checkout `walk`
-  map). These work immediately:
+  machine — *not* a per-directory file). It comes pre-seeded with **one** worked example:
+  **saucedemo.com** — a full login→browse→cart→checkout `walk` map. This works immediately:
   ```bash
-  webnav recall "python retry library"                       # GitHub, seeded
   webnav walk --start www.saucedemo.com:login \
               --goal www.saucedemo.com:checkout-complete      # saucedemo, seeded
   ```
+  Nothing else is seeded — webnav is a blank-slate map tool, and saucedemo is the single
+  example that proves it works. (The GitHub `recall` skeleton + the internet-graph for
+  `route`/`search` are available but **opt-in** — seed them with `seedGitHubAndGraph`, or
+  build your own maps; they are intentionally not in the default install.)
 - **The map persists and self-heals.** It's saved to `~/.webnav/webnav.db` and reused on
   every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
   or moved element), a `walk` escalates once for the agent to pick the element, then **writes
@@ -57,8 +59,9 @@ honestly what you get and how it grows, so there are no surprises:
 - **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
   sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
 
-**TL;DR:** same machine + a mapped site → instant, cached, self-healing. A brand-new site →
-you (or your agent) record it once first. Maps don't yet travel between users.
+**TL;DR:** out of the box you can `walk` saucedemo; everything else you map yourself. Same
+machine + a mapped site → instant, cached, self-healing. A brand-new site → you (or your
+agent) record it once first. Maps don't yet travel between users.
 
 ## Verbs
 
