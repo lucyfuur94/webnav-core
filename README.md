@@ -23,7 +23,6 @@ npm install                 # Node 18+ (better-sqlite3 native build)
 npm link                    # install `webnav` on PATH (runs src via tsx — NO build needed)
 webnav --help               # the tool menu (a peer of playwright-cli)
 npm test                    # unit tests (+ gated browser e2e)
-npm run dev                 # live graph viewer -> http://127.0.0.1:7777
 npm run build               # tsc -> dist/ (only needed for the dist build; the `webnav` CLI runs src directly)
 ```
 Needs `playwright-cli` on PATH. A gitignored `webnav.db` (SQLite) persists the map across runs.
@@ -38,27 +37,25 @@ webnav recall "<use-case>"                   GitHub repo discovery -> evidence b
 webnav search "<query>" [--top N]            multi-provider open-web search -> extracted evidence
 webnav route "<request>" [--capability X]    graph: which site(s) for this request + signals
 webnav hop <url> --to-cluster X|--to-node Y  graph: move to a related site
-webnav graph [--json]                        export the internet-graph as JSON (live viewer: npm run dev)
 webnav dev node-add <id> --url --capabilities --topics    teach a new site
 webnav dev edge-add <from> <to> --kind           teach a relationship
+webnav dev graph-show --node <id>            a site's stored states + edges (JSON)
+webnav dev outline <site>                    human-readable interior outline (completeness check)
+webnav dev mermaid <site>                    a Mermaid stateDiagram of the interior
 webnav capture <url> <out.yml>               dev: save a snapshot YAML
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.
 
 Consumer verbs can also be invoked canonically as `webnav use <verb> ...` and map-authoring verbs as `webnav dev <verb> ...`; bare consumer verbs (e.g. `webnav recall ...`) still work too.
 
-### See the map
+### Inspect a site's map
+The map is for the calling AGENT (recall/walk), not a human dashboard. To inspect
+what's captured, use the text views — no UI:
 ```bash
-npm run dev                      # live viewer at http://127.0.0.1:7777 (reads SQLite live)
-                                 #   click a site-node to drill into its intra-site interior
-                                 #   (states + action-edges) fetched from /api/node/<id>/interior
-npm run dev:web                  # React dev server with HMR (proxies /api to the Node server)
-webnav graph                     # the internet-graph as JSON
+webnav dev outline www.saucedemo.com    # top-to-bottom states + affordances + completeness cues
+webnav dev mermaid www.saucedemo.com     # paste into GitHub/mermaid.live to render
+webnav dev graph-show --node <id>        # raw JSON
 ```
-The live viewer is a `web/` Vite + React + **@xyflow/react** app (laid out by
-**elkjs**), built to `web/dist/` and served as static files by a tiny read-only
-HTTP server (`src/server.ts`, Node `http`, no new ROOT deps — React/xyflow/elk
-live in `web/`). Fork (`needs-input`) edges are drawn dashed/orange.
 
 ## Architecture (one CLI, three components, ZERO LLM)
 
@@ -83,11 +80,10 @@ router/    resolve.ts, replay.ts, router.ts, recall-via-map.ts, live.ts    navig
            search.ts, search-providers.ts, search-live.ts                 multi-provider open-web search
            walk.ts, walk-live.ts                                          interactive multi-step walk (saucedemo)
            catalog.ts, locate.ts                                          list/describe + place lookup
-graph/     seed.ts, route.ts, hop.ts, export.ts, interior.ts, teach.ts    the internet graph + viewer data builders
+graph/     seed.ts, route.ts, hop.ts, teach.ts, edit.ts, show.ts, coverage.ts   the internet graph + map authoring/inspection
 goals/     find-battle-tested-repos.ts                                    the (only) GitHub-repo-specific goal
-web/       Vite + React + @xyflow/react viewer (elkjs layout); served from web/dist by src/server.ts
 ```
-Tests mirror this under `tests/`. The 2 live e2e tests are gated behind `WEBNAV_LIVE=1`.
+Tests mirror this under `tests/`. The live e2e walk tests are gated behind `WEBNAV_LIVE=1`.
 
 ## Principles (full list in CLAUDE.md)
 

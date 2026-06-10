@@ -235,19 +235,6 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav describe "trending repositories"',
   },
   {
-    name: 'graph',
-    summary: 'Show the map of known sites (the internet graph) as JSON.',
-    args: [],
-    flags: [
-      {
-        name: '--json',
-        takesValue: false,
-        description: 'Emit JSON (it is already JSON — kept for flag consistency).',
-      },
-    ],
-    example: 'webnav graph > map.json',
-  },
-  {
     name: 'node-add',
     summary: 'Teach webnav a new site: its id, url, capabilities, topics.',
     args: [
@@ -333,16 +320,6 @@ export const DEV_COMMANDS: CommandSpec[] = [
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
     example: 'webnav dev mermaid www.saucedemo.com',
-  },
-  {
-    name: 'standalone',
-    summary: 'Write a SINGLE self-contained HTML file that renders a site\'s interior graph offline (inlines the React Flow bundle + the graph data) — open it by double-clicking, no server. Requires `npm --prefix web run build` first.',
-    args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
-    flags: [
-      { name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' },
-      { name: '--out', takesValue: true, description: 'Output HTML path (default: <site>-graph.html in cwd).' },
-    ],
-    example: 'webnav dev standalone www.saucedemo.com --out saucedemo.html',
   },
 ];
 
