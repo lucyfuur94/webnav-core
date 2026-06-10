@@ -9,11 +9,15 @@ describe('CLI surface', () => {
     }
   });
 
-  it('top-level help does NOT list admin verbs (they live under dev)', () => {
+  it('top-level help lists the dev verbs too, under a labeled dev section', () => {
     const h = topLevelHelp();
-    expect(h).not.toMatch(/^\s+node-add\b/m);
-    expect(h).not.toMatch(/^\s+edge-add\b/m);
-    expect(h).toContain('webnav dev');
+    // dev verbs ARE shown in the single top-level menu (complete tool list)...
+    expect(h).toMatch(/^\s+node-add\b/m);
+    expect(h).toMatch(/^\s+edge-add\b/m);
+    expect(h).toMatch(/^\s+dashboard\b/m);
+    // ...but kept in their own category, invoked as `webnav dev <command>`.
+    expect(h).toMatch(/dev — /);
+    expect(h).toContain('webnav dev <command>');
   });
 
   it('dev help lists the admin verbs', () => {

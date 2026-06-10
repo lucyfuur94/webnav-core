@@ -37,14 +37,24 @@ export function topLevelHelp(): string {
     }
     lines.push('');
   }
+  // dev — the authoring/inspection verbs. Shown here too (not just under
+  // `webnav dev --help`) so a single `webnav --help` is a complete tool list;
+  // they stay a separate CATEGORY (invoked as `webnav dev <cmd>`) because they
+  // build/inspect the map rather than drive it at runtime.
+  lines.push('dev — teach & inspect the map (run as `webnav dev <command>`):');
+  lines.push('');
+  const devWidth = Math.max(...DEV_COMMANDS.map((c) => c.name.length));
+  for (const c of DEV_COMMANDS) {
+    lines.push(`  ${pad(c.name, devWidth)}  ${c.summary}`);
+  }
+  lines.push('');
   lines.push('Global flags:');
   const flagWidth = Math.max(...GLOBAL_FLAGS.map((f) => f.name.length));
   for (const f of GLOBAL_FLAGS) {
     lines.push(`  ${pad(f.name, flagWidth)}  ${f.description}`);
   }
   lines.push('');
-  lines.push('Run `webnav dev --help` for teach/inspect/dev tools.');
-  lines.push('Run `webnav <command> --help` for details.');
+  lines.push('Run `webnav <command> --help` (or `webnav dev <command> --help`) for details.');
   return lines.join('\n');
 }
 
