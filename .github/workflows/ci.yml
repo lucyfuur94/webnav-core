@@ -34,13 +34,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Upgrade npm
-        # the runner's bundled npm crashed with "Exit handler never called!"
-        # installing @libsql/client's native optional deps; newer npm fixes it.
-        run: npm install -g npm@10
       - name: Install site deps
         working-directory: site
-        run: npm install --no-audit --no-fund
+        # --ignore-scripts skips @libsql/client's native postinstall, which was
+        # crashing npm ("Exit handler never called!") on the runner. The Next
+        # BUILD doesn't need that native binary (it's only used at API runtime),
+        # so the build still succeeds.
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Build site
         working-directory: site
         run: npm run build
