@@ -15,3 +15,6 @@ tests/tmp/
 # dev graph-screenshot artifacts
 *-graph.html
 .playwright-cli/
+
+# OS / editor cruft
+.DS_Store
