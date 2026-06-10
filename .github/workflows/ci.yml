@@ -34,11 +34,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+          # no npm cache here: a partial cache restore was triggering npm's
+          # "Exit handler never called!" crash on this runner.
       - name: Install site deps
         working-directory: site
-        run: npm ci
+        run: npm install --no-audit --no-fund
       - name: Build site
         working-directory: site
         run: npm run build
