@@ -29,12 +29,16 @@ This is the maintainer guide to put the site live and wire up the hosted
 ## 2. Publish the seed map(s) into Turso
 
 The shared map is populated from your LOCAL `~/.webnav/webnav.db` (build/seed the
-sites you want to share first — saucedemo is seeded by default). From the repo root:
+sites you want to share first — saucedemo is seeded by default). Run from the repo
+root so both the ROOT deps (better-sqlite3, to read the local DB) and the SITE
+deps (@libsql/client, to write Turso) are available:
 
 ```bash
-cd site && npm install && cd ..
+npm install              # root deps (better-sqlite3) — once
+cd site && npm install   # site deps (@libsql/client, tsx) — once
+cd ..
 TURSO_DATABASE_URL="libsql://...." TURSO_AUTH_TOKEN="...." \
-  npx tsx site/scripts/publish-map.ts www.saucedemo.com
+  node --import tsx site/scripts/publish-map.ts www.saucedemo.com
 ```
 
 Add more sites as args once you've mapped them. Re-running updates them (idempotent upsert).
