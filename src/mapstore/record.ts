@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { SnapshotDiff } from '../explorer/diff.js';
+import { dbPath } from '../paths.js';
 
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
@@ -24,7 +25,7 @@ export interface StoredActionEffect extends ActionEffect { seq: number; captured
  *  same Database handle, separate tables. No clustering here — that's analyse. */
 export class RecordStore {
   private db: Database.Database;
-  constructor(path = 'webnav.db') {
+  constructor(path = dbPath()) {
     this.db = new Database(path);
     this.db.exec(SCHEMA);
     this.migrate();

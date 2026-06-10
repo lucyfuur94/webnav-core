@@ -1,6 +1,7 @@
 import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
 import type { BrowserOpts } from './playwright/adapter.js';
+import { dbPath } from './paths.js';
 
 export type ParsedArgs =
   | { cmd: 'help'; command?: string }
@@ -271,7 +272,7 @@ async function main() {
   if (args.cmd === 'list-goals') {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     const goals = store.allGoals().map((g) => ({ id: g.name, site: g.site,
       signals: Object.values(g.surface).flat() }));
@@ -316,7 +317,7 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { route } = await import('./graph/route.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     console.log(JSON.stringify(route(store, args.request, args.capability), null, 2));
     return;
@@ -326,7 +327,7 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { hop } = await import('./graph/hop.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     console.log(JSON.stringify(
       hop(store, args.url, { toCluster: args.toCluster, toNode: args.toNode }), null, 2));
@@ -337,7 +338,7 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { addNode } = await import('./graph/teach.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     const node = addNode(store, {
       id: args.id, homeUrl: args.url, capabilities: args.capabilities, topics: args.topics,
@@ -350,7 +351,7 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
     const { addEdge } = await import('./graph/teach.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     const result = addEdge(store, { from: args.from, to: args.to, kind: args.kind as any });
     console.log(JSON.stringify(result, null, 2));
@@ -390,7 +391,7 @@ async function main() {
   }
   if (args.cmd === 'record-start') {
     const { RecordStore } = await import('./mapstore/record.js');
-    const rec = new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    const rec = new RecordStore(dbPath());
     const session = args.session || `map-${Date.now()}`;
     rec.start(session);
     console.log(JSON.stringify({ status: 'recording', session }, null, 2));
@@ -398,14 +399,14 @@ async function main() {
   }
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
-    new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db').stop(args.session);
+    new RecordStore(dbPath()).stop(args.session);
     console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
     return;
   }
   if (args.cmd === 'graph-analyse') {
     const { RecordStore } = await import('./mapstore/record.js');
     const { analyseActionEffects } = await import('./explorer/analyse.js');
-    const result = analyseActionEffects(new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db').actionEffects(args.session));
+    const result = analyseActionEffects(new RecordStore(dbPath()).actionEffects(args.session));
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
     return;
@@ -413,7 +414,7 @@ async function main() {
   if (args.cmd === 'graph-edit') {
     const { MapStore } = await import('./mapstore/store.js');
     const { editGraph } = await import('./graph/edit.js');
-    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    const store = new MapStore(dbPath());
     const graph = JSON.parse(args.graph);
     console.log(JSON.stringify(editGraph(store, args.node, graph), null, 2));
     return;
@@ -421,7 +422,7 @@ async function main() {
   if (args.cmd === 'graph-show') {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
-    console.log(JSON.stringify(showInterior(new MapStore(process.env.WEBNAV_DB ?? 'webnav.db'), args.node), null, 2));
+    console.log(JSON.stringify(showInterior(new MapStore(dbPath()), args.node), null, 2));
     return;
   }
   if (args.cmd === 'outline' || args.cmd === 'mermaid') {
@@ -431,7 +432,7 @@ async function main() {
     // summary (counts / unexplored / dead-ends / orphans) rides alongside.
     const { MapStore } = await import('./mapstore/store.js');
     const { analyseCoverage, toOutline, toMermaid } = await import('./graph/coverage.js');
-    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    const store = new MapStore(dbPath());
     const states = store.statesForNode(args.node);
     if (!states.length) {
       console.log(JSON.stringify({ status: 'empty', node: args.node,
@@ -480,7 +481,7 @@ async function main() {
     const { ensureSeeded } = await import('./graph/seed.js');
     const { CredStore } = await import('./creds.js');
     const { startDashboard } = await import('./dashboard/server.js');
-    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    const store = new MapStore(dbPath());
     ensureSeeded(store);
     const creds = new CredStore();
     const port = args.port;
@@ -503,7 +504,7 @@ async function main() {
     const { WalkSessionStore } = await import('./router/walk-session.js');
     const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
-    const store = new MapStore('webnav.db');
+    const store = new MapStore();
     ensureSeeded(store);
     if (!store.getState(args.start)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.start }, null, 2)); process.exitCode = 2; return; }
     if (!store.getState(args.goal)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.goal }, null, 2)); process.exitCode = 2; return; }
@@ -524,7 +525,7 @@ async function main() {
     const states = store.statesForNode(startState.nodeId ?? '');
     const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path });
     if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
-      const sessions = new WalkSessionStore('webnav.db');
+      const sessions = new WalkSessionStore();
       const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession });
       // pos points at the state the walk paused ON, so resume restarts there.
       const pausedAt = (res as any).at;
@@ -546,8 +547,8 @@ async function main() {
     const { WalkSessionStore } = await import('./router/walk-session.js');
     const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
-    const store = new MapStore('webnav.db');
-    const sessions = new WalkSessionStore('webnav.db');
+    const store = new MapStore();
+    const sessions = new WalkSessionStore();
     const w = sessions.load(args.session);
     if (!w) { console.log(JSON.stringify({ status: 'failed', reason: 'no active walk-session ' + args.session }, null, 2)); process.exitCode = 2; return; }
     const answer = args.ref ? { kind: 'ref' as const, ref: args.ref }
@@ -595,7 +596,7 @@ async function main() {
       await adapter.open(args.url);
       const toSnapshot = await adapter.snapshot();
       const toUrl = await adapter.currentUrl();
-      const rec = new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db');
+      const rec = new RecordStore(dbPath());
       let recorded = false;
       if (rec.isActive(args.session)) {
         const { diffSnapshots } = await import('./explorer/diff.js');
@@ -637,7 +638,7 @@ async function main() {
       const fromSnapshot = await adapter.snapshot();
       const fromUrl = await adapter.currentUrl();
       const r = await runActionRecorded({
-        sessionId: args.session, recordStore: new RecordStore(process.env.WEBNAV_DB ?? 'webnav.db'),
+        sessionId: args.session, recordStore: new RecordStore(dbPath()),
         fromUrl, fromSnapshot,
         action: { role: '', name: null, ref: args.ref },
         text: args.cmd === 'type' ? args.text : undefined,
@@ -655,7 +656,7 @@ async function main() {
   // browser. Prints a RecallResponse JSON for the calling agent.
   if (args.cmd === 'recall') {
     const { runRecallLive } = await import('./router/live.js');
-    const response = await runRecallLive(args.query, args.top, 'webnav.db', args.goal);
+    const response = await runRecallLive(args.query, args.top, dbPath(), args.goal);
     console.log(JSON.stringify(response, null, 2));
     if (isEmptyOrFailed(response)) process.exitCode = 3;
   }

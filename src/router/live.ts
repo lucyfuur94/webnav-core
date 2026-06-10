@@ -27,7 +27,7 @@ export function resolveEntry(entry: string, query: string): string {
 // replay can SKIP navigation for addressable steps (future increment). This code
 // does not fake a cost drop.
 export async function runRecallLive(
-  query: string, top: number, dbPath = 'webnav.db', goalName = 'github-repos',
+  query: string, top: number, dbPath: string | undefined = undefined, goalName = 'github-repos',
 ): Promise<RecallResponse> {
   const store = new MapStore(dbPath);
   const { ensureSeeded } = await import('../graph/seed.js');
