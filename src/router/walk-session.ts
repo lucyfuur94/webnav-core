@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+import { dbPath } from '../paths.js';
+
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'mapstore', 'schema.sql'), 'utf8');
 
@@ -16,7 +18,7 @@ export interface WalkSession {
  *  No inputs are ever stored — credentials/form values are runtime-only. */
 export class WalkSessionStore {
   private db: Database.Database;
-  constructor(path = 'webnav.db') {
+  constructor(path = dbPath()) {
     this.db = new Database(path);
     this.db.exec(SCHEMA);
   }

@@ -2,6 +2,7 @@ import type { MapStore } from '../mapstore/store.js';
 import type { SiteNode, NodeEdge } from '../mapstore/types.js';
 import { makeNodeEdge } from '../mapstore/types.js';
 import { exploreGitHub } from '../explorer/github-skeleton.js';
+import { seedSaucedemoComplete } from '../router/walk-live.js';
 import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
 
 // Seed-and-grow (spec #2): the graph starts from the nodes webnav actually
@@ -35,10 +36,16 @@ export function seedGraph(store: MapStore): void {
     for (const n of INTERNET_GRAPH_SEED.nodes) store.upsertNode(n);
     for (const e of INTERNET_GRAPH_SEED.edges) store.upsertNodeEdge(e);
   });
-  // Interiors: the known site skeletons are seed DATA. exploreGitHub runs its own
-  // transaction (atomic, idempotent upserts). saucedemo is no longer seeded — it is
-  // an agent-built `www.saucedemo.com` graph (the walk tests seed it inline).
+  // Interiors: the known site skeletons are seed DATA, built from code so a FRESH
+  // shared DB comes up with them out-of-the-box (not just whatever a given laptop
+  // happened to record). Each runs idempotent upserts.
+  //   - GitHub: the v1 recall skeleton.
+  //   - saucedemo: the full login → checkout-complete walk map (+ burger menu),
+  //     so `webnav walk` works for the demo site in every session, not only where
+  //     it was manually recorded. (Was previously inline-in-tests only — the cause
+  //     of "walks here but not in another terminal".)
   exploreGitHub(store);
+  seedSaucedemoComplete(store);
   // Goals: seed the known goal records so getGoal() works after ensureSeeded().
   store.upsertGoal(FIND_BATTLE_TESTED_REPOS);
 }
@@ -54,7 +61,9 @@ export function ensureSeeded(store: MapStore): void {
   // Guard on BOTH a known interior state AND a known goal record: an older
   // webnav.db may have interiors but predate goal records (or vice versa), so
   // checking only one would skip the other. seedGraph's upserts are idempotent.
-  if (store.getState('github:repo-detail') === null || store.getGoal('github-repos') === null) {
+  if (store.getState('github:repo-detail') === null
+    || store.getGoal('github-repos') === null
+    || store.getState('www.saucedemo.com:checkout-complete') === null) {
     seedGraph(store);
   }
 }

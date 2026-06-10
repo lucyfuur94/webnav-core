@@ -141,7 +141,7 @@ export async function runWalkLive(
   // 1. File-backed MapStore; DB is authoritative — the saucedemo interior is written
   //    inline here (saucedemo is no longer part of the seeded graph). If it's absent,
   //    the walk seeds it once (the single bootstrap).
-  const store = new MapStore(dbPath ?? 'webnav.db');
+  const store = new MapStore(dbPath);
   if (!store.getState('www.saucedemo.com:checkout-overview')) {
     seedSaucedemoForWalk(store);
   }
@@ -265,7 +265,7 @@ export async function runWalkLiveComplete(
   dbPath?: string,
 ): Promise<RecallResponse> {
   const N = 'www.saucedemo.com';
-  const store = new MapStore(dbPath ?? 'webnav.db');
+  const store = new MapStore(dbPath);
   if (!store.getState(`${N}:checkout-complete`)) seedSaucedemoComplete(store);
 
   const adapter = new PlaywrightAdapter('sdc' + (Date.now() % 100000));

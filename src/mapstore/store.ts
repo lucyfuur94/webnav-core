@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { State, Edge, Affordance, InteriorEdge, Goal, SiteNode, NodeEdge } from './types.js';
 import { makeEdge, makeNodeEdge } from './types.js';
+import { dbPath } from '../paths.js';
 
 const SCHEMA = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8');
@@ -37,7 +38,7 @@ export interface IMapStore {
 
 export class MapStore implements IMapStore {
   private db: Database.Database;
-  constructor(path = 'webnav.db') {
+  constructor(path = dbPath()) {
     this.db = new Database(path);
     this.db.exec(SCHEMA);
     this.migrate();
