@@ -35,11 +35,11 @@ describe('parseArgs', () => {
   });
   it('parses read with the url first', () => {
     expect(parseArgs(['read', 'https://github.com/psf/requests']))
-      .toEqual({ cmd: 'read', url: 'https://github.com/psf/requests', raw: false, browser: {} });
+      .toEqual({ cmd: 'read', url: 'https://github.com/psf/requests', raw: false, browser: { headed: true } });
   });
   it('parses read --raw in either order (flag before url)', () => {
     expect(parseArgs(['read', '--raw', 'https://x.com']))
-      .toEqual({ cmd: 'read', url: 'https://x.com', raw: true, browser: {} });
+      .toEqual({ cmd: 'read', url: 'https://x.com', raw: true, browser: { headed: true } });
   });
   it('parses search --top', () => {
     expect(parseArgs(['search', 'x', '--top', '5']))
@@ -68,17 +68,22 @@ describe('parseArgs', () => {
   it('parses per-command help for route', () => {
     expect(parseArgs(['route', '--help'])).toEqual({ cmd: 'help', command: 'route' });
   });
-  it('walk/navigate/read default to headless (empty browser opts)', () => {
-    expect((parseArgs(['walk', '--start', 'a', '--goal', 'b']) as any).browser).toEqual({});
-    expect((parseArgs(['navigate', 'https://x']) as any).browser).toEqual({});
-    expect((parseArgs(['read', 'https://x']) as any).browser).toEqual({});
+  it('walk/navigate/read default to HEADED (visible window)', () => {
+    expect((parseArgs(['walk', '--start', 'a', '--goal', 'b']) as any).browser).toEqual({ headed: true });
+    expect((parseArgs(['navigate', 'https://x']) as any).browser).toEqual({ headed: true });
+    expect((parseArgs(['read', 'https://x']) as any).browser).toEqual({ headed: true });
   });
-  it('parses --headed / --persistent / --profile (implies persistent) / --browser', () => {
+  it('--headless opts out of the headed default', () => {
+    expect((parseArgs(['walk', '--start', 'a', '--goal', 'b', '--headless']) as any).browser)
+      .toEqual({ headed: false });
+    expect((parseArgs(['navigate', 'https://x', '--headless']) as any).browser).toEqual({ headed: false });
+  });
+  it('parses --persistent / --profile (implies persistent) / --browser (all headed by default)', () => {
     expect((parseArgs(['walk', '--start', 'a', '--goal', 'b', '--headed']) as any).browser)
       .toEqual({ headed: true });
     expect((parseArgs(['navigate', 'https://x', '--profile', '/tmp/p']) as any).browser)
-      .toEqual({ profile: '/tmp/p', persistent: true });
-    expect((parseArgs(['read', 'https://x', '--headed', '--browser', 'firefox']) as any).browser)
+      .toEqual({ headed: true, profile: '/tmp/p', persistent: true });
+    expect((parseArgs(['read', 'https://x', '--browser', 'firefox']) as any).browser)
       .toEqual({ headed: true, browser: 'firefox' });
   });
   it('parses creds set/list/rm', () => {

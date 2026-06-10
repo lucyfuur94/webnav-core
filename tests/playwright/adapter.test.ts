@@ -37,9 +37,17 @@ describe('PlaywrightAdapter', () => {
     expect(calls[0]).toEqual(['-s=s', 'fill', 'e8', 'playwright']);
   });
 
-  it('open is HEADLESS by default — no browser flags', async () => {
+  it('open is HEADED by default — carries --headed', async () => {
     const calls: string[][] = [];
     const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; });
+    await a.open('https://x');
+    expect(calls[0]).toEqual(['-s=s', 'open', 'https://x', '--headed']);
+  });
+
+  it('open with {headed:false} is headless — no browser flags', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; },
+      undefined, { headed: false });
     await a.open('https://x');
     expect(calls[0]).toEqual(['-s=s', 'open', 'https://x']);
   });

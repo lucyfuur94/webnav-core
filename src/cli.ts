@@ -55,14 +55,15 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
 }
 
 // Browser launch flags shared by the verbs that open a browser (read / navigate /
-// walk). Default is headless (omit all → BrowserOpts{} → headless). `--headed`
-// shows a real window (needed for interactive login + dodges some headless-only
-// bot-walls); `--persistent` / `--profile <dir>` reuse a logged-in profile;
-// `--browser chrome|firefox|webkit|msedge` picks the engine.
+// walk). Default is HEADED — a real visible window — so every run is watchable;
+// pass `--headless` to opt out (CI / gated live tests). `--headed` is still
+// accepted as an explicit no-op for back-compat. `--persistent` / `--profile
+// <dir>` reuse a logged-in profile; `--browser chrome|firefox|webkit|msedge`
+// picks the engine.
 function browserOpts(args: string[]): BrowserOpts {
   const has = (f: string) => args.includes(f);
   const o: BrowserOpts = {};
-  if (has('--headed')) o.headed = true;
+  o.headed = !has('--headless');   // headed by default; --headless opts out
   if (has('--persistent')) o.persistent = true;
   const profile = flagValue(args, '--profile');
   if (profile) { o.profile = profile; o.persistent = true; }   // a profile implies persistent
@@ -499,7 +500,10 @@ async function main() {
       // pos points at the state the walk paused ON, so resume restarts there.
       const pausedAt = (res as any).at;
       if (typeof pausedAt === 'number') sessions.advance(id, pausedAt);
-      console.log(JSON.stringify({ ...res, session: id }, null, 2));
+      // Expose browserSession so the agent can act on the LIVE paused browser
+      // (e.g. fire an in-page affordance) via `use <verb> --session <browserSession>`
+      // before calling walk-resume.
+      console.log(JSON.stringify({ ...res, session: id, browserSession }, null, 2));
     } else {
       await adapter.close().catch(() => {});
       console.log(JSON.stringify(res, null, 2));
@@ -523,14 +527,27 @@ async function main() {
     if (!answer) { console.log(JSON.stringify({ status: 'failed', reason: 'supply --ref or --classify' }, null, 2)); process.exitCode = 2; return; }
     const resumeFrom = w.path[w.pos] ?? w.startState;
     const adapter = new PlaywrightAdapter(w.browserSession);   // reattach the live browser
-    const browser = makeLiveWalkBrowser(adapter, {});
     const startState = store.getState(resumeFrom) ?? store.getState(w.startState)!;
+    // Rebuild the SAME stored creds the original `walk` used, so input steps
+    // encountered AFTER the pause (e.g. checkout's firstName/lastName/zip) still
+    // auto-fill. Keying is by node, so it covers any input step on the route, not
+    // just login. Without this the resume hits unfillable fields and fails to
+    // resolve them — the bug that forced a `use` fallback.
+    const { CredStore } = await import('./creds.js');
+    const siteCreds = startState.nodeId ? new CredStore().get(startState.nodeId) : {};
+    const browser = makeLiveWalkBrowser(adapter, siteCreds);
     const states = store.statesForNode(startState.nodeId ?? '');
     const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer });
     if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
-      const pausedAt = (res as any).at;
-      sessions.advance(args.session, typeof pausedAt === 'number' ? pausedAt : w.pos + 1);
-      console.log(JSON.stringify({ ...res, session: args.session }, null, 2));
+      // walkRoute's `at` is RELATIVE to resumeFrom (it starts each call at 0), but
+      // the session `pos` is ABSOLUTE over the full path. resumeFrom sits at w.pos,
+      // so absolute = w.pos + at. A single resume can traverse several states before
+      // halting, so this keeps the session synced (the desync bug that restarted the
+      // next resume at the wrong step).
+      const relAt = (res as any).at;
+      const absPos = typeof relAt === 'number' ? w.pos + relAt : w.pos + 1;
+      sessions.advance(args.session, absPos);
+      console.log(JSON.stringify({ ...res, session: args.session, browserSession: w.browserSession }, null, 2));
     } else {
       sessions.close(args.session);
       await adapter.close().catch(() => {});

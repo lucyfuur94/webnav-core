@@ -164,7 +164,11 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     const r = replayStep(edge, nodes);
     if (r.status === 'blocked-commit' || r.status === 'needs-classify') {
       // Commit-point halt: NEVER act. Hand the action to the agent to classify.
-      return { status: 'needs-classification', action: edge.semanticStep, snapshot: yaml };
+      // Carry `at` (the absolute path index we paused ON) so the session position
+      // stays in sync — a single resume can traverse several states before this
+      // halt, and without `at` the handler would advance by only 1 and desync,
+      // restarting the NEXT resume at the wrong step.
+      return { status: 'needs-classification', at, action: edge.semanticStep, snapshot: yaml };
     }
     if (r.status === 'escalate') {
       // Real drift: deterministic resolve couldn't find the step on this page.

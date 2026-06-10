@@ -20,7 +20,7 @@ export interface EvidenceBundle {
 export type RecallResponse =
   | { status: 'done'; evidence: EvidenceBundle; halted?: 'commit-point' }
   | { status: 'needs-navigation'; at: number; semanticStep: string; snapshot: string; question: string }
-  | { status: 'needs-classification'; action: string; snapshot: string }
+  | { status: 'needs-classification'; action: string; snapshot: string; at?: number }
   | { status: 'failed'; reason: string };
 
 // --- Place lookup ("where is A?"): return a coordinate WITHOUT traversing. ---

@@ -6,7 +6,7 @@ describe('parseArgs — walk verbs', () => {
     expect(parseArgs(['walk', '--start', 'sd:login', '--goal', 'sd:checkout-overview',
       '--input', 'username=u', '--input', 'password=p'])).toEqual({
       cmd: 'walk', start: 'sd:login', goal: 'sd:checkout-overview',
-      inputs: { username: 'u', password: 'p' }, browser: {},
+      inputs: { username: 'u', password: 'p' }, browser: { headed: true },
     });
   });
   it('parses walk-resume with --ref', () => {

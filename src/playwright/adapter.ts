@@ -33,7 +33,7 @@ export class PlaywrightAdapter {
     private session: string,
     private run: RunFn = defaultRun,
     private readFile: ReadFileFn = (p) => readFileSync(p, 'utf8'),
-    private opts: BrowserOpts = {},
+    private opts: BrowserOpts = { headed: true },   // HEADED by default; pass {headed:false} for CI/headless
   ) {}
 
   private async exec(...args: string[]): Promise<string> {
