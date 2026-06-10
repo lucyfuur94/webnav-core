@@ -1,6 +1,6 @@
 # webnav
 
-**"Google Maps for the agent-internet."** A zero-LLM web-navigation **memory + map**: an
+**A navigation memory for AI agents.** A zero-LLM web-navigation **memory + map**: an
 LLM agent shells out to the `webnav` CLI to navigate websites reliably, recall routes it's
 learned, search the open web, and get back compact **evidence** — while the agent itself does
 all the judgment. webnav is the honest map and mechanics; the agent is the driver.

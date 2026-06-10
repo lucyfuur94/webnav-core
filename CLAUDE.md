@@ -24,7 +24,7 @@ webnav's verbs split into **two top-level categories**:
 
 These look similar (both move through a site) but are **opposite in intent** — never collapse one into the other:
 - **`use` = the hands (manual driving).** Low-level, one action per call (`navigate`/`snapshot`/`click`/`type`). The agent reasons at **every step** — snapshot, read it, pick a ref, act, repeat. High agent-token cost per action. This is the tool for **exploring/building** the map (what the site-mapping flow uses).
-- **`walk` = the memory / autopilot (cheap recall).** The agent says "take me to goal G" and webnav **replays a known page-to-page route deterministically** (re-finding elements by semantic intent, self-healing), so the agent spends ~zero tokens on the journey and only intervenes at genuine **forks** (a needed in-page affordance, drift, a commit point) via the pause/resume protocol. This is the tool for **travelling** a built map — and it IS the core "Google Maps for agents" speed/cost win.
+- **`walk` = the memory / autopilot (cheap recall).** The agent says "take me to goal G" and webnav **replays a known page-to-page route deterministically** (re-finding elements by semantic intent, self-healing), so the agent spends ~zero tokens on the journey and only intervenes at genuine **forks** (a needed in-page affordance, drift, a commit point) via the pause/resume protocol. This is the tool for **travelling** a built map — and it IS the core recall-don't-re-explore speed/cost win.
 - **In-page affordances during a walk:** the walk drives **page-to-page**; an in-page action that's required before the next navigation (e.g. add-to-cart before the cart is useful) is **fired by the agent at a pause**, not threaded through the pathfinder (affordance model: in-page actions are a node's repertoire, not path edges).
 
 **Rule:** when "finishing the walk" or similar comes up, do NOT reduce `walk` to "just the `use` loop." That throws away walk's entire reason to exist (deterministic, low-token replay). `use` = explore/build (agent drives every step); `walk` = recall/travel (webnav drives, agent only acts at forks).
@@ -42,13 +42,13 @@ A state's **`affordances: Affordance[]` is the SOURCE OF TRUTH**, not a separate
 
 ## What this project is
 
-**"Google Maps for the agent-internet."** A web-navigation **memory** that lets agents recall cheap, reliable routes to goals on a website instead of re-exploring from scratch every time. The core win is **speed and cost**: the second time an agent needs to get somewhere, it recalls the route rather than re-discovering it.
+**A navigation memory for AI agents.** A web-navigation **memory** that lets agents recall cheap, reliable routes to goals on a website instead of re-exploring from scratch every time. The core win is **speed and cost**: the second time an agent needs to get somewhere, it recalls the route rather than re-discovering it.
 
 It is **a map, not a driver.** It gets the agent to where the signals live, cheaply and reliably. It does **not** decide what to do or judge what it finds — that stays with the LLM.
 
 ## The mental model (settled)
 
-A **place index + weighted routing graph** (Google Maps does BOTH place-lookup and directions — so does webnav):
+A **place index + weighted routing graph** — webnav answers BOTH "where is X" (place-lookup) and "route me there" (directions):
 - **Nodes = states** of a site (what's true / what's possible from here). A URL is an *attribute* of a state, not the node itself (same URL can be many states; many URLs can be one state).
 - **Edges = actions** (click/type/navigate) that transition between states. Every edge carries **cost** (tokens/time), **reliability** (success/fail history), and **age/confidence** (decays over time).
 - **Goals = named destinations** the agent cares about, plus *what signals to surface there*. A goal index resolves intent → target state + route.
@@ -67,7 +67,7 @@ URL is the lat/lon of the *addressable subset* — NOT a universal coordinate (i
 
 ## Settled principles (do not violate)
 
-1. **Observe first, traverse rarely.** Build the map primarily by *reading what the page declares* (snapshot, hrefs, form targets, ARIA, labels). Execute only **safe, reversible** actions to reveal hidden state. This mirrors how Google Maps was actually built — from licensed/observed data, not by driving every road. The web *announces its own roads*; exploit that.
+1. **Observe first, traverse rarely.** Build the map primarily by *reading what the page declares* (snapshot, hrefs, form targets, ARIA, labels). Execute only **safe, reversible** actions to reveal hidden state. Prefer observed/declared data over driving every road — the web *announces its own roads*; exploit that.
 
 2. **Never traverse a declared commit point.** Destructive/irreversible actions (Place Order, Pay, Send, Delete) are mapped **by inference from the page's declaration**, never fired. (v1 on GitHub is read-only, so this is trivially satisfied — but the rule is permanent.)
 

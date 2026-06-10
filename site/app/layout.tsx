@@ -3,13 +3,13 @@ import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'webnav — Google Maps for AI agents',
+  title: 'webnav — a navigation memory for AI agents',
   description:
-    'A deterministic, zero-LLM map of websites that AI agents walk page-to-page to recall cheap, reliable routes instead of re-exploring every time.',
+    'webnav remembers how to get around websites so your AI agent recalls cheap, reliable routes — deterministic, zero-LLM, self-healing — instead of re-exploring every time.',
   metadataBase: new URL('https://webnav.dpdns.org'),
   openGraph: {
-    title: 'webnav — Google Maps for AI agents',
-    description: 'Deterministic, zero-LLM web navigation memory for agents.',
+    title: 'webnav — a navigation memory for AI agents',
+    description: 'A deterministic, zero-LLM navigation memory for AI agents.',
     type: 'website',
   },
 };

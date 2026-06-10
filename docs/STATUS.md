@@ -26,7 +26,7 @@
 
 ## What webnav is (one line)
 
-A zero-LLM web-navigation **memory + map** ("Google Maps for the agent-internet"):
+A zero-LLM web-navigation **memory + map** (a navigation memory for AI agents):
 an agent shells out to the `webnav` CLI to navigate sites reliably, recall routes,
 search the web, and get back compact **evidence** — the agent does all judgment.
 See CLAUDE.md for the full mental model and the 6+ settled principles (esp. #5a:
@@ -119,7 +119,7 @@ isn't CLI-reachable end-to-end. Spec/plan:
 
 An agent explores an unknown site (driving via webnav's `use` browser primitives,
 which record each page) and webnav builds a per-site navigation skeleton it can
-later `recall`/`route` over — the "Google Maps was built from observed data"
+later `recall`/`route` over — the "build the map from observed/declared data"
 thesis applied to map-building. Flow: `dev record-start` opens a capture session →
 agent browses (each page → url + structural fingerprint + declared links buffered
 in SQLite via `runSnapshotRecorded`) → `dev record-stop` → `dev graph-analyse

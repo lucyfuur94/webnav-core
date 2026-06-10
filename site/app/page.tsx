@@ -15,14 +15,15 @@ export default function Home() {
     <div>
       {/* Hero */}
       <section className="py-20 text-center">
-        <p className="mb-3 font-mono text-sm text-accent">Google Maps for AI agents</p>
+        <p className="mb-3 font-mono text-sm text-accent">A navigation memory for AI agents</p>
         <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight sm:text-5xl">
-          A map of the web your agent can <span className="text-accent">recall</span>, not re-explore.
+          Your agent <span className="text-accent">recalls</span> the route — instead of re-exploring.
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-muted">
-          webnav is a deterministic, <strong className="text-fg">zero-LLM</strong> navigation memory. Agents
-          walk known routes page-to-page — cheap, reliable, self-healing — and spend their expensive
-          reasoning on judging results, not re-finding them.
+          webnav remembers how to get around websites. It’s a deterministic,{' '}
+          <strong className="text-fg">zero-LLM</strong> navigation memory: agents walk known routes
+          page-to-page — cheap, reliable, self-healing — and spend their expensive reasoning on judging
+          results, not re-finding them.
         </p>
         <div className="mt-8 flex justify-center gap-3">
           <Link href="/docs" className="rounded-md bg-accent px-5 py-2.5 font-medium text-bg hover:opacity-90">Get started</Link>
