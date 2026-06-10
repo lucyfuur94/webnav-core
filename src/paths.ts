@@ -25,3 +25,11 @@ export function dbPath(): string {
   if (override) return override;
   return join(webnavDir(), 'webnav.db');
 }
+
+/** Non-secret CLI config (the hosted-route API key + optional API base URL) at
+ *  ~/.webnav/config.json. SEPARATE from credentials.json (site logins) and the
+ *  map DB — this only holds the hosted-service key, never site credentials.
+ *  Honors WEBNAV_CONFIG (tests). */
+export function configPath(): string {
+  return process.env.WEBNAV_CONFIG ?? join(webnavDir(), 'config.json');
+}

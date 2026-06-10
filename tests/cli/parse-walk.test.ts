@@ -6,8 +6,15 @@ describe('parseArgs — walk verbs', () => {
     expect(parseArgs(['walk', '--start', 'sd:login', '--goal', 'sd:checkout-overview',
       '--input', 'username=u', '--input', 'password=p'])).toEqual({
       cmd: 'walk', start: 'sd:login', goal: 'sd:checkout-overview',
-      inputs: { username: 'u', password: 'p' }, browser: { headed: true },
+      inputs: { username: 'u', password: 'p' }, browser: { headed: true }, hosted: false,
     });
+  });
+  it('parses walk --hosted', () => {
+    const a = parseArgs(['walk', '--start', 'a', '--goal', 'b', '--hosted']) as any;
+    expect(a.hosted).toBe(true);
+  });
+  it('parses login <key>', () => {
+    expect(parseArgs(['login', 'wn_live_abc'])).toEqual({ cmd: 'login', key: 'wn_live_abc' });
   });
   it('parses walk-resume with --ref', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--ref', 'e42']))

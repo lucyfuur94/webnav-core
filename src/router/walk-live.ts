@@ -17,6 +17,10 @@ import type { RecallResponse } from '../protocol.js';
 export function seedSaucedemoForWalk(store: MapStore): void {
   const N = 'www.saucedemo.com';
   store.transaction(() => {
+    // The site-node row (so getNode works — needed by the dashboard, the hosted
+    // map pack, and /api/maps). The interior states below are its skeleton.
+    store.upsertNode({ id: N, homeUrl: 'https://www.saucedemo.com/',
+      capabilities: ['e-commerce-demo'], topics: ['demo', 'automation-practice', 'e-commerce'] });
     // Each state's REPERTOIRE is the source of truth (spec §8). navigate/reveal
     // affordances with a toState project into the walk's edges; mutate/input never
     // route (they're fired by the agent at a pause if it wants them). The "Finish"

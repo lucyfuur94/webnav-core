@@ -33,8 +33,9 @@ export type ParsedArgs =
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
   | { cmd: 'type'; ref: string; text: string; session: string }
-  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts }
+  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts; hosted: boolean }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
+  | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'dashboard'; port: number }
   | { cmd: 'dev-help' }
@@ -190,11 +191,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
-      inputs: inputFlags(rest), browser: browserOpts(rest) };
+      inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted') };
   }
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
       ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify') };
+  }
+  if (cmd === 'login') {
+    return { cmd, key: rest.find((a) => !a.startsWith('--')) ?? '' };
   }
   if (cmd === 'creds') {
     // creds set <site> key=value... | creds list | creds rm <site> [key]
@@ -496,6 +500,16 @@ async function main() {
     // Keep the process alive (the server holds the event loop; nothing else to do).
     return;
   }
+  if (args.cmd === 'login') {
+    // Save the hosted-route API key to ~/.webnav/config.json. This file holds ONLY
+    // the service key — never site credentials (those stay in credentials.json).
+    const { saveConfig } = await import('./hosted.js');
+    const { configPath } = await import('./paths.js');
+    if (!args.key) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav login <api-key>' }, null, 2)); process.exitCode = 2; return; }
+    saveConfig({ apiKey: args.key });
+    console.log(JSON.stringify({ status: 'ok', saved: configPath(), note: 'hosted route enabled — use `webnav walk --hosted ...`' }, null, 2));
+    return;
+  }
   if (args.cmd === 'walk') {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
@@ -505,7 +519,23 @@ async function main() {
     const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const store = new MapStore();
-    ensureSeeded(store);
+    if (args.hosted) {
+      // HOSTED ROUTE: fetch the site's map LIVE from the service and import it,
+      // instead of using the local seed. The site id is the start state's prefix
+      // (e.g. www.saucedemo.com:login -> www.saucedemo.com). Credentials are still
+      // loaded LOCALLY below (CredStore) — the hosted route never sees them.
+      const site = args.start.includes(':') ? args.start.slice(0, args.start.lastIndexOf(':')) : args.start;
+      try {
+        const { fetchHostedMap, importMapPack } = await import('./hosted.js');
+        const pack = await fetchHostedMap(site);
+        importMapPack(store, pack);
+      } catch (e) {
+        console.log(JSON.stringify({ status: 'failed', reason: String((e as Error).message) }, null, 2));
+        process.exitCode = 2; return;
+      }
+    } else {
+      ensureSeeded(store);
+    }
     if (!store.getState(args.start)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.start }, null, 2)); process.exitCode = 2; return; }
     if (!store.getState(args.goal)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.goal }, null, 2)); process.exitCode = 2; return; }
     const path = findPath(store, args.start, args.goal);
