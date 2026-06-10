@@ -35,6 +35,7 @@ export type ParsedArgs =
   | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
+  | { cmd: 'dashboard'; port: number }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -181,6 +182,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
+  if (cmd === 'dashboard') {
+    const portFlag = flagValue(rest, '--port');
+    const port = Number(portFlag ?? process.env.WEBNAV_PORT ?? 7777);
+    return { cmd, port };
+  }
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest) };
@@ -465,6 +471,29 @@ async function main() {
     }
     console.log(JSON.stringify({ status: 'error', hint: 'webnav creds set|list|rm' }, null, 2));
     process.exitCode = 2; return;
+  }
+  if (args.cmd === 'dashboard') {
+    // Long-lived LOCAL operator UI (not a one-shot JSON verb): start the server,
+    // print the URL to stderr (keeps stdout clean per CLI rules), auto-open the
+    // browser, then stay alive until Ctrl-C. Reads ./webnav.db + the creds file.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
+    const { CredStore } = await import('./creds.js');
+    const { startDashboard } = await import('./dashboard/server.js');
+    const store = new MapStore(process.env.WEBNAV_DB ?? 'webnav.db');
+    ensureSeeded(store);
+    const creds = new CredStore();
+    const port = args.port;
+    startDashboard(store, creds, { port });
+    const url = `http://127.0.0.1:${port}`;
+    process.stderr.write(`webnav dashboard running at ${url}\n(reads ./webnav.db + ${process.env.WEBNAV_CREDS ?? '~/.webnav/credentials.json'}; Ctrl-C to stop)\n`);
+    // Best-effort auto-open the default browser (macOS `open`; swallow errors).
+    if (process.platform === 'darwin') {
+      const { exec } = await import('node:child_process');
+      exec(`open ${url}`, () => { /* ignore — the URL is printed regardless */ });
+    }
+    // Keep the process alive (the server holds the event loop; nothing else to do).
+    return;
   }
   if (args.cmd === 'walk') {
     const { MapStore } = await import('./mapstore/store.js');
