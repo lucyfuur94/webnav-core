@@ -34,8 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # no npm cache here: a partial cache restore was triggering npm's
-          # "Exit handler never called!" crash on this runner.
+      - name: Upgrade npm
+        # the runner's bundled npm crashed with "Exit handler never called!"
+        # installing @libsql/client's native optional deps; newer npm fixes it.
+        run: npm install -g npm@10
       - name: Install site deps
         working-directory: site
         run: npm install --no-audit --no-fund
