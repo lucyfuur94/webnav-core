@@ -25,7 +25,40 @@ webnav --help               # the tool menu (a peer of playwright-cli)
 npm test                    # unit tests (+ gated browser e2e)
 npm run build               # tsc -> dist/ (only needed for the dist build; the `webnav` CLI runs src directly)
 ```
-Needs `playwright-cli` on PATH. A gitignored `webnav.db` (SQLite) persists the map across runs.
+Needs `playwright-cli` on PATH.
+
+## How the map grows (start here if you're new)
+
+webnav is a **map** — and a fresh install is **not** blank, but it is small. Here's
+honestly what you get and how it grows, so there are no surprises:
+
+- **What ships, out of the box.** The first time you run any verb, webnav seeds a shared
+  map at **`~/.webnav/webnav.db`** (per-user, shared across every terminal/folder on the
+  machine — *not* a per-directory file). It comes pre-seeded with two site maps: **GitHub**
+  (the `recall` repo-evidence skeleton) and **saucedemo.com** (a full login→checkout `walk`
+  map). These work immediately:
+  ```bash
+  webnav recall "python retry library"                       # GitHub, seeded
+  webnav walk --start www.saucedemo.com:login \
+              --goal www.saucedemo.com:checkout-complete      # saucedemo, seeded
+  ```
+- **The map persists and self-heals.** It's saved to `~/.webnav/webnav.db` and reused on
+  every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
+  or moved element), a `walk` escalates once for the agent to pick the element, then **writes
+  the fix back** so the next run resolves it deterministically (principle #3). Routes you use
+  stay fresh; routes nobody uses decay. Credentials for login-gated sites live **outside** the
+  map, locally, at `~/.webnav/credentials.json` (chmod 600) — never in the DB, never shared.
+- **Mapping a NEW site (the current rough edge — honest).** Any site beyond the two seeded
+  ones has no map yet, and adding one today is a manual, multi-step authoring flow
+  (`dev record-start` → browse the site via webnav → `dev record-stop` → `dev graph-analyse`
+  → `dev graph-edit`), or hand-writing a skeleton with `dev node-add`/`dev graph-edit`. This
+  is expert-ish; a one-command `map <url>` flow and shareable "map packs" (so maps travel
+  between users instead of every install being an island) are on the roadmap, not built yet.
+- **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
+  sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
+
+**TL;DR:** same machine + a mapped site → instant, cached, self-healing. A brand-new site →
+you (or your agent) record it once first. Maps don't yet travel between users.
 
 ## Verbs
 
@@ -42,6 +75,8 @@ webnav dev edge-add <from> <to> --kind           teach a relationship
 webnav dev graph-show --node <id>            a site's stored states + edges (JSON)
 webnav dev outline <site>                    human-readable interior outline (completeness check)
 webnav dev mermaid <site>                    a Mermaid stateDiagram of the interior
+webnav dev dashboard [--port N]              local operator UI: sites + JSON map + credentials
+webnav creds set <site> key=value...         store login/form creds locally (~/.webnav, chmod 600)
 webnav capture <url> <out.yml>               dev: save a snapshot YAML
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.
@@ -96,5 +131,10 @@ navigation skeleton; goals declare signal interests. **Never evade bot-walls** �
 ## Status
 
 All current work is merged to `main`, tests green. See **`docs/STATUS.md`** for the live
-checklist, pending work, and known
-limitations. No git remote configured yet.
+checklist, pending work, and known limitations.
+
+## License
+
+[Apache License 2.0](LICENSE). Free to use, modify, and redistribute (including commercially)
+**with attribution**: retain the copyright notice and the [`NOTICE`](NOTICE) file. Includes an
+explicit patent grant. Copyright 2026 Dikshant Yadav.
