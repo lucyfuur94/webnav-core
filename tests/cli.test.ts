@@ -35,11 +35,11 @@ describe('parseArgs', () => {
   });
   it('parses read with the url first', () => {
     expect(parseArgs(['read', 'https://github.com/psf/requests']))
-      .toEqual({ cmd: 'read', url: 'https://github.com/psf/requests', raw: false });
+      .toEqual({ cmd: 'read', url: 'https://github.com/psf/requests', raw: false, browser: {} });
   });
   it('parses read --raw in either order (flag before url)', () => {
     expect(parseArgs(['read', '--raw', 'https://x.com']))
-      .toEqual({ cmd: 'read', url: 'https://x.com', raw: true });
+      .toEqual({ cmd: 'read', url: 'https://x.com', raw: true, browser: {} });
   });
   it('parses search --top', () => {
     expect(parseArgs(['search', 'x', '--top', '5']))
@@ -67,6 +67,26 @@ describe('parseArgs', () => {
   });
   it('parses per-command help for route', () => {
     expect(parseArgs(['route', '--help'])).toEqual({ cmd: 'help', command: 'route' });
+  });
+  it('walk/navigate/read default to headless (empty browser opts)', () => {
+    expect((parseArgs(['walk', '--start', 'a', '--goal', 'b']) as any).browser).toEqual({});
+    expect((parseArgs(['navigate', 'https://x']) as any).browser).toEqual({});
+    expect((parseArgs(['read', 'https://x']) as any).browser).toEqual({});
+  });
+  it('parses --headed / --persistent / --profile (implies persistent) / --browser', () => {
+    expect((parseArgs(['walk', '--start', 'a', '--goal', 'b', '--headed']) as any).browser)
+      .toEqual({ headed: true });
+    expect((parseArgs(['navigate', 'https://x', '--profile', '/tmp/p']) as any).browser)
+      .toEqual({ profile: '/tmp/p', persistent: true });
+    expect((parseArgs(['read', 'https://x', '--headed', '--browser', 'firefox']) as any).browser)
+      .toEqual({ headed: true, browser: 'firefox' });
+  });
+  it('parses creds set/list/rm', () => {
+    expect(parseArgs(['creds', 'set', 'site.com', 'username=u', 'password=p']))
+      .toEqual({ cmd: 'creds', sub: 'set', site: 'site.com', key: undefined, values: { username: 'u', password: 'p' } });
+    expect(parseArgs(['creds', 'list'])).toEqual({ cmd: 'creds', sub: 'list', site: undefined, key: undefined, values: {} });
+    expect(parseArgs(['creds', 'rm', 'site.com', 'username']))
+      .toEqual({ cmd: 'creds', sub: 'rm', site: 'site.com', key: 'username', values: {} });
   });
   it('parses node-add with comma-split capabilities/topics', () => {
     expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com',

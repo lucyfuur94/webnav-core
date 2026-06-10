@@ -36,4 +36,29 @@ describe('PlaywrightAdapter', () => {
     await a.fill('e8', 'playwright');
     expect(calls[0]).toEqual(['-s=s', 'fill', 'e8', 'playwright']);
   });
+
+  it('open is HEADLESS by default — no browser flags', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; });
+    await a.open('https://x');
+    expect(calls[0]).toEqual(['-s=s', 'open', 'https://x']);
+  });
+
+  it('open forwards BrowserOpts (headed/persistent/profile/browser) as flags', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; },
+      undefined, { headed: true, persistent: true, profile: '/tmp/p', browser: 'firefox' });
+    await a.open('https://x');
+    expect(calls[0]).toEqual(['-s=s', 'open', 'https://x', '--headed', '--persistent', '--profile', '/tmp/p', '--browser', 'firefox']);
+  });
+
+  it('browser flags apply ONLY to open, not to subsequent commands', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; },
+      undefined, { headed: true });
+    await a.open('https://x');
+    await a.click('e1');
+    expect(calls[0]).toContain('--headed');
+    expect(calls[1]).toEqual(['-s=s', 'click', 'e1']);   // no --headed on click
+  });
 });

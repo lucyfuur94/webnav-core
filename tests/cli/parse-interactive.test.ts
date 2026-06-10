@@ -4,7 +4,7 @@ import { parseArgs } from '../../src/cli.js';
 describe('parseArgs — interactive verbs', () => {
   it('parses navigate', () => {
     expect(parseArgs(['navigate', 'https://x.com', '--session', 's1']))
-      .toEqual({ cmd: 'navigate', url: 'https://x.com', session: 's1' });
+      .toEqual({ cmd: 'navigate', url: 'https://x.com', session: 's1', browser: {} });
   });
   it('parses snapshot', () => {
     expect(parseArgs(['snapshot', '--session', 's1'])).toEqual({ cmd: 'snapshot', session: 's1' });

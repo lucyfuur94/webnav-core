@@ -1,5 +1,6 @@
 import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
+import type { BrowserOpts } from './playwright/adapter.js';
 
 export type ParsedArgs =
   | { cmd: 'help'; command?: string }
@@ -7,7 +8,7 @@ export type ParsedArgs =
   | { cmd: 'list' }
   | { cmd: 'describe'; place: string }
   | { cmd: 'locate'; place: string }
-  | { cmd: 'read'; url: string; raw: boolean }
+  | { cmd: 'read'; url: string; raw: boolean; browser: BrowserOpts }
   | { cmd: 'list-goals' }
   | { cmd: 'recall'; goal: string; query: string; top: number }
   | { cmd: 'search'; query: string; top: number }
@@ -27,11 +28,11 @@ export type ParsedArgs =
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
-  | { cmd: 'navigate'; url: string; session: string }
+  | { cmd: 'navigate'; url: string; session: string; browser: BrowserOpts }
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
   | { cmd: 'type'; ref: string; text: string; session: string }
-  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string> }
+  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'dev-help' }
@@ -51,6 +52,23 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
     if (i !== -1) return args[i + 1];
   }
   return undefined;
+}
+
+// Browser launch flags shared by the verbs that open a browser (read / navigate /
+// walk). Default is headless (omit all → BrowserOpts{} → headless). `--headed`
+// shows a real window (needed for interactive login + dodges some headless-only
+// bot-walls); `--persistent` / `--profile <dir>` reuse a logged-in profile;
+// `--browser chrome|firefox|webkit|msedge` picks the engine.
+function browserOpts(args: string[]): BrowserOpts {
+  const has = (f: string) => args.includes(f);
+  const o: BrowserOpts = {};
+  if (has('--headed')) o.headed = true;
+  if (has('--persistent')) o.persistent = true;
+  const profile = flagValue(args, '--profile');
+  if (profile) { o.profile = profile; o.persistent = true; }   // a profile implies persistent
+  const browser = flagValue(args, '--browser');
+  if (browser) o.browser = browser;
+  return o;
 }
 
 // Collect repeated `--input slot=value` flags into a map. Runtime-only values
@@ -90,7 +108,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     // First non-flag positional is the URL, so `read --raw <url>` and
     // `read <url> --raw` both work (agents write the flag in either order).
     const url = rest.find((a) => !a.startsWith('--')) ?? '';
-    return { cmd, url, raw: rest.includes('--raw') };
+    return { cmd, url, raw: rest.includes('--raw'), browser: browserOpts(rest) };
   }
   if (cmd === 'list-goals') return { cmd };
   if (cmd === 'capture') return { cmd, url: rest[0], out: rest[1] };
@@ -164,7 +182,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
-      inputs: inputFlags(rest) };
+      inputs: inputFlags(rest), browser: browserOpts(rest) };
   }
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
@@ -182,7 +200,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'navigate') {
     const pos = rest.filter((a) => !a.startsWith('--'));
-    return { cmd, url: pos[0] ?? '', session: flagValue(rest, '--session') ?? '' };
+    return { cmd, url: pos[0] ?? '', session: flagValue(rest, '--session') ?? '', browser: browserOpts(rest) };
   }
   if (cmd === 'snapshot') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'click') {
@@ -235,7 +253,7 @@ async function main() {
   if (args.cmd === 'read') {
     const { readUrl } = await import('./router/read.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
-    const adapter = new PlaywrightAdapter(`read-${Date.now()}`);
+    const adapter = new PlaywrightAdapter(`read-${Date.now()}`, undefined, undefined, args.browser);
     const fetchSnapshot = async (u: string) => { await adapter.open(u); return adapter.snapshot(); };
     const r = await readUrl(args.url, fetchSnapshot, { raw: args.raw });
     await adapter.close().catch(() => {});
@@ -462,7 +480,7 @@ async function main() {
     const path = findPath(store, args.start, args.goal);
     if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
     const browserSession = 'w-' + Date.now();
-    const adapter = new PlaywrightAdapter(browserSession);
+    const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, args.browser);
     const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
@@ -523,7 +541,7 @@ async function main() {
   if (args.cmd === 'navigate') {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { RecordStore } = await import('./mapstore/record.js');
-    const adapter = new PlaywrightAdapter(args.session);
+    const adapter = new PlaywrightAdapter(args.session, undefined, undefined, args.browser);
     try {
       // `open` creates the session if new AND navigates; it also works to
       // re-navigate an existing session (whereas `goto` requires the session to

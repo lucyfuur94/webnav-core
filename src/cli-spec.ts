@@ -26,6 +26,15 @@ export interface CommandSpec {
 
 export const VERSION = '0.1.0';
 
+// Browser-launch flags shared by every verb that opens a browser (read / navigate
+// / walk). Default is HEADLESS; these opt into a visible/persistent browser.
+export const BROWSER_FLAGS: FlagSpec[] = [
+  { name: '--headed', takesValue: false, description: 'Show a real browser window (needed for interactive login; dodges some headless-only bot-walls).' },
+  { name: '--persistent', takesValue: false, description: 'Reuse a persistent browser profile so a logged-in session survives across runs.' },
+  { name: '--profile', takesValue: true, description: 'Persistent profile directory (implies --persistent).' },
+  { name: '--browser', takesValue: true, description: 'Engine/channel: chrome | firefox | webkit | msedge.' },
+];
+
 export const CONSUMER_COMMANDS: CommandSpec[] = [
   {
     name: 'locate',
@@ -42,7 +51,10 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     group: 'read',
     summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
     args: [{ name: 'url', required: true, description: 'A URL to open — e.g. a coordinate from `locate`.' }],
-    flags: [{ name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' }],
+    flags: [
+      { name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' },
+      ...BROWSER_FLAGS,
+    ],
     example: 'webnav read https://github.com/psf/requests',
   },
   {
@@ -170,9 +182,10 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     flags: [
       { name: '--start', takesValue: true, description: 'Start state id (from `dev graph-show`).' },
       { name: '--goal', takesValue: true, description: 'Goal state id to reach.' },
-      { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored).' },
+      { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored). Stored creds are used if set.' },
+      ...BROWSER_FLAGS,
     ],
-    example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --input username=u --input password=p',
+    example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --headed',
   },
   {
     name: 'walk-resume', group: 'navigate',
@@ -195,8 +208,11 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     name: 'navigate', group: 'navigate',
     summary: 'Open a URL in a session browser; records a landing observation if the session is recording.',
     args: [{ name: 'url', required: true, description: 'URL to open.' }],
-    flags: [{ name: '--session', takesValue: true, description: 'Session id (browser + record buffer; from `dev record-start`).' }],
-    example: 'webnav use navigate https://www.saucedemo.com --session sd1',
+    flags: [
+      { name: '--session', takesValue: true, description: 'Session id (browser + record buffer; from `dev record-start`).' },
+      ...BROWSER_FLAGS,
+    ],
+    example: 'webnav use navigate https://www.saucedemo.com --session sd1 --headed',
   },
   {
     name: 'snapshot', group: 'navigate',
