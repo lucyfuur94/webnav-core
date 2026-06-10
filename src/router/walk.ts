@@ -4,6 +4,7 @@ import type { RecallResponse } from '../protocol.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { matchState } from '../explorer/fingerprint.js';
 import { replayStep } from './replay.js';
+import { resolveStep } from './resolve.js';
 
 // Minimal browser the walk drives. The live adapter implements this; tests fake it.
 // ASYNC so ONE walk loop serves both the scripted unit fake and the real
@@ -97,7 +98,29 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         if (ans.verdict === 'commit') {
           return doneHalted(args, browser);   // hard halt — never fire a commit point (#2)
         }
-        // 'safe': fall through and resolve+act this step normally.
+        // 'safe': the AGENT has taken responsibility for this step (e.g. it's a
+        // demo/dry-run, or genuinely reversible). Resolve + act it DIRECTLY,
+        // bypassing replayStep's commit/unclassified guard — otherwise the guard
+        // would just re-escalate needs-classification and the answer is ignored
+        // (the R5 resume bug). This is the ONLY path that fires a commit edge, and
+        // only on an explicit agent "safe" verdict.
+        const yaml = await browser.snapshot();
+        const ref = resolveStep(edge.semanticStep, parseSnapshot(yaml));
+        if (!ref) {
+          return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: yaml,
+            question: 'classified safe, but cannot resolve "' + edge.semanticStep + '" on the current page' };
+        }
+        await browser.act(ref, edge.acceptsInput);
+        const afterYaml = await browser.snapshot();
+        const observed = matchState(parseSnapshot(afterYaml), states);
+        if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+          return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: afterYaml,
+            question: 'after the classified-safe step, expected ' + edge.toState + ' but observed '
+              + (observed.status === 'matched' ? observed.state.id : observed.status) };
+        }
+        store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
+        current = edge.toState; at++;
+        continue;
       } else {
         // 'ref': act on the agent-chosen element, skip replayStep for THIS step.
         await browser.act(ans.ref, edge.acceptsInput);

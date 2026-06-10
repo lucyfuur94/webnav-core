@@ -227,3 +227,70 @@ export async function runWalkLive(
   await adapter.close();
   return result;
 }
+
+/**
+ * Seed the saucedemo interior WITH the post-commit `checkout-complete` state, so a
+ * walk can go all the way through the Finish commit to the "Thank you" page. The
+ * Finish affordance is commit:true → the walk still HALTS there (needs-classification)
+ * unless the agent classifies it safe (which runWalkLiveComplete does, because
+ * saucedemo is a demo with no real payment).
+ */
+export function seedSaucedemoComplete(store: MapStore): void {
+  const N = 'www.saucedemo.com';
+  seedSaucedemoForWalk(store);   // login..checkout-overview + menu
+  store.transaction(() => {
+    // Re-point Finish at a REAL checkout-complete state and add that state.
+    store.upsertState(makeState({ id: `${N}:checkout-overview`, nodeId: N, semanticName: `${N}:checkout-overview`,
+      urlPattern: '*checkout-step-two*', role: 'detail', fingerprint: ['button:Finish'],
+      affordances: [
+        makeAffordance({ id: 'aff_finish', label: 'click "Finish"', kind: 'navigate',
+          toState: `${N}:checkout-complete`, commit: true, core: true }),
+      ] }));
+    store.upsertState(makeState({ id: `${N}:checkout-complete`, nodeId: N, semanticName: `${N}:checkout-complete`,
+      urlPattern: '*checkout-complete*', role: 'detail', fingerprint: ['heading:Thank you for your order!', 'button:Back Home'],
+      affordances: [
+        makeAffordance({ id: 'aff_back_home', label: 'Back Home', kind: 'navigate', toState: `${N}:inventory` }),
+      ] }));
+  });
+}
+
+/**
+ * Live wiring for the FULL order completion (increment R5): walk login → … →
+ * checkout-overview → (Finish commit, classified SAFE because saucedemo is a demo)
+ * → checkout-complete. Proves the resume loop fires a commit point end-to-end on a
+ * real site after an explicit agent "safe" verdict — the only path that fires a commit.
+ */
+export async function runWalkLiveComplete(
+  inputs: Record<string, string>,
+  dbPath?: string,
+): Promise<RecallResponse> {
+  const N = 'www.saucedemo.com';
+  const store = new MapStore(dbPath ?? 'webnav.db');
+  if (!store.getState(`${N}:checkout-complete`)) seedSaucedemoComplete(store);
+
+  const adapter = new PlaywrightAdapter('sdc' + (Date.now() % 100000));
+  await adapter.open('https://www.saucedemo.com/');
+  const browser = makeLiveWalkBrowser(adapter, inputs);
+  const states = store.statesForNode(N);
+  const args = {
+    goalName: 'complete-checkout', startStateId: `${N}:login`, goalStateId: `${N}:checkout-complete`,
+    store, states, browser,
+  } as const;
+
+  try {
+    // Leg 1: walk to the goal. It will HALT at the Finish commit (needs-classification).
+    let result = await walkRoute(args);
+    // Leg 2: agent decides the demo Finish is SAFE → resume; the walk fires it and
+    // continues to checkout-complete. (R5 resume loop.)
+    if (result.status === 'needs-classification') {
+      result = await walkRoute({
+        ...args,
+        startStateId: `${N}:checkout-overview`,   // resume from where it halted
+        answer: { kind: 'classify', verdict: 'safe' },
+      });
+    }
+    return result;
+  } finally {
+    await adapter.close().catch(() => {});
+  }
+}
