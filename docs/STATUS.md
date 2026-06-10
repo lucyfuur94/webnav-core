@@ -1,6 +1,14 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-09 · **Branch:** `feat/affordance-model` (pending merge) · **Tests:** 328 unit + 14 web pass + 9 gated live e2e (2 live saucedemo walks pass with `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-10 · **Branch:** `main` · **Tests:** 346 unit + 14 web pass + 10 gated live e2e (3 live saucedemo walks pass with `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+
+> **2026-06-10 — Full saucedemo map + R5 resume loop (DONE).**
+> - **Complete site mapped:** exhaustively explored saucedemo via webnav (Haiku subagent) and persisted the FULL graph to `webnav.db` — 7 states incl. the previously-missing `product-detail` and `checkout-complete`, About→external `saucelabs.com`, cart Remove, both checkout Cancels. `dev outline` confirms 0 dead-ends / 0 orphans / 1 external exit.
+> - **Navigation test cases:** `tests/router/saucedemo-routes.test.ts` — 8 `findPath` cases over the full cyclic map (log-in, full checkout, product-detail, product→cart, logout/cancel back-edges, post-order return, reachability). Proves the stored graph SUPPORTS navigation.
+> - **R5 resume loop DONE:** fixed the bug where `classify: safe` on a commit edge re-escalated forever; now a safe verdict FIRES the commit (the only path that does, on explicit agent classification — #2 intact). New `runWalkLiveComplete` walks login→…→checkout-overview, classifies Finish safe, and reaches checkout-complete. Verified LIVE end-to-end; the other two live walks still halt-at-commit / no-escalation. 3 new unit cases + a gated live e2e.
+> - **Graph viewer:** deprioritised (per review — the agent never reads it; `dev outline`/`mermaid`/`graph-show` are the right verification tools). The React-Flow viewer works (ELK-routed, dark mode persisted, single orthogonal edge style) but is treated as good-enough, not the focus.
+
+
 
 > **2026-06-09 — Affordance-primary model + working saucedemo walk + readable graph (DONE; on `feat/affordance-model`).**
 > `State.affordances` is now `Affordance[]` (typed: `navigate`/`reveal`/`mutate`/`input`, + `commit`, `toState`, `addressableUrl`, `children`, `needs`, `acceptsInput`). Affordances are the SOURCE OF TRUTH; `store.edgesFrom`/`allEdges` PROJECT navigate/reveal affordances into the existing `Edge` shape so the router/walk are unchanged; `store.interiorEdges` adds `viaAffordance` + dangling stubs for the viewer.
@@ -251,7 +259,7 @@ engine + verbs: `docs/superpowers/specs/2026-06-06-interactive-walk-design.md`.)
 
 In roughly recommended order:
 
-1. **R5 — resume loop:** agent answers a `needs-navigation`/`needs-classification`; `walkRoute` continues to completion. Lets the saucedemo flow finish autonomously end-to-end.
+1. ~~**R5 — resume loop**~~ ✅ **DONE (2026-06-10):** `classify: safe` now fires a commit and the walk continues to completion; `runWalkLiveComplete` proves it end-to-end on live saucedemo (login→…→checkout-complete). Default still hard-halts at commits (#2).
 2. **G4 — co-use weight learning:** node-edge weights emerge from usage + decay (the Maps-traffic analog), so `route` ordering reflects real use. `recordOutcome`/`decayConfidence` machinery already exists at the intra-site edge level — reuse at the node level.
 3. **Auto-learn nodes from usage:** when search/recall visits a new site, auto-add it as a node (the self-growing gazetteer).
 4. **Phase 5 — MCP wrapper (secondary):** expose the verbs as MCP tools; CLI stays primary; test both.
