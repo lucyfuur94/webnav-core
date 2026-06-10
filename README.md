@@ -17,7 +17,6 @@ all the judgment. webnav is the honest map and mechanics; the agent is the drive
 
 > New here? Read **`docs/STATUS.md`** (current state + what's next + how to run) and
 > **`CLAUDE.md`** (settled design, mental model, and principles). Design docs: `docs/superpowers/specs/`.
-> Deploying the site + hosted backend: **`DEPLOY.md`**.
 
 ## Why
 
@@ -89,8 +88,9 @@ moves only the map skeleton, never logins).
   ```
   The map is fetched live and metered per key (free tier + usage-based paid tiers); your site
   credentials are still loaded locally by `CredStore`. The key lives in `~/.webnav/config.json`,
-  separate from credentials. The marketing/docs/pricing site + this API live in [`site/`](site/)
-  (Next.js on Vercel) backed by Turso; deploy with **`DEPLOY.md`**.
+  separate from credentials. The website + hosted API are a separate service (not part of this
+  open-source repo); this repo ships the **client** (`login`, `walk --hosted`) and the
+  `dev export-map` verb that produces the map packs a hosted service publishes.
 
 ## Verbs
 

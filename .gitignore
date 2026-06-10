@@ -1,11 +1,7 @@
 .worktrees/
 node_modules/
 dist/
-# site (Next.js) build + deploy artifacts
-site/.next/
-site/out/
 .vercel/
-site/tsconfig.tsbuildinfo
 .playwright-cli/
 *.db
 *.db-journal

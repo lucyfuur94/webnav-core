@@ -27,6 +27,7 @@ export type ParsedArgs =
   | { cmd: 'graph-analyse'; session: string }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
+  | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
   | { cmd: 'navigate'; url: string; session: string; browser: BrowserOpts }
@@ -181,6 +182,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -427,6 +429,20 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
     console.log(JSON.stringify(showInterior(new MapStore(dbPath()), args.node), null, 2));
+    return;
+  }
+  if (args.cmd === 'export-map') {
+    // Emit a site's full MAP PACK { node, states } as JSON — the unit a hosted
+    // service publishes/imports. Skeleton only; credentials are never in the map.
+    const { MapStore } = await import('./mapstore/store.js');
+    const store = new MapStore(dbPath());
+    const node = store.getNode(args.node);
+    const states = store.statesForNode(args.node);
+    if (!node || states.length === 0) {
+      console.log(JSON.stringify({ status: 'empty', node: args.node, hint: 'no map for this site in the local db — build/seed it first' }, null, 2));
+      process.exitCode = 3; return;
+    }
+    console.log(JSON.stringify({ node, states }, null, 2));
     return;
   }
   if (args.cmd === 'outline' || args.cmd === 'mermaid') {

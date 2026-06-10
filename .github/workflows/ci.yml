@@ -25,22 +25,3 @@ jobs:
         run: npx tsc --noEmit
       - name: Unit tests (gated live e2e skipped without WEBNAV_LIVE)
         run: npm test
-
-  site-build:
-    name: Site build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install site deps
-        working-directory: site
-        # --ignore-scripts skips @libsql/client's native postinstall, which was
-        # crashing npm ("Exit handler never called!") on the runner. The Next
-        # BUILD doesn't need that native binary (it's only used at API runtime),
-        # so the build still succeeds.
-        run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Build site
-        working-directory: site
-        run: npm run build

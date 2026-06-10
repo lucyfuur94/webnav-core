@@ -339,6 +339,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev graph-show --node github.com',
   },
   {
+    name: 'export-map',
+    summary: 'Emit a site\'s full map pack {node, states} as JSON (skeleton only — never credentials). The unit a hosted service publishes; pipe it wherever maps are shared.',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
+    example: 'webnav dev export-map www.saucedemo.com > saucedemo-map.json',
+  },
+  {
     name: 'outline',
     summary: 'Human-scannable text outline of a site\'s interior (states + typed affordances), with completeness cues: unexplored exits, dead-ends, orphans, per-kind counts. Answers "did we capture everything?" without the UI.',
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],

@@ -1,9 +1,0 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root { color-scheme: dark; }
-html { scroll-behavior: smooth; }
-body { background: #0b0d11; color: #e6e9ef; }
-
-a { color: inherit; }
