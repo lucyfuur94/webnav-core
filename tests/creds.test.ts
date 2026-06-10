@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, rmSync, statSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { CredStore } from '../src/creds.js';
+import { CredStore, categorize } from '../src/creds.js';
 
 const PATH = join(tmpdir(), `webnav-creds-test-${process.pid}.json`);
 
@@ -62,5 +62,70 @@ describe('CredStore', () => {
     s.set('x.com', { username: 'u' });
     expect(s.remove('x.com')).toBe(true);
     expect(s.get('x.com')).toEqual({});
+  });
+
+  // ---- categorization (login / personal / other) ----
+
+  it('categorize infers login, personal, and other from key names', () => {
+    expect(categorize('username')).toBe('login');
+    expect(categorize('password')).toBe('login');
+    expect(categorize('email')).toBe('login');
+    expect(categorize('firstName')).toBe('personal');
+    expect(categorize('zip')).toBe('personal');
+    expect(categorize('phone')).toBe('personal');
+    expect(categorize('somethingElse')).toBe('other');
+  });
+
+  it('listDetailed returns each key with an inferred category, never values', () => {
+    const s = store();
+    s.set('x.com', { username: 'u', password: 'secret', firstName: 'Test', misc: 'm' });
+    const detailed = s.listDetailed();
+    expect(detailed).toEqual([{ site: 'x.com', keys: [
+      { name: 'firstName', category: 'personal' },
+      { name: 'misc', category: 'other' },
+      { name: 'password', category: 'login' },
+      { name: 'username', category: 'login' },
+    ]}]);
+    expect(JSON.stringify(detailed)).not.toContain('secret');
+  });
+
+  it('set with an explicit category overrides inference', () => {
+    const s = store();
+    s.set('x.com', { token: 'abc' }, 'login');   // token would infer 'login' anyway; force 'other'
+    s.set('x.com', { note: 'n' }, 'login');       // 'note' would be 'other' — force 'login'
+    const d = s.listDetailed()[0].keys;
+    expect(d.find(k => k.name === 'note')!.category).toBe('login');
+  });
+
+  it('a value-only update preserves the existing category', () => {
+    const s = store();
+    s.set('x.com', { apiKey: 'k1' }, 'personal');     // deliberately mis-categorized
+    s.set('x.com', { apiKey: 'k2' });                  // value-only update, no category
+    expect(s.get('x.com').apiKey).toBe('k2');
+    expect(s.listDetailed()[0].keys[0].category).toBe('personal');  // category kept
+  });
+
+  it('setCategory changes only the category, leaving the value intact', () => {
+    const s = store();
+    s.set('x.com', { username: 'u' });
+    expect(s.setCategory('x.com', 'username', 'other')).toBe(true);
+    expect(s.get('x.com').username).toBe('u');
+    expect(s.listDetailed()[0].keys[0].category).toBe('other');
+    expect(s.setCategory('x.com', 'nope', 'other')).toBe(false);
+  });
+
+  it('reads LEGACY bare-string entries and normalizes them (backward compat)', () => {
+    // simulate an old credentials.json: { site: { key: "value" } }
+    writeFileSync(PATH, JSON.stringify({ 'old.com': { username: 'legacy_user', password: 'legacy_pass' } }), { mode: 0o600 });
+    const s = store();
+    expect(s.get('old.com')).toEqual({ username: 'legacy_user', password: 'legacy_pass' });
+    expect(s.listDetailed()).toEqual([{ site: 'old.com', keys: [
+      { name: 'password', category: 'login' },
+      { name: 'username', category: 'login' },
+    ]}]);
+    // once re-written, entries are upgraded to the {value,category} shape
+    s.set('old.com', { username: 'new_user' });
+    const onDisk = JSON.parse(readFileSync(PATH, 'utf8'));
+    expect(onDisk['old.com'].username).toEqual({ value: 'new_user', category: 'login' });
   });
 });

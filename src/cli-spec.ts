@@ -344,6 +344,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
     example: 'webnav dev mermaid www.saucedemo.com',
   },
+  {
+    name: 'dashboard',
+    summary: 'Open a LOCAL operator UI (localhost only) to inspect which sites webnav has data for, view a site\'s JSON map, and manage stored credentials (grouped by category, masked with reveal + inline edit). Reads ./webnav.db + ~/.webnav/credentials.json; the only writes are credential set/remove/recategorize (chmod 600).',
+    args: [],
+    flags: [{ name: '--port', takesValue: true, default: '7777', description: 'Port to bind on 127.0.0.1 (or set WEBNAV_PORT). The dashboard runs until Ctrl-C.' }],
+    example: 'webnav dev dashboard --port 7777',
+  },
 ];
 
 export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];

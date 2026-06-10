@@ -112,6 +112,15 @@ describe('parseArgs', () => {
     expect(parseArgs(['edge-add', 'github.com', 'pypi.org', '--kind', 'hyperlink']))
       .toEqual({ cmd: 'edge-add', from: 'github.com', to: 'pypi.org', kind: 'hyperlink' });
   });
+  it('parses dashboard with default port', () => {
+    expect(parseArgs(['dashboard'])).toEqual({ cmd: 'dashboard', port: 7777 });
+  });
+  it('parses dashboard --port override', () => {
+    expect(parseArgs(['dashboard', '--port', '8080'])).toEqual({ cmd: 'dashboard', port: 8080 });
+  });
+  it('routes dashboard under the dev dispatcher', () => {
+    expect(parseArgs(['dev', 'dashboard'])).toEqual(parseArgs(['dashboard']));
+  });
   it('parses --help', () => { expect(parseArgs(['--help'])).toEqual({ cmd: 'help' }); });
   it('parses -h', () => { expect(parseArgs(['-h'])).toEqual({ cmd: 'help' }); });
   it('parses no args as help', () => { expect(parseArgs([])).toEqual({ cmd: 'help' }); });
