@@ -33,6 +33,7 @@ export type ParsedArgs =
   | { cmd: 'type'; ref: string; text: string; session: string }
   | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string> }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
+  | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -168,6 +169,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
       ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify') };
+  }
+  if (cmd === 'creds') {
+    // creds set <site> key=value... | creds list | creds rm <site> [key]
+    const sub = rest[0] ?? '';
+    const pos = rest.slice(1).filter((a) => !a.startsWith('--') && !a.includes('='));
+    const values: Record<string, string> = {};
+    for (const a of rest.slice(1)) {
+      if (a.includes('=') && !a.startsWith('--')) { const [k, ...v] = a.split('='); values[k] = v.join('='); }
+    }
+    return { cmd, sub, site: pos[0], key: pos[1], values };
   }
   if (cmd === 'navigate') {
     const pos = rest.filter((a) => !a.startsWith('--'));
@@ -408,6 +419,34 @@ async function main() {
     console.log(JSON.stringify({ status: 'ok', node: args.node, coverage, text }, null, 2));
     return;
   }
+  if (args.cmd === 'creds') {
+    // Local credential store (~/.webnav/credentials.json, chmod 600). Values are
+    // NEVER printed (list shows key NAMES only) and never stored in the map.
+    const { CredStore, credsPath } = await import('./creds.js');
+    const cs = new CredStore();
+    if (args.sub === 'set') {
+      if (!args.site || Object.keys(args.values).length === 0) {
+        console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav creds set <site> key=value [key=value...]' }, null, 2));
+        process.exitCode = 2; return;
+      }
+      const keys = cs.set(args.site, args.values);
+      console.log(JSON.stringify({ status: 'ok', site: args.site, keys, file: credsPath() }, null, 2));
+      return;
+    }
+    if (args.sub === 'list') {
+      console.log(JSON.stringify({ status: 'ok', sites: cs.list(), file: credsPath() }, null, 2));
+      return;
+    }
+    if (args.sub === 'rm') {
+      if (!args.site) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav creds rm <site> [key]' }, null, 2)); process.exitCode = 2; return; }
+      const removed = cs.remove(args.site, args.key);
+      console.log(JSON.stringify({ status: removed ? 'ok' : 'empty', site: args.site, key: args.key, removed }, null, 2));
+      if (!removed) process.exitCode = 3;
+      return;
+    }
+    console.log(JSON.stringify({ status: 'error', hint: 'webnav creds set|list|rm' }, null, 2));
+    process.exitCode = 2; return;
+  }
   if (args.cmd === 'walk') {
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
@@ -426,7 +465,14 @@ async function main() {
     const adapter = new PlaywrightAdapter(browserSession);
     const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
-    const browser = makeLiveWalkBrowser(adapter, args.inputs);
+    // Inputs = stored creds for this site (if any) overlaid with any --input flags
+    // (flags win). Lets `walk` run without re-typing credentials each time, while
+    // a one-off --input still overrides. Creds live in ~/.webnav/credentials.json,
+    // never in the map.
+    const { CredStore } = await import('./creds.js');
+    const siteCreds = startState.nodeId ? new CredStore().get(startState.nodeId) : {};
+    const inputs = { ...siteCreds, ...args.inputs };
+    const browser = makeLiveWalkBrowser(adapter, inputs);
     const states = store.statesForNode(startState.nodeId ?? '');
     const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path });
     if (res.status === 'needs-navigation' || res.status === 'needs-classification') {

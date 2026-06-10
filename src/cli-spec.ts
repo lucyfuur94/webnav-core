@@ -185,6 +185,13 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     example: 'webnav walk-resume walk-w-123 --ref e42',
   },
   {
+    name: 'creds', group: 'navigate',
+    summary: 'Store login/form credentials LOCALLY per site (~/.webnav/credentials.json, chmod 600; never in the map, never transmitted). A walk auto-fills its input slots from these. Subcommands: set <site> key=value… | list (key names only) | rm <site> [key].',
+    args: [{ name: 'sub', required: true, description: 'set | list | rm' }],
+    flags: [],
+    example: 'webnav creds set www.saucedemo.com username=standard_user password=secret_sauce',
+  },
+  {
     name: 'navigate', group: 'navigate',
     summary: 'Open a URL in a session browser; records a landing observation if the session is recording.',
     args: [{ name: 'url', required: true, description: 'URL to open.' }],
