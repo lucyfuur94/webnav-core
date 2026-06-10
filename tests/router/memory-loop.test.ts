@@ -3,7 +3,7 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { recallViaMap } from '../../src/router/recall-via-map.js';
 import { MapStore } from '../../src/mapstore/store.js';
 import { FIND_BATTLE_TESTED_REPOS } from '../../src/goals/find-battle-tested-repos.js';
-import { seedGraph } from '../../src/graph/seed.js';
+import { seedGitHubAndGraph } from '../../src/graph/seed.js';
 import * as skeleton from '../../src/explorer/github-skeleton.js';
 
 // Pull-based snapshot stream identical to recall()'s tests. Reset per run so the
@@ -35,7 +35,7 @@ describe('memory loop (cross-run, file-backed MapStore, no browser)', () => {
     // step, not lazily by recall. seedGraph() persists it; both recall runs below
     // read it from disk and must NEVER call exploreGitHub again (criterion #3).
     const seedStore = new MapStore(DB_PATH);
-    seedGraph(seedStore);
+    seedGitHubAndGraph(seedStore);   // GitHub recall skeleton is opt-in, not default-seeded
     expect(seedStore.getState('github:repo-detail')).not.toBeNull();
     expect(seedStore.edgesFrom('github:search-entry').length).toBeGreaterThan(0);
 

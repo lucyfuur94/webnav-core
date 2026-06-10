@@ -30,40 +30,45 @@ export const INTERNET_GRAPH_SEED: { nodes: SiteNode[]; edges: NodeEdge[] } = {
   ],
 };
 
-/** Seed the internet graph into `store` transactionally (idempotent upserts). */
+/**
+ * Seed the out-of-the-box map for a FRESH install (idempotent upserts).
+ *
+ * Deliberately MINIMAL: the ONLY thing seeded is the **saucedemo** walk map — a
+ * single, complete worked example (login → checkout-complete + the burger menu)
+ * so `webnav walk` does something real on first run. Everything else (the GitHub
+ * recall skeleton, the internet-graph nodes for route/search, …) is NOT seeded —
+ * a new user builds those maps themselves (or seeds them explicitly). webnav is a
+ * blank-slate map tool; saucedemo is just the example that proves it works.
+ *
+ * Tests/features that need GitHub or the internet graph seed it explicitly
+ * (exploreGitHub(store) / seedInternetGraph(store)); they no longer get it for
+ * free from this function.
+ */
 export function seedGraph(store: MapStore): void {
+  seedSaucedemoComplete(store);
+}
+
+/** Opt-in: the GitHub recall skeleton + internet-graph nodes + the github-repos
+ *  goal. Not part of the default seed — call this when you want `recall`/`route`/
+ *  `search` to work (tests, or a user who wants GitHub repo discovery). */
+export function seedGitHubAndGraph(store: MapStore): void {
   store.transaction(() => {
     for (const n of INTERNET_GRAPH_SEED.nodes) store.upsertNode(n);
     for (const e of INTERNET_GRAPH_SEED.edges) store.upsertNodeEdge(e);
   });
-  // Interiors: the known site skeletons are seed DATA, built from code so a FRESH
-  // shared DB comes up with them out-of-the-box (not just whatever a given laptop
-  // happened to record). Each runs idempotent upserts.
-  //   - GitHub: the v1 recall skeleton.
-  //   - saucedemo: the full login → checkout-complete walk map (+ burger menu),
-  //     so `webnav walk` works for the demo site in every session, not only where
-  //     it was manually recorded. (Was previously inline-in-tests only — the cause
-  //     of "walks here but not in another terminal".)
   exploreGitHub(store);
-  seedSaucedemoComplete(store);
-  // Goals: seed the known goal records so getGoal() works after ensureSeeded().
   store.upsertGoal(FIND_BATTLE_TESTED_REPOS);
 }
 
 /**
- * Ensure the map is fully seeded — nodes AND interiors. Use this as the bootstrap
- * guard (NOT `if (!getNode(...))`): a pre-existing webnav.db may already have the
- * nodes from an older seed but ZERO interior states, so a node-only guard would
- * skip seeding and leave drill-in empty. We guard on a known interior state
- * instead. seedGraph's upserts are idempotent, so calling it again is cheap+safe.
+ * Ensure the default out-of-the-box map is present. Guard on a known saucedemo
+ * interior state (NOT a node-only check): a pre-existing webnav.db may have older
+ * data but lack the full saucedemo walk map. seedGraph's upserts are idempotent,
+ * so re-running is cheap+safe. (GitHub/internet-graph are opt-in via
+ * seedGitHubAndGraph — they are intentionally NOT part of the default seed.)
  */
 export function ensureSeeded(store: MapStore): void {
-  // Guard on BOTH a known interior state AND a known goal record: an older
-  // webnav.db may have interiors but predate goal records (or vice versa), so
-  // checking only one would skip the other. seedGraph's upserts are idempotent.
-  if (store.getState('github:repo-detail') === null
-    || store.getGoal('github-repos') === null
-    || store.getState('www.saucedemo.com:checkout-complete') === null) {
+  if (store.getState('www.saucedemo.com:checkout-complete') === null) {
     seedGraph(store);
   }
 }

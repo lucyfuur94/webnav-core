@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MapStore } from '../../src/mapstore/store.js';
 import { makeEdge, makeNodeEdge } from '../../src/mapstore/types.js';
-import { seedGraph, INTERNET_GRAPH_SEED } from '../../src/graph/seed.js';
+import { seedGraph, seedGitHubAndGraph, INTERNET_GRAPH_SEED } from '../../src/graph/seed.js';
 
 function freshStore() { return new MapStore(':memory:'); }
 
@@ -106,7 +106,7 @@ describe('MapStore', () => {
 
   it('allNodeEdges returns every edge', () => {
     const s = freshStore();
-    seedGraph(s);
+    seedGitHubAndGraph(s);   // the internet-graph nodes/edges are opt-in, not default-seeded
     expect(s.allNodeEdges()).toHaveLength(INTERNET_GRAPH_SEED.edges.length);
   });
 });
