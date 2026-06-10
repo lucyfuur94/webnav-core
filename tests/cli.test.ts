@@ -68,12 +68,6 @@ describe('parseArgs', () => {
   it('parses per-command help for route', () => {
     expect(parseArgs(['route', '--help'])).toEqual({ cmd: 'help', command: 'route' });
   });
-  it('parses graph', () => {
-    expect(parseArgs(['graph'])).toEqual({ cmd: 'graph' });
-  });
-  it('parses graph --json', () => {
-    expect(parseArgs(['graph', '--json'])).toEqual({ cmd: 'graph' });
-  });
   it('parses node-add with comma-split capabilities/topics', () => {
     expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com',
       '--capabilities', 'package-search,registry', '--topics', 'javascript,packages']))
