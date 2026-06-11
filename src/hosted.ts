@@ -17,7 +17,7 @@ export interface MapPack { node: SiteNode; states: State[] }
 
 export interface HostedConfig { apiKey?: string; apiBase?: string }
 
-const DEFAULT_API_BASE = 'https://webnav.dpdns.org';
+const DEFAULT_API_BASE = 'https://webnav.qzz.io';
 
 /** Where the CLI looks for the hosted API base + key, in priority order:
  *  explicit arg → env (WEBNAV_API / WEBNAV_KEY) → ~/.webnav/config.json → default. */

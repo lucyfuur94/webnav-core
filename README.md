@@ -11,7 +11,7 @@ LLM agent shells out to the `webnav` CLI to navigate websites reliably, recall r
 learned, search the open web, and get back compact **evidence** — while the agent itself does
 all the judgment. webnav is the honest map and mechanics; the agent is the driver.
 
-> **Website:** <https://webnav.dpdns.org> · **Two ways to use it:** self-host (free, this repo) or
+> **Website:** <https://webnav.qzz.io> · **Two ways to use it:** self-host (free, this repo) or
 > the **hosted shared-knowledge route** (a maintained central map you fetch over the network — your
 > credentials still stay local). See [Two routes](#two-routes-self-host-vs-hosted) below.
 
@@ -83,7 +83,7 @@ moves only the map skeleton, never logins).
 - **Hosted shared-knowledge route:** instead of building maps, fetch a maintained central map over
   the network — always the latest. Get a free API key from the website, then:
   ```bash
-  webnav login wn_live_xxx        # free key from https://webnav.dpdns.org/keys
+  webnav login wn_live_xxx        # free key from https://webnav.qzz.io/keys
   webnav walk --hosted --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-complete
   ```
   The map is fetched live and metered per key (free tier + usage-based paid tiers); your site
