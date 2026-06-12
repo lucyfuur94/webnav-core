@@ -58,6 +58,23 @@ function toAffordance(a: EditAffordance, stateId: (label: string) => string): Af
   });
 }
 
+// Find the ONE navigate/reveal affordance (recursing into reveal children) that
+// carries the (toState, via) transition an edge declares. Prefers an exact
+// label/semanticStep match on `via`; falls back to destination-only when it is
+// unambiguous. Returns null when several candidates exist and none matches the
+// label — we never guess among genuinely-equivalent targets (#5a).
+function findNavTarget(affs: Affordance[], toId: string, via: string): Affordance | null {
+  const flat: Affordance[] = [];
+  const walk = (list: Affordance[]) => {
+    for (const a of list) { flat.push(a); if (a.children) walk(a.children); }
+  };
+  walk(affs);
+  const targets = flat.filter((a) => (a.kind === 'navigate' || a.kind === 'reveal') && a.toState === toId);
+  const byLabel = targets.find((a) => a.label === via || a.semanticStep === via);
+  if (byLabel) return byLabel;
+  return targets.length === 1 ? targets[0] : null;
+}
+
 export function editGraph(store: MapStore, node: string, graph: EditGraph): EditResult {
   const stateId = (label: string) => `${node}:${label}`;
   // Labels that will exist after this edit: payload states + already-stored states.
@@ -74,6 +91,15 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     }
   }
 
+  // Build payload states up front so the edge pass can author onto their
+  // affordances before anything is written.
+  const payloadStates = new Map(graph.states.map((s) => [s.label, makeState({
+    id: stateId(s.label), nodeId: node, semanticName: s.label,
+    urlPattern: s.urlPattern ?? '', role: 'detail',
+    fingerprint: s.fingerprint ?? [],
+    affordances: (s.affordances ?? []).map((a) => toAffordance(a, stateId)),
+  })]));
+
   let statesWritten = 0, edgesWritten = 0;
   store.transaction(() => {
     const existing = store.getNode(node);
@@ -83,16 +109,29 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
       capabilities: graph.node?.capabilities ?? existing?.capabilities ?? [],
       topics: graph.node?.topics ?? existing?.topics ?? [],
     });
-    for (const s of graph.states) {
-      store.upsertState(makeState({
-        id: stateId(s.label), nodeId: node, semanticName: s.label,
-        urlPattern: s.urlPattern ?? '', role: 'detail',
-        fingerprint: s.fingerprint ?? [],
-        affordances: (s.affordances ?? []).map((a) => toAffordance(a, stateId)),
-      }));
-      statesWritten++;
-    }
+    // Edge pass FIRST (it may author onto payload/stored states, written after).
+    // Affordances are the SOURCE OF TRUTH: when the from-state has a matching
+    // navigate affordance, the edge's gate is authored as that affordance's
+    // `needs` (and core merged) and NO edge row is written — a stored row would
+    // shadow the gated projection on dedup. Edge rows remain only for edge-only
+    // authoring (no backing affordance) and needsInput/unclassified forks.
+    const patchedStored = new Map<string, ReturnType<typeof makeState>>();
     for (const e of graph.edges) {
+      if (!e.needsInput) {
+        const owner = payloadStates.get(e.from)
+          ?? patchedStored.get(e.from)
+          ?? store.getState(stateId(e.from)) ?? undefined;
+        const aff = owner ? findNavTarget(owner.affordances ?? [], stateId(e.to), e.via) : null;
+        if (owner && aff) {
+          for (const id of e.requiresAffordances ?? []) {
+            if (!aff.needs.includes(id)) aff.needs.push(id);
+          }
+          aff.core = aff.core || (e.core ?? false);
+          if (!payloadStates.has(e.from)) patchedStored.set(e.from, owner);
+          edgesWritten++;
+          continue;
+        }
+      }
       const step = e.needsInput ? `${e.via} [needs-input: ${e.why ?? 'unspecified'}]` : e.via;
       store.upsertEdge(makeEdge({
         fromState: stateId(e.from), toState: stateId(e.to),
@@ -102,6 +141,11 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
       }));
       edgesWritten++;
     }
+    for (const s of payloadStates.values()) {
+      store.upsertState(s);
+      statesWritten++;
+    }
+    for (const s of patchedStored.values()) store.upsertState(s);
   });
   return { node, statesWritten, edgesWritten };
 }

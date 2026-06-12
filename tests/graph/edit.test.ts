@@ -135,3 +135,101 @@ describe('editGraph — full typed affordance authoring', () => {
     })).toThrow(/ghost/);
   });
 });
+
+describe('editGraph — gates author needs on the affordance (source of truth)', () => {
+  it('merges an edge requiresAffordances into the matching navigate affordance needs (no shadowing edge row)', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'inventory', affordances: [
+          { id: 'aff_add', label: 'add to cart', kind: 'mutate' },
+          { id: 'aff_cart', label: 'open cart', kind: 'navigate', to: 'cart' },
+        ] },
+        { label: 'cart' },
+      ],
+      edges: [{ from: 'inventory', to: 'cart', via: 'open cart', requiresAffordances: ['aff_add'] }],
+    });
+    const inv = store.getState('shop.example:inventory')!;
+    const aff = inv.affordances.find((a) => a.id === 'aff_cart')!;
+    expect(aff.needs).toEqual(['aff_add']);
+    // ONE edge, and it carries the gate — no ungated stored row shadows the projection.
+    const edges = store.edgesFrom('shop.example:inventory');
+    expect(edges).toHaveLength(1);
+    expect(edges[0].requiresAffordances).toEqual(['aff_add']);
+  });
+
+  it('unions with pre-existing needs and merges core onto the affordance', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'inventory', affordances: [
+          { id: 'aff_cart', label: 'open cart', kind: 'navigate', to: 'cart', needs: ['aff_add'] },
+        ] },
+        { label: 'cart' },
+      ],
+      edges: [{ from: 'inventory', to: 'cart', via: 'open cart', requiresAffordances: ['aff_add', 'aff_coupon'], core: true }],
+    });
+    const aff = store.getState('shop.example:inventory')!.affordances[0];
+    expect(aff.needs).toEqual(['aff_add', 'aff_coupon']);   // union, no duplicate
+    expect(aff.core).toBe(true);                            // edge core merged onto the affordance
+    expect(store.edgesFrom('shop.example:inventory')[0].core).toBe(true);
+  });
+
+  it('patches a STORED state when the from-state is not in this payload', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'inventory', affordances: [{ id: 'aff_cart', label: 'open cart', kind: 'navigate', to: 'cart' }] },
+        { label: 'cart' },
+      ],
+      edges: [],
+    });
+    // Second edit: only the edge, against the stored inventory state.
+    editGraph(store, 'shop.example', {
+      states: [],
+      edges: [{ from: 'inventory', to: 'cart', via: 'open cart', requiresAffordances: ['aff_add'] }],
+    });
+    const aff = store.getState('shop.example:inventory')!.affordances[0];
+    expect(aff.needs).toEqual(['aff_add']);
+    expect(store.edgesFrom('shop.example:inventory')).toHaveLength(1);
+  });
+
+  it('still writes an edge row when NO matching affordance exists (back-compat) or when needsInput', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'inventory', affordances: [{ id: 'aff_cart', label: 'open cart', kind: 'navigate', to: 'cart' }] },
+        { label: 'cart' }, { label: 'search' },
+      ],
+      edges: [
+        // no affordance leads to 'search' → edge row keeps the gate
+        { from: 'inventory', to: 'search', via: 'open search', requiresAffordances: ['aff_focus'] },
+        // needsInput edges keep the stored-row path (unclassified semantics live on edges)
+        { from: 'inventory', to: 'cart', via: 'open cart', needsInput: true, why: 'which item?' },
+      ],
+    });
+    const edges = store.edgesFrom('shop.example:inventory');
+    const toSearch = edges.find((e) => e.toState === 'shop.example:search')!;
+    expect(toSearch.requiresAffordances).toEqual(['aff_focus']);
+    expect(edges.some((e) => e.kind === 'unclassified')).toBe(true);
+  });
+
+  it('does NOT guess among multiple same-destination affordances when none matches the via label', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'shop.example', {
+      states: [
+        { label: 'checkout', affordances: [
+          { id: 'aff_cancel', label: 'Cancel', kind: 'navigate', to: 'inventory' },
+          { id: 'aff_logo', label: 'logo home link', kind: 'navigate', to: 'inventory' },
+        ] },
+        { label: 'inventory' },
+      ],
+      edges: [{ from: 'checkout', to: 'inventory', via: 'go back somehow', requiresAffordances: ['aff_x'] }],
+    });
+    // Ambiguous → falls back to the edge row; neither affordance gets the gate.
+    const affs = store.getState('shop.example:checkout')!.affordances;
+    expect(affs.every((a) => a.needs.length === 0)).toBe(true);
+    const row = store.edgesFrom('shop.example:checkout').find((e) => e.semanticStep === 'go back somehow')!;
+    expect(row.requiresAffordances).toEqual(['aff_x']);
+  });
+});
