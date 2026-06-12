@@ -1,6 +1,12 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 398 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 399 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+
+> **2026-06-12 (later) — PR #1 restored + walk-resume input fix.** PR #1 (the MCP/repositioning
+> work below) was accidentally reverted on GitHub and has been reapplied (`git revert` of the
+> revert; re-verified: tests, build, MCP stdio smoke). Also fixed: `walk-resume` now accepts
+> repeated `--input slot=value`, so one-off inputs from the original `walk` survive a pause
+> (same flags-over-stored-creds overlay as `walk`; still never persisted).
 
 > **2026-06-12 — MCP wrapper (Phase 5 DONE) + saucedemo-only repositioning + docs sync.**
 > - **`webnav mcp` (Phase 5 DONE):** every verb is now served as an MCP tool over stdio
