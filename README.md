@@ -1,6 +1,6 @@
 # webnav
 
-[![CI](https://github.com/lucyfuur94/webnav/actions/workflows/ci.yml/badge.svg)](https://github.com/lucyfuur94/webnav/actions/workflows/ci.yml)
+[![CI](https://github.com/lucyfuur94/webnav-core/actions/workflows/ci.yml/badge.svg)](https://github.com/lucyfuur94/webnav-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
