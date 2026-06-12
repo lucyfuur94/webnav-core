@@ -35,7 +35,7 @@ export type ParsedArgs =
   | { cmd: 'click'; ref: string; session: string }
   | { cmd: 'type'; ref: string; text: string; session: string }
   | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts; hosted: boolean }
-  | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
+  | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string; inputs: Record<string, string> }
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
@@ -201,7 +201,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
-      ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify') };
+      ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify'),
+      inputs: inputFlags(rest) };
   }
   if (cmd === 'login') {
     return { cmd, key: rest.find((a) => !a.startsWith('--')) ?? '' };
@@ -627,9 +628,13 @@ async function main() {
     // auto-fill. Keying is by node, so it covers any input step on the route, not
     // just login. Without this the resume hits unfillable fields and fails to
     // resolve them — the bug that forced a `use` fallback.
+    // One-off `--input` values are runtime-only (never persisted in the walk
+    // session), so the agent re-supplies them here; flags win over stored creds,
+    // same overlay as `walk`.
     const { CredStore } = await import('./creds.js');
     const siteCreds = startState.nodeId ? new CredStore().get(startState.nodeId) : {};
-    const browser = makeLiveWalkBrowser(adapter, siteCreds);
+    const inputs = { ...siteCreds, ...args.inputs };
+    const browser = makeLiveWalkBrowser(adapter, inputs);
     const states = store.statesForNode(startState.nodeId ?? '');
     const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer });
     if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
