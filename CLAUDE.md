@@ -18,7 +18,7 @@
 
 webnav's verbs split into **two top-level categories**:
 - **`use`** — what an agent does at runtime: the playwright browser-driving primitives (`navigate`, `click`, `type`, `snapshot`, `read`, `eval`, `network`, `wait-for`, `go-back`/`reload`) AND the map-query verbs (`recall`, `search`, `locate`, `route`, `hop`, `list-goals`). "Use webnav" = drive the browser + query the map.
-- **`dev`** — authoring the map: the agent-driven site-mapping flow (`record-start`, `record-stop`, `graph-analyse`, `graph-edit`, `graph-show`, `effects`) plus inspect/teach verbs (`list`, `describe`, `node-add`, `edge-add`, `capture`, `export-map`, `outline`, `mermaid`, `dashboard`, `mcp`). Verbs are named **entity-first** (`record-start`, `node-add`), not action-first.
+- **`dev`** — authoring the map: the agent-driven site-mapping flow (`record-start`, `record-stop`, `graph-analyse`, `graph-edit`, `graph-show`) plus inspect/teach verbs (`list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`). Verbs are named **entity-first** (`record-start`, `node-add`), not action-first.
 
 ## `walk` vs `use` — DO NOT conflate (settled)
 
@@ -45,25 +45,6 @@ A state's **`affordances: Affordance[]` is the SOURCE OF TRUTH**, not a separate
 **A navigation memory for AI agents.** A web-navigation **memory** that lets agents recall cheap, reliable routes to goals on a website instead of re-exploring from scratch every time. The core win is **speed and cost**: the second time an agent needs to get somewhere, it recalls the route rather than re-discovering it.
 
 It is **a map, not a driver.** It gets the agent to where the signals live, cheaply and reliably. It does **not** decide what to do or judge what it finds — that stays with the LLM.
-
-## Default map + product surface (settled 2026-06-12)
-
-- **The default seed is saucedemo ONLY** — one complete worked example (login →
-  checkout-complete) proving `walk`/record/self-heal work. Nothing else ships seeded.
-- **What this repo advertises = that example + the record-your-own-site flow** (automation
-  testing, internal tools, repeated agent workflows). Users build maps for THEIR sites;
-  webnav is an open-source blank-slate map tool.
-- **The GitHub `recall` skeleton + the internet-graph seed are programmatic/test fixtures**
-  (`seedGitHubAndGraph`) — deliberately NOT seeded by default, NOT advertised, NOT a product
-  surface. (They remain the v1 proof-of-engine and keep their tests.) Consequence: the
-  graph-layer roadmap items (G4 co-use weights, auto-learn nodes, richer GitHub signals)
-  are PARKED unless that surface returns.
-- **The website/hosted shared-map route lives in the separate `webnav-site` repo and is
-  NOT advertised here.** This repo keeps only the thin, tested client (`login`,
-  `walk --hosted`, `src/hosted.ts`, `dev export-map`), documented via `--help` only.
-- **MCP is a first-class interface:** `webnav mcp` serves every verb as MCP tools over
-  stdio. It is a THIN layer — tools are GENERATED from the cli-spec registry and every
-  call executes the real CLI — so CLI and MCP cannot drift. The CLI stays primary.
 
 ## The mental model (settled)
 
@@ -128,7 +109,7 @@ Browser automation layer: **`playwright-cli`** (github.com/microsoft/playwright-
 - MapStore backing: **SQLite** (via `better-sqlite3` — synchronous, fits one-serialized-session model).
 - **No LLM dependency in webnav.** The calling agent supplies all reasoning via the response protocol (#5a). webnav has no API keys, no provider config.
 
-## v1 scope (settled — historical; superseded as a PRODUCT surface by the 2026-06-12 decision above, kept as the proof-of-engine + test fixture)
+## v1 scope (settled)
 
 **Target site:** GitHub (read-only, public browsing — no auth, no checkout, no commit points).
 
@@ -155,9 +136,9 @@ Output is **structured so a future stitching layer can consume multiple evidence
 
 > **Single source of truth for current state + how to run + next steps: `docs/STATUS.md`.** Quickstart + module map: `README.md`. This section is the narrative; STATUS.md is the live checklist — keep STATUS.md updated as the canonical handoff.
 
-**Snapshot (2026-06-12):** All work is **merged to `main`** in the public repo (`github.com/lucyfuur94/webnav`, CI: typecheck + units on Node 18/20), **398 unit tests pass (+9 gated live e2e)**, build green. webnav is a working zero-LLM CLI **and MCP server** (`webnav mcp`). Consumer verbs: `walk`/`walk-resume`/`creds`, `locate`/`read`/`recall`/`search`/`route`/`hop`/`list-goals`, `eval`/`network`/`go-back`/`reload`, and the `use` browser primitives (`navigate`/`snapshot`/`click`/`type`); dev verbs: the record→analyse→edit mapping flow (`record-start`/`record-stop`/`graph-analyse`/`graph-edit`/`graph-show`/`effects`), `node-add`/`edge-add`/`list`/`describe`/`capture`, `export-map`/`outline`/`mermaid`/`dashboard`/`mcp`. Default seed = saucedemo only; the website/hosted backend was split into the separate `webnav-site` repo (2026-06-10).
+**Snapshot (2026-06-01):** All work below is **merged to `main`**, **192 unit tests pass (+2 gated live e2e)**, build green. webnav is a working zero-LLM CLI tool with these verbs: `list`, `describe`, `locate`, `recall` (GitHub repo evidence), `search` (multi-provider open-web), `route` + `hop` (the internet graph), `graph`/`add-node`/`add-edge` (the visualizable, teachable map), `capture` (dev). Self-describing CLI (`--help`/`--version`/`--json`/exit-codes).
 
-Built + verified (each merged from its own worktree; details + dates in `docs/STATUS.md`):
+Built + verified (each merged from its own worktree):
 - **v1 (Tasks 0–13):** zero-LLM engine — snapshot parser, playwright-cli adapter, SQLite MapStore, deterministic resolve/replay, explorer, recall→evidence-bundle, goals, CLI. Spec `docs/superpowers/specs/2026-05-30-webnav-design.md`, plan `docs/.../plans/2026-05-30-webnav.md`.
 - **Memory loop (M1–M3):** live path goes Router→MapStore→Explorer; skeleton built once, persisted, never re-explored (criterion #3, proven by a reopen-from-disk test).
 - **Cost thesis (corrected + verified live):** the saving is the calling AGENT's tokens/time, not playwright page-loads; evidence bundle reports `tokens_saved`. GitHub `python retry http` → 5 real repos w/ rich signals, ~65k tokens saved.
@@ -165,17 +146,14 @@ Built + verified (each merged from its own worktree; details + dates in `docs/ST
 - **Research (R2/R3/R4, R4 verified live):** R2 `classifyReadiness` (ready|loading|interstitial — detect+escalate, NEVER evade); R3 `extractContent` (answer-evidence from any page); R4 multi-provider open-web search (Marginalia + Wiby — Google/Bing/DDG bot-wall browsers), fan-out + merge, found-via-dogfooding chrome-leak + render-race fixes.
 - **Phase 1 — CLI hardening (DONE):** clig.dev self-describing CLI (the agent's tool-discovery: `webnav --help` + per-verb help), `--json`, `--version`, exit codes (0 ok / 2 error+hint / 3 ran-but-empty), stdout=result / stderr=diagnostics.
 - **Phase 2 G1–G3 — internet graph (DONE):** nodes + node_edges in MapStore; `route "<request>"` (surfaces candidate nodes + signals, agent decides — #5a) and `hop` (move to a related node via an edge). Spec `docs/.../specs/2026-05-31-internet-graph-design.md`.
-- **Affordance model + agent-driven mapping + interactive recording (2026-06-04…09):** `State.affordances` as source of truth (edges projected); the record→analyse→edit flow; `use` browser primitives that record action-effects.
-- **R5 resume loop (DONE 2026-06-10):** `classify: safe` fires a commit and the walk continues; full saucedemo login→checkout-complete verified live. Full saucedemo map persisted (7 states, 0 dead-ends).
-- **R1 + R1.1 benchmarks (DONE):** R1 honest negative on tokens; **R1.1 (re-grounded CLI): webnav tied for best quality 9/10, swept bot-walled tasks, never thrashed** (`bench/results/`). Navigation benchmark (multi-page, the real thesis test) designed, re-pointed at saucedemo, NOT yet run.
-- **Phase 5 — MCP wrapper (DONE 2026-06-12):** `webnav mcp` serves every verb as MCP tools over stdio; generated from cli-spec; every call runs the real CLI.
-- **Site split (2026-06-10):** website + hosted backend → separate `webnav-site` repo; the local web viewer left with it (inspect via `dev outline`/`mermaid`/`dashboard`).
+- **Graph-viz (DONE):** `graph` (JSON/`--html`), `add-node`/`add-edge` (teach new sites; persisted), interactive Cytoscape.js HTML viewer (`webnav graph --html > map.html`) — clustered, drag/hover/click, teach-via-UI forms.
 
 **Honest remaining gaps / pending (full list in `docs/STATUS.md`):**
-1. **The navigation thesis is still unproven by benchmark** — run the saucedemo walk-vs-raw-browser multi-page benchmark (needs playwright-cli + open network; not runnable from a sandboxed cloud session).
-2. Mapping a NEW site is an expert-ish multi-step flow; a one-command `map <url>` + shareable map packs are roadmap.
-3. Open-web search quality is capped by the automation-friendly engines' thin indexes (good engines bot-wall browsers; we don't evade).
-4. PARKED (per the 2026-06-12 product-surface decision): G4 co-use weights, auto-learn-nodes, richer GitHub goal signals.
+1. **Graph HTML viewer render NOT yet visually confirmed** — it generates + is unit-tested, but the Chrome browser-bridge tool timed out so the in-browser render is unverified. *Verify first next session* (e.g. via playwright-cli headless, since the Chrome MCP bridge was down).
+2. The saucedemo walk escalates at add-to-cart rather than completing autonomously (correct behavior, but needs the **R5 resume loop** to finish a multi-step flow end-to-end — designed, not built).
+3. GitHub run-2 doesn't navigate fewer pages (irreducible re-reads); the real saving is agent tokens.
+4. Open-web search quality is capped by the automation-friendly engines' thin indexes (good engines bot-wall browsers; we don't evade).
+5. Pending features: **G4** co-use weight learning, **R5** resume loop, **R1** A/B benchmark, **Phase 5** MCP wrapper, auto-learn-nodes-from-usage, richer goal signals (`closed_issues`/`latest_release`/`has_ci`).
 
 ## Research push (increment R) — R2/R3/R4 DONE + merged to main
 
@@ -183,8 +161,8 @@ webnav's value = **agent + webnav vs. agent + plain web search** on INFO-SEEKING
 - ✅ **R2** — page-readiness / interstitial detection (`classifyReadiness`: ready|loading|interstitial; detect+escalate, NEVER evade).
 - ✅ **R3** — info-seeking content extraction (`extractContent`: clean answer-evidence from any page snapshot).
 - ✅ **R4** — web-search skeleton (`search-live.ts`: search Marginalia → parse results → visit top-N with readiness retry → extract). CLI `webnav search`. Verified live. (Marginalia chosen because DuckDuckGo/Bing/Google bot-wall browsers.)
-- ✅ **R5** — needs-* RESUME loop (agent answers escalation → walk continues). DONE 2026-06-10.
-- ✅ **R1/R1.1** — A/B benchmarks run twice (see `bench/results/`); the multi-page navigation benchmark remains (re-pointed at saucedemo).
+- ⏳ **R5** — needs-* RESUME loop (agent answers escalation → walk continues). Deferred to Phase 3 below.
+- ⏳ **R1** — A/B benchmark (subagent + real webnav CLI vs subagent + plain search; gold answers + agent tokens). Deferred to Phase 4 below.
 
 ## THE PLAN (settled with user — "do all, plan and execute") — dependency-ordered
 
@@ -193,11 +171,11 @@ The internet-graph spec (`docs/superpowers/specs/2026-05-31-internet-graph-desig
 Build order (each its own increment, on its own worktree, merged when green):
 - **Phase 0** ✅ consolidate (R2/R3/R4 merged to main).
 - **Phase 1 — CLI hardening** ✅ DONE. Self-describing CLI (`--help`/per-verb help/`--json`/`--version`/exit-codes/stdout=result). Answers "how does the agent know how to call the tools".
-- **Phase 2 — Internet graph:** G1–G3 ✅ DONE (nodes/node_edges + `route` + `hop`). **G4 — co-use weight learning: PARKED** (2026-06-12 product-surface decision — the internet graph is no longer an advertised surface; revisit if it returns).
-- **Phase 3 — R5 resume loop** ✅ DONE (2026-06-10): agent answers a `needs-*`, walk continues to completion; saucedemo finishes end-to-end live.
-- **Phase 4 — R1 benchmark** ✅ run twice (R1 + R1.1; see `bench/results/`). **Remaining: the multi-page NAVIGATION benchmark on saucedemo** (walk vs raw-browser) — the actual thesis test; needs a machine with playwright-cli + open network.
-- **Phase 5 — MCP wrapper** ✅ DONE (2026-06-12): `webnav mcp` — every verb as an MCP tool over stdio, generated from cli-spec, every call runs the real CLI. CLI stays primary.
-- **Immediate first step next session:** ⚠️ **run the saucedemo navigation benchmark** (`2026-06-03-navigation-benchmark-design.md` + the re-point note in STATUS.md) from a dev machine with a browser.
+- **Phase 2 — Internet graph:** G1–G3 ✅ DONE (nodes/node_edges + `route` + `hop`). **G4 ⏳ PENDING** — co-use weight learning (the Maps-traffic analog: weight emerges from usage, decays). + ✅ graph-viz (export/teach/HTML viewer) landed alongside.
+- **Phase 3 — R5 resume loop ⏳ PENDING:** agent answers a `needs-*`, walk continues to completion (lets the saucedemo flow finish autonomously end-to-end).
+- **Phase 4 — R1 benchmark ⏳ PENDING:** A/B harness (subagent + real CLI, graph-routed) vs. plain search; real tasks + agent tokens. Proves the thesis. *Recommended next-after-verify.*
+- **Phase 5 — MCP wrapper ⏳ PENDING (SECONDARY):** expose the stable verbs as MCP tools so agents see them natively. Thin layer over the CLI verbs; CLI stays primary. Test both via CLI and MCP.
+- **Immediate first step next session:** ⚠️ **verify the graph HTML viewer actually renders** (browser bridge was down — use playwright-cli headless). Then pick a pending phase (R1 benchmark recommended).
 
 ## Sanctioned-doors layer + attention-return economics (agreed direction; not yet built)
 

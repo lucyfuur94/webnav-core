@@ -134,24 +134,3 @@ Arm A and Arm C both drive playwright-cli → distinct `-s=` sessions per task.
 2. The report answers the A-vs-C thesis question with quality + reliability +
    tool_uses: does webnav's navigation skeleton beat an agent ad-hoc-driving the
    browser on multi-page navigation? — honestly, including if it doesn't.
-
----
-
-## Addendum (2026-06-12) — re-pointed at saucedemo
-
-The GitHub task set above predates the saucedemo-only product-surface decision
-(CLAUDE.md, 2026-06-12): the GitHub `recall` skeleton is a test fixture now, not the
-advertised surface, so benchmarking it would prove the wrong thing. Run this design's
-3-arm harness instead on **saucedemo multi-step flows** — the seeded walk map vs an
-agent raw-driving the same UI:
-
-- **Task shape:** `walk` to a non-addressable state and read a signal there (e.g.
-  "what is the checkout-overview total for items X+Y", "which products are in the cart
-  after adding A and B", "complete checkout and report the confirmation message").
-  Arm A uses `webnav walk`/`walk-resume`; arm C raw playwright-cli; arm B (WebSearch)
-  stays as the honest can't-do baseline.
-- **Metrics unchanged:** quality + reliability + tool-call count (the spawn-floor note
-  above still applies to tokens).
-- **Where to run:** a dev machine with playwright-cli on PATH and open network —
-  sandboxed cloud sessions block both (verified 2026-06-12: no playwright-cli,
-  saucedemo.com blocked by network policy).

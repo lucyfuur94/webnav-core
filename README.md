@@ -11,6 +11,10 @@ LLM agent shells out to the `webnav` CLI to navigate websites reliably, recall r
 learned, search the open web, and get back compact **evidence** — while the agent itself does
 all the judgment. webnav is the honest map and mechanics; the agent is the driver.
 
+> **Website:** <https://webnav-site.vercel.app> · **Two ways to use it:** self-host (free, this repo) or
+> the **hosted shared-knowledge route** (a maintained central map you fetch over the network — your
+> credentials still stay local). See [Two routes](#two-routes-self-host-vs-hosted) below.
+
 > New here? Read **`docs/STATUS.md`** (current state + what's next + how to run) and
 > **`CLAUDE.md`** (settled design, mental model, and principles). Design docs: `docs/superpowers/specs/`.
 
@@ -47,11 +51,9 @@ honestly what you get and how it grows, so there are no surprises:
               --goal www.saucedemo.com:checkout-complete      # saucedemo, seeded
   ```
   Nothing else is seeded — webnav is a blank-slate map tool, and saucedemo is the single
-  example that proves it works. **You record your own sites** (see below); that's the
-  product. This fits any flow you repeat against the same site: automation testing,
-  internal tools, back-office workflows, recurring agent tasks. (A GitHub `recall`
-  skeleton and a small internet-graph exist in the codebase as programmatic/test
-  fixtures only — they are deliberately not seeded and not part of the product surface.)
+  example that proves it works. (The GitHub `recall` skeleton + the internet-graph for
+  `route`/`search` are available but **opt-in** — seed them with `seedGitHubAndGraph`, or
+  build your own maps; they are intentionally not in the default install.)
 - **The map persists and self-heals.** It's saved to `~/.webnav/webnav.db` and reused on
   every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
   or moved element), a `walk` escalates once for the agent to pick the element, then **writes
@@ -71,49 +73,45 @@ honestly what you get and how it grows, so there are no surprises:
 machine + a mapped site → instant, cached, self-healing. A brand-new site → you (or your
 agent) record it once first.
 
+## Two routes: self-host vs hosted
+
+There are two ways to get maps — and **both keep your credentials 100% local** (the hosted route
+moves only the map skeleton, never logins).
+
+- **Self-host (this repo, free forever, Apache-2.0):** build/own your maps in the local
+  `~/.webnav/webnav.db`. No account, no key, no limits.
+- **Hosted shared-knowledge route:** instead of building maps, fetch a maintained central map over
+  the network — always the latest. Get a free API key from the website, then:
+  ```bash
+  webnav login wn_live_xxx        # free key from https://webnav-site.vercel.app/keys
+  webnav walk --hosted --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-complete
+  ```
+  The map is fetched live and metered per key (free tier + usage-based paid tiers); your site
+  credentials are still loaded locally by `CredStore`. The key lives in `~/.webnav/config.json`,
+  separate from credentials. The website + hosted API are a separate service (not part of this
+  open-source repo); this repo ships the **client** (`login`, `walk --hosted`) and the
+  `dev export-map` verb that produces the map packs a hosted service publishes.
+
 ## Verbs
 
 ```
-# Travel a map you've built (the core win: deterministic, low-token replay)
-webnav walk --start <state> --goal <state>   autopilot a multi-step route; pauses at genuine forks
-webnav walk-resume <session> --ref|--classify   answer a paused walk's fork and continue
-webnav creds set <site> key=value...         store login/form creds locally (~/.webnav, chmod 600)
-
-# Drive a live browser one step at a time (explore/build; each step recordable)
-webnav use navigate <url> --session S        open a URL (records a landing if S is recording)
-webnav use snapshot --session S              read the page + element refs (never records)
-webnav use click <ref> / use type <ref> <t>  act on a ref; records the before/after effect
-webnav read <url> [--raw]                    open a URL -> distilled content
-webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's API calls
-
-# Author a site's map (the record -> analyse -> edit flow)
-webnav dev record-start / record-stop        bracket a mapping session
-webnav dev graph-analyse --session S         mechanical structure from what you recorded
-webnav dev graph-edit --node <id> --graph J  write the validated graph
-webnav dev effects --session S               the RAW recorded before/after snapshots
-webnav dev outline <site> | mermaid <site>   completeness check | renderable diagram
+webnav list                                  what webnav knows (sites, places, goals)
+webnav describe "<place>"                    a place's address + what you can do there
+webnav locate "<place>"                      WHERE a place is (URL) — no navigation
+webnav recall "<use-case>"                   GitHub repo discovery -> evidence bundle (agent ranks)
+webnav search "<query>" [--top N]            multi-provider open-web search -> extracted evidence
+webnav route "<request>" [--capability X]    graph: which site(s) for this request + signals
+webnav hop <url> --to-cluster X|--to-node Y  graph: move to a related site
+webnav dev node-add <id> --url --capabilities --topics    teach a new site
+webnav dev edge-add <from> <to> --kind           teach a relationship
 webnav dev graph-show --node <id>            a site's stored states + edges (JSON)
-webnav dev export-map <site>                 a site's map pack as JSON (skeleton only, no creds)
+webnav dev outline <site>                    human-readable interior outline (completeness check)
+webnav dev mermaid <site>                    a Mermaid stateDiagram of the interior
 webnav dev dashboard [--port N]              local operator UI: sites + JSON map + credentials
-webnav dev node-add / edge-add / list / describe / capture   teach + inspect helpers
-
-# Query maps / the web (operate on whatever maps + goals YOU have built)
-webnav locate "<place>" | list-goals         place lookup | stored recall goals
-webnav recall <goal-id> "<query>"            replay a stored goal route -> evidence bundle
-webnav search "<query>" [--top N]            open-web search -> extracted evidence
-webnav route "<request>" | hop <url> --to-…  query/traverse your inter-site graph
+webnav creds set <site> key=value...         store login/form creds locally (~/.webnav, chmod 600)
+webnav capture <url> <out.yml>               dev: save a snapshot YAML
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.
-
-### MCP server
-
-`webnav mcp` serves every verb as an MCP tool over stdio — point an MCP client at it and
-agents get the verbs natively (no shelling out). Tools are generated from the same command
-registry as `--help`, and every call runs the real CLI, so the two surfaces can't drift:
-
-```json
-{ "mcpServers": { "webnav": { "command": "webnav", "args": ["mcp"] } } }
-```
 
 Consumer verbs can also be invoked canonically as `webnav use <verb> ...` and map-authoring verbs as `webnav dev <verb> ...`; bare consumer verbs (e.g. `webnav recall ...`) still work too.
 
@@ -141,19 +139,16 @@ skeletons are the node interiors.
 ```
 cli.ts, cli-spec.ts, cli-help.ts     CLI: parsing, command registry, help rendering
 protocol.ts                          RecallResponse / EvidenceBundle / Coordinate types
-paths.ts, creds.ts, hosted.ts        ~/.webnav paths · local credential store · remote-map client
-mcp/       server.ts                 `webnav mcp`: every verb as an MCP tool (generated from cli-spec)
-mapstore/  types.ts, store.ts, record.ts, schema.sql   SQLite persistence (states+affordances, edges, goals, nodes, node_edges, record sessions)
+mapstore/  types.ts, store.ts, schema.sql    SQLite persistence (states, edges, goals, nodes, node_edges)
 playwright/ adapter.ts, snapshot.ts, capture.ts   playwright-cli child-process + a11y-tree snapshot parser
-explorer/  explorer.ts, analyse.ts, diff.ts, fingerprint.ts, fingerprint-page.ts, github-skeleton.ts   read structure / diff effects / recognize states / test skeleton
-router/    resolve.ts, replay.ts, router.ts, recall-via-map.ts, live.ts    navigate + recall
+explorer/  explorer.ts, fingerprint.ts, github-skeleton.ts, saucedemo-skeleton.ts   read structure / recognize states / seeded skeletons
+router/    resolve.ts, replay.ts, router.ts, recall-via-map.ts, live.ts    navigate + recall (GitHub)
            readiness.ts, extract.ts, extract-content.ts, tokens.ts        bot-wall detection, signal/content extraction, token-savings
            search.ts, search-providers.ts, search-live.ts                 multi-provider open-web search
-           walk.ts, walk-live.ts, walk-session.ts, path.ts, browse.ts, read.ts   interactive multi-step walk + pathfinding + page reading
+           walk.ts, walk-live.ts                                          interactive multi-step walk (saucedemo)
            catalog.ts, locate.ts                                          list/describe + place lookup
-graph/     seed.ts, route.ts, hop.ts, teach.ts, edit.ts, show.ts, export.ts, interior.ts, coverage.ts   inter-site graph + map authoring/inspection
-goals/     find-battle-tested-repos.ts                                    the (only) GitHub-repo-specific goal (test fixture)
-dashboard/ server.ts, shell.ts                                            `webnav dev dashboard` local operator UI
+graph/     seed.ts, route.ts, hop.ts, teach.ts, edit.ts, show.ts, coverage.ts   the internet graph + map authoring/inspection
+goals/     find-battle-tested-repos.ts                                    the (only) GitHub-repo-specific goal
 ```
 Tests mirror this under `tests/`. The live e2e walk tests are gated behind `WEBNAV_LIVE=1`.
 

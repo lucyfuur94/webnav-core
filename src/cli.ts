@@ -38,8 +38,6 @@ export type ParsedArgs =
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string }
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
-  | { cmd: 'effects'; session: string }
-  | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
@@ -188,8 +186,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
-  if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
-  if (cmd === 'mcp') return { cmd };
   if (cmd === 'dashboard') {
     const portFlag = flagValue(rest, '--port');
     const port = Number(portFlag ?? process.env.WEBNAV_PORT ?? 7777);
@@ -419,20 +415,6 @@ async function main() {
     const result = analyseActionEffects(new RecordStore(dbPath()).actionEffects(args.session));
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
-    return;
-  }
-  if (args.cmd === 'effects') {
-    const { RecordStore } = await import('./mapstore/record.js');
-    const effects = new RecordStore(dbPath()).actionEffects(args.session);
-    console.log(JSON.stringify({ status: effects.length ? 'done' : 'empty', session: args.session, effects }, null, 2));
-    if (effects.length === 0) process.exitCode = 3;
-    return;
-  }
-  if (args.cmd === 'mcp') {
-    // Server mode: stdout carries JSON-RPC (the MCP stdio transport) until
-    // stdin closes — the documented exception to one-JSON-object-stdout.
-    const { startMcpServer } = await import('./mcp/server.js');
-    await startMcpServer();
     return;
   }
   if (args.cmd === 'graph-edit') {
