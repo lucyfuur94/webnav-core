@@ -22,9 +22,7 @@ export interface IMapStore {
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
   interiorEdges(nodeId: string): InteriorEdge[];
-  recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void;
   recordSelector(fromState: string, toState: string, semanticStep: string, selector: string): void;
-  decayConfidence(nowMs?: number, halfLifeMs?: number): void;
   upsertGoal(g: Goal): void;
   getGoal(name: string): Goal | null;
   allGoals(): Goal[];
@@ -126,16 +124,14 @@ export class MapStore implements IMapStore {
 
   upsertEdge(e: Edge): void {
     this.db.prepare(`INSERT INTO edges
-      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,reliability,success_count,fail_count,last_verified,confidence,requires_affordances,core)
-      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@reliability,@successCount,@failCount,@lastVerified,@confidence,@requiresAffordances,@core)
+      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,requires_affordances,core)
+      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@requiresAffordances,@core)
       ON CONFLICT(from_state,to_state,semantic_step) DO UPDATE SET
-      selector_cache=@selectorCache, cost=@cost, reliability=@reliability,
-      success_count=@successCount, fail_count=@failCount, last_verified=@lastVerified, confidence=@confidence, requires_affordances=@requiresAffordances, core=@core`)
+      selector_cache=@selectorCache, cost=@cost, requires_affordances=@requiresAffordances, core=@core`)
       .run({
         fromState: e.fromState, toState: e.toState, semanticStep: e.semanticStep,
         selectorCache: e.selectorCache, kind: e.kind, acceptsInput: e.acceptsInput,
-        cost: e.cost, reliability: e.reliability, successCount: e.successCount,
-        failCount: e.failCount, lastVerified: e.lastVerified, confidence: e.confidence,
+        cost: e.cost,
         requiresAffordances: JSON.stringify(e.requiresAffordances ?? []),
         core: e.core ? 1 : 0,
       });
@@ -167,8 +163,7 @@ export class MapStore implements IMapStore {
             // there's no acceptsInput to satisfy them (a genuine in-page affordance the
             // agent must fire first, e.g. a real add-to-cart-before-checkout gate).
             requiresAffordances: a.acceptsInput ? [] : a.needs,
-            cost: a.cost, reliability: a.reliability, successCount: a.successCount,
-            failCount: a.failCount, lastVerified: a.lastVerified, confidence: a.confidence,
+            cost: a.cost,
           }));
         }
         if (a.children) walk(a.children);
@@ -179,7 +174,8 @@ export class MapStore implements IMapStore {
   }
 
   /** Edges leaving a state = stored edges UNION projected-from-affordances, deduped
-   *  by (from,to,semanticStep) preferring the stored row (carries live reliability). */
+   *  by (from,to,semanticStep) preferring the stored row (carries the self-heal
+   *  selector_cache and teach-written fields). */
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
     const stored = rows.map(rowToEdge);
@@ -257,19 +253,6 @@ export class MapStore implements IMapStore {
     return rows.map(rowToEdge);
   }
 
-  recordOutcome(fromState: string, toState: string, semanticStep: string, success: boolean): void {
-    const row: any = this.db.prepare(
-      'SELECT * FROM edges WHERE from_state=? AND to_state=? AND semantic_step=?')
-      .get(fromState, toState, semanticStep);
-    if (!row) return;
-    const sc = row.success_count + (success ? 1 : 0);
-    const fc = row.fail_count + (success ? 0 : 1);
-    const reliability = sc / Math.max(1, sc + fc);
-    this.db.prepare(`UPDATE edges SET success_count=?, fail_count=?, reliability=?,
-      last_verified=?, confidence=1 WHERE id=?`)
-      .run(sc, fc, reliability, Date.now(), row.id);
-  }
-
   /** SELF-HEAL write-back (principle #3): record the durable name an agent's ref
    *  resolved to on a step that deterministic resolution had MISSED, so the next
    *  walk re-resolves it without re-asking. Stored as the edge's selector_cache.
@@ -281,16 +264,6 @@ export class MapStore implements IMapStore {
       .get(fromState, toState, semanticStep);
     if (!row) return;
     this.db.prepare('UPDATE edges SET selector_cache=? WHERE id=?').run(selector, row.id);
-  }
-
-  /** Halve confidence per `halfLifeMs` of age since last_verified. */
-  decayConfidence(nowMs: number = Date.now(), halfLifeMs = 1000 * 60 * 60 * 24 * 30): void {
-    const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE last_verified IS NOT NULL').all();
-    for (const r of rows) {
-      const age = nowMs - r.last_verified;
-      const confidence = Math.pow(0.5, age / halfLifeMs);
-      this.db.prepare('UPDATE edges SET confidence=? WHERE id=?').run(confidence, r.id);
-    }
   }
 
   upsertGoal(g: Goal): void {
@@ -344,15 +317,10 @@ export class MapStore implements IMapStore {
   }
 
   upsertNodeEdge(e: NodeEdge): void {
-    this.db.prepare(`INSERT INTO node_edges
-      (from_node,to_node,kind,weight,last_verified,confidence)
-      VALUES (@fromNode,@toNode,@kind,@weight,@lastVerified,@confidence)
-      ON CONFLICT(from_node,to_node,kind) DO UPDATE SET
-      weight=@weight, last_verified=@lastVerified, confidence=@confidence`)
-      .run({
-        fromNode: e.fromNode, toNode: e.toNode, kind: e.kind,
-        weight: e.weight, lastVerified: e.lastVerified, confidence: e.confidence,
-      });
+    this.db.prepare(`INSERT INTO node_edges (from_node,to_node,kind)
+      VALUES (@fromNode,@toNode,@kind)
+      ON CONFLICT(from_node,to_node,kind) DO NOTHING`)
+      .run({ fromNode: e.fromNode, toNode: e.toNode, kind: e.kind });
   }
   nodeEdgesFrom(fromNode: string): NodeEdge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM node_edges WHERE from_node=?').all(fromNode);
@@ -373,10 +341,7 @@ function rowToNode(r: any): SiteNode {
 }
 
 function rowToNodeEdge(r: any): NodeEdge {
-  return makeNodeEdge({
-    fromNode: r.from_node, toNode: r.to_node, kind: r.kind,
-    weight: r.weight, lastVerified: r.last_verified, confidence: r.confidence,
-  });
+  return makeNodeEdge({ fromNode: r.from_node, toNode: r.to_node, kind: r.kind });
 }
 
 function rowToState(r: any): State {
@@ -390,8 +355,7 @@ function rowToEdge(r: any): Edge {
   return makeEdge({
     fromState: r.from_state, toState: r.to_state, semanticStep: r.semantic_step,
     selectorCache: r.selector_cache, kind: r.kind, acceptsInput: r.accepts_input,
-    cost: r.cost, reliability: r.reliability, successCount: r.success_count,
-    failCount: r.fail_count, lastVerified: r.last_verified, confidence: r.confidence,
+    cost: r.cost,
     requiresAffordances: r.requires_affordances ? JSON.parse(r.requires_affordances) : [],
     core: r.core === 1,
   });

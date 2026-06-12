@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { MapStore } from '../../src/mapstore/store.js';
-import { makeState, makeAffordance } from '../../src/mapstore/types.js';
+import { makeState, makeAffordance, makeEdge } from '../../src/mapstore/types.js';
 
 function store(): MapStore { return MapStore.fromDatabase(new Database(':memory:')); }
 
@@ -41,14 +41,16 @@ describe('edge projection from affordances', () => {
     expect(s.edgesFrom('sd:over')[0].kind).toBe('commit-point');
   });
 
-  it('stored edge wins over a duplicate projected edge (live reliability)', () => {
+  it('stored edge wins over a duplicate projected edge (carries the self-heal selector cache)', () => {
     const s = store();
     s.upsertState(makeState({ id: 'sd:inv', nodeId: 'sd', semanticName: 'inv', urlPattern: '', role: 'detail',
       affordances: [makeAffordance({ id: 'aff_cart', label: 'open cart', kind: 'navigate', toState: 'sd:cart' })] }));
     s.upsertState(makeState({ id: 'sd:cart', nodeId: 'sd', semanticName: 'cart', urlPattern: '', role: 'detail' }));
-    // record an outcome onto the stored edge so reliability/successCount differ from projection defaults
-    s.recordOutcome('sd:inv', 'sd:cart', 'open cart', true); // no stored row yet → no-op, so seed one:
+    // a self-heal repair lands on the STORED row; the duplicate projection must not shadow it
+    s.upsertEdge(makeEdge({ fromState: 'sd:inv', toState: 'sd:cart', semanticStep: 'open cart', kind: 'navigate' }));
+    s.recordSelector('sd:inv', 'sd:cart', 'open cart', 'Shopping cart');
     const edges = s.edgesFrom('sd:inv');
     expect(edges).toHaveLength(1); // not duplicated
+    expect(edges[0].selectorCache).toBe('Shopping cart'); // the stored row (with the repair) won
   });
 });

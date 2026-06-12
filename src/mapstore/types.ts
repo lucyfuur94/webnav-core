@@ -25,15 +25,13 @@ export interface Affordance {
   needs: string[];              // affordance ids that should fire first (preconditions); [] = none
   acceptsInput: string | null;  // runtime input slot the live browser fills (e.g. 'credentials')
   core: boolean;                // on the site's MAIN path (drives the viewer's top-to-bottom spine); default false
-  // — durable intent + disposable cache + usage stats (moved off the old Edge) —
+  // — durable intent + disposable selector cache (self-heal) —
   semanticStep: string;         // DURABLE intent (survives redesigns)
   selectorCache: string | null; // DISPOSABLE last-known ref/selector
-  cost: number;
-  reliability: number;
-  successCount: number;
-  failCount: number;
-  lastVerified: number | null;
-  confidence: number;           // decays with age, rises with use
+  cost: number;                 // static per-edge cost (playwright-cli call count)
+  // NOTE: usage-learned stats (reliability/confidence/co-use weights) are a
+  // hosted-service concern (webnav-site aggregates them across users); the
+  // open-source map stores only declared/static data + the selector cache.
 }
 
 export function makeAffordance(
@@ -41,8 +39,7 @@ export function makeAffordance(
 ): Affordance {
   return {
     commit: false, toState: null, addressableUrl: null, children: null, needs: [], acceptsInput: null, core: false,
-    semanticStep: init.label, selectorCache: null, cost: 0, reliability: 1,
-    successCount: 0, failCount: 0, lastVerified: null, confidence: 1,
+    semanticStep: init.label, selectorCache: null, cost: 0,
     ...init,
   };
 }
@@ -81,11 +78,6 @@ export interface Edge {
   requiresAffordances: string[];  // in-page affordances to fire before traversing this edge; [] = none
   core: boolean;                // on the main/core path (agent-declared); default false
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
-  reliability: number;          // successCount / (successCount + failCount); 1 when unused
-  successCount: number;
-  failCount: number;
-  lastVerified: number | null;  // epoch ms
-  confidence: number;           // decays with age, rises with use
 }
 
 // Viewer-facing edge (one node's interior). `viaAffordance` = the affordance id
@@ -116,8 +108,6 @@ export function makeEdge(
 ): Edge {
   return {
     selectorCache: null, acceptsInput: null, addressableUrl: null, requiresAffordances: [], core: false, cost: 0,
-    reliability: 1, successCount: 0, failCount: 0,
-    lastVerified: null, confidence: 1,
     ...init,
   };
 }
@@ -138,16 +128,12 @@ export interface NodeEdge {
   fromNode: string;
   toNode: string;
   kind: NodeEdgeKind;
-  weight: number;               // usage weight signal (1 for now; G4 learns it)
-  lastVerified: number | null;  // epoch ms
-  confidence: number;           // decays with age, rises with use
+  // NOTE: co-use weight learning (the Maps-traffic analog, the old G4) is a
+  // hosted-service feature — webnav-site learns weights from aggregate usage.
 }
 
 export function makeNodeEdge(
   init: Pick<NodeEdge, 'fromNode' | 'toNode' | 'kind'> & Partial<NodeEdge>,
 ): NodeEdge {
-  return {
-    weight: 1, lastVerified: null, confidence: 1,
-    ...init,
-  };
+  return { ...init };
 }

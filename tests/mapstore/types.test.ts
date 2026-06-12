@@ -7,10 +7,9 @@ describe('core types', () => {
       fromState: 's1', toState: 's2',
       semanticStep: 'open the Insights tab', kind: 'navigate',
     });
-    expect(e.reliability).toBe(1);
-    expect(e.successCount).toBe(0);
-    expect(e.failCount).toBe(0);
-    expect(e.confidence).toBe(1);
+    expect(e.cost).toBe(0);
+    expect(e.core).toBe(false);
+    expect(e.requiresAffordances).toEqual([]);
     expect(e.selectorCache).toBeNull();
     expect(e.acceptsInput).toBeNull();
   });

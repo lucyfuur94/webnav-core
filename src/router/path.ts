@@ -1,10 +1,11 @@
 import type { MapStore } from '../mapstore/store.js';
 import type { Edge } from '../mapstore/types.js';
 
-/** Weight for an edge: lower = preferred. Cheap, reliable, confident edges win.
- *  +0.01 guards against a zero denominator (a brand-new edge has reliability 1). */
+/** Weight for an edge: lower = preferred. Cheap edges win; cost is static
+ *  declared data (playwright-cli call count). Usage-learned weighting
+ *  (reliability/confidence) is a hosted-service concern, not stored here. */
 function edgeWeight(e: Edge): number {
-  return (1 + e.cost) / (e.reliability * e.confidence + 0.01);
+  return 1 + e.cost;
 }
 
 /**

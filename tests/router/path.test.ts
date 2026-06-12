@@ -10,7 +10,7 @@ function store(): MapStore {
 function addState(s: MapStore, id: string) {
   s.upsertState(makeState({ id, nodeId: 'n', semanticName: id, urlPattern: '', role: 'detail' }));
 }
-function addEdge(s: MapStore, from: string, to: string, extra: Partial<{ cost: number; reliability: number; confidence: number }> = {}) {
+function addEdge(s: MapStore, from: string, to: string, extra: Partial<{ cost: number }> = {}) {
   s.upsertEdge(makeEdge({ fromState: from, toState: to, semanticStep: `${from}->${to}`, kind: 'navigate', ...extra }));
 }
 
@@ -27,13 +27,13 @@ describe('findPath', () => {
     expect(findPath(s, 'a', 'a')).toEqual(['a']);
   });
 
-  it('picks the lower-weight branch', () => {
+  it('picks the lower-cost branch', () => {
     const s = store();
     ['a', 'b', 'c', 'd'].forEach((id) => addState(s, id));
-    addEdge(s, 'a', 'b', { reliability: 1, confidence: 1 });
-    addEdge(s, 'b', 'd', { reliability: 1, confidence: 1 });
-    addEdge(s, 'a', 'c', { cost: 5, reliability: 0.2, confidence: 0.2 });
-    addEdge(s, 'c', 'd', { cost: 5, reliability: 0.2, confidence: 0.2 });
+    addEdge(s, 'a', 'b');
+    addEdge(s, 'b', 'd');
+    addEdge(s, 'a', 'c', { cost: 5 });
+    addEdge(s, 'c', 'd', { cost: 5 });
     expect(findPath(s, 'a', 'd')).toEqual(['a', 'b', 'd']);
   });
 

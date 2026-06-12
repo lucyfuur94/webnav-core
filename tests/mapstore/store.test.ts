@@ -19,18 +19,6 @@ describe('MapStore', () => {
     expect(s.edgesFrom('a')).toHaveLength(1);
   });
 
-  it('record_outcome updates reliability', () => {
-    const s = freshStore();
-    s.upsertEdge(makeEdge({ fromState: 'a', toState: 'b', semanticStep: 'go', kind: 'navigate' }));
-    s.recordOutcome('a', 'b', 'go', true);
-    s.recordOutcome('a', 'b', 'go', false);
-    const e = s.edgesFrom('a')[0];
-    expect(e.successCount).toBe(1);
-    expect(e.failCount).toBe(1);
-    expect(e.reliability).toBeCloseTo(0.5);
-    expect(e.lastVerified).not.toBeNull();
-  });
-
   it('recordSelector writes back the self-heal name onto the edge', () => {
     const s = freshStore();
     s.upsertEdge(makeEdge({ fromState: 'a', toState: 'b', semanticStep: 'click "Open Cart"', kind: 'safe-reversible' }));
@@ -42,14 +30,6 @@ describe('MapStore', () => {
   it('recordSelector is a no-op for an unknown edge (no throw)', () => {
     const s = freshStore();
     expect(() => s.recordSelector('nope', 'x', 'y', 'z')).not.toThrow();
-  });
-
-  it('decayConfidence lowers confidence for old edges', () => {
-    const s = freshStore();
-    s.upsertEdge(makeEdge({ fromState: 'a', toState: 'b', semanticStep: 'go', kind: 'navigate',
-      lastVerified: 1, confidence: 1 }));
-    s.decayConfidence(1000 * 60 * 60 * 24 * 30); // 30 days later, halfLife default
-    expect(s.edgesFrom('a')[0].confidence).toBeLessThan(1);
   });
 
   it('stores and retrieves a goal', () => {
@@ -92,16 +72,14 @@ describe('MapStore', () => {
     const edges = s.nodeEdgesFrom('a');
     expect(edges).toHaveLength(1);
     expect(edges[0].kind).toBe('hyperlink');
-    expect(edges[0].weight).toBe(1);
   });
 
   it('node edge upsert is idempotent on (from,to,kind)', () => {
     const s = freshStore();
     s.upsertNodeEdge(makeNodeEdge({ fromNode: 'a', toNode: 'b', kind: 'hyperlink' }));
-    s.upsertNodeEdge(makeNodeEdge({ fromNode: 'a', toNode: 'b', kind: 'hyperlink', weight: 2 }));
+    s.upsertNodeEdge(makeNodeEdge({ fromNode: 'a', toNode: 'b', kind: 'hyperlink' }));
     const edges = s.nodeEdgesFrom('a');
     expect(edges).toHaveLength(1);
-    expect(edges[0].weight).toBe(2);
   });
 
   it('allNodeEdges returns every edge', () => {

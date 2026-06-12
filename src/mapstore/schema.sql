@@ -6,9 +6,7 @@ CREATE TABLE IF NOT EXISTS edges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   from_state TEXT NOT NULL, to_state TEXT NOT NULL, semantic_step TEXT NOT NULL,
   selector_cache TEXT, kind TEXT NOT NULL, accepts_input TEXT,
-  cost REAL NOT NULL DEFAULT 0, reliability REAL NOT NULL DEFAULT 1,
-  success_count INTEGER NOT NULL DEFAULT 0, fail_count INTEGER NOT NULL DEFAULT 0,
-  last_verified INTEGER, confidence REAL NOT NULL DEFAULT 1,
+  cost REAL NOT NULL DEFAULT 0,
   requires_affordances TEXT, core INTEGER,
   UNIQUE(from_state, to_state, semantic_step)
 );
@@ -22,7 +20,6 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE TABLE IF NOT EXISTS node_edges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   from_node TEXT NOT NULL, to_node TEXT NOT NULL, kind TEXT NOT NULL,
-  weight REAL NOT NULL DEFAULT 1, last_verified INTEGER, confidence REAL NOT NULL DEFAULT 1,
   UNIQUE(from_node, to_node, kind)
 );
 CREATE TABLE IF NOT EXISTS record_sessions (

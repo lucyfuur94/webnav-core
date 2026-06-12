@@ -38,7 +38,7 @@ A state's **`affordances: Affordance[]` is the SOURCE OF TRUTH**, not a separate
 - **`input`** — fills a field. Never routes; named in a navigate's `needs` (preconditions). When the navigate also has `acceptsInput`, the live browser auto-fills those inputs, so they do NOT pause the walk.
 - Cross-cutting: **`commit`** (irreversible → never auto-fired, #2) and explored-ness (`toState === null` ⇒ unexplored "dangling" stub).
 
-**Edges are PROJECTED, not stored:** `store.edgesFrom`/`allEdges` derive `Edge[]` from navigate/reveal affordances (so the router/walk interface is unchanged); `store.interiorEdges` adds `viaAffordance` (the affordance id, so the VIEWER anchors each arrow to its specific affordance row) + dangling stubs. A stored `edges` row still wins on duplicate (carries live reliability); legacy/explorer edges with no backing affordance still surface. The viewer renders the typed repertoire as a categorized list with per-affordance handles + collapsible reveals; floating edges (border-intersection + direction-invariant reciprocal bowing) are ported from `Mnet/process-map`.
+**Edges are PROJECTED, not stored:** `store.edgesFrom`/`allEdges` derive `Edge[]` from navigate/reveal affordances (so the router/walk interface is unchanged); `store.interiorEdges` adds `viaAffordance` (the affordance id, so the VIEWER anchors each arrow to its specific affordance row) + dangling stubs. A stored `edges` row still wins on duplicate (carries the self-heal selector cache); legacy/explorer edges with no backing affordance still surface. The viewer renders the typed repertoire as a categorized list with per-affordance handles + collapsible reveals; floating edges (border-intersection + direction-invariant reciprocal bowing) are ported from `Mnet/process-map`.
 
 ## What this project is
 
@@ -69,7 +69,7 @@ It is **a map, not a driver.** It gets the agent to where the signals live, chea
 
 A **place index + weighted routing graph** — webnav answers BOTH "where is X" (place-lookup) and "route me there" (directions):
 - **Nodes = states** of a site (what's true / what's possible from here). A URL is an *attribute* of a state, not the node itself (same URL can be many states; many URLs can be one state).
-- **Edges = actions** (click/type/navigate) that transition between states. Every edge carries **cost** (tokens/time), **reliability** (success/fail history), and **age/confidence** (decays over time).
+- **Edges = actions** (click/type/navigate) that transition between states. Every edge carries a static **cost** (tokens/time). (Usage-learned weighting — reliability/confidence/co-use — is a **webnav-site** feature, settled 2026-06-12: it only makes sense where usage aggregates across users; the open-source map stores declared/static data + the self-heal selector cache only.)
 - **Goals = named destinations** the agent cares about, plus *what signals to surface there*. A goal index resolves intent → target state + route.
 
 The map answers TWO kinds of query:
@@ -95,7 +95,7 @@ URL is the lat/lon of the *addressable subset* — NOT a universal coordinate (i
    - **Disposable selector cache** — the concrete selectors/refs that worked last time. Expected to break.
    On recall: try the cheap cached selectors first; on miss, re-resolve that step from semantic intent against the live page, and **write the repair back.** The map **self-heals from usage**, one step at a time.
 
-4. **Confidence decays with age, updates with use.** Recall prefers recently-verified, high-reliability routes. Using a route re-verifies it. Routes nobody uses are allowed to go stale — that's correct. The map gets freshest exactly where it's used most.
+4. **Usage-learned weights live in the HOSTED service, not here (settled 2026-06-12).** Reliability/confidence/co-use weights only mean something where usage aggregates across many users — that's webnav-site's job (it learns from walk outcomes reported via the API and serves weighted maps). The open-source map is judgment-free static data: declared structure + static cost + the self-heal selector cache. (This replaces the earlier "confidence decays with age" principle, whose local machinery was removed 2026-06-12 — design for the hosted side: webnav-site repo, `docs/superpowers/specs/2026-06-12-usage-weights-design.md`.)
 
 5. **The map surfaces evidence; it does NOT score or judge.** No hard-coded rubrics, no per-goal scoring formulas. The map routes and reads declared signals; **the calling AGENT does all judgment/ranking**, per use-case, using its own reasoning. Keeping the map judgment-free is what makes it generalize to every future goal.
 
@@ -117,7 +117,7 @@ URL is the lat/lon of the *addressable subset* — NOT a universal coordinate (i
 One `webnav` CLI orchestrating three independently-testable components. **No LLM service** — reasoning is offloaded to the calling agent via the response protocol (principle #5a).
 
 - **Explorer** — *"Given a start + goal, extend the map by READING the site."* Drives `playwright-cli`, snapshots, builds states/edges from declared structure (links/buttons/inputs), traverses only navigate/safe edges. Unclassified actions are surfaced for the agent, not classified by webnav. Writes nodes/edges to MapStore. Depends on: playwright-cli.
-- **MapStore** — *"Persist the graph; answer structural queries."* Owns the data model (states, edges+weights, goals, semantic route + selector cache). SQLite. Depends on: nothing (pure persistence).
+- **MapStore** — *"Persist the graph; answer structural queries."* Owns the data model (states, edges, goals, semantic route + selector cache). SQLite. Depends on: nothing (pure persistence).
 - **Router** — *"Given a goal, return cheapest reliable route, replay, self-heal deterministically, return evidence OR a 'your move' response."* Asks MapStore for a route (or Explorer to build one), replays via playwright-cli (cached selectors first; deterministic role+name re-match on miss; real drift → `needs-navigation` to the agent; repairs written back). Surfaces raw declared signals. Does NOT score, does NOT call an LLM. Depends on: MapStore, playwright-cli.
 
 Browser automation layer: **`playwright-cli`** (github.com/microsoft/playwright-cli) — built for agents, token-efficient, returns stable element refs from `snapshot`.
@@ -188,7 +188,7 @@ webnav's value = **agent + webnav vs. agent + plain web search** on INFO-SEEKING
 
 ## THE PLAN (settled with user — "do all, plan and execute") — dependency-ordered
 
-The internet-graph spec (`docs/superpowers/specs/2026-05-31-internet-graph-design.md`) is the north-star: **the web as one clustered graph of site-nodes; capabilities are neighborhoods (clusters); intra-site skeletons are node interiors.** Agent interface = `route` (graph: which node(s) for a request + signals) → agent decides → `run` (intra-site skeleton acts) → optional `hop` (graph: move to related node) → agent synthesizes. webnav gives SIGNALS; the agent JUDGES (#5a). Provider selection is mechanical (capability match + reachability + learned co-use weight that emerges from usage & decays — the Maps-traffic analog), never a quality judgment.
+The internet-graph spec (`docs/superpowers/specs/2026-05-31-internet-graph-design.md`) is the north-star: **the web as one clustered graph of site-nodes; capabilities are neighborhoods (clusters); intra-site skeletons are node interiors.** Agent interface = `route` (graph: which node(s) for a request + signals) → agent decides → `run` (intra-site skeleton acts) → optional `hop` (graph: move to related node) → agent synthesizes. webnav gives SIGNALS; the agent JUDGES (#5a). Provider selection is mechanical (capability match + reachability + learned co-use weight that emerges from usage & decays — the Maps-traffic analog; the LEARNING half is a webnav-site feature, 2026-06-12), never a quality judgment.
 
 Build order (each its own increment, on its own worktree, merged when green):
 - **Phase 0** ✅ consolidate (R2/R3/R4 merged to main).
