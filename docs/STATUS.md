@@ -1,6 +1,35 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-10 · **Branch:** `main` · **Tests:** 346 unit + 14 web pass + 10 gated live e2e (3 live saucedemo walks pass with `WEBNAV_LIVE=1`) · **Build:** green (incl. web/)
+**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 398 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+
+> **2026-06-12 — MCP wrapper (Phase 5 DONE) + saucedemo-only repositioning + docs sync.**
+> - **`webnav mcp` (Phase 5 DONE):** every verb is now served as an MCP tool over stdio
+>   (`{"command":"webnav","args":["mcp"]}` in any MCP client). A THIN layer: tools are
+>   GENERATED from the cli-spec registry and every call executes the real CLI, so the two
+>   surfaces cannot drift. Excludes long-running modes (`dashboard`, `mcp` itself).
+>   Unit-tested (tool schemas, argv round-trip through the real parser, JSON-RPC handling,
+>   exit-code mapping 2=error/3=empty-ok) + smoke-verified live over stdio.
+> - **Repositioning (settled with user):** this repo advertises ONLY the saucedemo-seeded
+>   default + the record-your-own-site flow (automation testing, internal tools, repeated
+>   agent workflows). The GitHub `recall` skeleton + internet-graph seed are programmatic/
+>   test fixtures (`seedGitHubAndGraph`), deliberately NOT seeded and NOT advertised. The
+>   website/hosted shared-map route moved to the separate `webnav-site` repo and is no
+>   longer advertised here (the thin client — `login`, `walk --hosted`, `hosted.ts` —
+>   remains in-tree, documented only via `--help`).
+> - **`dev effects --session S`:** dumps a record session's RAW action-effects (full
+>   before/after snapshots) — closes the "raw stays for the agent isn't CLI-reachable"
+>   follow-up from 2026-06-08.
+> - **Spec/code fix:** BROWSER_FLAGS help said headless-default; the code (and tests) are
+>   headed-by-default with `--headless` opt-out. Spec now matches the code, and documents
+>   `--headless`.
+> - **Docs sync:** README (verb table led by walk/record flows, source map refreshed,
+>   website/hosted sections removed), this file (post-site-split reality), CLAUDE.md
+>   (status snapshot + plan checkmarks).
+> - **Benchmark re-pointed at saucedemo:** the multi-page navigation benchmark
+>   (`2026-06-03-navigation-benchmark-design.md`) targeted GitHub, which contradicts the
+>   saucedemo-only positioning; it should run as `walk` vs raw-browser on saucedemo flows.
+>   NOT runnable in a sandboxed/cloud session (needs playwright-cli + open network) — run
+>   it from a normal dev machine.
 
 > **2026-06-10 — Full saucedemo map + R5 resume loop (DONE).**
 > - **Complete site mapped:** exhaustively explored saucedemo via webnav (Haiku subagent) and persisted the FULL graph to `webnav.db` — 7 states incl. the previously-missing `product-detail` and `checkout-complete`, About→external `saucelabs.com`, cart Remove, both checkout Cancels. `dev outline` confirms 0 dead-ends / 0 orphans / 1 external exit.
@@ -52,16 +81,20 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
 | Verb | What it does |
 |---|---|
+| `webnav walk --start X --goal Y [--input k=v] [--hosted]` | autopilot a multi-step route over a built map; pauses at genuine forks (`needs-navigation`/`needs-classification`) |
+| `webnav walk-resume <session> --ref e42 \| --classify safe` | answer a paused walk's fork; `--classify safe` fires a commit and continues (R5) |
+| `webnav creds set\|list\|rm <site> [k=v…]` | local credential store (`~/.webnav/credentials.json`, chmod 600; never in the map) |
 | `webnav locate "<place>"` | WHERE a place is (URL coordinate) without navigating |
 | `webnav read <url> [--raw]` | open a URL → distilled content (the "go read this page" primitive) |
-| `webnav recall <goal-id> "<query>"` | replay a goal's known route → evidence bundle (agent ranks). Goal carries site/entry/extractor as DATA — no site baked into the verb. Defaults to `github-repos`. |
+| `webnav recall <goal-id> "<query>"` | replay a goal's known route → evidence bundle (agent ranks). Goal carries site/entry/extractor as DATA. No goals ship by default — author/seed your own. |
 | `webnav search "<query>" [--top N]` | multi-provider open-web search → visit top-N → extract evidence |
-| `webnav route "<request>" [--capability X]` | graph: candidate site-nodes for a request + signals (agent decides) |
+| `webnav route "<request>" [--capability X]` | graph: candidate site-nodes for a request + signals (agent decides) — over YOUR taught graph |
 | `webnav hop <url> --to-cluster X \| --to-node Y` | graph: move to a related site via an edge |
 | `webnav list-goals` | the recall goals webnav knows (id + signals) — so the agent can pick a goal-id |
 | `webnav eval <url> "<js>"` | open a URL, run a JS expression → just the value (cheap, targeted extraction vs a full snapshot) |
 | `webnav network <url>` | open a URL → the network/API calls the page made (the JSON behind the DOM) |
 | `webnav go-back \| reload` | step within the current `-s=<session>` browser |
+| `webnav login <key>` | save a hosted-route API key (un-advertised; the hosted service lives in the separate `webnav-site` repo) |
 | `webnav use navigate <url> --session S` | open a URL in session S's browser (records a landing observation if S is recording) |
 | `webnav use snapshot --session S` | the current page's snapshot + refs (the agent's "look"; never records) |
 | `webnav use click <ref> --session S` | click a ref (from snapshot); records the before/after action-effect if recording |
@@ -69,7 +102,7 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
 `--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
-**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `graph`, `node-add`, `edge-add`, `capture`, **`record-start`**, **`record-stop`**, **`graph-analyse`**, **`graph-edit`**, **`graph-show`** (the agent-driven site-mapping flow — see below).
+**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `node-add`, `edge-add`, `capture`, **`record-start`**, **`record-stop`**, **`graph-analyse`**, **`graph-edit`**, **`graph-show`**, **`effects`** (the agent-driven site-mapping flow — see below), plus `export-map` (a site's map pack as JSON), `outline` / `mermaid` (text views of an interior), `dashboard` (local operator UI: sites + JSON map + credentials), and `mcp` (serve all verbs as MCP tools over stdio).
 
 Two CLI categories: **`use`** (drive the browser + query the map — the consumer verbs) and **`dev`** (author the map — the teach + mapping verbs). Both dispatchers re-parse the sub-verb; bare consumer verbs still work.
 
@@ -154,41 +187,46 @@ psf/requests page title cleanly). Spec/plan:
 
 webnav's verbs are now **generic operations over map DATA** — no website baked into a verb (fixing the old `recall` = "navigate GitHub" coupling that made agents thrash a trivial "how many open issues" task). Highlights: added `read <url>` (the missing "open a page and read it" primitive — distilled content via `extractContent`/`classifyReadiness`, escalates on bot-walls, never evades); `recall <goal-id> "<query>"` is data-driven (explicit goal id, deterministic lookup, site-bound Goal record carries `site`/`entry`/`extractor`, named extractor registry) — GitHub-repos is the one seeded goal, a 2nd site is data-only; admin verbs moved under `webnav dev`; `list-goals` for discovery. Verified live (read returns "Issues 145" off the psf/requests page; recall still navigates GitHub end-to-end). Spec/plan: `docs/superpowers/specs/2026-06-02-generic-verb-regrounding-design.md`, `docs/superpowers/plans/2026-06-02-generic-verb-regrounding.md`.
 
-## Viewing the graph (live)
+## Inspecting the map
 
-`npm run dev` → open **http://127.0.0.1:7777**. A read-only HTTP server
-(`src/server.ts`, Node built-in `http`, no new ROOT deps) over the **live** SQLite
-map: `/api/graph` (whole internet graph) and `/api/node/:id/interior` (one
-site's intra-site skeleton — its states + action-edges), plus the static viewer
-bundle from `web/dist/`. **Click a site-node to drill into its interior** (e.g.
-github.com → search-entry → result-list → repo-detail). The viewer is a `web/`
-Vite + React + **@xyflow/react** app laid out by **elkjs** (see below);
-`npm run dev:web` runs it with HMR. `webnav graph` emits the graph as JSON.
+> The React-Flow web viewer left this repo with the 2026-06-10 site split (it lives in
+> `webnav-site` now). In-repo inspection is text-first — the agent never read the UI anyway:
 
-DB is now the **single source of truth** for interiors: the known skeletons
-(GitHub, saucedemo) are written by the **seed step** (`seedGraph`), not lazily on
-the recall/walk path — the lazy `exploreGitHub`/`exploreSaucedemo` bootstrap was
-removed (a recall against an unseeded map returns `failed`; seed first). States
-gained a `node_id` column (backfilled from the `<node>:<state>` id prefix via an
-idempotent migration). `MapStore` now implements an `IMapStore` interface — the
-swappable seam for a future hosted backend. Spec/plan:
-`docs/superpowers/specs/2026-06-02-live-graph-viewer-design.md`,
-`docs/superpowers/plans/2026-06-02-live-graph-viewer.md`.
+- `webnav dev outline <site>` — top-to-bottom states + typed affordances + completeness
+  cues (unexplored exits, dead-ends, orphans).
+- `webnav dev mermaid <site>` — a Mermaid stateDiagram; paste into GitHub/mermaid.live.
+- `webnav dev graph-show --node <site>` / `webnav dev export-map <site>` — raw JSON.
+- `webnav dev dashboard` — a local operator UI (localhost only) over `webnav.db` +
+  `~/.webnav/credentials.json`: per-site maps + credential management.
 
-## R1 — A/B benchmark (DONE)
+DB facts that still hold: the DB is the **single source of truth** for interiors; the
+default seed writes ONLY saucedemo (`seedGraph` → `ensureSeeded`; GitHub + the internet
+graph are opt-in **programmatic/test fixtures** via `seedGitHubAndGraph` — a recall/route
+against an unseeded map returns `failed`/empty). States carry a `node_id` column.
+`MapStore` implements the `IMapStore` interface — the swappable seam the hosted backend
+uses. Spec/plan: `docs/superpowers/specs/2026-06-02-live-graph-viewer-design.md`.
+
+## R1/R1.1 — A/B benchmarks (DONE) + the navigation benchmark (PENDING, saucedemo)
 
 `bench/` holds a re-runnable A/B benchmark: agent+webnav (CLI only) vs
-agent+plain-search (WebSearch+WebFetch), both Sonnet, scored by an anonymized
-Sonnet judge against gold answers. Broad mixed task set (`bench/tasks.yml`,
-unit-tested loader `bench/load.ts`); run recipe + verbatim prompts in
-`bench/README.md`; reports in `bench/results/`. **First run
-(`bench/results/2026-06-02.md`): quality webnav 3 / baseline 1 / tie 8; webnav
-used MORE agent tokens (median +6k), NOT fewer.** Honest finding — the naive
-token-savings thesis did NOT hold on general info-seeking (the baseline answers
-known facts with 0 tool calls; webnav always navigates). webnav's demonstrated
-edge is QUALITY on non-recallable data: won the fresh-maintenance comparison and
-swept the botwalled category 2-0 (read a free NYT homepage; caught a baseline
-hallucination). Spec: `docs/superpowers/specs/2026-06-02-r1-ab-benchmark-design.md`.
+agent+plain-search (WebSearch+WebFetch), scored by an anonymized judge against
+gold answers (`bench/tasks.yml`, loader `bench/load.ts`, recipe in
+`bench/README.md`, reports in `bench/results/`).
+
+- **R1 (`2026-06-02.md`, the OLD GitHub-coupled CLI):** quality webnav 3 / baseline 1 /
+  tie 8; webnav used MORE agent tokens (median +6k). Honest negative — the naive
+  token-savings thesis did NOT hold on general info-seeking.
+- **R1.1 (`2026-06-03-r1.1.md`, 3-arm, re-grounded CLI):** **webnav tied for best
+  quality 9/10** (with raw-browser; baseline 7/10), never thrashed, swept the
+  bot-walled category, and beat the API's subtly-wrong `open_issues_count`. Tokens
+  ~equal across arms (~19–22k; every task forces a real fetch). webnav's proven edge
+  is QUALITY on data search/APIs get wrong or can't reach — and honest failure on walls.
+- **Navigation benchmark (designed, NOT run):** single-page lookups structurally can't
+  show the navigation thesis. `2026-06-03-navigation-benchmark-design.md` designed the
+  multi-page version against GitHub — **re-pointed (2026-06-12): run it on saucedemo**
+  (`walk` vs an agent raw-driving the same login→cart→checkout flows; quality +
+  reliability + tool-calls), matching the saucedemo-only positioning. Needs a machine
+  with playwright-cli + open network (NOT runnable from a sandboxed cloud session).
 
 ## DONE (merged to main, verified)
 
@@ -259,12 +297,19 @@ engine + verbs: `docs/superpowers/specs/2026-06-06-interactive-walk-design.md`.)
 
 In roughly recommended order:
 
-1. ~~**R5 — resume loop**~~ ✅ **DONE (2026-06-10):** `classify: safe` now fires a commit and the walk continues to completion; `runWalkLiveComplete` proves it end-to-end on live saucedemo (login→…→checkout-complete). Default still hard-halts at commits (#2).
-2. **G4 — co-use weight learning:** node-edge weights emerge from usage + decay (the Maps-traffic analog), so `route` ordering reflects real use. `recordOutcome`/`decayConfidence` machinery already exists at the intra-site edge level — reuse at the node level.
-3. **Auto-learn nodes from usage:** when search/recall visits a new site, auto-add it as a node (the self-growing gazetteer).
-4. **Phase 5 — MCP wrapper (secondary):** expose the verbs as MCP tools; CLI stays primary; test both.
-5. **Richer GitHub signals:** `closed_issues`, `latest_release`, `has_ci` (currently omitted).
-6. **Token-thesis follow-up (from R1):** R1 showed webnav does NOT save agent tokens on general-info tasks (the baseline answers known facts with 0 tool calls). To test the token thesis fairly, add tasks REQUIRING multi-step navigation to non-addressable state. webnav's proven edge is QUALITY on non-recallable data (fresh signals, bot-walled/paywalled content) — see `bench/results/2026-06-02.md`.
+1. **Saucedemo navigation benchmark (the thesis test):** run the re-pointed multi-page
+   benchmark — `walk` vs an agent raw-driving saucedemo's login→cart→checkout flows
+   (quality + reliability + tool-calls). Design: `2026-06-03-navigation-benchmark-design.md`
+   (+ the 2026-06-12 re-point note above). Needs playwright-cli + open network.
+2. **One-command `map <url>` flow + shareable map packs:** the record→analyse→edit
+   authoring flow works but is expert-ish; the README promises this on the roadmap.
+   `dev export-map` already emits the pack — import + a guided flow are the gap.
+3. ~~**R5 — resume loop**~~ ✅ **DONE (2026-06-10):** `classify: safe` fires a commit and the walk continues to completion (verified live, login→…→checkout-complete). Default still hard-halts at commits (#2).
+4. ~~**Phase 5 — MCP wrapper**~~ ✅ **DONE (2026-06-12):** `webnav mcp` serves every verb as MCP tools over stdio; generated from cli-spec; calls run the real CLI.
+5. **PARKED — multi-site graph features** (G4 co-use weight learning, auto-learn nodes
+   from usage, richer GitHub signals): the internet graph + GitHub recall are not the
+   advertised product surface (2026-06-12 repositioning) — revisit only if/when that
+   surface comes back.
 
 ## Honest known limitations (not bugs — design/ecosystem reality)
 
@@ -283,4 +328,5 @@ In roughly recommended order:
 - **Subagents can't run Bash here** — pattern used all session: the implementer subagent WRITES code+tests and reports; the main session runs vitest/build/commit.
 - **Dogfood + "failures are features":** use webnav on real problems; every failure becomes a feature to fix (this caught the open/goto bug, relative-link bug, license-noise bug, search chrome-leak, render-race).
 - **`dontAsk` permission mode** is set in `.claude/settings.local.json` (takes effect on a fresh session) to stop repeated allow-prompts.
-- No git remote yet — push when the repo is defined (user will do this).
+- The repo is public: `github.com/lucyfuur94/webnav` (CI on push/PR to `main`). The
+  website/hosted backend is the separate `webnav-site` repo.
