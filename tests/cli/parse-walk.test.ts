@@ -18,11 +18,18 @@ describe('parseArgs — walk verbs', () => {
   });
   it('parses walk-resume with --ref', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--ref', 'e42']))
-      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: 'e42', classify: undefined });
+      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: 'e42', classify: undefined, inputs: {} });
   });
   it('parses walk-resume with --classify', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--classify', 'safe']))
-      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe' });
+      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe', inputs: {} });
+  });
+  it('parses walk-resume with repeated --input (one-off inputs survive a pause)', () => {
+    expect(parseArgs(['walk-resume', 'walk-7', '--classify', 'safe',
+      '--input', 'firstName=Ada', '--input', 'zip=560001'])).toEqual({
+      cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe',
+      inputs: { firstName: 'Ada', zip: '560001' },
+    });
   });
   it('routes walk under the use dispatcher', () => {
     expect(parseArgs(['use', 'walk', '--start', 'a', '--goal', 'b']))

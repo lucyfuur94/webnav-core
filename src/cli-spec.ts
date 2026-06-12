@@ -203,6 +203,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     flags: [
       { name: '--ref', takesValue: true, description: 'Element ref (answers needs-navigation; from the snapshot).' },
       { name: '--classify', takesValue: true, description: 'safe | commit (answers needs-classification; commit halts).' },
+      { name: '--input', takesValue: true, description: 'Re-supply a one-off slot=value from the original `walk` (repeatable; runtime-only, never stored — stored creds are rebuilt automatically).' },
     ],
     example: 'webnav walk-resume walk-w-123 --ref e42',
   },
