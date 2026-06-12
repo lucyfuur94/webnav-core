@@ -27,9 +27,10 @@ export interface CommandSpec {
 export const VERSION = '0.1.0';
 
 // Browser-launch flags shared by every verb that opens a browser (read / navigate
-// / walk). Default is HEADLESS; these opt into a visible/persistent browser.
+// / walk). Default is HEADED (a visible window); --headless opts out.
 export const BROWSER_FLAGS: FlagSpec[] = [
-  { name: '--headed', takesValue: false, description: 'Show a real browser window (needed for interactive login; dodges some headless-only bot-walls).' },
+  { name: '--headless', takesValue: false, description: 'Run without a visible browser window (CI / servers). Default is headed — a real visible window.' },
+  { name: '--headed', takesValue: false, description: 'Show a real browser window (the default; kept as an explicit no-op for back-compat).' },
   { name: '--persistent', takesValue: false, description: 'Reuse a persistent browser profile so a logged-in session survives across runs.' },
   { name: '--profile', takesValue: true, description: 'Persistent profile directory (implies --persistent).' },
   { name: '--browser', takesValue: true, description: 'Engine/channel: chrome | firefox | webkit | msedge.' },
@@ -358,6 +359,20 @@ export const DEV_COMMANDS: CommandSpec[] = [
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
     example: 'webnav dev mermaid www.saucedemo.com',
+  },
+  {
+    name: 'effects',
+    summary: 'Dump a record session\'s RAW action-effects (full before/after snapshots + diff + navigated) as JSON — the unabridged data `graph-analyse` only summarizes.',
+    args: [],
+    flags: [{ name: '--session', takesValue: true, description: 'Record session id from `dev record-start`.' }],
+    example: 'webnav dev effects --session map-1',
+  },
+  {
+    name: 'mcp',
+    summary: 'Serve every webnav verb as MCP tools over stdio (Model Context Protocol) — point an MCP client\'s command at `webnav mcp`. Tools are generated from this spec; each call runs the real CLI.',
+    args: [],
+    flags: [],
+    example: 'webnav mcp',
   },
   {
     name: 'dashboard',
