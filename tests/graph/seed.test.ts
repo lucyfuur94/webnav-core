@@ -99,10 +99,6 @@ describe('seedGitHubAndGraph (opt-in — GitHub recall + internet graph)', () =>
     expect(s.nodeEdgesFrom('duckduckgo').some((e) => e.toNode === 'marginalia' && e.kind === 'capability')).toBe(true);
   });
 
-  it('is structure-only — every edge weight is 1 (no learned judgment yet)', () => {
-    for (const e of INTERNET_GRAPH_SEED.edges) expect(e.weight).toBe(1);
-  });
-
   it('is idempotent (re-seeding does not duplicate nodes/edges)', () => {
     const s = ghSeeded();
     const nodesBefore = s.allNodes().length;

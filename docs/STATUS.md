@@ -1,6 +1,15 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 399 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 396 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+
+> **2026-06-12 (later) — usage-weights machinery moved OUT (to webnav-site).** Edge
+> `reliability`/`success_count`/`fail_count`/`last_verified`/`confidence`, node-edge `weight`,
+> `recordOutcome`/`decayConfidence`, and the reliability-weighted path cost are REMOVED — the
+> open-source map stores declared/static data + the self-heal `selector_cache` only (principle
+> #4 rewritten in CLAUDE.md). Usage-learned weighting is a hosted feature: webnav-site will
+> aggregate walk outcomes across users and fold weights into the served map's `cost` (design:
+> webnav-site `docs/superpowers/specs/2026-06-12-usage-weights-design.md`). Contract note: the
+> next `@lucyfuur94/webnav` release drops those fields from `Affordance`/`Edge`/`NodeEdge`.
 
 > **2026-06-12 (later) — PR #1 restored + walk-resume input fix.** PR #1 (the MCP/repositioning
 > work below) was accidentally reverted on GitHub and has been reapplied (`git revert` of the

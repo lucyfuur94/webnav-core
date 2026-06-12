@@ -5,7 +5,6 @@ export interface RouteCandidate {
   node: string;
   cluster: string;
   homeUrl: string;
-  weight: number;          // node-edge/usage weight signal (1 for now; G4 learns it)
   why: string;             // provenance: why this candidate surfaced
 }
 export interface RouteResponse {
@@ -23,8 +22,9 @@ const NOTE =
  * nodes (+ mechanical signals). If capability is given, return that cluster's
  * nodes. If NOT given, do a deterministic keyword match of the request against
  * nodes' declared topics/capabilities (NO intent inference — if nothing matches,
- * return ALL nodes as candidates so the agent can choose). Sorted by weight as a
- * CONVENIENCE ordering, explicitly labeled not-a-judgment in `note`.
+ * return ALL nodes as candidates so the agent can choose). Sorted by node id as a
+ * CONVENIENCE ordering, explicitly labeled not-a-judgment in `note`. (Usage-learned
+ * co-use weights are a hosted-service feature — webnav-site.)
  */
 export function route(store: MapStore, request: string, capability?: string): RouteResponse {
   let candidates: RouteCandidate[];
@@ -35,7 +35,7 @@ export function route(store: MapStore, request: string, capability?: string): Ro
     resolvedCapability = capability;
     candidates = store.nodesByCapability(capability).map((n) => ({
       node: n.id, cluster: capability, homeUrl: n.homeUrl,
-      weight: 1, why: `serves ${capability}`,
+      why: `serves ${capability}`,
     }));
   } else {
     resolvedCapability = null;
@@ -48,7 +48,7 @@ export function route(store: MapStore, request: string, capability?: string): Ro
       if (token) {
         matched.push({
           node: n.id, cluster: n.capabilities[0], homeUrl: n.homeUrl,
-          weight: 1, why: `request mentions "${token}"`,
+          why: `request mentions "${token}"`,
         });
       }
     }
@@ -59,14 +59,14 @@ export function route(store: MapStore, request: string, capability?: string): Ro
       // chooses. webnav refuses to guess intent (#5a).
       candidates = store.allNodes().map((n: SiteNode) => ({
         node: n.id, cluster: n.capabilities[0], homeUrl: n.homeUrl,
-        weight: 1, why: 'no capability match — all known nodes offered',
+        why: 'no capability match — all known nodes offered',
       }));
     }
   }
 
-  // Convenience ordering only (weight desc, then node id for stability). The
-  // `note` makes explicit this is NOT a quality ranking.
-  candidates.sort((a, b) => b.weight - a.weight || a.node.localeCompare(b.node));
+  // Convenience ordering only (node id, for stability). The `note` makes
+  // explicit this is NOT a quality ranking.
+  candidates.sort((a, b) => a.node.localeCompare(b.node));
 
   return { request, capability: resolvedCapability, candidates, note: NOTE };
 }

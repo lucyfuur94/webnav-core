@@ -56,7 +56,7 @@ honestly what you get and how it grows, so there are no surprises:
   every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
   or moved element), a `walk` escalates once for the agent to pick the element, then **writes
   the fix back** so the next run resolves it deterministically (principle #3). Routes you use
-  stay fresh; routes nobody uses decay. Credentials for login-gated sites live **outside** the
+  stay fresh. Credentials for login-gated sites live **outside** the
   map, locally, at `~/.webnav/credentials.json` (chmod 600) — never in the DB, never shared.
 - **Mapping a NEW site (the current rough edge — honest).** Any site beyond the two seeded
   ones has no map yet, and adding one today is a manual, multi-step authoring flow
@@ -160,7 +160,7 @@ Tests mirror this under `tests/`. The live e2e walk tests are gated behind `WEBN
 ## Principles (full list in CLAUDE.md)
 
 1. Observe first, traverse rarely. 2. Never traverse a declared commit point. 3. Store durable
-semantic routes; cache selectors. 4. Confidence decays with age, updates with use. 5. The map
+semantic routes; cache selectors. 4. Usage-learned weights are a hosted-service concern. 5. The map
 surfaces evidence; the **agent** judges. **5a. ZERO LLM in webnav** — all reasoning offloaded to
 the calling agent via a call-and-response protocol. 6. The map is a use-case-independent
 navigation skeleton; goals declare signal interests. **Never evade bot-walls** — detect + escalate.

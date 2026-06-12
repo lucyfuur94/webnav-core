@@ -9,7 +9,7 @@ import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
 // navigates and grows from there. This is the structure-only starting set —
 // nodes + the edges between them. NO judgments about which node is "best";
 // edges record only that a relationship exists (same cluster / a real link /
-// learned co-use). weight is 1 for all edges now; G4 learns it from usage.
+// learned co-use). Usage-learned co-use weights are a hosted-service feature (webnav-site).
 export const INTERNET_GRAPH_SEED: { nodes: SiteNode[]; edges: NodeEdge[] } = {
   nodes: [
     { id: 'github.com', homeUrl: 'https://github.com',

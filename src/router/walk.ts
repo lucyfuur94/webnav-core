@@ -118,7 +118,6 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
             question: 'after the classified-safe step, expected ' + edge.toState + ' but observed '
               + (observed.status === 'matched' ? observed.state.id : observed.status) };
         }
-        store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
         current = edge.toState; at++;
         continue;
       } else {
@@ -140,7 +139,6 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
             question: 'after applying the supplied ref, expected ' + edge.toState + ' but observed '
               + (observed.status === 'matched' ? observed.state.id : observed.status) };
         }
-        store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
         if (chosen?.name) store.recordSelector(edge.fromState, edge.toState, edge.semanticStep, chosen.name);
         current = edge.toState; at++;
         continue;
@@ -162,7 +160,6 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
           question: 'jumped to ' + edge.addressableUrl + ' but expected ' + edge.toState + ' — observed '
             + (observed.status === 'matched' ? observed.state.id : observed.status) };
       }
-      store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
       current = edge.toState; at++;
       continue;
     }
@@ -213,7 +210,6 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     }
 
     // Success: self-heal write-back, then advance.
-    store.recordOutcome(edge.fromState, edge.toState, edge.semanticStep, true);
     current = edge.toState;
     at++;
   }

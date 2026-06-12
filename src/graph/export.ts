@@ -7,7 +7,7 @@ import type { IMapStore } from '../mapstore/store.js';
 export interface GraphView {
   nodes: { id: string; homeUrl: string; capabilities: string[]; topics: string[]; clusters: string[] }[];
   clusters: string[];                 // distinct capability names across all nodes (the neighborhoods)
-  edges: { from: string; to: string; kind: string; weight: number }[];
+  edges: { from: string; to: string; kind: string }[];
 }
 
 /**
@@ -31,7 +31,7 @@ export function buildGraphView(store: IMapStore): GraphView {
 
   const edges = store
     .allNodeEdges()
-    .map((e) => ({ from: e.fromNode, to: e.toNode, kind: e.kind, weight: e.weight }))
+    .map((e) => ({ from: e.fromNode, to: e.toNode, kind: e.kind }))
     .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.kind.localeCompare(b.kind));
 
   return { nodes, clusters, edges };
