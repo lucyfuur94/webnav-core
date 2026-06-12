@@ -1,6 +1,6 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 396 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 426 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
 
 > **2026-06-12 (later) — usage-weights machinery moved OUT (to webnav-site).** Edge
 > `reliability`/`success_count`/`fail_count`/`last_verified`/`confidence`, node-edge `weight`,
