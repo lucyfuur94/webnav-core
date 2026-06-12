@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lucyfuur94/webnav.git"
+    "url": "git+https://github.com/lucyfuur94/webnav-core.git"
   },
   "type": "module",
   "bin": { "webnav": "bin/webnav" },

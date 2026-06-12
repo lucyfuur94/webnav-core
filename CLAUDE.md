@@ -1,4 +1,4 @@
-# CLAUDE.md — zy-core / `webnav`
+# CLAUDE.md — webnav-core / `webnav`
 
 > **Read this first, every session. These are settled decisions. Do not deviate without an explicit decision to change them.**
 
