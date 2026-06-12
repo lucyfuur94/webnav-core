@@ -10,4 +10,9 @@ while [ -L "$SOURCE" ]; do
   [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
-exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli.ts" "$@"
+# In the repo: run current src/ via tsx (no build step). In the published
+# package (no src/, only dist/): run the compiled CLI.
+if [ -f "$ROOT/src/cli.ts" ] && [ -x "$ROOT/node_modules/.bin/tsx" ]; then
+  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli.ts" "$@"
+fi
+exec node "$ROOT/dist/cli.js" "$@"
