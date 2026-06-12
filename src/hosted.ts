@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import type { State, SiteNode } from './mapstore/types.js';
+import { WEBNAV_KEY_HEADER, mapFetchPath, type MapPack } from './contract.js';
 import type { IMapStore } from './mapstore/store.js';
 import { configPath } from './paths.js';
 
@@ -13,7 +13,7 @@ import { configPath } from './paths.js';
 // by the live browser on the user's machine at walk time. A MapPack therefore has
 // no credential fields, and fetchHostedMap sends only the API key + site id.
 
-export interface MapPack { node: SiteNode; states: State[] }
+export type { MapPack } from './contract.js';
 
 export interface HostedConfig { apiKey?: string; apiBase?: string }
 
@@ -65,8 +65,8 @@ export async function fetchHostedMap(
   }
   const base = resolveApiBase(opts.apiBase).replace(/\/$/, '');
   const doFetch = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchFn);
-  const url = `${base}/api/maps/${encodeURIComponent(site)}`;
-  const res = await doFetch(url, { headers: { 'X-Webnav-Key': key } });
+  const url = `${base}${mapFetchPath(site)}`;
+  const res = await doFetch(url, { headers: { [WEBNAV_KEY_HEADER]: key } });
   if (res.status === 401) throw new Error('hosted route: invalid or unknown API key (re-run `webnav login <key>`).');
   if (res.status === 429) throw new Error('hosted route: usage quota exceeded for this key — upgrade your tier or use the self-host route.');
   if (res.status === 404) throw new Error(`hosted route: no shared map for "${site}" yet.`);
