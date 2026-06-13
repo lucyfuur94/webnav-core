@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -126,6 +126,20 @@ function listSessionFiles(): { name: string; mtimeMs: number }[] {
   return out;
 }
 
+/** Delete every on-disk `.session` file for `name` (a session can appear under more than
+ *  one daemon subdir). Best-effort: missing files / unreadable dirs are ignored. This is
+ *  what actually clears an ORPHAN from the inventory — `playwright-cli close` only removes
+ *  the file of a LIVE daemon it can talk to, so a dead daemon's stale file lingers forever
+ *  (the reap-says-done-but-count-unchanged bug) unless we unlink it directly. `root` is the
+ *  daemon cache dir (injectable for tests; defaults to the real one). */
+export function removeSessionFiles(name: string, root: string = DAEMON_DIR): void {
+  let dirs: string[] = [];
+  try { dirs = readdirSync(root); } catch { return; }
+  for (const d of dirs) {
+    try { rmSync(join(root, d, `${name}.session`), { force: true }); } catch { /* gone */ }
+  }
+}
+
 async function listDaemonPs(): Promise<string[]> {
   try {
     const { stdout } = await execFileAsync('ps', ['-eo', 'pid,command'], { maxBuffer: 8 * 1024 * 1024 });
@@ -153,11 +167,12 @@ function pidAlive(pid: number): boolean {
 async function closeSession(name: string, pid?: number): Promise<boolean> {
   try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); }
   catch { /* graceful close failed; fall through to force-kill if we have a pid */ }
-  if (pid === undefined) return true;                 // orphan / no daemon to kill
-  if (!pidAlive(pid)) return true;                    // graceful close worked
+  if (pid === undefined) { removeSessionFiles(name); return true; }   // orphan: unlink the stale file
+  if (!pidAlive(pid)) { removeSessionFiles(name); return true; }      // graceful close worked
   // Wedged: kill the daemon's process GROUP so its chrome children die too. Fall back to the
   // bare pid if the group kill isn't permitted.
   try { process.kill(-pid, 'SIGTERM'); } catch { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
+  removeSessionFiles(name);                            // and sweep the on-disk file regardless
   return !pidAlive(pid);
 }
 
