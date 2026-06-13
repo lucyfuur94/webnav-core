@@ -233,3 +233,22 @@ describe('editGraph — gates author needs on the affordance (source of truth)',
     expect(row.requiresAffordances).toEqual(['aff_x']);
   });
 });
+
+describe('editGraph — elementFp authoring', () => {
+  it('round-trips an affordance elementFp through graph-edit into the projected edge', () => {
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'ohrm.example', {
+      states: [
+        { label: 'login', affordances: [
+          { id: 'aff_login', label: 'log in', kind: 'navigate', to: 'dashboard',
+            elementFp: { role: 'button', name: 'Login' } },
+        ] },
+        { label: 'dashboard' },
+      ],
+      edges: [],
+    });
+    const aff = store.getState('ohrm.example:login')!.affordances[0];
+    expect(aff.elementFp).toEqual({ role: 'button', name: 'Login' });
+    expect(store.edgesFrom('ohrm.example:login')[0].elementFp).toEqual({ role: 'button', name: 'Login' });
+  });
+});

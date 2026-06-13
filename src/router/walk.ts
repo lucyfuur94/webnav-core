@@ -42,6 +42,9 @@ export interface WalkBrowser {
   // ref — for icon-only/unstable links whose destination has a canonical URL. The
   // unit fake just advances its scripted snapshot (ignores the url).
   goto?(url: string, inputSlot: string | null): Promise<void>;
+  // Sleep `ms` between readiness retries (JS-render race). Live browser implements it;
+  // the unit fake omits it so tests resolve immediately (no waiting / no retry loop).
+  waitMs?(ms: number): Promise<void>;
   callCount(): number;
 }
 
@@ -185,10 +188,21 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     }
 
     // Read the CURRENT page (before acting) so commit/drift checks see this page.
-    const yaml = await browser.snapshot();
-    const nodes = parseSnapshot(yaml);
-
-    const r = replayStep(edge, nodes);
+    // READINESS RETRY: JS-heavy apps (React/Angular/Vue — e.g. OrangeHRM) render the
+    // page asynchronously; an immediate snapshot can catch it empty (0 nodes) or
+    // pre-render, so the step won't resolve yet. Re-snapshot a bounded number of times
+    // until the step resolves, before treating an unresolved step as real drift. This
+    // is the same race live.ts handles for search results. `browser.waitMs` lets the
+    // live browser sleep between tries; the unit fake omits it (resolves immediately).
+    let yaml = await browser.snapshot();
+    let nodes = parseSnapshot(yaml);
+    let r = replayStep(edge, nodes);
+    for (let attempt = 0; r.status === 'escalate' && browser.waitMs && attempt < 5; attempt++) {
+      await browser.waitMs(800);
+      yaml = await browser.snapshot();
+      nodes = parseSnapshot(yaml);
+      r = replayStep(edge, nodes);
+    }
     if (r.status === 'blocked-commit' || r.status === 'needs-classify') {
       // Commit-point halt: NEVER act. Hand the action to the agent to classify.
       // Carry `at` (the absolute path index we paused ON) so the session position

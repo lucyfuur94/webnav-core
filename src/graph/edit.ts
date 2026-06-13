@@ -1,5 +1,5 @@
 import type { MapStore } from '../mapstore/store.js';
-import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind } from '../mapstore/types.js';
+import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind, type ElementFingerprint } from '../mapstore/types.js';
 
 // Teach API accepts an affordance either as a bare label string (→ mutate, the
 // safe default for an in-page action with no declared transition) or as the full
@@ -18,6 +18,8 @@ export interface EditAffordanceObj {
   acceptsInput?: string;      // runtime input slot
   core?: boolean;             // on the main spine
   children?: EditAffordance[];// reveal overlay's affordances
+  elementFp?: ElementFingerprint;  // durable element key {role,name,near?} — disambiguates
+                                   // heading-vs-button + identical siblings (e.g. table-row icon buttons)
 }
 export type EditAffordance = string | EditAffordanceObj;
 export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; }
@@ -54,6 +56,7 @@ function toAffordance(a: EditAffordance, stateId: (label: string) => string): Af
     addressableUrl: a.addressableUrl ?? null,
     acceptsInput: a.acceptsInput ?? null,
     core: a.core ?? false,
+    elementFp: a.elementFp ?? null,
     children: a.children ? a.children.map((c) => toAffordance(c, stateId)) : null,
   });
 }

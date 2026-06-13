@@ -105,6 +105,7 @@ export function makeLiveWalkBrowser(
     },
     callCount: () => adapter.callCount,
     goto: async (url: string) => { await adapter.goto(url); },
+    waitMs: (ms: number) => new Promise((r) => setTimeout(r, ms)),
     act: async (ref: string, inputSlot: string | null) => {
       if (inputSlot === 'credentials') {
         await adapter.fill(await fieldRef('Username'), inputs.username);
@@ -184,6 +185,7 @@ export async function runWalkLive(
       return lastSnapshot;
     },
     callCount: () => adapter.callCount,
+    waitMs: (ms: number) => new Promise((r) => setTimeout(r, ms)),
     // Tier-1 addressable jump: the walk calls this for an edge with addressableUrl
     // (the cart link is icon-only / unstable on saucedemo, but cart.html is canonical).
     goto: async (url: string) => { await adapter.goto(url); },

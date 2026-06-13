@@ -72,6 +72,38 @@ describe('walkRoute (interactive multi-step walk)', () => {
   // inventory page for the agent to add an item before opening the cart. (Full
   // resume-through-gates completion is covered by walk-affordance.test.ts and the
   // gated live e2e.)
+  it('readiness retry: re-snapshots a JS-rendered page that is empty at first, then resolves', async () => {
+    // A 2-state walk login->cart (no gate). The login page renders LATE: the first
+    // two snapshots are empty (React not mounted), then the Login button appears.
+    // With `waitMs` present, walkRoute retries instead of escalating as false drift.
+    const store = new MapStore(':memory:');
+    store.transaction(() => {
+      store.upsertState(makeState({ id: 'r:login', nodeId: 'n', semanticName: 'r:login', urlPattern: '',
+        role: 'search-entry', fingerprint: ['button:Login'] }));
+      store.upsertState(makeState({ id: 'r:home', nodeId: 'n', semanticName: 'r:home', urlPattern: '',
+        role: 'detail', fingerprint: ['heading:Home'] }));
+      store.upsertEdge(makeEdge({ fromState: 'r:login', toState: 'r:home',
+        semanticStep: 'log in by clicking "Login"', kind: 'safe-reversible',
+        elementFp: { role: 'button', name: 'Login', near: null } }));
+    });
+    let snaps = 0; let acted = false;
+    const browser: WalkBrowser = {
+      snapshot: async () => {
+        snaps++;
+        if (acted) return '- heading "Home" [ref=e9]';     // after acting → destination
+        return snaps <= 2 ? '' : '- button "Login" [ref=e2]'; // empty for first 2 reads, then renders
+      },
+      act: async () => { acted = true; },
+      waitMs: async () => { /* no real delay in the test */ },
+      callCount: () => snaps,
+    };
+    const r = await walkRoute({
+      goalName: 'login', startStateId: 'r:login', goalStateId: 'r:home',
+      store, states: store.statesForNode('n'), browser,
+    });
+    expect(r.status).toBe('done');   // resolved after the retry instead of escalating
+  });
+
   it('walks login -> inventory then PAUSES at the add-to-cart affordance gate', async () => {
     const store = freshStore();
     const seq = ['t:login', 't:inventory', 't:cart', 't:checkout-info', 't:checkout-overview', 't:checkout-overview'];
