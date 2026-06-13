@@ -4,6 +4,7 @@ export interface SnapNode {
   ref: string | null;
   url: string | null;
   raw: string;
+  depth: number;   // indentation depth = leading-space count of the raw line (structure for `near` anchoring)
 }
 
 // We parse line-by-line with regex rather than the `yaml` dependency on purpose:
@@ -25,6 +26,7 @@ export function parseSnapshot(yml: string): SnapNode[] {
   const lines = yml.split('\n');
   const nodes: SnapNode[] = [];
   for (const line of lines) {
+    const depth = line.length - line.replace(/^ */, '').length;   // leading-space count, BEFORE trim
     const trimmed = line.trim().replace(/^-\s*/, '');
     if (!trimmed) continue;
 
@@ -49,7 +51,7 @@ export function parseSnapshot(yml: string): SnapNode[] {
     // NOTE: names with escaped quotes (e.g. `"say \"hi\""`) are not handled;
     // NODE_RE stops the name at the first inner quote. Out of scope for v1.
     nodes.push({
-      role: m[1], name: m[2] ?? null, ref: refMatch ? refMatch[1] : null, url: null, raw: trimmed,
+      role: m[1], name: m[2] ?? null, ref: refMatch ? refMatch[1] : null, url: null, raw: trimmed, depth,
     });
   }
   return nodes;
