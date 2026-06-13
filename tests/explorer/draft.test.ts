@@ -168,6 +168,83 @@ describe('draftFromEffects — cross-link mesh (synthesized, not clicked)', () =
   });
 });
 
+// ── Layer 1 (learning-the-core): the draft must capture the in-page affordance REPERTOIRE,
+// not just navigate edges. A recorded non-navigating click → mutate; a click that opened an
+// overlay (diff.added non-empty) → reveal with children; a filter form on a landing page →
+// synthesized inputs; a destructive-looking affordance → needsClassification (commit stays false).
+// Spec: docs/superpowers/specs/2026-06-13-learning-the-core-design.md (Layer 1).
+describe('draftFromEffects — Layer 1 in-page repertoire (mutate/reveal/input/needsClassification)', () => {
+  const LIST = [
+    '- heading "Employee List" [ref=e1]',
+    '- textbox "Employee Name" [ref=e2]',
+    '- combobox "Job Title" [ref=e3]',
+    '- button "Search" [ref=e4]',
+    '- button "Reset" [ref=e5]',
+    '- button "Add" [ref=e6]',
+    '- button "Delete Selected" [ref=e7]',
+  ].join('\n');
+  // after a "Sort by Job Title" click: same url, nothing newly revealed (pure in-place mutate).
+  const LIST_SORTED = LIST;  // identity for the diff; the action just reordered rows (no new nodes)
+  // after clicking a "⋮" actions button: a menu overlay appears (new nodes added).
+  const MENU_OPEN = [LIST, '- menuitem "Edit" [ref=e20]', '- menuitem "Delete" [ref=e21]'].join('\n');
+  const B = 'https://hr.example.com/pim';
+
+  const mk = (seq: number, action: any, toSnapshot: string, navigated: boolean, added: any[] = []) => ({
+    seq, capturedAt: 0, fromUrl: `${B}/list`, fromSnapshot: LIST, action,
+    toUrl: `${B}/list`, toSnapshot, navigated, diff: { added, removed: [] } as any,
+  });
+
+  it('a non-navigating click with NO newly-revealed nodes → a mutate affordance', () => {
+    const effs = [mk(0, { role: 'button', name: 'Search', ref: 'e4', elementFp: { role: 'button', name: 'Search', near: null } }, LIST_SORTED, false)];
+    const draft = draftFromEffects(effs as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    const search = list.affordances.find((a) => a.label === 'Search');
+    expect(search).toBeTruthy();
+    expect(search!.kind).toBe('mutate');
+  });
+
+  it('a non-navigating click that REVEALS new nodes → a reveal affordance with ARIA children', () => {
+    const added = [
+      { role: 'menuitem', name: 'Edit', ref: 'e20', url: null, raw: '', depth: 2 },
+      { role: 'menuitem', name: 'Delete', ref: 'e21', url: null, raw: '', depth: 2 },
+      { role: 'generic', name: null, ref: 'e22', url: null, raw: '', depth: 2 },  // no role+name → NOT a child
+    ];
+    const effs = [mk(0, { role: 'button', name: 'Row actions', ref: 'e9', elementFp: { role: 'button', name: 'Row actions', near: null } }, MENU_OPEN, false, added)];
+    const draft = draftFromEffects(effs as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    const reveal = list.affordances.find((a) => a.kind === 'reveal');
+    expect(reveal).toBeTruthy();
+    const childLabels = (reveal!.children ?? []).map((c) => c.label).sort();
+    expect(childLabels).toEqual(['Delete', 'Edit']);   // the generic/unnamed node is dropped, not guessed
+  });
+
+  it('interior-synthesis: declared-but-unclicked form fields + buttons become input/mutate', () => {
+    // no recorded in-page actions at all — purely from the landing snapshot's declared elements.
+    const effs = [
+      { seq: 0, capturedAt: 0, fromUrl: `${B}/auth`, fromSnapshot: '- button "Login" [ref=e1]', action: { role: 'button', name: 'Login', ref: 'e1', elementFp: { role: 'button', name: 'Login', near: null } }, toUrl: `${B}/list`, toSnapshot: LIST, navigated: true, diff: { added: [], removed: [] } },
+    ];
+    const draft = draftFromEffects(effs as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    const byKind = (k: string) => list.affordances.filter((a) => a.kind === k).map((a) => a.label);
+    expect(byKind('input')).toContain('Employee Name');   // textbox
+    expect(byKind('input')).toContain('Job Title');        // combobox
+    expect(byKind('mutate')).toEqual(expect.arrayContaining(['Search', 'Reset', 'Add', 'Delete Selected']));  // buttons
+  });
+
+  it('a destructive-looking affordance is flagged needsClassification but commit stays false (#2/#5a)', () => {
+    const effs = [
+      { seq: 0, capturedAt: 0, fromUrl: `${B}/auth`, fromSnapshot: '- button "Login" [ref=e1]', action: { role: 'button', name: 'Login', ref: 'e1', elementFp: { role: 'button', name: 'Login', near: null } }, toUrl: `${B}/list`, toSnapshot: LIST, navigated: true, diff: { added: [], removed: [] } },
+    ];
+    const draft = draftFromEffects(effs as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    const del = list.affordances.find((a) => a.label === 'Delete Selected')!;
+    expect(del.needsClassification).toBe(true);
+    expect((del as any).commit).not.toBe(true);            // never auto-set commit
+    const search = list.affordances.find((a) => a.label === 'Search')!;
+    expect(search.needsClassification).toBeFalsy();        // non-destructive → not flagged
+  });
+});
+
 // the snapshot a given drafted state was built from (test helper)
 function snapFor(label: string): string {
   return { 'auth-login': LOGIN, 'dashboard-index': DASHBOARD, 'admin-viewadminmodule': ADMIN, 'pim-viewpimmodule': PIM }[label] ?? '';

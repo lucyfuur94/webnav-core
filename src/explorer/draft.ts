@@ -13,9 +13,19 @@ import { makeState, type State } from '../mapstore/types.js';
 
 // The graph-edit-shaped draft (what graph-edit --graph accepts; agent curates then pipes it).
 export interface DraftAffordance {
-  id: string; label: string; kind: 'navigate' | 'input';
+  id: string; label: string; kind: 'navigate' | 'input' | 'mutate' | 'reveal';
   to?: string; elementFp?: ElementFingerprint; acceptsInput?: string; needs?: string[]; core?: boolean;
+  children?: DraftAffordance[];     // reveal: the ARIA-named affordances the overlay exposed
+  needsClassification?: boolean;    // label matched a commit-word → agent classifies (commit stays false, #2/#5a)
 }
+
+// Roles that count as a real, resolvable child of a revealed overlay (ARIA role + name only;
+// NEVER an inferred purpose — review-bounded #5a). A revealed node outside this set is dropped,
+// not guessed.
+const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkbox', 'combobox', 'textbox']);
+// Conservative commit-word match on a DECLARED label — surfaces a CANDIDATE for the agent to
+// classify; it is a string match, not a judgment (commit is never auto-set true, #2/#5a).
+const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply)\b/i;
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
   _warning?: string;   // self-verify flag: non-unique fingerprint / unresolvable edge — agent curates
@@ -43,6 +53,12 @@ function candidateTokens(nodes: SnapNode[]): string[] {
 }
 
 const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40) || 'state';
+
+// map an interactive ARIA role to its in-page affordance kind (strict, no layout inference):
+// fillable fields → input; everything else interactive → mutate. (link-to-known-state is handled
+// by the cross-link mesh, not here.)
+const INPUT_ROLES = new Set(['textbox', 'combobox', 'checkbox', 'searchbox', 'spinbutton']);
+function childKind(role: string): DraftAffordance['kind'] { return INPUT_ROLES.has(role) ? 'input' : 'mutate'; }
 function pathSlug(url: string): string {
   try { const p = new URL(url).pathname.split('/').filter(Boolean); return slug(p.slice(-2).join('-') || 'home'); }
   catch { return slug(url); }
@@ -123,10 +139,29 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const fromLabel = labelOf(fromPageKey(e.fromUrl, e.fromSnapshot));
     if (!fromLabel) return;
     const fromNodes = parseSnapshot(e.fromSnapshot);
-    // login input: a `use type` on a textbox → an input affordance on this page.
-    if (!e.navigated && e.action && e.action.role === 'textbox' && e.action.name) {
-      pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',
-        elementFp: { role: 'textbox', name: e.action.name, near: null } });
+    // ── non-navigating recorded action → in-page affordance (Layer 1) ──
+    if (!e.navigated && e.action) {
+      // a `use type` on a textbox → an input affordance (login or any field).
+      if (e.action.role === 'textbox' && e.action.name) {
+        pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',
+          elementFp: { role: 'textbox', name: e.action.name, near: null } });
+        return;
+      }
+      // any other click: REVEAL if it exposed new ARIA-named nodes (an overlay/menu opened),
+      // else MUTATE (an in-place change — sort/filter/search). Carries the recovered elementFp.
+      if (e.action.name) {
+        const fp: ElementFingerprint = e.action.elementFp ?? { role: e.action.role, name: e.action.name, near: null };
+        const children: DraftAffordance[] = (e.diff?.added ?? [])
+          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role))
+          .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
+            kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
+            ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
+        const aff: DraftAffordance = children.length
+          ? { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'reveal', elementFp: fp, children }
+          : { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'mutate', elementFp: fp };
+        if (COMMIT_WORDS.test(e.action.name)) aff.needsClassification = true;
+        pushAff(fromLabel, aff);
+      }
       return;
     }
     // a navigation → a navigate affordance to the landing page.
@@ -168,6 +203,31 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     }
   }
 
+  // ── 3c. interior-synthesis (Layer 1): a page's OWN declared interactive elements become
+  // input/mutate affordances even when never clicked — same philosophy as the cross-link mesh
+  // (declared-but-unclicked structure is real). STRICT ARIA: a fillable role → input, any other
+  // named button → mutate. NO layout/proximity inference (#5a-bounded). Skip elements already
+  // captured (by a recorded action or as a navigate link), and links (the mesh owns those).
+  // VERIFY-BEFORE-EMIT: only synthesize if the {role,name} fingerprint resolves UNIQUELY on this
+  // page (resolveByFingerprint != null). This is the mechanical filter that drops the noise a real
+  // page is full of — the 11 identical icon-glyph row buttons (ambiguous → null), a textbox named
+  // by its placeholder that won't match (no match → null) — WITHOUT any judgment about meaning.
+  // A genuinely unique, addressable control (one "Add", a "Search" button) survives.
+  for (const p of pageList) {
+    for (const n of p.nodes) {
+      if (!n.name || !n.name.trim()) continue;
+      if (n.role === 'link' || n.role === 'heading') continue;     // links → mesh; headings → fingerprint
+      if (!INPUT_ROLES.has(n.role) && n.role !== 'button') continue; // only declared interactive controls
+      const have = affById.get(p.label) ?? [];
+      if (have.some((a) => a.label === n.name && (a.kind === 'input' || a.kind === 'mutate' || a.kind === 'reveal'))) continue;
+      const fp: ElementFingerprint = { role: n.role, name: n.name, near: null };
+      if (resolveByFingerprint(fp, p.nodes) === null) continue;    // not a reliable coordinate → skip (no guess)
+      const aff: DraftAffordance = { id: `aff_${affSeq++}_${slug(n.name)}`, label: n.name, kind: childKind(n.role), elementFp: fp };
+      if (COMMIT_WORDS.test(n.name)) aff.needsClassification = true;
+      pushAff(p.label, aff);
+    }
+  }
+
   // ── assemble draft states ──
   const states: DraftState[] = pageList.map((p, pi) => ({
     label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint,
@@ -181,10 +241,12 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       states[pi]._warning = `fingerprint not unique (matchState: ${m.status}) — curate`;
     }
     for (const a of states[pi].affordances) {
-      if (a.kind === 'navigate' && a.elementFp) {
+      // verify each affordance's OWN opener resolves on this page (reveal CHILDREN live on the
+      // post-reveal snapshot we don't keep per-state, so they're not checked here).
+      if (a.elementFp && (a.kind === 'navigate' || a.kind === 'mutate' || a.kind === 'input' || a.kind === 'reveal')) {
         if (resolveByFingerprint(a.elementFp, pageList[pi].nodes) === null) {
           states[pi]._warning = (states[pi]._warning ? states[pi]._warning + '; ' : '')
-            + `edge "${a.label}" won't resolve on this page`;
+            + `affordance "${a.label}" won't resolve on this page`;
         }
       }
     }
