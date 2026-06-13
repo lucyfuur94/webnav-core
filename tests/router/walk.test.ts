@@ -104,6 +104,33 @@ describe('walkRoute (interactive multi-step walk)', () => {
     expect(r.status).toBe('done');   // resolved after the retry instead of escalating
   });
 
+  it('non-hydration: a page that loads-but-never-renders (stable, no known state) reports a soft-block, not generic drift', async () => {
+    const store = new MapStore(':memory:');
+    store.transaction(() => {
+      store.upsertState(makeState({ id: 'b:login', nodeId: 'n', semanticName: 'b:login', urlPattern: '',
+        role: 'search-entry', fingerprint: ['button:Login'] }));
+      store.upsertState(makeState({ id: 'b:home', nodeId: 'n', semanticName: 'b:home', urlPattern: '',
+        role: 'detail', fingerprint: ['heading:Home'] }));
+      store.upsertEdge(makeEdge({ fromState: 'b:login', toState: 'b:home',
+        semanticStep: 'log in', kind: 'safe-reversible',
+        elementFp: { role: 'button', name: 'Login', near: null } }));
+    });
+    // every snapshot is the same tiny shell that matches NO known state (the OrangeHRM symptom)
+    const SHELL = '- generic [ref=e1]';
+    const browser: WalkBrowser = {
+      snapshot: async () => SHELL,
+      act: async () => { /* never reached */ },
+      waitMs: async () => { /* no real delay */ },
+      callCount: () => 0,
+    };
+    const r = await walkRoute({
+      goalName: 'login', startStateId: 'b:login', goalStateId: 'b:home',
+      store, states: store.statesForNode('n'), browser,
+    });
+    expect(r.status).toBe('needs-navigation');
+    if (r.status === 'needs-navigation') expect(r.question).toMatch(/rate-limited|bot-throttled|did not render/i);
+  });
+
   it('walks login -> inventory then PAUSES at the add-to-cart affordance gate', async () => {
     const store = freshStore();
     const seq = ['t:login', 't:inventory', 't:cart', 't:checkout-info', 't:checkout-overview', 't:checkout-overview'];

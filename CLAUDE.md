@@ -14,6 +14,16 @@
 - **Self-describing.** `--help` (grouped) + per-verb help that teaches data-flow (where an arg comes from / where output goes). Keep new verbs discoverable this way.
 - **Installed on PATH.** `webnav` is a real CLI (a peer of `playwright-cli`) via `bin/webnav` → `tsx src/cli.ts` + `npm link` — runs current source, NO build step needed.
 
+## Browser guardrails (settled 2026-06-13 — `2026-06-13-browser-guardrails-design.md`)
+
+playwright-cli sessions are DAEMONIZED (survive the CLI process so `walk-resume`/`use` can reattach). Without limits this exploded to ~100 Chrome procs in one session and soft-blocked a demo site. Four guardrails, all defaults-on, all bypassing nothing (politeness/cleanup, NEVER evasion):
+- **Live-session ceiling** (`WEBNAV_MAX_SESSIONS`, default 16): a daemonized verb (`walk`/`use navigate`/`record`) refuses to open a NEW browser past the cap (`ensureCanOpen` — pure soft-cap inequality, #5a-clean), AFTER first reaping orphans + abandoned paused-walk browsers. Excludes the current session (reattach never refused). **The real fix for the count explosion.**
+- **Paused-walk leak fix:** a `needs-*` pause leaves a LIVE daemon nothing else reaps; the ceiling pre-check TTL-reaps paused-walk browsers >1h old (`WalkSessionStore.staleBrowserSessions`).
+- **Reap force-close:** `dev sessions reap` kills the daemon process GROUP (pid plumbed via `ps -eo pid,command`) when graceful `playwright-cli close` leaves it wedged.
+- **Per-host politeness throttle** (`WEBNAV_HOST_INTERVAL_MS`, default 1000ms): min interval between `open`/`goto` to one host (sqlite-backed, cross-process; intra-session clicks exempt). Reduces provoking bot-walls.
+- **Non-hydration detection:** a page that loads-but-never-renders (stable snapshot, NO known state matched after the readiness-retry budget) is reported as a likely rate-limit/bot-throttle ("back off"), not generic drift. Gated on fingerprint ABSENCE, not size (a legit sparse page still matches).
+- **Behavioral rule for ME (the agent):** never fan out many live browsers without closing each; prefer ONE serial session reused across checks; reap after batches. The burst that caused the incident was my doing, not just a missing limit.
+
 ## CLI categories (settled)
 
 webnav's verbs split into **two top-level categories**:

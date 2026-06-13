@@ -197,7 +197,9 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     let yaml = await browser.snapshot();
     let nodes = parseSnapshot(yaml);
     let r = replayStep(edge, nodes);
+    let prevYaml = '';
     for (let attempt = 0; r.status === 'escalate' && browser.waitMs && attempt < 5; attempt++) {
+      prevYaml = yaml;
       await browser.waitMs(800);
       yaml = await browser.snapshot();
       nodes = parseSnapshot(yaml);
@@ -212,6 +214,21 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
       return { status: 'needs-classification', at, action: edge.semanticStep, snapshot: yaml };
     }
     if (r.status === 'escalate') {
+      // Distinguish a NON-HYDRATING SOFT-BLOCK from real drift (review #9): if after the
+      // full retry budget NO known state matched (the expected page never appeared at all)
+      // AND the snapshot is STABLE across the last two retries, the page loaded its shell but
+      // never rendered — almost always a rate-limit / bot-throttle. Report that honestly so
+      // the agent backs off rather than chasing a phantom drift. Gated on fingerprint ABSENCE
+      // (matchState none), not size — a legit sparse page (saucedemo login) still matches.
+      const unmatched = matchState(nodes, states).status === 'none';
+      const stable = prevYaml !== '' && prevYaml === yaml;
+      if (unmatched && stable) {
+        return {
+          status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: yaml,
+          question: 'the page loaded but did not render any known state (stable across retries) — '
+            + 'likely rate-limited or bot-throttled. Back off and retry later; do NOT hammer it.',
+        };
+      }
       // Real drift: deterministic resolve couldn't find the step on this page.
       return {
         status: 'needs-navigation',
