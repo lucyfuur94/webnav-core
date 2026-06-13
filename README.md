@@ -71,10 +71,9 @@ honestly what you get and how it grows, so there are no surprises:
   Nothing else is seeded — webnav is a blank-slate map tool, and saucedemo is the single
   example that proves it works. **You record your own sites** (see below); that's the
   product. This fits any flow you repeat against the same site: automation testing,
-  internal tools, back-office workflows, recurring agent tasks. (A GitHub recall
-  skeleton and a small internet-graph remain in the codebase as programmatic/test
-  fixtures only — not seeded, and their CLI verbs were removed from the product surface;
-  the engine stays in git history if that surface ever returns.)
+  internal tools, back-office workflows, recurring agent tasks. (An earlier GitHub-recall
+  + internet-graph engine — the v1 proof-of-engine — was removed from the tree 2026-06-13;
+  it lives in git history if that surface ever returns.)
 - **The map persists and self-heals.** It's saved to `~/.webnav/webnav.db` and reused on
   every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
   or moved element), a `walk` escalates once for the agent to pick the element, then **writes
@@ -112,14 +111,17 @@ webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's
 
 # Author a site's map (the record -> analyse -> edit flow)
 webnav dev record-start / record-stop        bracket a mapping session
-webnav dev graph-analyse --session S         mechanical structure from what you recorded
+webnav dev graph-analyse --session S [--draft]  mechanical structure from what you recorded
+                                             (--draft = a self-verified, ready-to-edit graph spec)
 webnav dev graph-edit --node <id> --graph J  write the validated graph
 webnav dev effects --session S               the RAW recorded before/after snapshots
 webnav dev outline <site> | mermaid <site>   completeness check | renderable diagram
 webnav dev graph-show --node <id>            a site's stored states + edges (JSON)
 webnav dev export-map <site>                 a site's map pack as JSON (skeleton only, no creds)
 webnav dev dashboard [--port N]              local operator UI: sites + JSON map + credentials
-webnav dev node-add / edge-add / list / describe / capture   teach + inspect helpers
+webnav dev list                              the sites you have maps for + state counts
+webnav dev node-clear / node-rm --node <id>  empty a site's map (re-learn) / delete it entirely
+webnav dev node-add / edge-add / capture     teach + inspect helpers
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.
 
@@ -136,7 +138,7 @@ registry as `--help`, and every call runs the real CLI, so the two surfaces can'
 Consumer verbs can also be invoked canonically as `webnav use <verb> ...` and map-authoring verbs as `webnav dev <verb> ...`; bare consumer verbs (e.g. `webnav read ...`) still work too.
 
 ### Inspect a site's map
-The map is for the calling AGENT (recall/walk), not a human dashboard. To inspect
+The map is for the calling AGENT (walk), not a human dashboard. To inspect
 what's captured, use the text views — no UI:
 ```bash
 webnav dev outline www.saucedemo.com    # top-to-bottom states + affordances + completeness cues
@@ -146,33 +148,29 @@ webnav dev graph-show --node <id>        # raw JSON
 
 ## Architecture (one CLI, three components, ZERO LLM)
 
-- **Explorer** — reads a site's declared structure (observe-first) and writes states/edges to MapStore.
-- **MapStore** — SQLite persistence: intra-site skeletons (states+edges) AND the inter-site graph (nodes+node_edges).
-- **Router** — recalls a route, replays it (cached selector → deterministic re-resolve), self-heals, returns evidence OR a `needs-navigation`/`needs-classification` "your move" response for the agent. Never judges, never calls an LLM.
-
-The **internet graph** sits above the per-site skeletons: nodes = websites, clusters = capabilities
-(web-search, code-search, …), edges = relationships. `route`/`hop` traverse it; intra-site
-skeletons are the node interiors.
+- **Explorer** — reads a site's declared structure (observe-first), folds a recording into a
+  self-verified map draft (states, typed affordances, the declared domain shadow), recognizes states.
+- **MapStore** — SQLite persistence: states (+ affordances + declared shadow), projected edges, the
+  site-node index, and record sessions.
+- **Router** — walks a route, replays it (cached selector → deterministic fingerprint re-resolve),
+  self-heals, returns evidence OR a `needs-navigation`/`needs-classification` "your move" response for
+  the agent. Never judges, never calls an LLM.
 
 ## Source map (`src/`)
 
 ```
 cli.ts, cli-spec.ts, cli-help.ts     CLI: parsing, command registry, help rendering
-protocol.ts                          RecallResponse / EvidenceBundle / Coordinate types
+protocol.ts, contract.ts             walk response types · published @dikshanty94/webnav types
 paths.ts, creds.ts, hosted.ts        ~/.webnav paths · local credential store · remote-map client
 mcp/       server.ts                 `webnav mcp`: every verb as an MCP tool (generated from cli-spec)
-mapstore/  types.ts, store.ts, record.ts, schema.sql   SQLite persistence (states+affordances, edges, goals, nodes, node_edges, record sessions)
-playwright/ adapter.ts, snapshot.ts, capture.ts   playwright-cli child-process + a11y-tree snapshot parser
-explorer/  explorer.ts, analyse.ts, diff.ts, fingerprint.ts, fingerprint-page.ts, github-skeleton.ts   read structure / diff effects / recognize states / test skeleton
-router/    resolve.ts, replay.ts, router.ts                              navigate / deterministic resolve
-           readiness.ts, extract.ts, extract-content.ts, tokens.ts        bot-wall detection, signal/content extraction, token-savings
+mapstore/  types.ts, store.ts, record.ts, schema.sql   SQLite persistence (states+affordances+shadow, edges, nodes, node_edges, record sessions)
+playwright/ adapter.ts, snapshot.ts, capture.ts, fingerprint.ts, sessions.ts, throttle.ts   playwright-cli child-process · a11y snapshot parser · element fingerprints · session guardrails
+explorer/  analyse.ts, diff.ts, draft.ts, shadow.ts, fingerprint.ts, fingerprint-page.ts   analyse a recording → self-verified draft (affordances + declared domain shadow) + state recognition
+router/    resolve.ts, replay.ts, path.ts, walk.ts, walk-live.ts, walk-session.ts   deterministic resolve/replay + interactive multi-step walk + pathfinding
+           readiness.ts, extract.ts, extract-content.ts, tokens.ts, browse.ts, read.ts   bot-wall detection · signal/content extraction · token-savings · page reading
            search.ts, search-providers.ts, search-live.ts                 multi-provider open-web search
-           walk.ts, walk-live.ts, walk-session.ts, path.ts, browse.ts, read.ts   interactive multi-step walk + pathfinding + page reading
-           catalog.ts                                                     dev list/describe
-           recall-via-map.ts, live.ts, locate.ts                          PARKED graph engine (recall/locate — no CLI verb; fixtures+tests only)
-graph/     seed.ts, teach.ts, edit.ts, show.ts, export.ts, interior.ts, coverage.ts   map authoring/inspection (saucedemo)
-           route.ts, hop.ts                                               PARKED internet-graph engine (no CLI verb; fixtures+tests only)
-goals/     find-battle-tested-repos.ts                                    PARKED GitHub goal (no CLI verb; fixture only)
+           catalog.ts                                                     dev list (the map index)
+graph/     seed.ts, teach.ts, edit.ts, show.ts, coverage.ts               map authoring + inspection (saucedemo seed, graph-edit, graph-show, outline/mermaid)
 dashboard/ server.ts, shell.ts                                            `webnav dev dashboard` local operator UI
 ```
 Tests mirror this under `tests/`. The live e2e walk tests are gated behind `WEBNAV_LIVE=1`.
