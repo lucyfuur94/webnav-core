@@ -32,7 +32,7 @@
       "id": "opensource-demo.orangehrmlive.com:admin",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "admin",
-      "urlPattern": "/web/index.php/admin/viewAdminModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/admin/viewAdminModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -64,7 +64,7 @@
       "id": "opensource-demo.orangehrmlive.com:claim",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "claim",
-      "urlPattern": "/web/index.php/claim/viewClaimModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/claim/viewClaimModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -97,7 +97,7 @@
       "id": "opensource-demo.orangehrmlive.com:dashboard",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "dashboard",
-      "urlPattern": "/web/index.php/dashboard/index",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/dashboard/index",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -302,7 +302,7 @@
       "id": "opensource-demo.orangehrmlive.com:directory",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "directory",
-      "urlPattern": "/web/index.php/directory/viewDirectory",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/directory/viewDirectory",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -334,7 +334,7 @@
       "id": "opensource-demo.orangehrmlive.com:leave-list",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "leave-list",
-      "urlPattern": "/web/index.php/leave/viewLeaveModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/leave/viewLeaveModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -367,7 +367,7 @@
       "id": "opensource-demo.orangehrmlive.com:login",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "login",
-      "urlPattern": "/web/index.php/auth/login",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/auth/login",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -442,7 +442,7 @@
       "id": "opensource-demo.orangehrmlive.com:maintenance",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "maintenance",
-      "urlPattern": "/web/index.php/maintenance/viewMaintenanceModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/maintenance/viewMaintenanceModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -475,7 +475,7 @@
       "id": "opensource-demo.orangehrmlive.com:my-info",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "my-info",
-      "urlPattern": "/web/index.php/pim/viewMyDetails",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/pim/viewMyDetails",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -507,7 +507,7 @@
       "id": "opensource-demo.orangehrmlive.com:performance",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "performance",
-      "urlPattern": "/web/index.php/performance/viewPerformanceModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/performance/viewPerformanceModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -540,7 +540,7 @@
       "id": "opensource-demo.orangehrmlive.com:pim-employee-list",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "pim-employee-list",
-      "urlPattern": "/web/index.php/pim/viewPimModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/pim/viewPimModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -573,7 +573,7 @@
       "id": "opensource-demo.orangehrmlive.com:recruitment",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "recruitment",
-      "urlPattern": "/web/index.php/recruitment/viewRecruitmentModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/recruitment/viewRecruitmentModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [
@@ -606,7 +606,7 @@
       "id": "opensource-demo.orangehrmlive.com:time",
       "nodeId": "opensource-demo.orangehrmlive.com",
       "semanticName": "time",
-      "urlPattern": "/web/index.php/time/viewTimeModule",
+      "urlPattern": "https://opensource-demo.orangehrmlive.com/web/index.php/time/viewTimeModule",
       "role": "detail",
       "availableSignals": [],
       "fingerprint": [

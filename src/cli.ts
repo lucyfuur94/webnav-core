@@ -243,7 +243,10 @@ async function main() {
     const { readUrl } = await import('./router/read.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const adapter = new PlaywrightAdapter(`read-${Date.now()}`, undefined, undefined, args.browser);
-    const fetchSnapshot = async (u: string) => { await adapter.open(u); return adapter.snapshot(); };
+    // open then snapshot WITH READINESS RETRY — a JS SPA (e.g. OrangeHRM) renders after the
+    // first paint, so a bare immediate snapshot catches an unfinished shell and read wrongly
+    // reports `blocked: loading`. snapshotReady waits for the page to actually render.
+    const fetchSnapshot = async (u: string) => { await adapter.open(u); return adapter.snapshotReady(); };
     const r = await readUrl(args.url, fetchSnapshot, { raw: args.raw });
     await adapter.close().catch(() => {});
     console.log(JSON.stringify(r, null, 2));

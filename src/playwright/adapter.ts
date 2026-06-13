@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { throttleOpen } from './throttle.js';
+import { classifyReadiness } from '../router/readiness.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -86,5 +87,22 @@ export class PlaywrightAdapter {
     const m = out.match(/\(([^)]+\.yml)\)/);
     if (!m) throw new Error('snapshot: could not find YAML path in CLI output');
     return this.readFile(m[1]);
+  }
+
+  /**
+   * Snapshot, but RETRY until the page is `ready` (a JS-SPA renders after first paint, so an
+   * immediate snapshot catches an unfinished shell — the OrangeHRM symptom). Re-snapshots up
+   * to `tries` times, `gapMs` apart, returning as soon as `classifyReadiness === 'ready'`;
+   * returns the last snapshot if the budget is exhausted (so the caller still classifies it —
+   * a genuine interstitial/bot-wall is surfaced, never evaded). The one-shot verbs (read /
+   * eval-on-page / search visits) use THIS instead of a bare snapshot.
+   */
+  async snapshotReady(tries = 6, gapMs = 800): Promise<string> {
+    let snap = await this.snapshot();
+    for (let i = 0; i < tries && classifyReadiness(snap) === 'loading'; i++) {
+      await new Promise((r) => setTimeout(r, gapMs));
+      snap = await this.snapshot();
+    }
+    return snap;
   }
 }
