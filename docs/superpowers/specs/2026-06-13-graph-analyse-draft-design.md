@@ -62,6 +62,25 @@ For each DISTINCT landing page in the recording:
   drops `elementFp` from a plain edge row (`findNavTarget` only folds metadata onto an existing
   navigate affordance). The draft puts `{kind:'navigate', to, elementFp}` on the from-state's
   affordances; `edges[]` carries only `needs`/`core`.
+- **Cross-link mesh — synthesize edges a page DECLARES but the walk never CLICKED (fix E, added
+  2026-06-13 after the Haiku dogfood).** A forward-only recorded walk (login→dashboard→admin→pim→
+  leave) leaves every module a dead-end: only the one clicked forward edge is captured, so the
+  agent had to hand-author back/sibling edges — and got them WRONG (admin→PIM mis-mapped). Fix:
+  after building edges from recorded transitions, scan each page's OWN declared links; any link
+  whose url matches ANOTHER known state's url (via `sameTarget`) becomes a synthesized
+  `{role:link,name}` navigate affordance. Skips self-links and edges a click already captured.
+  Result on the real OrangeHRM `learn` session: admin/pim/leave each gain a `→dashboard` back-edge
+  — zero dead-ends, zero hand-authoring.
+  - **Honest limit (redirect-masked sibling edges):** OrangeHRM's sidebar declares module links by
+    their **pre-redirect** `viewXModule` URLs (`/pim/viewPimModule`) while the recorded STATES are
+    keyed by their **post-redirect** landing URLs (`/pim/viewEmployeeList`). `sameTarget` is pure
+    (pathname compare, no traversal), so it only meshes the link whose declared URL survives the
+    redirect unchanged — `Dashboard` (`/dashboard/index`). The result is **hub-and-spoke** (every
+    module ↔ dashboard), not a full mesh (no direct admin↔leave). That is SUFFICIENT — the graph is
+    fully connected (any module → dashboard → any module), no dead-ends — but it is not maximal.
+    Matching pre→post-redirect URLs would require following the redirect (a traversal the pure draft
+    deliberately avoids, #1 observe-don't-traverse). If full inter-module edges are ever wanted,
+    that's a record-time job (capture the redirect target), not a draft-time one.
 - **Login input affordances + `acceptsInput` — WIRE in v1, do NOT defer (review: else every authed
   site PAUSES at login forever).** A `use type` on a textbox → an `input` affordance; the navigate
   that followed → `needs:[those] + acceptsInput:'credentials'`. (Honest limit: `walk-live`'s live
@@ -113,10 +132,12 @@ Document this in `--help` as the primary path.
 2. ✅ Self-verify pass folded in (matchState + replayStep over the draft's own snapshots). (DONE)
 3. ✅ Wire `--draft` into `graph-analyse` (emit the shape + the walk-example receipt). (DONE)
 4. ~~`dev map` orchestration verb~~ — DROPPED (agent consumer doesn't need the glue; see above).
-5. RE-AUTHOR OrangeHRM live through the record→`--draft`→graph-edit sequence (the 5-call flow) —
+5. ✅ Cross-link mesh (fix E) — synthesize declared-but-unclicked edges; proven on the real `learn`
+   session (admin/pim/leave each gain a `→dashboard` back-edge, zero dead-ends). (DONE b2e1c0d)
+6. RE-AUTHOR OrangeHRM live through the record→`--draft`→graph-edit sequence (the 5-call flow) —
    deletes the sqlite-patched provenance, dogfoods --draft on the real site. (Deferred to a
    deliberate session per the no-hammering rule; fixture stays a test oracle meanwhile.)
-6. Document `export-map` packs as the primary distribution path in `--help`.
+7. Document `export-map` packs as the primary distribution path in `--help`.
 
 ## OrangeHRM right now (settled)
 The current OrangeHRM node was hand-patched via raw `sqlite3 UPDATE` — NOT webnav-built — which
