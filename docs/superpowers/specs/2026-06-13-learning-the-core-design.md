@@ -1,7 +1,25 @@
 # Learning the CORE of a website (beyond the navigation skeleton)
 
-**Date:** 2026-06-13 · **Status:** spec for review (not yet built) · **Supersedes nothing; extends**
-the affordance model (2026-06-09) and the draft flow (2026-06-13-graph-analyse-draft-design.md).
+**Date:** 2026-06-13 · **Status:** Layer 1 BUILT; Layer 2 next; Layer 3 OUT OF SCOPE; Layer 4 PARKED
+· **Supersedes nothing; extends** the affordance model (2026-06-09) and the draft flow
+(2026-06-13-graph-analyse-draft-design.md).
+
+## SCOPE DECISION (settled with user 2026-06-13)
+
+The objective is narrow and concrete: **a cheap (Haiku) agent learns a website, then USES the learned
+graph.** Judged against ONLY that, the four layers split:
+- **Layer 1 (in-page affordance repertoire) — BUILT.** Prerequisite: without it the learned graph is
+  unusable (just sidebar links). Done, commit b3de872.
+- **Layer 2 (entity/relationship shadow) — BUILD NEXT.** Cheap (read-only, no traversal); lets the
+  agent reason "this is the Employee list with these filters" instead of staring at anonymous buttons.
+- **Layer 3 (workflows) — OUT OF SCOPE.** A Haiku agent can compose a multi-step job from Layer-1
+  affordances + Layer-2 shadow on the fly; a stored Workflow object is an optimization, not needed for
+  the objective. Cut.
+- **Layer 4 (cross-state couplings) — PARKED.** Requires DOING (before/after diff), expensive to learn,
+  rarely needed to accomplish a task. Revisit only if a real use-case demands it.
+
+The sections below keep the full design for Layers 3–4 as a record of the thinking, but they are NOT on
+the build path. Do not implement them without a fresh decision.
 
 ## Trigger
 
@@ -260,15 +278,17 @@ internal, so changing their defaults is safe (review #4). Rules to stay backward
    (`diff.added` non-empty) → `reveal` with resolvable children; a filter form on a landing page →
    synthesized `input`s; a "Delete" affordance → `needsClassification:true`, `commit:false`. Then
    re-run the Haiku learn with the exercise-each-section recipe; expect node interiors, not a sidebar
-   star. **HIGHEST leverage, smallest change, unblocks the rest.**
+   star. **HIGHEST leverage, smallest change, unblocks the rest.** ✅ DONE (commit b3de872).
 2. **Layer 2** — `declaredShadow?` on `State` (read-only; optional contract field; `makeState` default
-   `null`). Bump package minor.
-3. **Layer 3** — `Workflow` type + `workflows` table + `MapStore.migrate()` + migration test +
-   `dev workflow-add` (agent supplies name/precondition/commitStep) + walk replay. `MapPack.workflows?`.
-4. **Layer 4** — `Coupling` type + `couplings` table + migration test; `governs/gates/enables`
-   (snapshot-read) first, `feeds` (exact-match before/after diff in record flow) last. `MapPack.couplings?`.
+   `null`). Bump package minor. ← **NEXT**
+3. ~~**Layer 3** — `Workflow`…~~ **OUT OF SCOPE** (agent composes jobs from Layer-1/2 on the fly).
+4. ~~**Layer 4** — `Coupling`…~~ **PARKED** (requires DOING; rarely needed; revisit per use-case).
 
 Each its own increment on its own worktree, merged when green, contract bumped (minor) where touched.
+
+**Also shipped alongside Layer 1:** `dev node-clear --node <id>` + `MapStore.clearNode` (commit bdff336)
+— wipe a node's interior to RE-LEARN through webnav, instead of raw `sqlite3 DELETE`. Needed for the
+"clear then re-learn" loop that proves the learning flow.
 
 ## Honest scope / non-goals
 
