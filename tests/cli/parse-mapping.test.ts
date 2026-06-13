@@ -18,4 +18,13 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses graph-show', () => {
     expect(parseArgs(['dev', 'graph-show', '--node', 'example.com'])).toEqual({ cmd: 'graph-show', node: 'example.com' });
   });
+  it('parses dev sessions list (default sub)', () => {
+    expect(parseArgs(['dev', 'sessions'])).toEqual({ cmd: 'sessions', sub: 'list', all: false, maxAgeHours: undefined });
+  });
+  it('parses dev sessions reap --all', () => {
+    expect(parseArgs(['dev', 'sessions', 'reap', '--all'])).toEqual({ cmd: 'sessions', sub: 'reap', all: true, maxAgeHours: undefined });
+  });
+  it('parses dev sessions reap --max-age-hours', () => {
+    expect(parseArgs(['dev', 'sessions', 'reap', '--max-age-hours', '4'])).toEqual({ cmd: 'sessions', sub: 'reap', all: false, maxAgeHours: 4 });
+  });
 });

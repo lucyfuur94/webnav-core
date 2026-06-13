@@ -1,0 +1,111 @@
+import { execFile } from 'node:child_process';
+import { readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
+// playwright-cli daemonizes each session (run-cli-server --daemon-session=…) so it
+// survives the CLI process exiting — that's what lets `webnav use <verb> --session S`
+// and `walk-resume` reattach across CLI calls. The cost: a session whose walk paused
+// and was never resumed (or a `use` exploration that just stopped) leaks a Chrome +
+// helpers forever, because nothing closes it. This module lists those sessions and
+// reaps the dead/old ones. Pure core (inventory/plan) + a thin live wrapper.
+
+export interface SessionInfo {
+  name: string;
+  live: boolean;      // a daemon process currently references this session
+  ageMs: number;      // now - session-file mtime (Infinity if the file is gone but daemon is live)
+}
+
+export interface ReapOpts {
+  all?: boolean;          // reap every session, live or not
+  maxAgeMs?: number;      // also reap LIVE sessions older than this (a TTL sweep)
+}
+
+/** Session name out of a daemon command line (`…--daemon-session=/…/<name>.session`). */
+export function sessionNameFromPs(line: string): string | null {
+  const m = line.match(/--daemon-session=\S*?\/([^/]+)\.session\b/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Merge on-disk session files with the live daemon process list into one inventory.
+ * `live` = a daemon references the session (browser is up). A file with no daemon is
+ * an ORPHAN (browser already died; only stale metadata remains). A live daemon with no
+ * file still surfaces (live:true, ageMs:Infinity). Pure — inputs are injected.
+ */
+export function inventorySessions(
+  files: { name: string; mtimeMs: number }[],
+  psLines: string[],
+  nowMs: number,
+): SessionInfo[] {
+  const liveNames = new Set(psLines.map(sessionNameFromPs).filter((n): n is string => !!n));
+  const byName = new Map<string, SessionInfo>();
+  for (const f of files) {
+    byName.set(f.name, { name: f.name, live: liveNames.has(f.name), ageMs: nowMs - f.mtimeMs });
+  }
+  for (const name of liveNames) {
+    if (!byName.has(name)) byName.set(name, { name, live: true, ageMs: Infinity });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Which sessions to close. Default: only orphans (dead browser). all → every session.
+ *  maxAgeMs → also live sessions older than the TTL. */
+export function planReap(inv: SessionInfo[], opts: ReapOpts): SessionInfo[] {
+  return inv.filter((s) => {
+    if (opts.all) return true;
+    if (!s.live) return true;                              // orphan: always reap
+    if (opts.maxAgeMs !== undefined && s.ageMs >= opts.maxAgeMs) return true;
+    return false;
+  });
+}
+
+// ─── live wrappers (not unit-tested; thin shells over fs/ps) ──────────────────
+const DAEMON_DIR = join(homedir(), 'Library', 'Caches', 'ms-playwright', 'daemon');
+
+function listSessionFiles(): { name: string; mtimeMs: number }[] {
+  const out: { name: string; mtimeMs: number }[] = [];
+  let dirs: string[] = [];
+  try { dirs = readdirSync(DAEMON_DIR); } catch { return out; }
+  for (const d of dirs) {
+    let entries: string[] = [];
+    try { entries = readdirSync(join(DAEMON_DIR, d)); } catch { continue; }
+    for (const e of entries) {
+      if (!e.endsWith('.session')) continue;
+      try {
+        const mtimeMs = statSync(join(DAEMON_DIR, d, e)).mtimeMs;
+        out.push({ name: e.replace(/\.session$/, ''), mtimeMs });
+      } catch { /* file vanished mid-scan */ }
+    }
+  }
+  return out;
+}
+
+async function listDaemonPs(): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync('ps', ['-eo', 'command'], { maxBuffer: 8 * 1024 * 1024 });
+    return stdout.split('\n').filter((l) => l.includes('--daemon-session='));
+  } catch { return []; }
+}
+
+/** Live inventory of all playwright-cli sessions on this machine. */
+export async function listSessions(nowMs: number): Promise<SessionInfo[]> {
+  return inventorySessions(listSessionFiles(), await listDaemonPs(), nowMs);
+}
+
+/** Close one session via playwright-cli (idempotent; ignores already-gone). */
+async function closeSession(name: string): Promise<boolean> {
+  try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); return true; }
+  catch { return false; }
+}
+
+/** Reap per `opts`; returns the names actually closed. */
+export async function reapSessions(nowMs: number, opts: ReapOpts): Promise<string[]> {
+  const targets = planReap(await listSessions(nowMs), opts);
+  const closed: string[] = [];
+  for (const t of targets) if (await closeSession(t.name)) closed.push(t.name);
+  return closed;
+}

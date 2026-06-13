@@ -39,6 +39,7 @@ export type ParsedArgs =
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
+  | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number }
   | { cmd: 'dev-help' }
@@ -189,6 +190,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'sessions') {
+    const maxAge = flagValue(rest, '--max-age-hours');
+    return { cmd, sub: rest.find((a) => !a.startsWith('--')) ?? 'list',
+      all: rest.includes('--all'), maxAgeHours: maxAge ? Number(maxAge) : undefined };
+  }
   if (cmd === 'mcp') return { cmd };
   if (cmd === 'dashboard') {
     const portFlag = flagValue(rest, '--port');
@@ -427,6 +433,25 @@ async function main() {
     const effects = new RecordStore(dbPath()).actionEffects(args.session);
     console.log(JSON.stringify({ status: effects.length ? 'done' : 'empty', session: args.session, effects }, null, 2));
     if (effects.length === 0) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'sessions') {
+    const { listSessions, reapSessions } = await import('./playwright/sessions.js');
+    const now = Date.now();
+    if (args.sub === 'reap') {
+      const maxAgeMs = args.maxAgeHours !== undefined ? args.maxAgeHours * 3600_000 : undefined;
+      const closed = await reapSessions(now, { all: args.all, maxAgeMs });
+      console.log(JSON.stringify({ status: closed.length ? 'done' : 'empty', reaped: closed }, null, 2));
+      if (closed.length === 0) process.exitCode = 3;
+      return;
+    }
+    // default: list
+    const sessions = (await listSessions(now)).map((s) => ({
+      name: s.name, live: s.live,
+      ageHours: s.ageMs === Infinity ? null : Math.round(s.ageMs / 3600_000 * 10) / 10,
+    }));
+    console.log(JSON.stringify({ status: sessions.length ? 'done' : 'empty', sessions }, null, 2));
+    if (sessions.length === 0) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'mcp') {
