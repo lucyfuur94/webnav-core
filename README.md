@@ -80,12 +80,15 @@ honestly what you get and how it grows, so there are no surprises:
   the fix back** so the next run resolves it deterministically (principle #3). Routes you use
   stay fresh. Credentials for login-gated sites live **outside** the
   map, locally, at `~/.webnav/credentials.json` (chmod 600) — never in the DB, never shared.
-- **Mapping a NEW site (the current rough edge — honest).** Any site beyond the two seeded
-  ones has no map yet, and adding one today is a manual, multi-step authoring flow
-  (`dev record-start` → browse the site via webnav → `dev record-stop` → `dev graph-analyse`
-  → `dev graph-edit`), or hand-writing a skeleton with `dev node-add`/`dev graph-edit`. This
-  is expert-ish; a one-command `map <url>` flow and shareable "map packs" (so maps travel
-  between users instead of every install being an island) are on the roadmap, not built yet.
+- **Mapping a NEW site — hand your AGENT the learn prompt.** webnav is built for agents, so you
+  don't map by hand: you give an agent (even a cheap one — we use Haiku) the reusable prompt in
+  **[`docs/LEARNING-A-SITE.md`](docs/LEARNING-A-SITE.md)** and let it run autonomously. It drives the
+  site once through webnav's `use` primitives while recording, then `dev graph-analyse --draft` folds
+  that into a SELF-VERIFIED map (absolute URLs, unique element fingerprints, the in-page affordance
+  repertoire, the declared domain shadow) which it persists with `dev graph-edit`. No hand-authoring
+  of fingerprints or URLs. (That prompt learned the seeded OrangeHRM map — login + 11 modules,
+  exercised — in a single one-shot run.) Re-learn cleanly with `dev node-clear`; share a finished map
+  with `dev export-map` (so maps travel between users instead of every install being an island).
 - **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
   sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
 
