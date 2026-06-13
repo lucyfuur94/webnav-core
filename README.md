@@ -30,10 +30,14 @@ $ webnav walk-resume walk-w-… --ref e124      # continue; e124 = the icon-only
 
 **4 agent-visible CLI calls**, login → inventory → cart → checkout form (**auto-filled from
 locally-stored creds** — never in the map) → overview. 12 browser actions underneath, zero
-agent tokens spent on navigation. In our [benchmark](bench/results/2026-06-13-nav.md), an
-agent ad-hoc-driving the same flow with a raw browser spent **16–22 reasoned actions** per
-task, each ingesting a full page snapshot — and fell into saucedemo's login-session trap in
-**3 of 4 runs** (webnav's map already knows that icon-only cart link needs a URL jump).
+agent tokens spent on navigation.
+
+In our [navigation benchmark](bench/results/2026-06-13-nav-v2.md) (both arms on Haiku, the same
+browser underneath), on a deep multi-step route **`walk` used ~3× fewer agent steps than an agent
+ad-hoc-driving the raw browser — median 6 calls vs 18 — and reached the goal more reliably (3/3 vs
+2/3).** Honest caveat, also in that file: the win shows up on *deep, reliably-walked* routes; on
+shallow 1–2-hop routes, or when the agent falls back to manual driving, the two tie. webnav helps
+most exactly where ad-hoc driving hurts most — the long, repeated journeys.
 
 ## Why
 
