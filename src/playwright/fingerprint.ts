@@ -104,6 +104,20 @@ export function deriveNear(nodes: SnapNode[], candIdx: number, role: string, nam
   return qualifying[0];
 }
 
+/**
+ * Recover a durable ElementFingerprint for the element at `ref` in a live snapshot —
+ * role + accessible name + (when the element has same-(role,name) siblings) a `near`
+ * content anchor. Used at record-time (the clicked element) and at heal-time (the
+ * agent-chosen element) so both produce the same durable key. Returns null if the ref
+ * isn't in the snapshot.
+ */
+export function recoverFingerprint(nodes: SnapNode[], ref: string): ElementFingerprint | null {
+  const idx = nodes.findIndex((n) => n.ref === ref);
+  if (idx < 0) return null;
+  const node = nodes[idx];
+  return { role: node.role, name: node.name, near: deriveNear(nodes, idx, node.role, node.name) };
+}
+
 // ─── resolution (the read path) ──────────────────────────────────────────────
 
 /**

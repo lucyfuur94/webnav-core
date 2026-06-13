@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { SnapshotDiff } from '../explorer/diff.js';
+import type { ElementFingerprint } from '../playwright/fingerprint.js';
 import { dbPath } from '../paths.js';
 
 const SCHEMA = readFileSync(
@@ -12,7 +13,11 @@ export interface DeclaredLink { to: string; via: string; }
 export interface Observation { url: string; fingerprint: string[]; declaredLinks: DeclaredLink[]; }
 export interface StoredObservation extends Observation { seq: number; capturedAt: number; }
 
-export interface ActionRef { role: string; name: string | null; ref: string | null; }
+export interface ActionRef {
+  role: string; name: string | null; ref: string | null;
+  elementFp?: ElementFingerprint | null;  // durable key recovered from the clicked node (role+name+near);
+                                          // carried into graph-analyse → graph-edit so authored maps get fingerprints
+}
 export interface ActionEffect {
   fromUrl: string; fromSnapshot: string;
   action: ActionRef | null;
