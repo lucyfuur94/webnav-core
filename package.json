@@ -28,7 +28,7 @@
   "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/",
-    "prepack": "npm run build",
+    "prepack": "rm -rf dist && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "webnav": "tsx src/cli.ts"
