@@ -281,6 +281,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev export-map www.saucedemo.com > saucedemo-map.json',
   },
   {
+    name: 'import-map',
+    summary: 'Load a map pack (the JSON `export-map` emits) into your local map, so you can `walk` a site someone else mapped WITHOUT re-learning it. Pure skeleton — set the login creds separately with `creds set`.',
+    args: [{ name: 'file', required: true, description: 'Path to a map-pack JSON file. Also accepts --file.' }],
+    flags: [{ name: '--file', takesValue: true, description: 'Map-pack path (alternative to the positional).' }],
+    example: 'webnav dev import-map mappacks/orangehrm.mappack.json',
+  },
+  {
     name: 'outline',
     summary: 'Human-scannable text outline of a site\'s interior (states + typed affordances), with completeness cues: unexplored exits, dead-ends, orphans, per-kind counts. Answers "did we capture everything?" without the UI.',
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
