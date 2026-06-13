@@ -102,6 +102,72 @@ describe('draftFromEffects', () => {
   });
 });
 
+// ── cross-link mesh: a module page's OWN declared sidebar links to OTHER known pages
+// become navigate affordances even when never clicked — so modules aren't dead-ends and
+// the agent never hand-authors (error-prone) back-edges. The recorded walk only ever
+// clicked dashboard→admin and dashboard→pim FORWARD; the back/sibling links live in each
+// module's landing snapshot and must be synthesized.
+describe('draftFromEffects — cross-link mesh (synthesized, not clicked)', () => {
+  // module landings that carry the full sidebar (Dashboard + sibling modules).
+  const SIDEBAR = (active: string) => [
+    `- heading "${active}" [ref=e1]`,
+    '- link "Dashboard" [ref=e2]:\n    - /url: https://x.com/web/index.php/dashboard/index',
+    '- link "Admin" [ref=e3]:\n    - /url: https://x.com/web/index.php/admin/viewAdminModule',
+    '- link "PIM" [ref=e4]:\n    - /url: https://x.com/web/index.php/pim/viewPimModule',
+  ].join('\n');
+  const ADMIN2 = SIDEBAR('Admin');
+  const PIM2 = SIDEBAR('PIM');
+  const DASH2 = [
+    '- heading "Dashboard" [ref=e1]',
+    '- link "Admin" [ref=e3]:\n    - /url: https://x.com/web/index.php/admin/viewAdminModule',
+    '- link "PIM" [ref=e4]:\n    - /url: https://x.com/web/index.php/pim/viewPimModule',
+  ].join('\n');
+  const effs: StoredActionEffect[] = [
+    // dashboard → admin (clicked), then admin's snapshot carries Dashboard + PIM links (never clicked).
+    eff(0, `${B}/dashboard/index`, DASH2, { role: 'link', name: 'Admin', ref: 'e3', elementFp: { role: 'link', name: 'Admin', near: null } }, `${B}/admin/viewAdminModule`, ADMIN2, true),
+    eff(1, `${B}/dashboard/index`, DASH2, { role: 'link', name: 'PIM', ref: 'e4', elementFp: { role: 'link', name: 'PIM', near: null } }, `${B}/pim/viewPimModule`, PIM2, true),
+  ];
+  const draft = draftFromEffects(effs);
+  const byLabel = Object.fromEntries(draft.states.map((s) => [s.label, s]));
+
+  it('synthesizes a back-edge from a module to Dashboard that was NEVER clicked', () => {
+    const admin = byLabel['admin-viewadminmodule'];
+    const back = admin.affordances.find((a) => a.to === 'dashboard-index');
+    expect(back).toBeTruthy();
+    expect(back!.kind).toBe('navigate');
+    expect(back!.elementFp).toEqual({ role: 'link', name: 'Dashboard', near: null });
+  });
+
+  it('synthesizes a sibling-edge admin → pim from the declared sidebar', () => {
+    const admin = byLabel['admin-viewadminmodule'];
+    expect(admin.affordances.find((a) => a.to === 'pim-viewpimmodule')).toBeTruthy();
+  });
+
+  it('does NOT synthesize a self-edge (the active module links to its own url)', () => {
+    const admin = byLabel['admin-viewadminmodule'];
+    expect(admin.affordances.find((a) => a.to === 'admin-viewadminmodule')).toBeUndefined();
+  });
+
+  it('does NOT duplicate an edge already captured from a click', () => {
+    const dash = byLabel['dashboard-index'];
+    const adminEdges = dash.affordances.filter((a) => a.to === 'admin-viewadminmodule');
+    expect(adminEdges.length).toBe(1);
+  });
+
+  it('every synthesized edge resolves on its from-page (no dead-end modules)', () => {
+    const snap: Record<string, string> = {
+      'dashboard-index': DASH2, 'admin-viewadminmodule': ADMIN2, 'pim-viewpimmodule': PIM2,
+    };
+    for (const s of draft.states) {
+      const nodes = parseSnapshot(snap[s.label] ?? '');
+      const navs = s.affordances.filter((a) => a.kind === 'navigate' && a.elementFp);
+      // every module must have at least one outgoing edge (not a dead-end)
+      expect(navs.length).toBeGreaterThan(0);
+      for (const a of navs) expect(resolveByFingerprint(a.elementFp!, nodes)).not.toBeNull();
+    }
+  });
+});
+
 // the snapshot a given drafted state was built from (test helper)
 function snapFor(label: string): string {
   return { 'auth-login': LOGIN, 'dashboard-index': DASHBOARD, 'admin-viewadminmodule': ADMIN, 'pim-viewpimmodule': PIM }[label] ?? '';
