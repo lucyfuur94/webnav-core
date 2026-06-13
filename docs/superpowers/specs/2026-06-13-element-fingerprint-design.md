@@ -41,8 +41,8 @@ churn-resistance, preferring user-facing/accessibility attributes over structura
 | 1 | **accessible name** (aria-label / `<label>` / button text) | low | PRIMARY key — user-facing |
 | 2 | **label · placeholder · alt · title** | low | secondary name sources (same family) |
 | 2 | **data-testid** (when present) | low* | opportunistic exact key when the site provides it |
-| 3 | **structural anchor** (nearest labeled ancestor/section + relative position) | medium | the DISAMBIGUATOR for identical siblings (the "+ buttons" case) |
-| 3 | order/index ("the 3rd match") | med-high | last-resort tiebreaker only; `log()` when used |
+| 3 | **content anchor `near`** (a distinguishing TEXT in the target's enclosing row/card — an id, product name) | low–medium | the DISAMBIGUATOR for identical (role,name) siblings (the "+ buttons" / table-row case); keyed on CONTENT, survives reordering |
+| — | order/index ("the 3rd match") | high | **NOT stored** — positional, breaks on reorder; `near` is content-based by design (§Anchoring) |
 | — | text content | medium | hint, not key (breaks on copy/i18n) |
 | — | id / class | high | NOT a key — React/Angular auto-generate (`sc-hGFkgZ`); disposable hint only |
 | — | xpath / css path | very high | the `selectorCache` that is MEANT to rot (self-heal) |
@@ -345,16 +345,18 @@ role+name alone is useless, `near` does the work.
 18      button "" e290                    ← delete (distinct action, same row)
 ```
 Trace for `elementFp{role:'button', name:<edit glyph>, near:<derived>}`
-(VERIFIED: `deriveNear(e288)`→"dfgsjsjdh" round-trips back to e288; delete→e290 likewise;
+(VERIFIED: `deriveNear(e288)`→**"123445 34"** (the id-like value, chosen over the free-text
+first-name "dfgsjsjdh" by `nearStability` — D3) round-trips back to e288; delete→e290 likewise;
 both ALSO resolve via `near:'444444'` — **distinct refs in the same row**, of 50 candidates
 each. S3: 12/50 rows are content-identical → `deriveNear`→null → those correctly escalate):
 - step 3: 50 edit-glyph buttons match role+name → >1 → step 4.
 - `anchorScope(e288)`: climb its cell/generic ancestors → up to `row e268` (d12) → clean (the row
   holds only this row's edit button among edit-candidates) → the table body that holds the
   other 49 edit buttons → STOP, return **row e268**.
-- row e268's subtree holds `e281 "444444"` (≠ target) → hit. Each row holds its own id →
-  exactly 1 → **resolves the edit button in employee 444444's row.** ✅ Reordering rows moves
-  the id WITH its row, so `near` stays correct → durable.
+- row e268's subtree holds `cell "123445 34" e278` (and `cell "444444" e280` — both QUOTED-name
+  nodes, ≠ target; NOT the post-colon `generic e281`, which parses to name=null per D2) → hit.
+  Each row holds its own ids → exactly 1 → **resolves the edit button in that employee's row.** ✅
+  Reordering rows moves the ids WITH the row, so `near` stays correct → durable.
 
 ### GitHub repo page (the flattened capture from the prior review)
 Fully flat (all nodes depth 0) — BUT every link is already distinct by name, so resolution
