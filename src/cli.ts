@@ -23,6 +23,7 @@ export type ParsedArgs =
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'node-clear'; node: string }
+  | { cmd: 'node-rm'; node: string }
   | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
@@ -156,6 +157,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  if (cmd === 'node-rm') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -471,6 +473,18 @@ async function main() {
     store.clearNode(args.node);
     console.log(JSON.stringify({ status: before ? 'done' : 'empty', node: args.node, statesCleared: before }, null, 2));
     if (!before) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'node-rm') {
+    // Fully delete a node (row + states + edges + node-edges) — never raw sqlite.
+    const { MapStore } = await import('./mapstore/store.js');
+    if (!args.node) { console.log(JSON.stringify({ status: 'error', hint: 'pass --node <site-id>' })); process.exitCode = 2; return; }
+    const store = new MapStore(dbPath());
+    const existed = store.getNode(args.node) !== null;
+    const states = store.statesForNode(args.node).length;
+    store.removeNode(args.node);
+    console.log(JSON.stringify({ status: existed ? 'done' : 'empty', node: args.node, removed: existed, statesRemoved: states }, null, 2));
+    if (!existed) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'export-map') {

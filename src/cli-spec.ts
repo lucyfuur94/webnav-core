@@ -276,6 +276,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev node-clear --node opensource-demo.orangehrmlive.com',
   },
   {
+    name: 'node-rm',
+    summary: 'Fully DELETE a site-node — its states, edges, node-edges, AND the node row itself — so a stale or empty site disappears entirely (e.g. from the dashboard). Stronger than node-clear (which keeps the row). Never hand-edit the DB.',
+    args: [],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host) to delete, e.g. pypi.org.' }],
+    example: 'webnav dev node-rm --node pypi.org',
+  },
+  {
     name: 'export-map',
     summary: 'Emit a site\'s full map pack {node, states} as JSON (skeleton only — never credentials). The unit a hosted service publishes; pipe it wherever maps are shared.',
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
