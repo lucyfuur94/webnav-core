@@ -34,6 +34,7 @@ export type ParsedArgs =
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
+  | { cmd: 'verify'; node: string; session: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number }
@@ -158,6 +159,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'sessions') {
     const maxAge = flagValue(rest, '--max-age-hours');
     return { cmd, sub: rest.find((a) => !a.startsWith('--')) ?? 'list',
@@ -363,6 +365,45 @@ async function main() {
     const effects = new RecordStore(dbPath()).actionEffects(args.session);
     console.log(JSON.stringify({ status: effects.length ? 'done' : 'empty', session: args.session, effects }, null, 2));
     if (effects.length === 0) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'verify') {
+    // Phase 5: check a hand-authored map's affordance fingerprints resolve UNIQUELY against
+    // the live page the session is currently on. graph-edit is offline; this is the only
+    // place an authored elementFp is validated against real bytes. v1 = single page (the
+    // state the browser is on); multi-state drive-through is a follow-up.
+    if (!args.node || !args.session) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev verify --node <id> --session <S>' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { MapStore } = await import('./mapstore/store.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { parseSnapshot } = await import('./playwright/snapshot.js');
+    const { matchState } = await import('./explorer/fingerprint.js');
+    const { resolveByFingerprint } = await import('./playwright/fingerprint.js');
+    const store = new MapStore(dbPath());
+    const nodes = parseSnapshot(await new PlaywrightAdapter(args.session).snapshot());
+    const matched = matchState(nodes, store.statesForNode(args.node));
+    if (matched.status !== 'matched') {
+      console.log(JSON.stringify({ status: 'no-match', node: args.node, reason: matched.status }, null, 2));
+      process.exitCode = 3; return;
+    }
+    const state = matched.state;
+    const checks: { id: string; label: string; unique: boolean; matchedRefs: string[] }[] = [];
+    const walkAffs = (affs: typeof state.affordances): void => {
+      for (const a of affs) {
+        if (a.elementFp && (a.kind === 'navigate' || a.kind === 'reveal' || a.kind === 'input')) {
+          const ref = resolveByFingerprint(a.elementFp, nodes);
+          const all = nodes.filter((n) => n.ref && n.role === a.elementFp!.role && n.name === a.elementFp!.name).map((n) => n.ref!);
+          checks.push({ id: a.id, label: a.label, unique: ref !== null, matchedRefs: ref ? [ref] : all });
+        }
+        if (a.children) walkAffs(a.children);
+      }
+    };
+    walkAffs(state.affordances ?? []);
+    const allUnique = checks.every((c) => c.unique);
+    console.log(JSON.stringify({ status: allUnique ? 'done' : 'non-unique', node: args.node, state: state.id, affordances: checks }, null, 2));
+    if (!allUnique) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'sessions') {
@@ -669,10 +710,22 @@ async function main() {
     try {
       const fromSnapshot = await adapter.snapshot();
       const fromUrl = await adapter.currentUrl();
+      // Recover a DURABLE fingerprint for the clicked element from the snapshot we just
+      // took (the ephemeral ref is reassigned per snapshot; role+name+near survive). This
+      // is carried through graph-analyse → graph-edit so an authored map gets fingerprints
+      // without hand-writing them (Phase 4).
+      const { parseSnapshot } = await import('./playwright/snapshot.js');
+      const { recoverFingerprint } = await import('./playwright/fingerprint.js');
+      const nodes = parseSnapshot(fromSnapshot);
+      const chosen = nodes.find((n) => n.ref === args.ref);
+      const elementFp = recoverFingerprint(nodes, args.ref);
+      const action = chosen
+        ? { role: chosen.role, name: chosen.name, ref: args.ref, elementFp }
+        : { role: '', name: null, ref: args.ref };
       const r = await runActionRecorded({
         sessionId: args.session, recordStore: new RecordStore(dbPath()),
         fromUrl, fromSnapshot,
-        action: { role: '', name: null, ref: args.ref },
+        action,
         text: args.cmd === 'type' ? args.text : undefined,
         adapter: adapter as any,
       });

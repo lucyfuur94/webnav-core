@@ -294,6 +294,16 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev effects --session map-1',
   },
   {
+    name: 'verify',
+    summary: 'Check that the affordance element fingerprints of the state the --session browser is currently on resolve UNIQUELY against the live page. The live-page check graph-edit (offline) cannot do: matchState identifies the state, then each navigate/input affordance\'s elementFp is resolved. status done = all unique · non-unique = some collide (exit 3) · no-match = not on a known state.',
+    args: [],
+    flags: [
+      { name: '--node', takesValue: true, description: 'Site-node id whose states to match against (e.g. opensource-demo.orangehrmlive.com).' },
+      { name: '--session', takesValue: true, description: 'A live browser session already ON the page to verify.' },
+    ],
+    example: 'webnav dev verify --node www.saucedemo.com --session sd1',
+  },
+  {
     name: 'sessions',
     summary: 'List or reap playwright-cli browser sessions. They are DAEMONIZED (survive the CLI exiting) so `use`/`walk-resume` can reattach — but a paused-and-abandoned walk or a stopped `use` exploration leaks a Chrome forever. `list` shows each session + age + whether its browser is still live; `reap` closes them.',
     args: [{ name: 'sub', required: false, description: 'list (default) | reap' }],

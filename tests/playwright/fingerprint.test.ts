@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
-import { resolveByNear, deriveNear, nearStability } from '../../src/playwright/fingerprint.js';
+import { resolveByNear, deriveNear, nearStability, recoverFingerprint } from '../../src/playwright/fingerprint.js';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), '../fixtures');
 const sd = parseSnapshot(readFileSync(join(FIX, 'saucedemo-inventory.yml'), 'utf8'));
@@ -72,5 +72,19 @@ describe('nearStability', () => {
   it('scores id-like text above free-text prose', () => {
     expect(nearStability('123445 34')).toBeGreaterThan(nearStability('dfgsjsjdh'));
     expect(nearStability('444444')).toBeGreaterThan(nearStability('John Smith'));
+  });
+});
+
+describe('recoverFingerprint (record/heal-time capture)', () => {
+  it('recovers role+name for a unique element (near=null)', () => {
+    const nodes = parseSnapshot('- heading "Login" [ref=e10]\n- button "Login" [ref=e32]');
+    expect(recoverFingerprint(nodes, 'e32')).toEqual({ role: 'button', name: 'Login', near: null });
+  });
+  it('recovers a near anchor for a same-(role,name) sibling (saucedemo cart button)', () => {
+    const fp = recoverFingerprint(sd, 'e54');   // first Add-to-cart
+    expect(fp).toEqual({ role: 'button', name: 'Add to cart', near: 'Sauce Labs Backpack' });
+  });
+  it('returns null when the ref is absent from the snapshot', () => {
+    expect(recoverFingerprint(sd, 'e9999')).toBeNull();
   });
 });
