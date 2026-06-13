@@ -149,6 +149,25 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     }
   });
 
+  // ── 3b. cross-link mesh: a page's OWN declared links to OTHER known pages become navigate
+  // affordances too — NOT just the links that were clicked. One forward walk-through captures
+  // every module's landing snapshot, which carries the full sidebar (Dashboard/other modules);
+  // synthesizing those edges means modules aren't dead-ends and the agent never hand-authors
+  // (error-prone) back-edges. Each is a {role:link,name} fp the resolver handles; skip a link
+  // if an edge to that target already exists, or if it points at the page's own url.
+  for (const p of pageList) {
+    const byUrl = (url: string) => pageList.find((q) => sameTarget(q.url, url) || q.url === url);
+    for (const n of p.nodes) {
+      if (n.role !== 'link' || !n.name || !n.url) continue;
+      const target = byUrl(n.url);
+      if (!target || target.label === p.label) continue;          // unknown target / self
+      const have = affById.get(p.label) ?? [];
+      if (have.some((a) => a.to === target.label)) continue;       // already have this edge
+      pushAff(p.label, { id: `aff_${affSeq++}_${target.label}`, label: n.name, kind: 'navigate',
+        to: target.label, elementFp: { role: 'link', name: n.name, near: null } });
+    }
+  }
+
   // ── assemble draft states ──
   const states: DraftState[] = pageList.map((p, pi) => ({
     label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint,
