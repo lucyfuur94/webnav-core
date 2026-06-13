@@ -79,6 +79,10 @@ function findNavTarget(affs: Affordance[], toId: string, via: string): Affordanc
 }
 
 export function editGraph(store: MapStore, node: string, graph: EditGraph): EditResult {
+  // Tolerate a graph missing `edges`/`states` (e.g. a `--draft` piped through `jq '{node,states}'`,
+  // or a hand-authored spec with only states). The draft carries edges AS navigate affordances on
+  // states, so `edges: []` is the common, valid case — never throw "edges is not iterable" on it.
+  graph = { ...graph, states: graph.states ?? [], edges: graph.edges ?? [] };
   const stateId = (label: string) => `${node}:${label}`;
   // Labels that will exist after this edit: payload states + already-stored states.
   const payloadLabels = new Set(graph.states.map((s) => s.label));
