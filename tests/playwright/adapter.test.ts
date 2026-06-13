@@ -30,6 +30,29 @@ describe('PlaywrightAdapter', () => {
     await expect(a.snapshot()).rejects.toThrow(/could not find YAML path/);
   });
 
+  it('snapshotReady RETRIES a loading SPA until it renders (the read/OrangeHRM fix)', async () => {
+    // first two snapshots are an unrendered shell (loading), third has the real form (ready)
+    const SHELL = '- generic [ref=e1]';   // < minNodes, no content → 'loading'
+    const FORM = ['- heading "Login" [ref=e10]', '- textbox "Username" [ref=e23]',
+      '- textbox "Password" [ref=e30]', '- button "Login" [ref=e32]',
+      '- paragraph "Forgot?" [ref=e34]', '- link "Help" [ref=e35]',
+      '- img "logo" [ref=e60]', '- heading "OrangeHRM" [ref=e61]'].join('\n');
+    let n = 0;
+    const fakeRun = vi.fn(async () => '### Snapshot\n- [Snapshot](.x.yml)');
+    const fakeRead = vi.fn(() => (++n <= 2 ? SHELL : FORM));
+    const a = new PlaywrightAdapter('s', fakeRun, fakeRead);
+    const snap = await a.snapshotReady(6, 0);   // gap 0 — no real wait in the test
+    expect(snap).toContain('button "Login"');   // got the RENDERED page, not the shell
+    expect(n).toBe(3);                            // retried twice, then ready
+  });
+
+  it('snapshotReady returns the last snapshot when the budget is exhausted (caller still classifies)', async () => {
+    const SHELL = '- generic [ref=e1]';
+    const a = new PlaywrightAdapter('s', async () => '### Snapshot\n- [Snapshot](.x.yml)', () => SHELL);
+    const snap = await a.snapshotReady(3, 0);
+    expect(snap).toBe(SHELL);   // never rendered → returns last; read.ts then reports blocked
+  });
+
   it('fill passes ref then text in order', async () => {
     const calls: string[][] = [];
     const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; });
