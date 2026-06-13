@@ -243,10 +243,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'graph-analyse',
-    summary: 'Mechanically derive a per-site navigation structure from a record session (data only — the agent names + validates it).',
+    summary: 'Mechanically derive a per-site navigation structure from a record session. Default: raw observations (data only). With --draft: a ready, SELF-VERIFIED {node,states,edges} graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login wired) — drive a site once via the use verbs, then `--draft` and pipe to graph-edit. No hand-authoring fingerprints/URLs.',
     args: [],
-    flags: [{ name: '--session', takesValue: true, description: 'Record session id from `dev record-start`.' }],
-    example: 'webnav dev graph-analyse --session map-1',
+    flags: [
+      { name: '--session', takesValue: true, description: 'Record session id from `dev record-start`.' },
+      { name: '--draft', takesValue: false, description: 'Emit a ready-to-edit graph spec (states+affordances) instead of raw observations; `_warning` flags states/edges the self-verify found shaky — curate those, then pipe to graph-edit.' },
+    ],
+    example: 'webnav dev graph-analyse --session map-1 --draft',
   },
   {
     name: 'graph-edit',

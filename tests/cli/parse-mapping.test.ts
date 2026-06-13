@@ -9,7 +9,10 @@ describe('parseArgs — mapping verbs (under dev)', () => {
     expect(parseArgs(['dev', 'record-stop', '--session', 's1'])).toEqual({ cmd: 'record-stop', session: 's1' });
   });
   it('parses graph-analyse', () => {
-    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1'])).toEqual({ cmd: 'graph-analyse', session: 's1' });
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1'])).toEqual({ cmd: 'graph-analyse', session: 's1', draft: false });
+  });
+  it('parses graph-analyse --draft', () => {
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1', '--draft'])).toEqual({ cmd: 'graph-analyse', session: 's1', draft: true });
   });
   it('parses graph-edit with node + graph json', () => {
     expect(parseArgs(['dev', 'graph-edit', '--node', 'example.com', '--graph', '{"states":[],"edges":[]}']))

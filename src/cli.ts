@@ -19,7 +19,7 @@ export type ParsedArgs =
   | { cmd: 'reload'; session: string | undefined }
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
-  | { cmd: 'graph-analyse'; session: string }
+  | { cmd: 'graph-analyse'; session: string; draft: boolean }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'export-map'; node: string }
@@ -151,7 +151,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
-  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '', draft: rest.includes('--draft') };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -357,8 +357,19 @@ async function main() {
   }
   if (args.cmd === 'graph-analyse') {
     const { RecordStore } = await import('./mapstore/record.js');
+    const effects = new RecordStore(dbPath()).actionEffects(args.session);
+    if (args.draft) {
+      // --draft: fold the recorded walk-through into a ready, SELF-VERIFIED {node,states,edges}
+      // graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges) so learning
+      // is "drive once → accept", not hand-author. The agent curates + pipes to graph-edit.
+      const { draftFromEffects } = await import('./explorer/draft.js');
+      const draft = draftFromEffects(effects);
+      console.log(JSON.stringify({ status: draft.states.length ? 'done' : 'empty', ...draft }, null, 2));
+      if (draft.states.length === 0) process.exitCode = 3;
+      return;
+    }
     const { analyseActionEffects } = await import('./explorer/analyse.js');
-    const result = analyseActionEffects(new RecordStore(dbPath()).actionEffects(args.session));
+    const result = analyseActionEffects(effects);
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
     return;
