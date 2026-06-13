@@ -47,6 +47,17 @@ export function makeAffordance(
   };
 }
 
+// Declared domain SHADOW (Layer 2) — EVIDENCE, never interpretation (#5a). Each field is a
+// VERBATIM declared string read from the snapshot; webnav never names an entity, asserts a
+// relationship, or infers a field's meaning. The calling agent reads the shadow and reconstructs
+// the domain model itself. Optional everywhere — a state with no declared structure has none.
+export interface DeclaredShadow {
+  collections?: { heading: string | null; columns: string[]; recordCount: number | null }[];
+  filters?: { field: string; control: 'text' | 'select' | 'date' | 'checkbox' }[];
+  createsEntity?: string | null;   // the Add-button's nearest enclosing heading (verbatim)
+  subTabs?: string[];              // topbar sub-tab/link labels (verbatim)
+}
+
 export interface State {
   id: string;
   nodeId: string | null;        // owning site-node id, e.g. 'github.com'; null when the
@@ -57,6 +68,7 @@ export interface State {
   availableSignals: string[];   // capability, NOT goal intent
   fingerprint: string[];        // key declared elements that identify this state
   affordances: Affordance[];    // the node's full typed repertoire (source of truth); [] = none
+  declaredShadow: DeclaredShadow | null;  // Layer 2 domain-shadow evidence; null = none captured
 }
 
 export function makeState(
@@ -66,6 +78,7 @@ export function makeState(
     availableSignals: [],
     fingerprint: [],
     affordances: [],
+    declaredShadow: null,
     ...init,
   };
 }

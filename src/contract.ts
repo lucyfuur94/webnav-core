@@ -16,6 +16,7 @@ export type {
   AffordanceKind,
   StateRole,
   EdgeKind,
+  DeclaredShadow,
 } from './mapstore/types.js';
 
 /** One site's full skeleton. This is what `webnav dev export-map` emits, what

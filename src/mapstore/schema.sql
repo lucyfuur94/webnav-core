@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS states (
   id TEXT PRIMARY KEY, node_id TEXT, semantic_name TEXT NOT NULL, url_pattern TEXT NOT NULL,
-  role TEXT NOT NULL, available_signals TEXT NOT NULL, fingerprint TEXT NOT NULL, affordances TEXT
+  role TEXT NOT NULL, available_signals TEXT NOT NULL, fingerprint TEXT NOT NULL, affordances TEXT,
+  declared_shadow TEXT
 );
 CREATE TABLE IF NOT EXISTS edges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

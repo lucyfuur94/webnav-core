@@ -2,7 +2,8 @@ import type { StoredActionEffect } from '../mapstore/record.js';
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
-import { makeState, type State } from '../mapstore/types.js';
+import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
+import { extractShadow } from './shadow.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
 // action.elementFp) into a ready-to-edit graph-edit spec — absolute URLs, uniqueness-driven
@@ -28,6 +29,7 @@ const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkb
 const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply)\b/i;
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
+  declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
   _warning?: string;   // self-verify flag: non-unique fingerprint / unresolvable edge — agent curates
 }
 export interface DraftGraph {
@@ -228,11 +230,16 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     }
   }
 
-  // ── assemble draft states ──
-  const states: DraftState[] = pageList.map((p, pi) => ({
-    label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint,
-    affordances: affById.get(p.label) ?? [],
-  }));
+  // ── assemble draft states (Layer 2: attach the declared domain shadow as evidence) ──
+  const states: DraftState[] = pageList.map((p, pi) => {
+    const shadow = extractShadow(p.nodes);
+    const hasShadow = (shadow.collections?.length || shadow.filters?.length || shadow.createsEntity || shadow.subTabs?.length);
+    return {
+      label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint,
+      affordances: affById.get(p.label) ?? [],
+      ...(hasShadow ? { declaredShadow: shadow } : {}),
+    };
+  });
 
   // ── 5. self-verify: flag non-unique fingerprints + unresolvable edges ──
   for (let pi = 0; pi < states.length; pi++) {
