@@ -74,6 +74,13 @@ npm test                    # unit tests (+ gated browser e2e)
 npm run build               # tsc -> dist/ (only for the published build; the CLI runs src directly)
 ```
 
+**Using it from an MCP client (Claude Desktop/Code, etc.)** — webnav serves every verb as an MCP
+tool over stdio, so your agent gets `walk`/`use`/`search`/… natively, no shelling out. One line:
+
+```json
+{ "mcpServers": { "webnav": { "command": "webnav", "args": ["mcp"] } } }
+```
+
 ## How the map grows (start here if you're new)
 
 webnav is a **map** — and a fresh install is **not** blank, but it is small. Here's
