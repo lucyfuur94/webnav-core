@@ -6,10 +6,12 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 ![zero-LLM](https://img.shields.io/badge/runtime-zero--LLM-7c4dff.svg)
 
-**A navigation memory for AI agents.** Your agent maps a website **once** — then travels it
-forever with `webnav walk`: deterministic, zero-LLM, page-to-page autopilot that pauses only
-at genuine forks (what to buy, an irreversible button) and hands the wheel back. webnav is
-the map and the mechanics; the agent keeps all the judgment.
+**Stop your web-browsing AI agent from re-exploring the same sites every run.** Your agent maps
+a website **once** — then travels it forever with `webnav walk`: deterministic, zero-LLM,
+page-to-page autopilot that pauses only at genuine forks (what to buy, an irreversible button)
+and hands the wheel back. It's a **reusable site map, not page compression** — most token-saving
+tools shrink what the agent *reads*; webnav remembers *where things are* so it stops re-finding
+the route. webnav is the map and the mechanics; the agent keeps all the judgment.
 
 ## See it
 
