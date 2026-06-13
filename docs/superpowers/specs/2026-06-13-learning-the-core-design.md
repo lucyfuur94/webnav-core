@@ -1,6 +1,6 @@
 # Learning the CORE of a website (beyond the navigation skeleton)
 
-**Date:** 2026-06-13 · **Status:** Layer 1 BUILT; Layer 2 next; Layer 3 OUT OF SCOPE; Layer 4 PARKED
+**Date:** 2026-06-13 · **Status:** Layer 1 BUILT; Layer 2 BUILT; Layer 3 OUT OF SCOPE; Layer 4 PARKED
 · **Supersedes nothing; extends** the affordance model (2026-06-09) and the draft flow
 (2026-06-13-graph-analyse-draft-design.md).
 
@@ -10,8 +10,10 @@ The objective is narrow and concrete: **a cheap (Haiku) agent learns a website, 
 graph.** Judged against ONLY that, the four layers split:
 - **Layer 1 (in-page affordance repertoire) — BUILT.** Prerequisite: without it the learned graph is
   unusable (just sidebar links). Done, commit b3de872.
-- **Layer 2 (entity/relationship shadow) — BUILD NEXT.** Cheap (read-only, no traversal); lets the
-  agent reason "this is the Employee list with these filters" instead of staring at anonymous buttons.
+- **Layer 2 (entity/relationship shadow) — BUILT** (commit aba1cac). Read-only; lets the agent reason
+  "this is the Candidates entity (6 cols, 59 records, creates 'Candidates')" instead of anonymous
+  buttons. #5a-bounded: real-ARIA structure only, NO layout inference (OrangeHRM's div pseudo-selects
+  are skipped, not guessed). On the real ohrm-full draft, 16/17 states carry shadow.
 - **Layer 3 (workflows) — OUT OF SCOPE.** A Haiku agent can compose a multi-step job from Layer-1
   affordances + Layer-2 shadow on the fly; a stored Workflow object is an optimization, not needed for
   the objective. Cut.
