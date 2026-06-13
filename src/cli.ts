@@ -602,6 +602,10 @@ async function main() {
     if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
     const browserSession = 'w-' + Date.now();
     const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, args.browser);
+    // Opt-in background housekeeping (WEBNAV_SESSION_TTL_HOURS) — reap stale sessions,
+    // never this fresh walk session. Fire-and-forget; never breaks the walk.
+    const { maybeTtlSweep } = await import('./playwright/sessions.js');
+    await maybeTtlSweep(browserSession);
     const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
@@ -683,6 +687,10 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { RecordStore } = await import('./mapstore/record.js');
     const adapter = new PlaywrightAdapter(args.session, undefined, undefined, args.browser);
+    // Opt-in background housekeeping (WEBNAV_SESSION_TTL_HOURS): reap orphan/old sessions,
+    // never this one. Fire-and-forget — awaited only so it can't outlive the process.
+    const { maybeTtlSweep } = await import('./playwright/sessions.js');
+    await maybeTtlSweep(args.session);
     try {
       // `open` creates the session if new AND navigates; it also works to
       // re-navigate an existing session (whereas `goto` requires the session to

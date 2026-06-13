@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inventorySessions, planReap } from '../../src/playwright/sessions.js';
+import { inventorySessions, planReap, ttlSweepOpts } from '../../src/playwright/sessions.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
 const psLines = [
@@ -51,5 +51,27 @@ describe('planReap', () => {
   it('with all=true reaps every session', () => {
     expect(planReap(inv, { all: true }).map((s) => s.name).sort())
       .toEqual(['old-1', 'stale-live', 'walk-1']);
+  });
+  it('NEVER reaps the protected session (the one the current command is using)', () => {
+    // even with all=true + a TTL, exclude is honored — the live command must not kill its own browser
+    expect(planReap(inv, { all: true, exclude: 'walk-1' }).map((s) => s.name).sort())
+      .toEqual(['old-1', 'stale-live']);
+    expect(planReap(inv, { maxAgeMs: 4 * 60 * 60 * 1000, exclude: 'stale-live' }).map((s) => s.name))
+      .toEqual(['old-1']);
+  });
+});
+
+describe('ttlSweepOpts (env → reap opts)', () => {
+  it('returns null when the env var is unset/blank (off by default)', () => {
+    expect(ttlSweepOpts(undefined, 'sess-x')).toBeNull();
+    expect(ttlSweepOpts('', 'sess-x')).toBeNull();
+  });
+  it('parses hours → maxAgeMs and protects the current session', () => {
+    expect(ttlSweepOpts('6', 'sess-x')).toEqual({ maxAgeMs: 6 * 3600_000, exclude: 'sess-x' });
+  });
+  it('returns null on a non-positive / non-numeric value (no accidental reap-all)', () => {
+    expect(ttlSweepOpts('0', 'sess-x')).toBeNull();
+    expect(ttlSweepOpts('-2', 'sess-x')).toBeNull();
+    expect(ttlSweepOpts('abc', 'sess-x')).toBeNull();
   });
 });

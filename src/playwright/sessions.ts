@@ -22,6 +22,7 @@ export interface SessionInfo {
 export interface ReapOpts {
   all?: boolean;          // reap every session, live or not
   maxAgeMs?: number;      // also reap LIVE sessions older than this (a TTL sweep)
+  exclude?: string;       // NEVER reap this session (the one the current command is using)
 }
 
 /** Session name out of a daemon command line (`…--daemon-session=/…/<name>.session`). */
@@ -53,14 +54,25 @@ export function inventorySessions(
 }
 
 /** Which sessions to close. Default: only orphans (dead browser). all → every session.
- *  maxAgeMs → also live sessions older than the TTL. */
+ *  maxAgeMs → also live sessions older than the TTL. exclude → never the current session. */
 export function planReap(inv: SessionInfo[], opts: ReapOpts): SessionInfo[] {
   return inv.filter((s) => {
+    if (opts.exclude !== undefined && s.name === opts.exclude) return false;  // never our own browser
     if (opts.all) return true;
     if (!s.live) return true;                              // orphan: always reap
     if (opts.maxAgeMs !== undefined && s.ageMs >= opts.maxAgeMs) return true;
     return false;
   });
+}
+
+/** Translate `WEBNAV_SESSION_TTL_HOURS` into a reap plan, or null when the background
+ *  sweep is OFF (var unset/blank/non-positive/non-numeric → no surprise reaping).
+ *  `current` is the session the calling command is about to use — always protected. */
+export function ttlSweepOpts(envValue: string | undefined, current: string): ReapOpts | null {
+  if (!envValue) return null;
+  const hours = Number(envValue);
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+  return { maxAgeMs: hours * 3600_000, exclude: current };
 }
 
 // ─── live wrappers (not unit-tested; thin shells over fs/ps) ──────────────────
@@ -108,4 +120,17 @@ export async function reapSessions(nowMs: number, opts: ReapOpts): Promise<strin
   const closed: string[] = [];
   for (const t of targets) if (await closeSession(t.name)) closed.push(t.name);
   return closed;
+}
+
+/**
+ * Opt-in background sweep, fired by browser-opening verbs. OFF unless
+ * `WEBNAV_SESSION_TTL_HOURS` is set (>0). Reaps orphans + sessions older than the TTL,
+ * NEVER `currentSession` (the browser this command is about to drive). Fire-and-forget:
+ * any error is swallowed so the actual command is never slowed or broken by housekeeping.
+ * `await` is optional — callers can ignore the returned promise.
+ */
+export async function maybeTtlSweep(currentSession: string): Promise<void> {
+  const opts = ttlSweepOpts(process.env.WEBNAV_SESSION_TTL_HOURS, currentSession);
+  if (!opts) return;
+  try { await reapSessions(Date.now(), opts); } catch { /* housekeeping must never break the command */ }
 }
