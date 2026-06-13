@@ -62,6 +62,6 @@ tasks:
   });
 
   it('exposes exactly the live-benchmark categories', () => {
-    expect([...ALLOWED_CATEGORIES].sort()).toEqual(['botwalled', 'github-live', 'web-live']);
+    expect([...ALLOWED_CATEGORIES].sort()).toEqual(['botwalled', 'github-live', 'saucedemo-nav', 'web-live']);
   });
 });
