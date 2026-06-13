@@ -572,11 +572,15 @@ async function main() {
     const path = findPath(store, args.start, args.goal);
     if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
     const browserSession = 'w-' + Date.now();
+    // Live-session CEILING (prevents the browser-count explosion). First frees orphans +
+    // abandoned paused-walk browsers older than 1h (the real leak — a needs-* pause leaves a
+    // live daemon nothing else reaps), then refuses if still at the cap. Never breaks a walk
+    // on a housekeeping error (ensureCanOpen degrades to ok).
+    const { ensureCanOpen } = await import('./playwright/sessions.js');
+    const staleWalks = new WalkSessionStore().staleBrowserSessions(60 * 60 * 1000);
+    const gate = await ensureCanOpen(browserSession, staleWalks);
+    if (!gate.ok) { console.log(JSON.stringify({ status: 'error', reason: gate.reason }, null, 2)); process.exitCode = 2; return; }
     const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, args.browser);
-    // Opt-in background housekeeping (WEBNAV_SESSION_TTL_HOURS) — reap stale sessions,
-    // never this fresh walk session. Fire-and-forget; never breaks the walk.
-    const { maybeTtlSweep } = await import('./playwright/sessions.js');
-    await maybeTtlSweep(browserSession);
     const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
@@ -657,11 +661,14 @@ async function main() {
   if (args.cmd === 'navigate') {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { RecordStore } = await import('./mapstore/record.js');
+    // Live-session ceiling. ensureCanOpen excludes args.session, so REATTACHING an existing
+    // session (the common record-flow case) is never refused — only a genuinely new session
+    // past the cap is. It also frees orphans + stale paused-walk browsers first.
+    const { ensureCanOpen } = await import('./playwright/sessions.js');
+    const { WalkSessionStore } = await import('./router/walk-session.js');
+    const gate = await ensureCanOpen(args.session, new WalkSessionStore().staleBrowserSessions(60 * 60 * 1000));
+    if (!gate.ok) { console.log(JSON.stringify({ status: 'error', reason: gate.reason }, null, 2)); process.exitCode = 2; return; }
     const adapter = new PlaywrightAdapter(args.session, undefined, undefined, args.browser);
-    // Opt-in background housekeeping (WEBNAV_SESSION_TTL_HOURS): reap orphan/old sessions,
-    // never this one. Fire-and-forget — awaited only so it can't outlive the process.
-    const { maybeTtlSweep } = await import('./playwright/sessions.js');
-    await maybeTtlSweep(args.session);
     try {
       // `open` creates the session if new AND navigates; it also works to
       // re-navigate an existing session (whereas `goto` requires the session to
