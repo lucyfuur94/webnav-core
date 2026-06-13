@@ -19,6 +19,7 @@ export interface IMapStore {
   statesForNode(nodeId: string): State[];
   upsertEdge(e: Edge): void;
   deleteEdgesFromPrefix(prefix: string): void;
+  clearNode(nodeId: string): void;
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
   interiorEdges(nodeId: string): InteriorEdge[];
@@ -144,6 +145,16 @@ export class MapStore implements IMapStore {
   }
   deleteEdgesFromPrefix(prefix: string): void {
     this.db.prepare("DELETE FROM edges WHERE from_state LIKE ? || '%'").run(prefix);
+  }
+  /** Wipe a single node's INTERIOR — its states and their stored edges — so the site can be
+   *  RE-LEARNED from scratch through webnav (never raw sqlite). The node row itself stays
+   *  (its id/capabilities/topics), so a fresh graph-edit lands back under it. No-op if unknown. */
+  clearNode(nodeId: string): void {
+    this.transaction(() => {
+      const ids: any[] = this.db.prepare('SELECT id FROM states WHERE node_id=?').all(nodeId);
+      for (const { id } of ids) this.db.prepare("DELETE FROM edges WHERE from_state=? OR to_state=?").run(id, id);
+      this.db.prepare('DELETE FROM states WHERE node_id=?').run(nodeId);
+    });
   }
   /**
    * Project a state's navigate/reveal affordances (recursing into reveal children)

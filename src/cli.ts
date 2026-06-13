@@ -22,6 +22,7 @@ export type ParsedArgs =
   | { cmd: 'graph-analyse'; session: string; draft: boolean }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
+  | { cmd: 'node-clear'; node: string }
   | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
@@ -154,6 +155,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '', draft: rest.includes('--draft') };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -458,6 +460,17 @@ async function main() {
     const { MapStore } = await import('./mapstore/store.js');
     const { showInterior } = await import('./graph/show.js');
     console.log(JSON.stringify(showInterior(new MapStore(dbPath()), args.node), null, 2));
+    return;
+  }
+  if (args.cmd === 'node-clear') {
+    // Wipe a node's interior so it can be re-learned through webnav (never raw sqlite).
+    const { MapStore } = await import('./mapstore/store.js');
+    if (!args.node) { console.log(JSON.stringify({ status: 'error', hint: 'pass --node <site-id>' })); process.exitCode = 2; return; }
+    const store = new MapStore(dbPath());
+    const before = store.statesForNode(args.node).length;
+    store.clearNode(args.node);
+    console.log(JSON.stringify({ status: before ? 'done' : 'empty', node: args.node, statesCleared: before }, null, 2));
+    if (!before) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'export-map') {

@@ -269,6 +269,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev graph-show --node github.com',
   },
   {
+    name: 'node-clear',
+    summary: 'Wipe a site-node\'s INTERIOR (its states + edges) so the site can be RE-LEARNED from scratch through webnav. The node row itself stays. Use before re-recording a site whose map is stale/wrong — never hand-edit the DB.',
+    args: [],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host) to clear, e.g. github.com.' }],
+    example: 'webnav dev node-clear --node opensource-demo.orangehrmlive.com',
+  },
+  {
     name: 'export-map',
     summary: 'Emit a site\'s full map pack {node, states} as JSON (skeleton only — never credentials). The unit a hosted service publishes; pipe it wherever maps are shared.',
     args: [{ name: 'site', required: true, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
