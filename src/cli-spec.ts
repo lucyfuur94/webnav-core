@@ -38,43 +38,15 @@ export const BROWSER_FLAGS: FlagSpec[] = [
 
 export const CONSUMER_COMMANDS: CommandSpec[] = [
   {
-    name: 'locate',
-    group: 'find',
-    summary: 'Find WHERE a place is (its URL coordinate) WITHOUT navigating to it.',
-    args: [
-      { name: 'place', required: true, description: 'A known place name (list via `webnav dev list`).' },
-    ],
-    flags: [],
-    example: 'webnav locate "trending repositories"',
-  },
-  {
     name: 'read',
     group: 'read',
     summary: 'Open a URL and return its distilled content (use --raw for the full page snapshot).',
-    args: [{ name: 'url', required: true, description: 'A URL to open — e.g. a coordinate from `locate`.' }],
+    args: [{ name: 'url', required: true, description: 'A URL to open and read.' }],
     flags: [
       { name: '--raw', takesValue: false, description: 'Return the full page snapshot instead of distilled content.' },
       ...BROWSER_FLAGS,
     ],
     example: 'webnav read https://github.com/psf/requests',
-  },
-  {
-    name: 'recall',
-    group: 'read',
-    summary: 'Replay the known route for a goal and return an evidence bundle (the agent ranks). Run list-goals for goal ids.',
-    args: [
-      { name: 'goal', required: false, description: 'Goal id from `list-goals` (defaults to github-repos).' },
-      { name: 'query', required: true, description: 'Search term fed into the goal\'s entry.' },
-    ],
-    flags: [
-      {
-        name: '--top',
-        takesValue: true,
-        default: '10',
-        description: 'Maximum number of candidate repos to gather.',
-      },
-    ],
-    example: 'webnav recall "python retry" --top 5',
   },
   {
     name: 'search',
@@ -93,45 +65,6 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
       },
     ],
     example: 'webnav search "who won the 2018 world cup" --top 3',
-  },
-  {
-    name: 'route',
-    group: 'find',
-    summary:
-      'Ask the graph which site(s) to use for a request (returns candidates + signals; you decide).',
-    args: [
-      { name: 'request', required: true, description: 'What you want to do; returns candidate sites to act on.' },
-    ],
-    flags: [
-      {
-        name: '--capability',
-        takesValue: true,
-        description:
-          'Explicit capability/cluster to route to (e.g. web-search). Alias: --cap. If omitted, the request is matched against declared tokens.',
-      },
-    ],
-    example: 'webnav route "find a python retry library"',
-  },
-  {
-    name: 'hop',
-    group: 'navigate',
-    summary: 'Move from the current page to a related site in the graph.',
-    args: [
-      { name: 'url', required: true, description: 'The page URL you are currently on.' },
-    ],
-    flags: [
-      {
-        name: '--to-cluster',
-        takesValue: true,
-        description: 'Capability/cluster to hop into (any related node serving it).',
-      },
-      {
-        name: '--to-node',
-        takesValue: true,
-        description: 'Specific node id to hop to.',
-      },
-    ],
-    example: 'webnav hop https://github.com/jd/tenacity --to-cluster package-search',
   },
   {
     name: 'eval',
@@ -167,14 +100,6 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     args: [],
     flags: [{ name: '--session', takesValue: true, description: 'Browser session name to act on (default: webnav-nav).' }],
     example: 'webnav reload --session mysession',
-  },
-  {
-    name: 'list-goals',
-    group: 'find',
-    summary: 'List the recall goals webnav knows: id, what it does, and the signals it returns.',
-    args: [],
-    flags: [],
-    example: 'webnav list-goals',
   },
   {
     name: 'walk', group: 'navigate',

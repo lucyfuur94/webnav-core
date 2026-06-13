@@ -4,7 +4,7 @@ import { topLevelHelp, devHelp } from '../../src/cli-help.js';
 describe('CLI surface', () => {
   it('top-level help shows the consumer verbs', () => {
     const h = topLevelHelp();
-    for (const v of ['locate', 'read', 'recall', 'search', 'list-goals']) {
+    for (const v of ['read', 'search', 'walk', 'walk-resume']) {
       expect(h).toContain(v);
     }
   });
@@ -27,9 +27,9 @@ describe('CLI surface', () => {
     }
   });
 
-  it('recall summary no longer hardcodes GitHub', () => {
+  it('the tagline reflects the navigation-memory product, not the agent-internet graph', () => {
     const h = topLevelHelp();
-    expect(h).toMatch(/recall/);
-    expect(h).not.toMatch(/Navigate GitHub for a use-case/);
+    expect(h).toMatch(/navigation memory/);
+    expect(h).not.toMatch(/generic map of the agent-internet/);
   });
 });

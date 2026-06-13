@@ -15,7 +15,7 @@ function pad(s: string, width: number): string {
 
 export function topLevelHelp(): string {
   const lines: string[] = [];
-  lines.push('webnav — a generic map of the agent-internet: locate places, read pages, recall routes, search the web.');
+  lines.push('webnav — a navigation memory for AI agents: record a site once, then walk routes to your goals deterministically (zero-LLM). Read pages and search the web too.');
   lines.push('');
   lines.push('Usage: webnav <command> [args...] [flags]');
   lines.push(`Version: ${VERSION}`);

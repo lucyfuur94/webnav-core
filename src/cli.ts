@@ -8,13 +8,8 @@ export type ParsedArgs =
   | { cmd: 'version' }
   | { cmd: 'list' }
   | { cmd: 'describe'; place: string }
-  | { cmd: 'locate'; place: string }
   | { cmd: 'read'; url: string; raw: boolean; browser: BrowserOpts }
-  | { cmd: 'list-goals' }
-  | { cmd: 'recall'; goal: string; query: string; top: number }
   | { cmd: 'search'; query: string; top: number }
-  | { cmd: 'route'; request: string; capability?: string }
-  | { cmd: 'hop'; url: string; toCluster?: string; toNode?: string }
   | { cmd: 'node-add'; id: string; url: string; capabilities: string[]; topics: string[] }
   | { cmd: 'edge-add'; from: string; to: string; kind: string }
   | { cmd: 'capture'; url: string; out: string }
@@ -92,7 +87,7 @@ function inputFlags(args: string[]): Record<string, string> {
   return out;
 }
 
-const KNOWN_VERBS = new Set([...COMMANDS.map((c) => c.name), 'list-goals', 'read']);
+const KNOWN_VERBS = new Set([...COMMANDS.map((c) => c.name), 'read']);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   // Global help/version and empty argv are checked BEFORE the verb switch.
@@ -111,14 +106,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   if (cmd === 'list') return { cmd };
   if (cmd === 'describe') return { cmd, place: rest[0] };
-  if (cmd === 'locate') return { cmd, place: rest[0] };
   if (cmd === 'read') {
     // First non-flag positional is the URL, so `read --raw <url>` and
     // `read <url> --raw` both work (agents write the flag in either order).
     const url = rest.find((a) => !a.startsWith('--')) ?? '';
     return { cmd, url, raw: rest.includes('--raw'), browser: browserOpts(rest) };
   }
-  if (cmd === 'list-goals') return { cmd };
   if (cmd === 'capture') return { cmd, url: rest[0], out: rest[1] };
   if (cmd === 'use') {
     const sub = rest[0];
@@ -130,35 +123,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (!sub || sub === '--help' || sub === '-h') return { cmd: 'dev-help' };
     return parseArgs([sub, ...rest.slice(1)]);
   }
-  if (cmd === 'recall') {
-    const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 10;
-    // Positionals only: drop --flags AND the value immediately after --top
-    // (otherwise `recall x --top 5` mis-reads "5" as the query).
-    const pos: string[] = [];
-    for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === '--top') { i++; continue; }   // skip flag + its value
-      if (rest[i].startsWith('--')) continue;        // skip any other flag
-      pos.push(rest[i]);
-    }
-    const hasGoal = pos.length >= 2;
-    const goal = hasGoal ? pos[0] : 'github-repos';
-    const query = hasGoal ? pos[1] : pos[0];
-    return { cmd, goal, query, top };
-  }
   if (cmd === 'search') {
     const query = rest[0];
     const top = rest.includes('--top') ? Number(rest[rest.indexOf('--top') + 1]) : 3;
     return { cmd, query, top };
-  }
-  if (cmd === 'route') {
-    return { cmd, request: rest[0], capability: flagValue(rest, '--capability', '--cap') };
-  }
-  if (cmd === 'hop') {
-    return {
-      cmd, url: rest[0],
-      toCluster: flagValue(rest, '--to-cluster'),
-      toNode: flagValue(rest, '--to-node'),
-    };
   }
   if (cmd === 'node-add') {
     return {
@@ -269,12 +237,6 @@ async function main() {
     console.log(JSON.stringify(describePlace(args.place), null, 2));
     return;
   }
-  if (args.cmd === 'locate') {
-    // "where is A?" — return the coordinate WITHOUT navigating. No browser needed.
-    const { locate } = await import('./router/locate.js');
-    console.log(JSON.stringify(locate(args.place), null, 2));
-    return;
-  }
   if (args.cmd === 'read') {
     const { readUrl } = await import('./router/read.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
@@ -284,16 +246,6 @@ async function main() {
     await adapter.close().catch(() => {});
     console.log(JSON.stringify(r, null, 2));
     if (r.status !== 'done') process.exitCode = 3;
-    return;
-  }
-  if (args.cmd === 'list-goals') {
-    const { MapStore } = await import('./mapstore/store.js');
-    const { ensureSeeded } = await import('./graph/seed.js');
-    const store = new MapStore();
-    ensureSeeded(store);
-    const goals = store.allGoals().map((g) => ({ id: g.name, site: g.site,
-      signals: Object.values(g.surface).flat() }));
-    console.log(JSON.stringify(goals, null, 2));
     return;
   }
   if (args.cmd === 'use-help') {
@@ -326,28 +278,6 @@ async function main() {
     // "ran fine but found nothing / blocked" → exit 3 so an agent's shell can
     // distinguish a clean empty result from a crash.
     if (isEmptyOrFailed(response)) process.exitCode = 3;
-    return;
-  }
-  if (args.cmd === 'route') {
-    // route: ask the graph which node(s) serve a request. Pure structural query
-    // over the seeded internet graph — no browser. Seed on first use.
-    const { MapStore } = await import('./mapstore/store.js');
-    const { ensureSeeded } = await import('./graph/seed.js');
-    const { route } = await import('./graph/route.js');
-    const store = new MapStore();
-    ensureSeeded(store);
-    console.log(JSON.stringify(route(store, args.request, args.capability), null, 2));
-    return;
-  }
-  if (args.cmd === 'hop') {
-    // hop: move from the current page's node to a related node in the graph.
-    const { MapStore } = await import('./mapstore/store.js');
-    const { ensureSeeded } = await import('./graph/seed.js');
-    const { hop } = await import('./graph/hop.js');
-    const store = new MapStore();
-    ensureSeeded(store);
-    console.log(JSON.stringify(
-      hop(store, args.url, { toCluster: args.toCluster, toNode: args.toNode }), null, 2));
     return;
   }
   if (args.cmd === 'node-add') {
@@ -753,14 +683,6 @@ async function main() {
       process.exitCode = 2;
     }
     return;
-  }
-  // recall: open GitHub search for the query, then drive recall() over the live
-  // browser. Prints a RecallResponse JSON for the calling agent.
-  if (args.cmd === 'recall') {
-    const { runRecallLive } = await import('./router/live.js');
-    const response = await runRecallLive(args.query, args.top, dbPath(), args.goal);
-    console.log(JSON.stringify(response, null, 2));
-    if (isEmptyOrFailed(response)) process.exitCode = 3;
   }
 }
 

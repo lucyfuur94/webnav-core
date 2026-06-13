@@ -4,7 +4,7 @@ import { topLevelHelp, commandHelp } from '../src/cli-help.js';
 describe('topLevelHelp', () => {
   it('lists consumer commands with their summaries', () => {
     const h = topLevelHelp();
-    for (const c of ['locate', 'read', 'recall', 'search', 'list-goals'])
+    for (const c of ['read', 'search', 'walk'])
       expect(h).toContain(c);
     expect(h).toMatch(/--help/);
     expect(h).toMatch(/--version/);
@@ -15,12 +15,12 @@ describe('topLevelHelp', () => {
 });
 
 describe('commandHelp', () => {
-  it('shows usage, args, flags with defaults, and an example for recall', () => {
-    const h = commandHelp('recall');
-    expect(h).toMatch(/Usage: webnav recall/);
+  it('shows usage, args, flags with defaults, and an example for search', () => {
+    const h = commandHelp('search');
+    expect(h).toMatch(/Usage: webnav search/);
     expect(h).toContain('query');
     expect(h).toMatch(/--top/);
-    expect(h).toMatch(/10/); // default shown
+    expect(h).toMatch(/3/); // default shown
     expect(h).toMatch(/Example/i);
   });
   it('shows the search default top of 3', () => {

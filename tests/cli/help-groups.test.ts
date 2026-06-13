@@ -4,25 +4,25 @@ import { topLevelHelp } from '../../src/cli-help.js';
 describe('grouped top-level help', () => {
   const h = topLevelHelp();
 
-  it('shows the group headers', () => {
-    expect(h).toMatch(/^Find:/m);
+  it('shows the surviving group headers (Find is now empty and omitted)', () => {
+    // The `find` group (locate/route/list-goals) was removed with the
+    // internet-graph surface, so no Find header is rendered.
+    expect(h).not.toMatch(/^Find:/m);
     expect(h).toMatch(/^Read:/m);
     expect(h).toMatch(/^Navigate:/m);
   });
 
-  it('lists locate under Find and recall under Read (ordering)', () => {
-    const findIdx = h.indexOf('Find:');
+  it('lists read/search under Read, before Navigate (ordering)', () => {
     const readIdx = h.indexOf('Read:');
     const navIdx = h.indexOf('Navigate:');
-    // Match the indented COMMAND lines (2-space prefix), not the tagline which
-    // also mentions "locate"/"recall".
-    const locateIdx = h.indexOf('  locate ');
-    const recallIdx = h.indexOf('  recall ');
-    expect(findIdx).toBeGreaterThanOrEqual(0);
-    expect(locateIdx).toBeGreaterThan(findIdx);
-    expect(locateIdx).toBeLessThan(readIdx);
-    expect(recallIdx).toBeGreaterThan(readIdx);
-    expect(recallIdx).toBeLessThan(navIdx);
+    // Match the indented COMMAND lines (2-space prefix).
+    const readCmdIdx = h.indexOf('  read ');
+    const searchIdx = h.indexOf('  search ');
+    expect(readIdx).toBeGreaterThanOrEqual(0);
+    expect(readCmdIdx).toBeGreaterThan(readIdx);
+    expect(searchIdx).toBeGreaterThan(readIdx);
+    expect(readCmdIdx).toBeLessThan(navIdx);
+    expect(searchIdx).toBeLessThan(navIdx);
   });
 
   it('eval and network appear under Navigate', () => {

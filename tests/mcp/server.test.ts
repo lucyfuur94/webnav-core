@@ -52,9 +52,9 @@ describe('mcp argv reconstruction', () => {
       .toEqual(['dev', 'outline', 'www.saucedemo.com']);
   });
 
-  it('multi-word flag names round-trip (to_cluster → --to-cluster)', () => {
-    expect(argvFor('webnav_hop', { url: 'https://x.com', to_cluster: 'web-search' }))
-      .toEqual(['hop', 'https://x.com', '--to-cluster', 'web-search']);
+  it('multi-word flag names round-trip (max_age_hours → --max-age-hours)', () => {
+    expect(argvFor('webnav_dev_sessions', { sub: 'reap', max_age_hours: '6' }))
+      .toEqual(['dev', 'sessions', 'reap', '--max-age-hours', '6']);
   });
 
   it('every generated argv parses with the real CLI parser (no drift)', () => {
@@ -95,19 +95,19 @@ describe('mcp json-rpc handling', () => {
 
   it('tools/call runs the CLI and maps exit codes (2=error, 3=empty-but-ok)', async () => {
     const ok = await handleMcpMessage(
-      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'webnav_list_goals', arguments: {} } },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'webnav_read', arguments: {} } },
       stubExec('{"status":"done"}', 0),
     );
     expect(ok?.result).toMatchObject({ isError: false, content: [{ type: 'text', text: '{"status":"done"}' }] });
 
     const empty = await handleMcpMessage(
-      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'webnav_list_goals', arguments: {} } },
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'webnav_read', arguments: {} } },
       stubExec('{"status":"empty"}', 3),
     );
     expect(empty?.result).toMatchObject({ isError: false });
 
     const err = await handleMcpMessage(
-      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'webnav_list_goals', arguments: {} } },
+      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'webnav_read', arguments: {} } },
       stubExec('{"status":"error"}', 2),
     );
     expect(err?.result).toMatchObject({ isError: true });

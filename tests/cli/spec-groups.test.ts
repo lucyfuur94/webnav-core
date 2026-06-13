@@ -10,12 +10,10 @@ describe('consumer command groups', () => {
 
   it('the core verbs land in the expected groups', () => {
     const byName = Object.fromEntries(CONSUMER_COMMANDS.map((c) => [c.name, (c as any).group]));
-    expect(byName['locate']).toBe('find');
-    expect(byName['route']).toBe('find');
-    expect(byName['list-goals']).toBe('find');
     expect(byName['read']).toBe('read');
-    expect(byName['recall']).toBe('read');
     expect(byName['search']).toBe('read');
-    expect(byName['hop']).toBe('navigate');
+    expect(byName['walk']).toBe('navigate');
+    expect(byName['eval']).toBe('navigate');
+    expect(byName['network']).toBe('navigate');
   });
 });

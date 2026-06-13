@@ -71,9 +71,10 @@ honestly what you get and how it grows, so there are no surprises:
   Nothing else is seeded — webnav is a blank-slate map tool, and saucedemo is the single
   example that proves it works. **You record your own sites** (see below); that's the
   product. This fits any flow you repeat against the same site: automation testing,
-  internal tools, back-office workflows, recurring agent tasks. (A GitHub `recall`
-  skeleton and a small internet-graph exist in the codebase as programmatic/test
-  fixtures only — they are deliberately not seeded and not part of the product surface.)
+  internal tools, back-office workflows, recurring agent tasks. (A GitHub recall
+  skeleton and a small internet-graph remain in the codebase as programmatic/test
+  fixtures only — not seeded, and their CLI verbs were removed from the product surface;
+  the engine stays in git history if that surface ever returns.)
 - **The map persists and self-heals.** It's saved to `~/.webnav/webnav.db` and reused on
   every run — you do **not** rebuild it each time. When a remembered step drifts (a renamed
   or moved element), a `walk` escalates once for the agent to pick the element, then **writes
@@ -106,6 +107,7 @@ webnav use navigate <url> --session S        open a URL (records a landing if S 
 webnav use snapshot --session S              read the page + element refs (never records)
 webnav use click <ref> / use type <ref> <t>  act on a ref; records the before/after effect
 webnav read <url> [--raw]                    open a URL -> distilled content
+webnav search "<query>" [--top N]            open-web search -> extracted evidence
 webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's API calls
 
 # Author a site's map (the record -> analyse -> edit flow)
@@ -118,12 +120,6 @@ webnav dev graph-show --node <id>            a site's stored states + edges (JSO
 webnav dev export-map <site>                 a site's map pack as JSON (skeleton only, no creds)
 webnav dev dashboard [--port N]              local operator UI: sites + JSON map + credentials
 webnav dev node-add / edge-add / list / describe / capture   teach + inspect helpers
-
-# Query maps / the web (operate on whatever maps + goals YOU have built)
-webnav locate "<place>" | list-goals         place lookup | stored recall goals
-webnav recall <goal-id> "<query>"            replay a stored goal route -> evidence bundle
-webnav search "<query>" [--top N]            open-web search -> extracted evidence
-webnav route "<request>" | hop <url> --to-…  query/traverse your inter-site graph
 ```
 `webnav <verb> --help` for details. Output is JSON on stdout; exit 0 ok / 2 error / 3 empty.
 
@@ -137,7 +133,7 @@ registry as `--help`, and every call runs the real CLI, so the two surfaces can'
 { "mcpServers": { "webnav": { "command": "webnav", "args": ["mcp"] } } }
 ```
 
-Consumer verbs can also be invoked canonically as `webnav use <verb> ...` and map-authoring verbs as `webnav dev <verb> ...`; bare consumer verbs (e.g. `webnav recall ...`) still work too.
+Consumer verbs can also be invoked canonically as `webnav use <verb> ...` and map-authoring verbs as `webnav dev <verb> ...`; bare consumer verbs (e.g. `webnav read ...`) still work too.
 
 ### Inspect a site's map
 The map is for the calling AGENT (recall/walk), not a human dashboard. To inspect
@@ -168,13 +164,15 @@ mcp/       server.ts                 `webnav mcp`: every verb as an MCP tool (ge
 mapstore/  types.ts, store.ts, record.ts, schema.sql   SQLite persistence (states+affordances, edges, goals, nodes, node_edges, record sessions)
 playwright/ adapter.ts, snapshot.ts, capture.ts   playwright-cli child-process + a11y-tree snapshot parser
 explorer/  explorer.ts, analyse.ts, diff.ts, fingerprint.ts, fingerprint-page.ts, github-skeleton.ts   read structure / diff effects / recognize states / test skeleton
-router/    resolve.ts, replay.ts, router.ts, recall-via-map.ts, live.ts    navigate + recall
+router/    resolve.ts, replay.ts, router.ts                              navigate / deterministic resolve
            readiness.ts, extract.ts, extract-content.ts, tokens.ts        bot-wall detection, signal/content extraction, token-savings
            search.ts, search-providers.ts, search-live.ts                 multi-provider open-web search
            walk.ts, walk-live.ts, walk-session.ts, path.ts, browse.ts, read.ts   interactive multi-step walk + pathfinding + page reading
-           catalog.ts, locate.ts                                          list/describe + place lookup
-graph/     seed.ts, route.ts, hop.ts, teach.ts, edit.ts, show.ts, export.ts, interior.ts, coverage.ts   inter-site graph + map authoring/inspection
-goals/     find-battle-tested-repos.ts                                    the (only) GitHub-repo-specific goal (test fixture)
+           catalog.ts                                                     dev list/describe
+           recall-via-map.ts, live.ts, locate.ts                          PARKED graph engine (recall/locate — no CLI verb; fixtures+tests only)
+graph/     seed.ts, teach.ts, edit.ts, show.ts, export.ts, interior.ts, coverage.ts   map authoring/inspection (saucedemo)
+           route.ts, hop.ts                                               PARKED internet-graph engine (no CLI verb; fixtures+tests only)
+goals/     find-battle-tested-repos.ts                                    PARKED GitHub goal (no CLI verb; fixture only)
 dashboard/ server.ts, shell.ts                                            `webnav dev dashboard` local operator UI
 ```
 Tests mirror this under `tests/`. The live e2e walk tests are gated behind `WEBNAV_LIVE=1`.

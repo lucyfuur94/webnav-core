@@ -1,6 +1,5 @@
 import type { Goal } from '../mapstore/types.js';
-import { GITHUB_GAZETTEER, type GazetteerEntry } from './locate.js';
-import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
+import type { GazetteerEntry } from './locate.js';
 
 /**
  * Discovery / coverage layer — the Google-Maps capabilities that exist BEFORE
@@ -8,6 +7,12 @@ import { FIND_BATTLE_TESTED_REPOS } from '../goals/find-battle-tested-repos.js';
  * (describe). Both are pure reads over the gazetteer + goal registry — zero
  * browser, zero LLM. They solve the agent's discovery problem: you can't route
  * to a place you don't know is on the map.
+ *
+ * NOTE (2026-06-12 product decision): the GitHub gazetteer + github-repos goal
+ * are parked FIXTURE data, not an advertised product surface, so `dev list` /
+ * `dev describe` no longer surface them by default. Callers inject the gazetteer
+ * / goals they actually want listed (the defaults are empty), so the kept dev
+ * surface shows only what's genuinely in the user's map.
  */
 
 export interface PlaceListing {
@@ -29,8 +34,8 @@ export interface Coverage {
  * reads this to learn what it can ask for (and, by absence, the coverage gaps).
  */
 export function listCoverage(
-  gazetteer: GazetteerEntry[] = GITHUB_GAZETTEER,
-  goals: Goal[] = [FIND_BATTLE_TESTED_REPOS],
+  gazetteer: GazetteerEntry[] = [],
+  goals: Goal[] = [],
 ): Coverage {
   const places = gazetteer.map((e) => ({
     place: e.canonical, site: e.site, url: e.url, aliases: e.aliases,
@@ -54,7 +59,7 @@ export type DescribeResponse =
  */
 export function describePlace(
   place: string,
-  gazetteer: GazetteerEntry[] = GITHUB_GAZETTEER,
+  gazetteer: GazetteerEntry[] = [],
 ): DescribeResponse {
   const q = place.toLowerCase().replace(/["'`]/g, '').replace(/\s+/g, ' ').trim();
   const entry = gazetteer.find((e) =>

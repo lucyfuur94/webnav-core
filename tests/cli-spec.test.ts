@@ -4,7 +4,7 @@ import { COMMANDS, VERSION } from '../src/cli-spec.js';
 describe('COMMANDS registry', () => {
   it('has all the registered verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'click', 'creds', 'dashboard', 'describe', 'edge-add', 'effects', 'eval', 'export-map', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'hop', 'list', 'list-goals', 'locate', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'outline', 'read', 'recall', 'record-start', 'record-stop', 'reload', 'route', 'search', 'sessions', 'snapshot', 'type', 'walk', 'walk-resume']);
+    expect(names).toEqual(['capture', 'click', 'creds', 'dashboard', 'describe', 'edge-add', 'effects', 'eval', 'export-map', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'list', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'outline', 'read', 'record-start', 'record-stop', 'reload', 'search', 'sessions', 'snapshot', 'type', 'walk', 'walk-resume']);
   });
 
   it('outline has a summary and an example', () => {
@@ -34,41 +34,12 @@ describe('COMMANDS registry', () => {
     expect(kind.default).toBe('capability');
   });
 
-  it('route has a summary, an example, and a --capability flag', () => {
-    const r = COMMANDS.find((c) => c.name === 'route')!;
-    expect(r.summary.length).toBeGreaterThan(0);
-    expect(r.example).toContain('webnav route');
-    const cap = r.flags.find((f) => f.name === '--capability')!;
-    expect(cap).toBeDefined();
-    expect(cap.takesValue).toBe(true);
-    const request = r.args.find((a) => a.name === 'request')!;
-    expect(request.required).toBe(true);
-  });
-
-  it('hop has a summary, an example, and --to-cluster/--to-node flags', () => {
-    const h = COMMANDS.find((c) => c.name === 'hop')!;
-    expect(h.summary.length).toBeGreaterThan(0);
-    expect(h.example).toContain('webnav hop');
-    expect(h.flags.find((f) => f.name === '--to-cluster')?.takesValue).toBe(true);
-    expect(h.flags.find((f) => f.name === '--to-node')?.takesValue).toBe(true);
-    const url = h.args.find((a) => a.name === 'url')!;
-    expect(url.required).toBe(true);
-  });
-
   it('every command has a non-empty summary and example', () => {
     for (const c of COMMANDS) {
       expect(c.summary.length).toBeGreaterThan(0);
       expect(c.example.length).toBeGreaterThan(0);
       expect(c.example).toContain('webnav');
     }
-  });
-
-  it('recall declares a --top flag with default 10', () => {
-    const recall = COMMANDS.find((c) => c.name === 'recall')!;
-    const top = recall.flags.find((f) => f.name === '--top')!;
-    expect(top).toBeDefined();
-    expect(top.takesValue).toBe(true);
-    expect(top.default).toBe('10');
   });
 
   it('search declares a --top flag with default 3', () => {
@@ -79,12 +50,10 @@ describe('COMMANDS registry', () => {
     expect(top.default).toBe('3');
   });
 
-  it('describe and locate require a place arg', () => {
-    for (const name of ['describe', 'locate']) {
-      const c = COMMANDS.find((cmd) => cmd.name === name)!;
-      const place = c.args.find((a) => a.name === 'place')!;
-      expect(place.required).toBe(true);
-    }
+  it('describe requires a place arg', () => {
+    const c = COMMANDS.find((cmd) => cmd.name === 'describe')!;
+    const place = c.args.find((a) => a.name === 'place')!;
+    expect(place.required).toBe(true);
   });
 
   it('exports a version string', () => {
