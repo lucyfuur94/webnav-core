@@ -25,11 +25,18 @@ Agents find tools via their operators installing them, so human distribution is 
 fit; the MCP registries directly answer "agents need to find it" (webnav already ships `webnav mcp`).
 
 ### 1. MCP registries/directories — DO FIRST (the literal "where agents find tools")
-- `modelcontextprotocol/servers` (official list) — PR adding webnav under community servers.
-- `punkpeye/awesome-mcp-servers` — PR.
-- `mcp.so`, `glama.ai/mcp`, `smithery.ai` — submit via their listing flow.
-- Entry copy: "webnav — navigation memory: your agent walks a recorded site map deterministically
-  instead of re-exploring. Zero-LLM, stdio MCP." Link the repo + the one-line config.
+- ✅ **`punkpeye/awesome-mcp-servers`** (89k★) — **PR #7998 opened 2026-06-13** (Browser Automation,
+  agent fast-track `🤖🤖🤖`). Awaiting merge.
+- ⏳ **Official MCP Server Registry** (`registry.modelcontextprotocol.io`) — the `modelcontextprotocol/
+  servers` README list is RETIRED; servers now publish a `server.json` to the registry via its
+  quickstart. This validates the package exists, so it's effectively **gated on the npm publish** —
+  do it right after npm goes live (user's task). Quickstart:
+  https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/quickstart.mdx
+- `mcp.so`, `glama.ai/mcp`, `smithery.ai` — submit via their listing flow (some auto-index from GitHub
+  topics — the `mcp`/`model-context-protocol` topics we added help here). Mostly web-form submissions
+  → user-driven.
+- Entry copy (used in #7998): "webnav — navigation memory: your agent walks a recorded site map
+  deterministically instead of re-exploring. Zero-LLM, stdio MCP." Link the repo + the one-line config.
 
 ### 2. Curated "awesome" GitHub lists — durable searchable backlinks
 - `e2b-dev/awesome-ai-agents`, `kyrolabs/awesome-agents`, `awesome-llm-tools`,
