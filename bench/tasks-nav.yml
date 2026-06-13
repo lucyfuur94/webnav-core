@@ -1,0 +1,62 @@
+# Navigation benchmark task set (saucedemo) — multi-step walks to NON-addressable
+# states. Spec: docs/superpowers/specs/2026-06-03-navigation-benchmark-design.md
+# (2026-06-12 addendum: re-pointed from GitHub at saucedemo walk flows).
+# Every task requires logging in (standard_user / secret_sauce) and traversing
+# the site UI; none is answerable from a single addressable URL.
+tasks:
+  - id: nav-cart-contents
+    category: saucedemo-nav
+    prompt: >-
+      On www.saucedemo.com (log in as standard_user / secret_sauce): add the
+      "Sauce Labs Backpack" and the "Sauce Labs Bike Light" to the cart, then
+      open the cart page and report exactly which items it lists (names and
+      per-item prices) and the cart badge count.
+    gold_answer: >-
+      RUBRIC. correct = cart page lists exactly Sauce Labs Backpack ($29.99) and
+      Sauce Labs Bike Light ($9.99) with badge count 2, with evidence of live
+      traversal (cart page reached after adding). partial = right items but a
+      price/badge missing or read from the inventory page instead of the cart
+      page. wrong = wrong/missing items or fabricated values or never reached
+      the cart.
+  - id: nav-overview-total
+    category: saucedemo-nav
+    prompt: >-
+      On www.saucedemo.com (log in as standard_user / secret_sauce): add the
+      "Sauce Labs Backpack" and the "Sauce Labs Bike Light" to the cart and
+      proceed through checkout (use any first/last name and zip) to the
+      checkout OVERVIEW page. Report the Item total, Tax, and Total shown
+      there. Do NOT finish the order.
+    gold_answer: >-
+      RUBRIC. correct = Item total $39.98, Tax $3.20, Total $43.18, read from
+      the checkout-overview page (live evidence), order NOT placed. partial =
+      reached overview but a value missing/derived rather than read. wrong =
+      values fabricated/incorrect, or never reached the overview page, or the
+      order was placed despite the instruction.
+  - id: nav-complete-order
+    category: saucedemo-nav
+    prompt: >-
+      On www.saucedemo.com (log in as standard_user / secret_sauce): purchase
+      the "Sauce Labs Onesie" — add it to the cart and complete the FULL
+      checkout (any name/zip). Report the exact confirmation heading on the
+      final page and the Total that was shown on the overview step.
+    gold_answer: >-
+      RUBRIC. correct = confirmation heading reported verbatim from the live
+      final page (e.g. "Thank you for your order!") AND the overview Total for
+      the Onesie ($7.99 item; total with tax, e.g. $8.63) — both with live
+      evidence of completing checkout. partial = order completed but one of
+      the two values missing/unsourced. wrong = order not completed, or
+      fabricated heading/total.
+  - id: nav-detail-description
+    category: saucedemo-nav
+    prompt: >-
+      On www.saucedemo.com (log in as standard_user / secret_sauce): open the
+      product DETAIL page for the "Sauce Labs Fleece Jacket" (click through
+      from the inventory, do not guess URLs) and report its price and the
+      first ten words of its product description.
+    gold_answer: >-
+      RUBRIC. correct = price $49.99 plus an actual leading fragment of the
+      live detail-page description (any faithful quote of its opening words),
+      reached by clicking through from inventory. partial = right price but
+      description missing or read from the inventory tile rather than the
+      detail page. wrong = wrong price or fabricated description or never
+      reached the detail page.
