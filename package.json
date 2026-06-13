@@ -1,6 +1,6 @@
 {
   "name": "@dikshanty94/webnav",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A navigation memory for AI agents — zero-LLM web-navigation CLI that recalls cheap, reliable routes instead of re-exploring.",
   "license": "Apache-2.0",
   "repository": {
@@ -8,7 +8,9 @@
     "url": "git+https://github.com/lucyfuur94/webnav-core.git"
   },
   "type": "module",
-  "bin": { "webnav": "bin/webnav" },
+  "bin": {
+    "webnav": "bin/webnav"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,7 +27,9 @@
     "dist",
     "bin"
   ],
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/",
     "prepack": "rm -rf dist && npm run build",
