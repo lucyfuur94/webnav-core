@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
+import { throttleOpen } from './throttle.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -51,8 +52,11 @@ export class PlaywrightAdapter {
     return f;
   }
 
-  open(url: string) { return this.exec('open', url, ...this.openFlags()); }
-  goto(url: string) { return this.exec('goto', url); }
+  // open/goto are the NEW-client / explicit-jump page loads — gate them with the per-host
+  // politeness throttle so a burst can't hammer one site. Intra-session clicks (below) are
+  // NOT throttled: a held session navigating its own pages isn't a new client.
+  async open(url: string) { await throttleOpen(url); return this.exec('open', url, ...this.openFlags()); }
+  async goto(url: string) { await throttleOpen(url); return this.exec('goto', url); }
   click(ref: string) { return this.exec('click', ref); }
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
