@@ -369,6 +369,16 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev effects --session map-1',
   },
   {
+    name: 'sessions',
+    summary: 'List or reap playwright-cli browser sessions. They are DAEMONIZED (survive the CLI exiting) so `use`/`walk-resume` can reattach — but a paused-and-abandoned walk or a stopped `use` exploration leaks a Chrome forever. `list` shows each session + age + whether its browser is still live; `reap` closes them.',
+    args: [{ name: 'sub', required: false, description: 'list (default) | reap' }],
+    flags: [
+      { name: '--all', takesValue: false, description: 'reap: close EVERY session (default closes only orphans whose browser already died).' },
+      { name: '--max-age-hours', takesValue: true, description: 'reap: also close LIVE sessions older than N hours (a TTL sweep).' },
+    ],
+    example: 'webnav dev sessions reap            # close dead-browser orphans\nwebnav dev sessions reap --all      # close everything\nwebnav dev sessions list',
+  },
+  {
     name: 'mcp',
     summary: 'Serve every webnav verb as MCP tools over stdio (Model Context Protocol) — point an MCP client\'s command at `webnav mcp`. Tools are generated from this spec; each call runs the real CLI.',
     args: [],
