@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inventorySessions, planReap, ttlSweepOpts } from '../../src/playwright/sessions.js';
+import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor } from '../../src/playwright/sessions.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
 const psLines = [
@@ -58,6 +58,33 @@ describe('planReap', () => {
       .toEqual(['old-1', 'stale-live']);
     expect(planReap(inv, { maxAgeMs: 4 * 60 * 60 * 1000, exclude: 'stale-live' }).map((s) => s.name))
       .toEqual(['old-1']);
+  });
+});
+
+describe('canOpen (live-session ceiling — soft cap, pure inequality)', () => {
+  it('allows opening below the cap, refuses at/above it', () => {
+    expect(canOpen(0, 16)).toBe(true);
+    expect(canOpen(15, 16)).toBe(true);
+    expect(canOpen(16, 16)).toBe(false);   // at cap → refuse (no per-session judgment)
+    expect(canOpen(20, 16)).toBe(false);
+  });
+  it('treats a non-positive/invalid cap as unlimited (never refuse)', () => {
+    expect(canOpen(100, 0)).toBe(true);
+    expect(canOpen(100, NaN)).toBe(true);
+  });
+});
+
+describe('ceilingFor (env → resolved cap)', () => {
+  it('defaults to 16 when unset', () => {
+    expect(ceilingFor(undefined)).toBe(16);
+    expect(ceilingFor('')).toBe(16);
+  });
+  it('honors a valid override', () => {
+    expect(ceilingFor('24')).toBe(24);
+  });
+  it('falls back to the default on garbage', () => {
+    expect(ceilingFor('abc')).toBe(16);
+    expect(ceilingFor('-3')).toBe(16);
   });
 });
 

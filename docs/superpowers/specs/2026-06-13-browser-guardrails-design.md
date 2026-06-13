@@ -75,26 +75,71 @@ stable (unchanged across retries) AND the URL loaded, classify it as a likely
 bot-throttled; back off and retry later"`) instead of a generic resolve failure. Honest
 reporting, never evasion. (This is the detect-half of detect-and-escalate.)
 
-## Config summary (all env, sane defaults, off = current behavior only for throttle=0)
-- `WEBNAV_MAX_SESSIONS` (default 8) — live-session ceiling.
-- `WEBNAV_HOST_INTERVAL_MS` (default 1000) — min ms between opens to one host.
-- (existing) `WEBNAV_SESSION_TTL_HOURS` — background reap sweep.
+## REVISION (2026-06-13, post adversarial review — needs-rework → these corrections)
+
+The review reframed the design. Key corrections folded in:
+
+- **The CEILING, not the throttle, is what prevents the incident.** It was a *count*
+  explosion (118 chrome / 22 daemons), not a *rate* problem. Ship the ceiling FIRST.
+- **The ACTUAL leak (root cause):** `walk` never closes its browser on a `needs-*` pause
+  (cli.ts walk dispatch; contrast walk-resume which DOES close on terminal status). An
+  abandoned paused walk leaves a LIVE daemon — which "auto-reap orphans" can NEVER collect
+  (orphans = dead-browser only). A few abandoned walks wedge the ceiling shut → self-lockout.
+  **FIX: on a `needs-*` pause, walk closes its browser too — the agent re-opens via
+  walk-resume's reattach? NO (resume needs the live browser). Instead: the ceiling pre-check
+  also TTL-sweeps live-but-stale walk-session browsers (reuse `ttlSweepOpts`/`maybeTtlSweep`
+  + the `walk_sessions` table's created_at), so an abandoned pause is reclaimed after the TTL
+  rather than living forever.** This is the structural fix that lets the ceiling hold.
+- **`MAX_LIVE_SESSIONS` default → 16, not 8** — 8 would hard-refuse the sanctioned 11-agent
+  fan-out mid-run. The defect was 11 that never freed, not 11 concurrent. 16 clears the known
+  fan-out with headroom; the leak fix bounds the rest by real in-flight work.
+- **Ceiling scope: daemonized verbs only** (`walk`, `use navigate`, `record-start`). Pure
+  open-close one-shots (`read`/`search`/`eval`/`network`) barely occupy a slot and are already
+  self-limiting serially — do NOT refuse them.
+- **Ceiling is a best-effort SOFT cap** — no cross-process lock, so concurrent openers can
+  overshoot by the number racing; acceptable, stated. `canOpen(liveCount, max) = liveCount < max`
+  over the post-orphan-reap count; pure inequality, no judgment (#5a-clean).
+- **Reap force-close needs PID plumbing FIRST (was unimplementable):** `sessions.ts` has no PID
+  anywhere — `listDaemonPs` runs `ps -eo command`. Re-plumb to `ps -eo pid,command`, add
+  `pid?: number` to `SessionInfo`, thread through inventory; then `closeSession` falls back to
+  `process.kill(pid)` when graceful close leaves the daemon alive, and kills the chrome **process
+  group** (best-effort) — not the unbacked "user-data-dir match".
+- **Throttle: sqlite-backed, scope-corrected.** Persist last-open per host in `better-sqlite3`
+  (file-locked UPSERT via `src/paths.ts` infra), NOT a lockfree JSON (which races under the
+  exact 100-process burst). Gate it on `open`/`goto` (new-client / explicit jumps), and EXEMPT
+  intra-session clicks of an already-open walk (a held session isn't a new client). `delayFor`
+  try/catches host parse; hostless/glob/`about:blank` → 0 delay.
+- **Non-hydration verdict keys on FINGERPRINT ABSENCE, not size.** saucedemo's login legitimately
+  fingerprints tiny+stable; a size threshold would mislabel it blocked. Gate "blocked" on: retry
+  budget expired AND `matchState` returned `none` across all candidates AND snapshot stable. Fold
+  the stability signal into `classifyReadiness` (prior-snapshot arg); for `read`/`search` reuse the
+  existing `blocked` return; for the walk, set the escalation question honestly ("page loaded but
+  did not hydrate — likely rate-limited; back off and retry") — no new RecallResponse variant.
+
+## Config summary (all env, sane defaults)
+- `WEBNAV_MAX_SESSIONS` (default 16) — live-session ceiling (daemonized verbs only).
+- `WEBNAV_HOST_INTERVAL_MS` (default 1000) — min ms between open/goto to one host.
+- (existing) `WEBNAV_SESSION_TTL_HOURS` — background + ceiling-precheck reap sweep.
 
 ## Testing
-- sessions ceiling: pure `canOpen(liveCount, max)` predicate unit-tested; opening past the cap
-  errors (mocked inventory); orphan auto-reap frees a slot.
-- host throttle: pure `delayFor(host, now, last, interval)` returns the sleep ms; unit-tested
-  (same host within interval → positive delay; different host / past interval → 0). Persistence
-  read/write tested over a temp file.
-- reap force-close: a fake "wedged" daemon (graceful close no-ops) gets killed (mock the kill).
-- non-hydration classify: a tiny+stable snapshot after the budget → blocked status (fixture).
+- ceiling: pure `canOpen(liveCount, max)`; opening past the cap errors (mocked inventory);
+  orphan + stale-walk auto-reap frees a slot; one-shot verbs are NOT gated.
+- throttle: pure `delayFor(host, now, last, interval)` (same host within interval → +delay;
+  other host / past interval / hostless → 0); sqlite persistence read/write over a temp db.
+- reap force-close: PID plumbed through inventory; a fake wedged daemon (graceful close no-ops)
+  gets `process.kill`'d (mock kill).
+- non-hydration: `matchState` none + stable snapshot after budget → blocked (fingerprint-gated,
+  NOT size); a legit tiny page (saucedemo login fixture) that DOES match → not blocked.
 
-## Phasing
-1. host-politeness throttle in the adapter open/goto path (+ pure delay fn + persistence) —
-   the single highest-value prevention (it's what would have stopped the OrangeHRM block).
-2. live-session ceiling at the creating verbs (+ canOpen predicate + auto-reap-orphans-first).
-3. reap force-close fallback.
-4. non-hydration soft-block classification in the readiness path.
+## Phasing (REORDERED per review)
+1. **Live-session ceiling + the walk-pause leak fix** (canOpen + ceiling pre-check that reaps
+   orphans AND TTL-stale walk sessions; gate daemonized verbs only; default 16). THE prevention.
+2. **Reap force-close** — after PID re-plumb in sessions.ts (`ps -eo pid,command` + `pid` on
+   SessionInfo); kill the daemon + its chrome process group when graceful close fails.
+3. **Per-host politeness throttle** — sqlite-backed last-open, gated on open/goto, exempt
+   intra-session, hostless→0.
+4. **Non-hydration soft-block classification** — fingerprint-absence-gated, folded into
+   classifyReadiness; honest escalation message.
 
 ## Out of scope
 - Proxies, fingerprint-spoofing, CAPTCHA-solving — webnav's permanent hard line (no evasion).

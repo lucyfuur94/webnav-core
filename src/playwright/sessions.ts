@@ -65,6 +65,24 @@ export function planReap(inv: SessionInfo[], opts: ReapOpts): SessionInfo[] {
   });
 }
 
+// ─── live-session ceiling (prevents the browser-count explosion) ─────────────
+export const DEFAULT_MAX_SESSIONS = 16;  // clears the sanctioned 11-agent fan-out with headroom
+
+/** Resolve the ceiling from `WEBNAV_MAX_SESSIONS`; default 16; garbage/≤0 → default. */
+export function ceilingFor(envValue: string | undefined): number {
+  if (!envValue) return DEFAULT_MAX_SESSIONS;
+  const n = Number(envValue);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_MAX_SESSIONS;
+}
+
+/** May a NEW daemonized session open? Pure soft-cap inequality — no per-session judgment
+ *  (#5a). `max <= 0` / NaN ⇒ unlimited. Best-effort: with no cross-process lock, concurrent
+ *  openers can briefly overshoot by the number racing — acceptable. */
+export function canOpen(liveCount: number, max: number): boolean {
+  if (!Number.isFinite(max) || max <= 0) return true;
+  return liveCount < max;
+}
+
 /** Translate `WEBNAV_SESSION_TTL_HOURS` into a reap plan, or null when the background
  *  sweep is OFF (var unset/blank/non-positive/non-numeric → no surprise reaping).
  *  `current` is the session the calling command is about to use — always protected. */
@@ -133,4 +151,38 @@ export async function maybeTtlSweep(currentSession: string): Promise<void> {
   const opts = ttlSweepOpts(process.env.WEBNAV_SESSION_TTL_HOURS, currentSession);
   if (!opts) return;
   try { await reapSessions(Date.now(), opts); } catch { /* housekeeping must never break the command */ }
+}
+
+/**
+ * Enforce the live-session ceiling before a DAEMONIZED verb (walk / use navigate / record)
+ * opens a NEW browser. First frees what it safely can — orphans (dead-browser) AND
+ * abandoned paused-walk browsers older than the stale-walk TTL (the real leak: a `needs-*`
+ * pause leaves a LIVE daemon nothing else collects) — then checks `canOpen`. Returns
+ * `{ ok:true }` to proceed, or `{ ok:false, reason }` to refuse with a clear message.
+ * `staleWalkBrowsers` is the set of browser_session ids of paused walks older than the TTL
+ * (supplied by the caller, which has the WalkSessionStore); never reaps `currentSession`.
+ * Errors degrade to ok:true — the ceiling must never wedge a legitimate command shut on a
+ * housekeeping failure.
+ */
+export async function ensureCanOpen(
+  currentSession: string,
+  staleWalkBrowsers: string[] = [],
+): Promise<{ ok: boolean; reason?: string }> {
+  const max = ceilingFor(process.env.WEBNAV_MAX_SESSIONS);
+  try {
+    const now = Date.now();
+    let inv = await listSessions(now);
+    // free orphans + abandoned stale paused-walk browsers (never the current one)
+    const toFree = inv.filter((s) =>
+      s.name !== currentSession && (!s.live || staleWalkBrowsers.includes(s.name)));
+    for (const s of toFree) await closeSession(s.name);
+    if (toFree.length) inv = await listSessions(Date.now());
+    const liveOthers = inv.filter((s) => s.live && s.name !== currentSession).length;
+    if (!canOpen(liveOthers, max)) {
+      return { ok: false, reason: `session ceiling reached (${liveOthers} live, max ${max}); close some with \`webnav dev sessions reap\` or raise WEBNAV_MAX_SESSIONS` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: true };  // never wedge a real command shut on a housekeeping error
+  }
 }

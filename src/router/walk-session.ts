@@ -52,4 +52,11 @@ export class WalkSessionStore {
   close(sessionId: string): void {
     this.db.prepare("UPDATE walk_sessions SET status='done' WHERE session_id=?").run(sessionId);
   }
+  /** browser_session ids of paused walks older than `maxAgeMs` (abandoned pauses whose live
+   *  browser nothing else reaps — the ceiling pre-check closes these). */
+  staleBrowserSessions(maxAgeMs: number, nowMs: number = Date.now()): string[] {
+    const rows: any[] = this.db.prepare(
+      "SELECT browser_session, created_at FROM walk_sessions WHERE status='paused'").all();
+    return rows.filter((r) => nowMs - r.created_at >= maxAgeMs).map((r) => r.browser_session);
+  }
 }
