@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor, pidFromPs, sessionNameFromPs } from '../../src/playwright/sessions.js';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor, pidFromPs, sessionNameFromPs, removeSessionFiles } from '../../src/playwright/sessions.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
 // `ps -eo pid,command` style: leading PID, then the command (the daemon-session path).
@@ -67,6 +70,31 @@ describe('planReap', () => {
       .toEqual(['old-1', 'stale-live']);
     expect(planReap(inv, { maxAgeMs: 4 * 60 * 60 * 1000, exclude: 'stale-live' }).map((s) => s.name))
       .toEqual(['old-1']);
+  });
+});
+
+// Regression: reap reported "done" but the dead session reappeared on the next list —
+// closeSession never unlinked an ORPHAN's .session file (graceful `playwright-cli close`
+// only cleans a LIVE daemon's file). removeSessionFiles must delete the on-disk file so the
+// inventory actually shrinks.
+describe('removeSessionFiles (orphan .session files actually get unlinked)', () => {
+  it('deletes the named session file across daemon subdirs, leaves others', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wn-daemon-'));
+    try {
+      mkdirSync(join(root, 'abc')); mkdirSync(join(root, 'def'));
+      writeFileSync(join(root, 'abc', 'orphan-1.session'), 'x');
+      writeFileSync(join(root, 'def', 'orphan-1.session'), 'x');   // same name, second subdir
+      writeFileSync(join(root, 'abc', 'keep-me.session'), 'x');
+
+      removeSessionFiles('orphan-1', root);
+
+      expect(existsSync(join(root, 'abc', 'orphan-1.session'))).toBe(false);
+      expect(existsSync(join(root, 'def', 'orphan-1.session'))).toBe(false);
+      expect(existsSync(join(root, 'abc', 'keep-me.session'))).toBe(true);  // untouched
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it('is a no-op when the file / root is absent (best-effort, never throws)', () => {
+    expect(() => removeSessionFiles('nope', join(tmpdir(), 'wn-does-not-exist-xyz'))).not.toThrow();
   });
 });
 
