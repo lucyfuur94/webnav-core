@@ -1,0 +1,639 @@
+{
+  "node": {
+    "id": "opensource-demo.orangehrmlive.com",
+    "homeUrl": "https://opensource-demo.orangehrmlive.com",
+    "capabilities": [
+      "hrm",
+      "employee-management",
+      "leave-management",
+      "recruitment",
+      "performance",
+      "time-tracking",
+      "directory",
+      "admin",
+      "maintenance",
+      "claim"
+    ],
+    "topics": [
+      "human-resources",
+      "employee-information",
+      "leave",
+      "recruitment",
+      "performance-review",
+      "timesheets",
+      "directory",
+      "system-administration",
+      "data-maintenance",
+      "expense-claims"
+    ]
+  },
+  "states": [
+    {
+      "id": "opensource-demo.orangehrmlive.com:admin",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "admin",
+      "urlPattern": "/web/index.php/admin/viewAdminModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:System Users"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_admin_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:claim",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "claim",
+      "urlPattern": "/web/index.php/claim/viewClaimModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Claim",
+        "heading:Employee Claims"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_claim_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:dashboard",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "dashboard",
+      "urlPattern": "/web/index.php/dashboard/index",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Dashboard",
+        "link:PIM",
+        "link:Admin"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:admin",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Admin",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Admin"
+          },
+          "cost": 0,
+          "id": "aff_dash_admin",
+          "label": "Admin",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:pim-employee-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": true,
+          "semanticStep": "PIM",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "PIM"
+          },
+          "cost": 0,
+          "id": "aff_dash_pim",
+          "label": "PIM",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:leave-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Leave",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Leave"
+          },
+          "cost": 0,
+          "id": "aff_dash_leave",
+          "label": "Leave",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:time",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Time",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Time"
+          },
+          "cost": 0,
+          "id": "aff_dash_time",
+          "label": "Time",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:recruitment",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Recruitment",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Recruitment"
+          },
+          "cost": 0,
+          "id": "aff_dash_recruitment",
+          "label": "Recruitment",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:performance",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Performance",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Performance"
+          },
+          "cost": 0,
+          "id": "aff_dash_performance",
+          "label": "Performance",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:directory",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Directory",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Directory"
+          },
+          "cost": 0,
+          "id": "aff_dash_directory",
+          "label": "Directory",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:maintenance",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Maintenance",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Maintenance"
+          },
+          "cost": 0,
+          "id": "aff_dash_maintenance",
+          "label": "Maintenance",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:claim",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Claim",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Claim"
+          },
+          "cost": 0,
+          "id": "aff_dash_claim",
+          "label": "Claim",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:my-info",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "My Info",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "My Info"
+          },
+          "cost": 0,
+          "id": "aff_dash_myinfo",
+          "label": "My Info",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:directory",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "directory",
+      "urlPattern": "/web/index.php/directory/viewDirectory",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Directory"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_directory_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:leave-list",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "leave-list",
+      "urlPattern": "/web/index.php/leave/viewLeaveModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Leave",
+        "heading:Leave List"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_leave_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:login",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "login",
+      "urlPattern": "/web/index.php/auth/login",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "textbox:Username",
+        "textbox:Password",
+        "button:Login"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [
+            "input_username",
+            "input_password"
+          ],
+          "acceptsInput": "credentials",
+          "core": true,
+          "semanticStep": "Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Login"
+          },
+          "cost": 0,
+          "id": "aff_login_submit",
+          "label": "Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Username",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Username"
+          },
+          "cost": 0,
+          "id": "input_username",
+          "label": "Username",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Password",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Password"
+          },
+          "cost": 0,
+          "id": "input_password",
+          "label": "Password",
+          "kind": "input"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:maintenance",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "maintenance",
+      "urlPattern": "/web/index.php/maintenance/viewMaintenanceModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Purge Employee Records",
+        "textbox:Type for hints..."
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_maintenance_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:my-info",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "my-info",
+      "urlPattern": "/web/index.php/pim/viewMyDetails",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:My Info"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_myinfo_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:performance",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "performance",
+      "urlPattern": "/web/index.php/performance/viewPerformanceModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Employee Reviews",
+        "heading:Manage Reviews"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_performance_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:pim-employee-list",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "pim-employee-list",
+      "urlPattern": "/web/index.php/pim/viewPimModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Employee Information",
+        "heading:PIM"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_pim_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:recruitment",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "recruitment",
+      "urlPattern": "/web/index.php/recruitment/viewRecruitmentModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Recruitment",
+        "link:Candidates"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_recruitment_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    },
+    {
+      "id": "opensource-demo.orangehrmlive.com:time",
+      "nodeId": "opensource-demo.orangehrmlive.com",
+      "semanticName": "time",
+      "urlPattern": "/web/index.php/time/viewTimeModule",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Time",
+        "heading:Timesheets Pending Action"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "opensource-demo.orangehrmlive.com:dashboard",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboard"
+          },
+          "cost": 0,
+          "id": "aff_time_dash",
+          "label": "Dashboard",
+          "kind": "navigate"
+        }
+      ]
+    }
+  ]
+}
