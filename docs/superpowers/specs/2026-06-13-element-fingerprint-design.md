@@ -72,9 +72,16 @@ export interface ElementFingerprint {
   near?: string | null;
 }
 // On Affordance AND on the projected Edge (both — see §Thread-through):
-//   fingerprint: ElementFingerprint | null;   // null => legacy name-only resolution
+//   elementFp: ElementFingerprint | null;   // null => legacy name-only resolution
 //   selectorCache stays as-is: the disposable id/class/xpath hint (self-heal)
 ```
+
+**Field name is `elementFp`, NOT `fingerprint` (S7).** The codebase already has
+`State.fingerprint: string[]` (state-IDENTITY tokens consumed by `matchState`) plus
+`states.fingerprint` and `record_observations.fingerprint` DB columns — all a different,
+load-bearing concept. Adding a third `fingerprint` of a different type on adjacent
+types/tables is a trap. The new field/column is `elementFp` / `element_fp`; it never touches
+the state-fingerprint path. (Throughout the rest of this spec, "the fingerprint" = `elementFp`.)
 
 ### Thread-through (resolution operates on Edge, not Affordance)
 
@@ -94,13 +101,24 @@ fingerprint must be carried end-to-end, or `resolveStep` receives nothing:
 6. update the TWO direct `resolveStep` call sites in `walk.ts` (the classify-safe path and
    the ref-answer self-heal path);
 7. **fingerprint-aware self-heal write-back.** When the agent picks an element at a fork, the
-   heal must persist enough to resolve role-aware next time. `recordSelector` is extended to
-   write the discovered **role+name into the edge row's `fingerprint`** (built from the chosen
-   snapshot node's role + name), NOT a bare name into `selector_cache` — otherwise the next
-   resolve goes through the legacy name-only retry (`tryName`) and re-collides with the
-   heading. (Unchanged limitation: a purely-projected edge with no stored row still can't
-   persist a heal — `recordSelector` no-ops on no row; fingerprints make this rarer since
-   authored/recorded affordances carry the fingerprint up front.)
+   heal must persist enough to resolve uniquely next time — `recordSelector` is extended to
+   write the **full `{role, name, near}` of the chosen node into the edge row's
+   `elementFp`** (the new field; see naming below), NOT a bare name into `selector_cache`.
+   - role+name alone is NOT enough when the fork was reached via step 5 (the N-identical case):
+     the heal MUST compute `near` for the chosen node using the SAME `resolveByNear` scope
+     logic recording uses (the chosen node + its snapshot are in hand at the heal site —
+     `walk.ts:132-133` holds `beforeNodes` + `chosen`), else the next walk re-collides at
+     step 3, has no `near`, and re-escalates forever (S2/S4). If no distinguishing `near`
+     exists in the chosen node's clean scope, the heal stores `{role,name}` and the step
+     honestly remains a per-walk escalation (don't claim a heal that can't stick).
+   - `recordSelector`'s signature changes from `(from,to,step,selector:string)` to
+     `(from,to,step,fp: ElementFingerprint)`; it does `UPDATE edges SET element_fp=?`. The
+     `walk.ts:142` call site passes the computed fp instead of `chosen.name`. `selector_cache`
+     is RETAINED only for legacy name-only edges (the legacy resolver still reads it); new
+     heals never write it.
+   - (Unchanged limitation: a purely-projected edge with no stored row still can't persist a
+     heal — `recordSelector` no-ops on no row; fingerprints make this rare since
+     authored/recorded affordances carry the fp up front.)
 
 `semanticStep` stays (durable prose, drives `--help`/viewer readability). The fingerprint
 is the machine key; `semanticStep` no longer needs to encode the name in quotes once a
@@ -113,15 +131,16 @@ parsed snapshot nodes.
 
 ```
 1. legacy path: no fingerprint → today's behavior (single name match else null). [back-compat]
-2. testId present → match nodes by data-testid; unique? return it.   [layer 2 exact]
+2. testId present → match nodes by data-testid AND `role==fp.role` (and name if set); unique?
+   return it. (A reassigned-but-unique testId must still match role/name, else fall to step 3
+   — testId is a hint, not an override of the durable layer-1 key.)   [layer 2 exact]
 3. candidates = nodes where role == fp.role AND name == fp.name.       [layer 1]
    - 1 match  → return it.                                             [OrangeHRM heading-vs-button solved here]
    - 0 match  → escalate (real drift; self-heal can repair).
    - >1 match → go to 4.
-4. fp.near present → keep only candidates whose ENCLOSING ROW/CARD also contains a node    [layer 3]
-   whose name == fp.near. "Same row/card" = they share the nearest common ancestor at a
-   container-ish role (row|cell|listitem|article|generic-with-children) found via depth.
-   - exactly 1 candidate's row contains `near` → return it.   [the 50-icon-button table + 6 carts solved here]
+4. fp.near present → `resolveByNear` (below): for each candidate, find its LARGEST enclosing  [layer 3]
+   scope that excludes every other candidate; keep candidates whose scope contains `near`.
+   - exactly 1 → return it.   [the 50×2 icon-button table + 6 carts solved here — VERIFIED]
    - else → 5.
 5. STILL not unique (no `near`, or `near` matched 0 / >1 rows) → TRUE ambiguity. Escalate
    `needs-navigation` naming it ("N 'button ' and no distinguishing text recorded —
@@ -131,20 +150,45 @@ parsed snapshot nodes.
    and hand-authored maps may be unverified), NOT a "can't happen".
 ```
 
-`near` containment uses snapshot **indentation depth** (added to `SnapNode`). CRITICAL
-over-scope rule (or a `generic` ancestor engulfs siblings → wrong click, not just a miss):
-- The target's "row/card" is the **NEAREST (smallest, first walking up) ancestor at lower
-  depth** with a container-ish role — stop at the first one, never climb past it to a
-  larger wrapper. (`generic` is in the role set because saucedemo's per-card wrapper is a
-  `generic` — but it's bounded by "nearest", so the per-card generic wins over the
-  list-level generic.)
-- The subtree tested for `name == fp.near` is bounded by the **next sibling at that
-  container's depth** — so card A's subtree ENDS where card B begins; a `near` belonging to
-  card B can never fall inside card A's tested region.
-- Then: exactly 1 candidate whose bounded row-subtree contains `near` → return it; 0 or >1 →
-  step 5 (escalate). On a FLAT page (no lower-depth container ancestor) `rowContains` returns
-  false for all → >1 candidates → escalate (degrades safely, never wrong-match).
-Container-ish roles: `{row, cell, listitem, article, grid, table, generic}`. Pure structural, no LLM.
+`near` containment uses snapshot **indentation depth** (added to `SnapNode`). The rule is
+**smallest-ancestor-that-CONTAINS-`near`**, NOT nearest-container — derived from and verified
+against the committed real captures (`tests/fixtures/saucedemo-inventory.yml`,
+`tests/fixtures/orangehrm-pim-table.yml`); see §Worked examples (verified) below. The earlier
+"stop at the first container" rule was WRONG — it picks the target's immediate wrapper (the
+saucedemo price-box, the OrangeHRM action-cell), whose subtree EXCLUDES the sibling carrying
+`near`, so every candidate fails and the walk escalates on its own motivating case.
+
+**The rule (verified against real bytes — see §Worked examples):** a candidate's anchor scope
+is the **LARGEST enclosing ancestor whose bounded subtree still EXCLUDES every OTHER candidate**
+(the per-card / per-row scope, found by climbing outward and stopping just before an ancestor
+that would pull in a sibling candidate). `near` must appear in THAT scope. This is NOT
+"nearest container" (too small — excludes the sibling holding `near`) and NOT "smallest
+ancestor that contains `near`" (too big — a high ancestor contains every candidate's `near`,
+so all match → escalate). It is the tightest *non-shared* scope.
+
+`anchorRef(nodes, candIdx, otherCandIdxs) -> scope | null`:
+```
+scope = null
+for each ancestor A of candIdx (preceding node, strictly-decreasing depth, nearest first):
+    boundedSubtree(A) = A's following nodes until the first depth <= A.depth (next sibling/uncle)
+    if boundedSubtree(A) contains ANY other candidate index → STOP, return scope (the previous, smaller one)
+    scope = A          // still clean (no sibling candidate) → remember, try larger
+return scope           // largest clean ancestor (null if none / flat page)
+```
+`resolveByNear(nodes, candidates, near)`:
+```
+hits = candidates where:
+    scope = anchorRef(nodes, cand, candidates\{cand})
+    scope != null AND boundedSubtree(scope) contains a node (≠ cand) whose name == near
+exactly 1 hit → return it.  [the 6 carts + 50×2 icon buttons resolve here — VERIFIED below]
+0 or >1 hits → step 5 (escalate). FLAT page (no clean ancestor) → 0 → escalate.
+```
+**Why it can't wrong-click:** the scope is bounded away from sibling candidates by construction
+(it stops before any ancestor that would include another candidate), so card A's scope never
+contains card B's `near`. And exactly-one-hit is required: a `near` generic enough to sit in
+two candidates' scopes → >1 → escalate, never a guess. No container-role allow-list is needed —
+the cross-candidate exclusion does all the bounding, so it works whether the card/row is a
+`generic`, `row`, `listitem`, or unlabeled. Pure structural, no LLM.
 
 ## Authoring guarantees uniqueness (the chosen rule)
 
@@ -168,43 +212,92 @@ time, not escalated at walk time.** Concretely:
   above is the safety net that turns a residual ambiguity into a loud "re-author"
   message, not a silent wrong click.
 
-## Anchoring is buildable — measured, not assumed (2026-06-13)
+## Worked examples — traced against committed real captures (2026-06-13)
 
-An earlier review feared the a11y snapshot is always flattened (one GitHub fixture showed
-every node at column 0), making `near` inert. Measured against the pages that actually HAVE
-the identical-sibling problem, that fear was overgeneralized — the structure to anchor on IS
-present exactly where needed:
+These are the GROUND TRUTH the algorithm was derived from and must pass. Both are committed
+as test fixtures (`tests/fixtures/`), captured live from the real sites this session. The
+indents are the actual leading-space counts in the captures.
 
-- **saucedemo inventory — 6× `button "Add to cart"`.** Each nests in a generic card (indent
-  10→12) alongside `link "Sauce Labs Backpack"` + `generic "$29.99"`. `near:"Sauce Labs Backpack"`
-  uniquely picks that row's button. ✅
-- **OrangeHRM PIM table — 50× `button ""` icon buttons** (Font-Awesome glyph names, so role+name
-  is useless). Each nests in `cell`→`row` (indent 18→16→14) whose sibling `cell` carries the
-  employee id `"444444"`. `near:"444444"` (or the employee name cell) uniquely picks the row. ✅
-- **GitHub repo page (the flattened fixture).** Fully flat — BUT every link there is already
-  distinct by name, so it never reaches layer 3. Flattening only co-occurred with *not needing*
-  anchoring. ✅
+### saucedemo inventory (`tests/fixtures/saucedemo-inventory.yml`) — 6× `button "Add to cart"`
+```
+ 6  generic e43                         ← the CARD (smallest scope holding both name & button)
+ 8    link "Sauce Labs Backpack" e45    (image link)
+ 8    generic e47
+10      generic e48
+12        link "Sauce Labs Backpack" e49
+14          generic "Sauce Labs Backpack" e50   ← a node matching near
+12        generic "carry.allTheThings()…" e51
+10      generic e52                     ← the price-box (the button's nearest wrapper)
+12        generic "$29.99" e53
+12        button "Add to cart" e54      ← TARGET
+```
+Trace for `fingerprint{role:'button', name:'Add to cart', near:'Sauce Labs Backpack'}`
+(VERIFIED by running the algorithm over the fixture — resolves e54; Bike Light→e66; Fleece→e90):
+- step 3: 6 nodes match role+name → >1 → step 4.
+- `anchorRef(e54)`: climb e52(d10)→clean→ e47(d8)→clean→ e43(d6, the card)→clean→ e42(d4, the
+  product GRID)→ its subtree contains the OTHER 5 Add-to-cart buttons → STOP, return the
+  previous clean scope = **card e43 (d6)**.
+- card e43's bounded subtree holds `link "Sauce Labs Backpack" e49` (≠ target) → hit.
+- Each other button's clean scope is its own card holding its own product name → exactly 1
+  candidate hits for `near:"Sauce Labs Backpack"` → **resolves e54.** ✅
 
-Honest limit: a page that is BOTH flattened AND has identical siblings with no distinguishing
-text in range would fall to step 5 (escalate). That's correct — it's genuine ambiguity, and the
-agent-pick + write-back handles it. We anchor on CONTENT, never on position/index, so a stored
-`near` survives row reordering (the churn trap an index-based anchor would create).
+### OrangeHRM PIM table (`tests/fixtures/orangehrm-pim-table.yml`) — 50× edit + 50× delete icon buttons
+The icon buttons are named by Font-Awesome **glyph codepoints** (edit = ``, delete =
+``) — so 50 edit buttons share one (role,name) and 50 delete buttons share another;
+role+name alone is useless, `near` does the work.
+```
+12  row " dfgsjsjdh 123445 34 444444 " e268   ← the ROW (50 rows are siblings under the table)
+14    cell "dfgsjsjdh" e276                    ← employee name (another usable `near`)
+14    cell "444444" e280
+16      generic "444444" e281                  ← node matching near:"444444"
+14    cell " " e286
+18      button "" e288                    ← TARGET edit
+18      button "" e290                    ← delete (distinct action, same row)
+```
+Trace for `fingerprint{role:'button', name:''(edit), near:'444444'}`
+(VERIFIED running the algorithm: edit→e288, delete `name:''`→e290 — **distinct refs in
+the same row**, out of 50 candidates each; `near:'dfgsjsjdh'` also → e288):
+- step 3: 50 `button ""` match → >1 → step 4.
+- `anchorRef(e288)`: climb its cell/generic ancestors → up to `row e268` (d12) → clean (the row
+  holds only this row's edit button among edit-candidates) → the table body that holds the
+  other 49 edit buttons → STOP, return **row e268**.
+- row e268's subtree holds `e281 "444444"` (≠ target) → hit. Each row holds its own id →
+  exactly 1 → **resolves the edit button in employee 444444's row.** ✅ Reordering rows moves
+  the id WITH its row, so `near` stays correct → durable.
+
+### GitHub repo page (the flattened capture from the prior review)
+Fully flat (all nodes depth 0) — BUT every link is already distinct by name, so resolution
+returns at step 3 and never reaches layer 3. Flattening only co-occurred with *not needing*
+anchoring; it is not a counterexample.
+
+Honest limit: a page that is BOTH flat AND has identical role+name siblings with no
+distinguishing text in any enclosing scope → step 5 (escalate). Correct: genuine ambiguity →
+agent picks → self-heal writes `{role,name,near}` back. We anchor on CONTENT, never position,
+so a stored `near` survives reordering.
 
 ## Snapshot parser change (src/playwright/snapshot.ts)
 
 `SnapNode` gains `depth: number` (indent level — currently `parseSnapshot` does `line.trim()`
-and discards it; we capture leading-space count BEFORE trimming). New helper
-`rowContains(nodes, candidateIndex, nearName) => boolean`: walk up from the candidate to its
-nearest container-ish ancestor (lower depth, role in {row,cell,listitem,article,grid,table,
-generic}), then test whether any node within that ancestor's subtree has `name === nearName`.
+and discards it; capture the leading-space count BEFORE trimming, mirroring the prototype in
+`docs/superpowers/artifacts/fingerprint-algo-prototype.mjs` which is the reference impl). The
+helpers are `ancestorsOf(nodes, idx)` (preceding nodes, strictly-decreasing depth) +
+`anchorScope(nodes, candIdx, otherCandSet)` (largest clean ancestor) + the `resolveByNear`
+loop — NO container-role allow-list (the cross-candidate exclusion does the bounding; verified
+against the real fixtures regardless of whether the card is `generic`/`row`/`listitem`).
 Also surface `testId`/`placeholder` if playwright-cli emits them in the snapshot line
-(investigate; if absent in the a11y snapshot those layers degrade to unavailable and we rely
-on role+name+`near` — which the measured evidence shows fixes both motivating cases).
+(investigate; if absent those layers degrade to unavailable and we rely on role+name+`near` —
+which the committed-fixture proof shows fixes both motivating cases).
 
 ## graph-edit / edit.ts
 
-`EditAffordanceObj` gains optional `fingerprint`. The existing gates-author-needs logic
-(2026-06-13 fix) is unaffected. `toAffordance` passes the fingerprint through.
+`EditAffordanceObj` gains optional `elementFp`. The existing gates-author-needs logic
+(2026-06-13 fix) is unaffected. `toAffordance` passes `elementFp` through. (S6 — dedup
+shadowing: an edge-row authored directly via `EditEdge` has no `elementFp` field, so a stored
+row could shadow a fingerprinted projected affordance on key collision. In practice gates are
+authored onto the AFFORDANCE (per the 2026-06-13 gate fix, `findNavTarget`), not as a bare row,
+so the projected affordance — which carries `elementFp` — wins. Documented stance: edge-only/
+needsInput rows fall to legacy name-only resolution; if a future need arises, add `elementFp`
+to `EditEdge` and carry it in `upsertEdge`. Not built now.)
 
 ## Input affordances + the credential-fill path (SF4)
 
@@ -224,43 +317,64 @@ the fingerprint mechanism, or one path stays on hardcoded names — a latent spl
 to the single `makeLiveWalkBrowser` (the inline one looks redundant) while doing this. Saucedemo
 login stays byte-identical via the no-fingerprint fallback regardless.
 
+## `dev verify --session` (S8) — the live uniqueness backstop for hand-authored maps
+
+graph-edit is offline so it can't check live uniqueness; `dev verify` is the only place a
+hand-authored `elementFp` is checked against a real page. Spec it as a normal verb (uniform
+JSON stdout + cli-spec registration + MCP-generated, per CLAUDE.md CLI rules):
+- **Input:** `--node <id>` (the site) + `--session <S>` (a live browser already driven to the
+  states, OR drive-to-each-state via the map's edges from the entry — v1: verify whatever state
+  the session's browser is currently on; full drive-through is a follow-up).
+- **Output (stdout):** `{ status, node, states: [{ id, affordances: [{ id, unique: bool,
+  collidesWith: [refs] }] }] }`. `unique:false` lists the other live nodes the `elementFp`
+  matched.
+- **Exit codes:** 0 = all unique · 3 = some affordance non-unique (ran fine, found collisions)
+  · 2 = error (no session / unknown node).
+
 ## Migration
 
-- Additive column on the affordance JSON (states.affordances is already a JSON blob — no
-  schema migration needed; absent field => null => legacy path).
-- saucedemo keeps working unchanged (name-only fallback). Optionally re-record it to gain
-  fingerprints, but not required.
-- OrangeHRM: re-author login affordance with `fingerprint:{role:'button',name:'Login'}` →
-  resolves uniquely → walk completes.
+- Additive: `states.affordances` is already a JSON blob → absent `elementFp` => null => legacy
+  path; the `edges.element_fp` column is added via the existing idempotent migrate() (nullable).
+- saucedemo keeps working unchanged (name-only fallback; its affordances have no `elementFp`).
+- OrangeHRM: author login affordance with `elementFp:{role:'button',name:'Login'}` → resolves
+  uniquely (heading excluded) → login works; PIM-table buttons get `elementFp` with `near` →
+  rows resolve (proven by the prototype against the committed fixture).
 
 ## Testing
 
-- resolveStep: legacy name-only (unchanged); role+name disambiguates heading-vs-button
-  (OrangeHRM, unit fixture); `near` disambiguates N identical (role,name) siblings using
-  fixtures built from the REAL captured structures (the 6 saucedemo cards; the 50-row
-  OrangeHRM table with id cells); testId exact; 0-match → escalate; residual >1 (no/failed
-  `near`) → loud re-author escalation. NO index-based test (index is not a resolver).
-- snapshot: `depth` parse; `rowContains` over a nested fixture AND a flattened one (asserts
-  it returns false, not a wrong match, when there's no container).
-- edit.ts: fingerprint round-trips through graph-edit (incl. `near`).
-- walk-live: credential fill resolves fields by input-affordance fingerprint; falls back to
-  hardcoded names when absent.
-- recording: a recorded click captures role+name (+ `near` when siblings collide) — unit
-  with a fake snapshot containing duplicate (role,name) inside distinct rows.
-- Live e2e (gated): OrangeHRM login→dashboard walk completes; saucedemo walk still completes.
+- **resolve (the proof):** a vitest test READS the two committed fixtures
+  (`tests/fixtures/saucedemo-inventory.yml`, `orangehrm-pim-table.yml`) and asserts the exact
+  refs the prototype proved: SD Backpack→e54, Bike Light→e66, Fleece→e90; OH edit-row-444444→
+  e288, delete→e290. This ports `docs/superpowers/artifacts/fingerprint-algo-prototype.mjs`
+  into the real `resolveStep` and locks the algorithm to real bytes (no hand-drawn fixtures).
+- resolveStep units: legacy name-only unchanged; role+name disambiguates heading-vs-button;
+  testId requires role match (S1); 0-match → escalate; residual >1 → escalate. NO index test.
+- snapshot: `depth` parse; `anchorScope`/`resolveByNear` over the nested fixtures AND a
+  flattened fixture (asserts 0 hits → escalate, never a wrong match).
+- self-heal: `recordSelector` writes `{role,name,near}` to `element_fp`; a re-resolve after a
+  step-5 heal resolves WITHOUT re-escalating (S2/S4 regression test).
+- edit.ts: `elementFp` round-trips through graph-edit.
+- walk-live: credential fill resolves fields by input-affordance `elementFp`; falls back to
+  hardcoded names when absent (saucedemo login byte-identical).
+- Live e2e (gated): OrangeHRM login→dashboard→PIM walk completes; saucedemo walk still completes.
 
 ## Phasing (implementation order, once spec approved)
 
-1. snapshot `depth` + `rowContains` (+ tests, nested & flattened fixtures).
-2. `ElementFingerprint` type + Edge thread-through (types/makeEdge/projection/edges column) +
-   `resolveStep` rewrite with legacy fallback + fingerprint-aware `recordSelector` (+ tests) —
-   fixes OrangeHRM heading-vs-button once its affordance has a fingerprint.
-3. graph-edit fingerprint authoring + input-affordance fingerprint in walk-live (+ tests);
-   re-author + verify OrangeHRM login→dashboard walk live end-to-end.
-4. recording auto-captures the fingerprint (+ `near` on sibling collision) (+ tests).
-5. `dev verify --session` uniqueness check; docs (CLAUDE.md principle #3 amended:
-   "store a durable element fingerprint (role+name+content-anchor); cache disposable
-   selectors; escalation stays the permanent backstop for true ambiguity").
+1. snapshot `depth` + `ancestorsOf`/`anchorScope`/`resolveByNear` (+ tests reading the committed
+   fixtures — the ported prototype proof; + a flattened fixture for safe degradation).
+2. `ElementFingerprint` type (field `elementFp`) + Edge thread-through (types/makeEdge/projection/
+   `edges.element_fp` column + `upsertEdge` write + `rowToEdge` parse + dedup) + `resolveStep`
+   rewrite with legacy fallback + fingerprint-aware `recordSelector` (full `{role,name,near}`,
+   computes `near` at heal) (+ tests) — fixes OrangeHRM heading-vs-button.
+3. graph-edit `elementFp` authoring + BOTH walk-live credential closures on `elementFp` (+ tests);
+   author OrangeHRM (login + PIM buttons) + verify the walk live end-to-end.
+4. recording auto-captures `elementFp` — extend the `use click` verb / `ActionRef` to recover
+   role+name (+`near` via `resolveByNear`) from `fromSnapshot` by ref-lookup (today cli.ts passes
+   `{role:'',name:null}` — B4), thread through `ActionEffect`→`analyseActionEffects`→graph-edit
+   payload (+ tests).
+5. `dev verify --session` (spec above) + cli-spec registration; docs (CLAUDE.md principle #3
+   amended: "store a durable element fingerprint (role+name+content-anchor `near`); cache
+   disposable selectors; escalation stays the permanent backstop for true ambiguity").
 
 ## Out of scope
 
