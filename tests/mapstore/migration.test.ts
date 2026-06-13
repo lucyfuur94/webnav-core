@@ -36,6 +36,17 @@ describe('node_id migration', () => {
     expect(store.getState('weird:thing')?.nodeId == null).toBe(true);
   });
 
+  it('adds declared_shadow (Layer 2) to a legacy db and round-trips a shadow', () => {
+    const db = legacyDb();
+    const store = MapStore.fromDatabase(db);   // migrate() must ALTER TABLE ADD declared_shadow
+    store.upsertState(makeState({ id: 'github:result-list', nodeId: 'github.com',
+      semanticName: 'github:result-list', urlPattern: 'https://github.com/search*', role: 'result-list',
+      declaredShadow: { collections: [{ heading: 'Repos', columns: ['Name', 'Stars'], recordCount: 9 }] } }));
+    expect(store.getState('github:result-list')?.declaredShadow?.collections?.[0].columns).toEqual(['Name', 'Stars']);
+    // the pre-existing legacy row has no shadow → null, not a crash
+    expect(store.getState('github:repo-detail')?.declaredShadow).toBeNull();
+  });
+
   it('upsertState writes correctly on a MIGRATED db (node_id is the LAST column there)', () => {
     // After ALTER TABLE ADD COLUMN, node_id is appended last — not 2nd as in
     // fresh schema. A positional INSERT would shift every field by one. Write a

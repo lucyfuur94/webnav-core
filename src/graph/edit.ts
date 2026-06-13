@@ -1,5 +1,5 @@
 import type { MapStore } from '../mapstore/store.js';
-import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind, type ElementFingerprint } from '../mapstore/types.js';
+import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind, type ElementFingerprint, type DeclaredShadow } from '../mapstore/types.js';
 
 // Teach API accepts an affordance either as a bare label string (→ mutate, the
 // safe default for an in-page action with no declared transition) or as the full
@@ -22,7 +22,7 @@ export interface EditAffordanceObj {
                                    // heading-vs-button + identical siblings (e.g. table-row icon buttons)
 }
 export type EditAffordance = string | EditAffordanceObj;
-export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; }
+export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
@@ -101,6 +101,7 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     urlPattern: s.urlPattern ?? '', role: 'detail',
     fingerprint: s.fingerprint ?? [],
     affordances: (s.affordances ?? []).map((a) => toAffordance(a, stateId)),
+    declaredShadow: s.declaredShadow ?? null,   // Layer 2: carry the domain-shadow evidence through
   })]));
 
   let statesWritten = 0, edgesWritten = 0;
