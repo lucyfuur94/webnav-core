@@ -93,24 +93,29 @@ dev record-stop --session map
 dev graph-analyse --session map --draft  # → a complete, SELF-VERIFIED {node,states,edges} draft
 dev graph-edit --node <id> --graph <draft, lightly curated>   # accept
 ```
-The headline, built on top (the "easy for anyone"): **`dev map <url> --session S`** — ONE
-orchestration verb that chains record-start → (agent drives) → record-stop → analyse --draft →
-graph-edit → self-verify, auto-threading the same session, surfacing the draft + any flagged
-states for the agent to accept. NOT autonomous (zero-LLM #5a: webnav can't decide what to click;
-the agent still drives + curates), but it removes all the glue. No sqlite, no per-state guessing.
+**`dev map <url>` orchestration verb — DROPPED (2026-06-13).** Initially planned as a one-verb
+wrapper over the 5-call sequence above. Cut after the reminder that **webnav's consumer is the
+calling AGENT, not a human.** Threading a session id through 5 calls and piping `--draft` JSON
+into `graph-edit` is trivial tool-calling for an agent — there's no fumbling/sequencing pain to
+remove, so the wrapper adds CLI surface for no real benefit (and webnav prefers small composable
+verbs). The thrash was never the verb count; it was the per-state hand-authoring of wrong
+fingerprints/URLs, which `--draft` already fixes. The 5-call sequence above IS the smooth flow
+for an agent. (If a human ergonomics surface is ever wanted, it belongs in tooling around webnav,
+not in the agent-facing CLI.)
 
 **Distribution (the other half of "easy for anyone"):** for COMMON sites nobody should re-learn —
 `dev export-map` already emits a shareable pack (`orangehrm-mappack.json` is one); `walk --hosted`
 + walk-live already seed from packs. Most users IMPORT a pack; only the first mapper LEARNS.
-Document this in `--help` as the primary path; `dev map` is for YOUR own/internal sites.
+Document this in `--help` as the primary path.
 
-## Build order (per review)
-1. `draftFromEffects(effects) -> {node,states,edges}` pure fn WITH fixes A–D + login-input wiring.
-2. Self-verify pass folded in (matchState + replayStep over the draft's own snapshots).
-3. Wire `--draft` into `graph-analyse` (emit the shape + the walk-example receipt).
-4. `dev map <url> --session S` orchestration verb (thin glue; not autonomous).
-5. RE-AUTHOR OrangeHRM through `dev map` as the verb's acceptance/dogfood test — deletes the
-   sqlite-patched provenance. (Do NOT block the draft on this; the fixture stays a test oracle.)
+## Build order (revised — `dev map` dropped, see above)
+1. ✅ `draftFromEffects(effects) -> {node,states,edges}` pure fn WITH fixes A–D + login-input wiring. (DONE 96d6be4)
+2. ✅ Self-verify pass folded in (matchState + replayStep over the draft's own snapshots). (DONE)
+3. ✅ Wire `--draft` into `graph-analyse` (emit the shape + the walk-example receipt). (DONE)
+4. ~~`dev map` orchestration verb~~ — DROPPED (agent consumer doesn't need the glue; see above).
+5. RE-AUTHOR OrangeHRM live through the record→`--draft`→graph-edit sequence (the 5-call flow) —
+   deletes the sqlite-patched provenance, dogfoods --draft on the real site. (Deferred to a
+   deliberate session per the no-hammering rule; fixture stays a test oracle meanwhile.)
 6. Document `export-map` packs as the primary distribution path in `--help`.
 
 ## OrangeHRM right now (settled)
