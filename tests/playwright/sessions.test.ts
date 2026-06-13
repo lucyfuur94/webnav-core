@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor } from '../../src/playwright/sessions.js';
+import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor, pidFromPs, sessionNameFromPs } from '../../src/playwright/sessions.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
+// `ps -eo pid,command` style: leading PID, then the command (the daemon-session path).
 const psLines = [
-  'run-cli-server --daemon-session=/cache/daemon/abc/walk-1.session',
-  'run-cli-server --daemon-session=/cache/daemon/abc/bench-a2.session',
+  ' 4101 run-cli-server --daemon-session=/cache/daemon/abc/walk-1.session',
+  ' 4102 run-cli-server --daemon-session=/cache/daemon/abc/bench-a2.session',
 ];
 // Session files on disk (name + mtime ms): walk-1 + bench-a2 are live; old-1 is orphaned
 // (file exists, no live daemon); login is live but recent.
@@ -33,6 +34,14 @@ describe('inventorySessions', () => {
     // both live sessions surface with live:true despite no file row
     expect(inv.filter((s) => s.live).map((s) => s.name).sort()).toEqual(['bench-a2', 'walk-1']);
   });
+
+  it('captures the daemon PID for live sessions (for reap force-close)', () => {
+    const inv = inventorySessions(files, psLines, 10_000);
+    const byName = Object.fromEntries(inv.map((s) => [s.name, s]));
+    expect(byName['walk-1'].pid).toBe(4101);
+    expect(byName['bench-a2'].pid).toBe(4102);
+    expect(byName['old-1'].pid).toBeUndefined();   // orphan: no live daemon → no pid
+  });
 });
 
 describe('planReap', () => {
@@ -58,6 +67,17 @@ describe('planReap', () => {
       .toEqual(['old-1', 'stale-live']);
     expect(planReap(inv, { maxAgeMs: 4 * 60 * 60 * 1000, exclude: 'stale-live' }).map((s) => s.name))
       .toEqual(['old-1']);
+  });
+});
+
+describe('pidFromPs / sessionNameFromPs (ps -eo pid,command parsing)', () => {
+  const line = ' 4101 run-cli-server --daemon-session=/cache/daemon/abc/walk-1.session';
+  it('extracts the leading pid', () => {
+    expect(pidFromPs(line)).toBe(4101);
+    expect(pidFromPs('run-cli-server --daemon-session=/x/y.session')).toBeNull();  // no pid column
+  });
+  it('still extracts the session name with the pid column present', () => {
+    expect(sessionNameFromPs(line)).toBe('walk-1');
   });
 });
 

@@ -17,6 +17,7 @@ export interface SessionInfo {
   name: string;
   live: boolean;      // a daemon process currently references this session
   ageMs: number;      // now - session-file mtime (Infinity if the file is gone but daemon is live)
+  pid?: number;       // the daemon process id (live sessions only) — for reap force-close
 }
 
 export interface ReapOpts {
@@ -31,24 +32,35 @@ export function sessionNameFromPs(line: string): string | null {
   return m ? m[1] : null;
 }
 
+/** Leading PID from a `ps -eo pid,command` line (or null if it has none). */
+export function pidFromPs(line: string): number | null {
+  const m = line.trim().match(/^(\d+)\s/);
+  return m ? Number(m[1]) : null;
+}
+
 /**
- * Merge on-disk session files with the live daemon process list into one inventory.
- * `live` = a daemon references the session (browser is up). A file with no daemon is
- * an ORPHAN (browser already died; only stale metadata remains). A live daemon with no
- * file still surfaces (live:true, ageMs:Infinity). Pure — inputs are injected.
+ * Merge on-disk session files with the live daemon process list (`ps -eo pid,command`
+ * lines) into one inventory. `live` = a daemon references the session (browser is up);
+ * a file with no daemon is an ORPHAN; a live daemon with no file still surfaces. Live
+ * sessions carry their daemon `pid` (for reap force-close). Pure — inputs injected.
  */
 export function inventorySessions(
   files: { name: string; mtimeMs: number }[],
   psLines: string[],
   nowMs: number,
 ): SessionInfo[] {
-  const liveNames = new Set(psLines.map(sessionNameFromPs).filter((n): n is string => !!n));
+  const livePid = new Map<string, number | undefined>();
+  for (const line of psLines) {
+    const name = sessionNameFromPs(line);
+    if (name) livePid.set(name, pidFromPs(line) ?? undefined);
+  }
   const byName = new Map<string, SessionInfo>();
   for (const f of files) {
-    byName.set(f.name, { name: f.name, live: liveNames.has(f.name), ageMs: nowMs - f.mtimeMs });
+    const live = livePid.has(f.name);
+    byName.set(f.name, { name: f.name, live, ageMs: nowMs - f.mtimeMs, ...(live ? { pid: livePid.get(f.name) } : {}) });
   }
-  for (const name of liveNames) {
-    if (!byName.has(name)) byName.set(name, { name, live: true, ageMs: Infinity });
+  for (const [name, pid] of livePid) {
+    if (!byName.has(name)) byName.set(name, { name, live: true, ageMs: Infinity, pid });
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -116,7 +128,7 @@ function listSessionFiles(): { name: string; mtimeMs: number }[] {
 
 async function listDaemonPs(): Promise<string[]> {
   try {
-    const { stdout } = await execFileAsync('ps', ['-eo', 'command'], { maxBuffer: 8 * 1024 * 1024 });
+    const { stdout } = await execFileAsync('ps', ['-eo', 'pid,command'], { maxBuffer: 8 * 1024 * 1024 });
     return stdout.split('\n').filter((l) => l.includes('--daemon-session='));
   } catch { return []; }
 }
@@ -126,17 +138,34 @@ export async function listSessions(nowMs: number): Promise<SessionInfo[]> {
   return inventorySessions(listSessionFiles(), await listDaemonPs(), nowMs);
 }
 
-/** Close one session via playwright-cli (idempotent; ignores already-gone). */
-async function closeSession(name: string): Promise<boolean> {
-  try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); return true; }
-  catch { return false; }
+/** Is a daemon pid still alive? (signal 0 = existence check, doesn't actually signal.) */
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+/**
+ * Close one session: graceful `playwright-cli close` first; if that leaves the daemon ALIVE
+ * (wedged daemons ignore close — the case that needed a manual kill), force-kill the daemon
+ * process group (negative pid → the whole tree, reaping its chrome children too). `pid` is
+ * the daemon pid from the inventory; omit for orphans (graceful-only). Returns true if the
+ * session is gone after.
+ */
+async function closeSession(name: string, pid?: number): Promise<boolean> {
+  try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); }
+  catch { /* graceful close failed; fall through to force-kill if we have a pid */ }
+  if (pid === undefined) return true;                 // orphan / no daemon to kill
+  if (!pidAlive(pid)) return true;                    // graceful close worked
+  // Wedged: kill the daemon's process GROUP so its chrome children die too. Fall back to the
+  // bare pid if the group kill isn't permitted.
+  try { process.kill(-pid, 'SIGTERM'); } catch { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
+  return !pidAlive(pid);
 }
 
 /** Reap per `opts`; returns the names actually closed. */
 export async function reapSessions(nowMs: number, opts: ReapOpts): Promise<string[]> {
   const targets = planReap(await listSessions(nowMs), opts);
   const closed: string[] = [];
-  for (const t of targets) if (await closeSession(t.name)) closed.push(t.name);
+  for (const t of targets) if (await closeSession(t.name, t.pid)) closed.push(t.name);
   return closed;
 }
 
@@ -175,7 +204,7 @@ export async function ensureCanOpen(
     // free orphans + abandoned stale paused-walk browsers (never the current one)
     const toFree = inv.filter((s) =>
       s.name !== currentSession && (!s.live || staleWalkBrowsers.includes(s.name)));
-    for (const s of toFree) await closeSession(s.name);
+    for (const s of toFree) await closeSession(s.name, s.pid);
     if (toFree.length) inv = await listSessions(Date.now());
     const liveOthers = inv.filter((s) => s.live && s.name !== currentSession).length;
     if (!canOpen(liveOthers, max)) {
