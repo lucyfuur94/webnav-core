@@ -1,6 +1,36 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-12 · **Branch:** `main` · **Tests:** 426 unit pass + 9 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+**Updated:** 2026-06-13 · **Branch:** `main` · **Tests:** 445 unit pass + 7 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+
+> **2026-06-13 — learning-the-core (Layers 1–2), browser/fingerprint hardening, and a big dead-code cleanup.**
+> - **Element fingerprints + browser guardrails + readiness retry (DONE):** affordances carry a durable
+>   `elementFp {role,name,near}` (role+name+content-anchor; survives redesigns; `resolveByFingerprint` is
+>   layered/deterministic). Browser guardrails: live-session ceiling (`WEBNAV_MAX_SESSIONS`=16), per-host
+>   throttle (`WEBNAV_HOST_INTERVAL_MS`=1000), reap force-close, non-hydration detection. `dev sessions reap`
+>   now UNLINKS the on-disk `.session` file (was a silent no-op for dead sessions). Specs:
+>   `2026-06-13-element-fingerprint-design.md`, `2026-06-13-browser-guardrails-design.md`.
+> - **Smooth learning via `graph-analyse --draft` (DONE):** folds a recording into a SELF-VERIFIED
+>   `{node,states,edges}` graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login
+>   wired, cross-link mesh so modules aren't dead-ends). Spec `2026-06-13-graph-analyse-draft-design.md`.
+>   `dev node-clear` (empty a node to re-learn) + `dev node-rm` (delete a node) added — re-learn ENTIRELY
+>   through webnav, never raw sqlite.
+> - **Learning the CORE (Layers 1–2 DONE; spec `2026-06-13-learning-the-core-design.md`):** the draft now
+>   captures the full in-page affordance REPERTOIRE (mutate/reveal/input + needsClassification, not just
+>   navigate; verify-before-emit drops ambiguous icon-glyph noise) AND a declared domain SHADOW on each
+>   state (table columns/filters/createsEntity/sub-tabs — evidence, never interpretation, #5a-bounded).
+>   `declaredShadow` persisted (idempotent migration) + carried through the contract (`MapPack`). Layer 3
+>   (workflows) OUT OF SCOPE, Layer 4 (couplings) PARKED.
+> - **Verified live on a Haiku-built OrangeHRM map:** a Haiku agent LEARNED the full site one-shot (17
+>   states, rich interiors) AND USED the map to walk login→Recruitment-Candidates (`status: done`, 1 ref
+>   resume at a drifted fork). Learn AND use both proven.
+> - **Dead-code cleanup (DONE):** deleted the parked GitHub-recall / internet-graph / goals engine —
+>   `router/{live,recall-via-map,router,extractors,locate}`, `graph/{route,hop,export,interior}`,
+>   `explorer/{github-skeleton,explorer}`, `goals/find-battle-tested-repos`, the `Goal` type + store goal
+>   CRUD + goals table, and their 18 tests. All were reachable from NO live verb (the recall/route/hop/
+>   locate/list-goals CLI verbs were removed 2026-06-13). Fixed `list` (it never read the store → always
+>   empty; now shows sites + state counts); removed `describe` (redundant with graph-show/outline). The v1
+>   proof-of-engine lives in git history.
+> - **npm:** package renamed `@dikshanty94/webnav`.
 
 > **2026-06-12 (later) — usage-weights machinery moved OUT (to webnav-site).** Edge
 > `reliability`/`success_count`/`fail_count`/`last_verified`/`confidence`, node-edge `weight`,
@@ -99,13 +129,8 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 | `webnav walk --start X --goal Y [--input k=v] [--hosted]` | autopilot a multi-step route over a built map; pauses at genuine forks (`needs-navigation`/`needs-classification`) |
 | `webnav walk-resume <session> --ref e42 \| --classify safe` | answer a paused walk's fork; `--classify safe` fires a commit and continues (R5) |
 | `webnav creds set\|list\|rm <site> [k=v…]` | local credential store (`~/.webnav/credentials.json`, chmod 600; never in the map) |
-| `webnav locate "<place>"` | WHERE a place is (URL coordinate) without navigating |
 | `webnav read <url> [--raw]` | open a URL → distilled content (the "go read this page" primitive) |
-| `webnav recall <goal-id> "<query>"` | replay a goal's known route → evidence bundle (agent ranks). Goal carries site/entry/extractor as DATA. No goals ship by default — author/seed your own. |
 | `webnav search "<query>" [--top N]` | multi-provider open-web search → visit top-N → extract evidence |
-| `webnav route "<request>" [--capability X]` | graph: candidate site-nodes for a request + signals (agent decides) — over YOUR taught graph |
-| `webnav hop <url> --to-cluster X \| --to-node Y` | graph: move to a related site via an edge |
-| `webnav list-goals` | the recall goals webnav knows (id + signals) — so the agent can pick a goal-id |
 | `webnav eval <url> "<js>"` | open a URL, run a JS expression → just the value (cheap, targeted extraction vs a full snapshot) |
 | `webnav network <url>` | open a URL → the network/API calls the page made (the JSON behind the DOM) |
 | `webnav go-back \| reload` | step within the current `-s=<session>` browser |
@@ -117,7 +142,7 @@ A file-backed `webnav.db` (SQLite, gitignored) persists the map across runs.
 
 `--help` is grouped **Find / Read / Navigate** (playwright-style), and each verb's per-verb help teaches data-flow (where its inputs come from / outputs go).
 
-**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list`, `describe`, `node-add`, `edge-add`, `capture`, **`record-start`**, **`record-stop`**, **`graph-analyse`**, **`graph-edit`**, **`graph-show`**, **`effects`** (the agent-driven site-mapping flow — see below), plus `export-map` (a site's map pack as JSON), `outline` / `mermaid` (text views of an interior), `dashboard` (local operator UI: sites + JSON map + credentials), and `mcp` (serve all verbs as MCP tools over stdio).
+**Dev/teach verbs** (`webnav dev <verb>`, out of the consumer menu): `list` (sites you have maps for + state counts), `node-add`, `edge-add`, `node-clear` (empty a node to re-learn), `node-rm` (delete a node), `capture`, **`record-start`**, **`record-stop`**, **`graph-analyse [--draft]`**, **`graph-edit`**, **`graph-show`**, **`effects`** (the agent-driven site-mapping flow — see below), plus `export-map` (a site's map pack as JSON), `outline` / `mermaid` (text views of an interior), `dashboard` (local operator UI: sites + JSON map + credentials), and `mcp` (serve all verbs as MCP tools over stdio).
 
 Two CLI categories: **`use`** (drive the browser + query the map — the consumer verbs) and **`dev`** (author the map — the teach + mapping verbs). Both dispatchers re-parse the sub-verb; bare consumer verbs still work.
 
