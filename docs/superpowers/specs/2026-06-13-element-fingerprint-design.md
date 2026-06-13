@@ -90,7 +90,14 @@ The walk/resolve path consumes **`Edge`**, and edges are *projected* from afford
 fingerprint must be carried end-to-end, or `resolveStep` receives nothing:
 1. add `elementFp` to the `Edge` interface (`types.ts`) + `makeEdge` defaults (null) — the
    field is `elementFp`, NEVER `fingerprint` (S7: collides with `State.fingerprint`);
-2. copy `elementFp` in `projectFromAffordances` (`store.ts`) `makeEdge({...})` when projecting navigate/reveal affordances;
+2. copy `elementFp` in `projectFromAffordances` (`store.ts`) `makeEdge({...})` when projecting
+   navigate/reveal affordances — **NORMALIZE: `elementFp: a.elementFp ?? null` (D4).** A legacy
+   affordance blob has no `elementFp` key → parses to `undefined`; `makeEdge`'s `{elementFp:null,
+   ...init}` spread lets that `undefined` OVERWRITE the null default → the projected Edge carries
+   `undefined`. So the legacy gate MUST be falsiness-based (`if (!fp)`, NOT `=== null`), and the
+   parsed value's type is `ElementFingerprint | null | undefined` (consumers treat undefined as
+   null). This is the exact path both motivating maps use (no edge rows). Add a test projecting a
+   key-predating blob;
 3. add an `element_fp` column to the `edges` table (`schema.sql` + the idempotent migration in
    `store.ts`) — JSON-encoded, nullable. Stored rows win on dedup in `edgesFrom`, so an
    edge-row-authored step must carry it too;
@@ -109,22 +116,35 @@ fingerprint must be carried end-to-end, or `resolveStep` receives nothing:
    motivating maps have **no edge rows** — saucedemo seeds affordances only; the 2026-06-13
    gate fix authors gates onto the affordance and `continue`s past `upsertEdge`. So an
    `UPDATE edges` heal no-ops on the common case. Therefore:
-   - New store method `recordElementFp(fromState, toState, semanticStep, fp)` that LOCATES THE
-     OWNING AFFORDANCE in `fromState`'s affordance tree (matching by `toState` + `semanticStep`,
-     recursing reveal `children` exactly as `interiorEdges`/`findNavTarget` already do), sets
-     its `elementFp`, and re-`upsertState`s. Falls back to `UPDATE edges SET element_fp` ONLY
-     for a legacy/explorer stored row with no backing affordance.
-   - The heal computes `near` via the shared **`deriveNear`** (see §near selection) on the
-     chosen node + its live snapshot (in hand at `walk.ts:132-133`: `beforeNodes` + `chosen`).
-     If `deriveNear` returns null (a truly content-identical sibling), store `{role,name}` and
-     the step honestly stays a per-walk escalation — don't claim a heal that can't stick.
-   - This RETIRES `recordSelector`'s bare-string signature. **S1 fallout (must do in Phase 2):**
-     update the `IMapStore` interface decl (store.ts:25), the `walk.ts` call site, and migrate
-     the three green tests asserting `selectorCache==='Shopping cart'` (walk.test.ts:168,
-     store.test.ts, project-edges.test.ts) to assert `elementFp` instead. `selector_cache`
-     column stays only as the legacy-name resolver's read path (replay.ts:20); new heals on a
-     legacy name-only edge may still write it (decide per-edge: fingerprinted edge → affordance
-     `elementFp`; legacy edge → `selector_cache` as today).
+   - New store method `recordElementFp(fromState, affordanceId, fp)` that sets the named
+     affordance's `elementFp` (recursing reveal `children`) and re-`upsertState`s. **D5 — key by
+     AFFORDANCE ID, not `(toState, semanticStep)`:** the affordance JSON blob has no uniqueness
+     constraint (unlike the edges table's `UNIQUE(from,to,step)`), and the fingerprint feature's
+     own target case is two navigate affordances in one state to the SAME `toState` distinguished
+     only by `elementFp.near` — so `(toState, semanticStep)` is NOT a unique key there. Thread the
+     affordance id through to the heal: reuse `interiorEdges`' existing `viaAffordance` identity
+     (add `viaAffordance` to the projected `Edge` so `walk.ts` knows which affordance it traversed).
+     The legacy fallback (`UPDATE edges SET element_fp`) applies ONLY to a legacy/explorer stored
+     row with no backing affordance.
+   - The heal computes `near` via the shared **`deriveNear`** on the chosen node + its live
+     snapshot. The heal site is the resume `ans.kind==='ref'` branch (`walk.ts:142`, which holds
+     `beforeNodes` + `chosen`); the FIRST-pass escalate (`walk.ts:180`) never heals. The heal
+     adapter: `candIdx = beforeNodes.findIndex(n => n.ref === ans.ref)`; role+name come FROM
+     `beforeNodes[candIdx]` (the chosen LIVE node), NOT from `edge.semanticStep`'s quoted prose
+     (D7b — they can differ, line 63). If `deriveNear` returns null OR the chosen node has a null
+     name, store nothing — the step honestly stays a per-walk escalation (D1).
+   - **Two heal branches, made explicit (D6 — resolves the prior L116/L127 contradiction):**
+     (a) the edge has a backing affordance (the common case, both motivating maps) → write
+     `elementFp` onto the AFFORDANCE via `recordElementFp`; do NOT touch `selector_cache`.
+     (b) a legacy/explorer STORED edge row with no backing affordance → write `selector_cache`
+     EXACTLY as today (the legacy name-only resolver reads it at replay.ts:20). These are
+     mutually exclusive per edge; `recordSelector` keeps a path for (b).
+   - **S1/D6 test fallout (Phase 2):** update the `IMapStore` interface decl (store.ts:25) + the
+     `walk.ts` call site. The NEW affordance-heal test uses a no-edge-row fixture (branch a). KEEP
+     the existing legacy stored-edge heal test (walk.test.ts:136-180: `upsertEdge` → escalate →
+     ref → assert `selectorCache` on the row → second walk resolves) UNCHANGED — it is the only
+     regression cover for branch (b) (depended on by explorer.ts + replay.ts:20, principle #3).
+     Do NOT repurpose it; add the affordance test alongside.
 
 `semanticStep` stays. The `elementFp` is the machine key; `semanticStep` no longer needs to
 encode the name in quotes once a fingerprint exists. **S6 — it MUST stay self-sufficient prose**
@@ -185,7 +205,7 @@ that would pull in a sibling candidate). `near` must appear in THAT scope. This 
 ancestor that contains `near`" (too big — a high ancestor contains every candidate's `near`,
 so all match → escalate). It is the tightest *non-shared* scope.
 
-`anchorRef(nodes, candIdx, otherCandIdxs) -> scope | null`:
+`anchorScope(nodes, candIdx, otherCandIdxs) -> scope | null`:
 ```
 scope = null
 for each ancestor A of candIdx (preceding node, strictly-decreasing depth, nearest first):
@@ -197,7 +217,7 @@ return scope           // largest clean ancestor (null if none / flat page)
 `resolveByNear(nodes, candidates, near)`:
 ```
 hits = candidates where:
-    scope = anchorRef(nodes, cand, candidates\{cand})
+    scope = anchorScope(nodes, cand, candidates\{cand})
     scope != null AND boundedSubtree(scope) contains a node (≠ cand) whose name == near
 exactly 1 hit → return it.  [the 6 carts + 50×2 icon buttons resolve here — VERIFIED below]
 0 or >1 hits → step 5 (escalate). FLAT page (no clean ancestor) → 0 → escalate.
@@ -219,25 +239,37 @@ prototype):
 deriveNear(nodes, candIdx, role, name) -> string | null
   cands = nodes matching (role, name) with a ref
   scope = anchorScope(nodes, candIdx, {other cands})         // candidate's clean per-row/card scope
+  if cands.length <= 1: return null                           // unique by role+name → no near needed
   if !scope: return null
-  for each text-bearing name T in scope (doc order, excluding candIdx, skip empty/whitespace):
-      if resolveByNear(nodes, cands, T) == [candIdx]:          // T uniquely identifies THIS candidate
-          return T
-  return null                                                  // honest flag: truly-identical sibling → escalate
+  qualifying = [ T : text-bearing name in scope (excl candIdx, skip empty/whitespace)
+                     where resolveByNear(nodes, cands, T) == [candIdx] ]  // T uniquely identifies candIdx
+  if qualifying is empty: return null                         // honest flag: truly-identical sibling → escalate
+  return the MOST STABLE T (nearStability desc; doc-order tiebreak)        // D3 — see below
 ```
-**Verified against the committed fixtures** (prototype, all PASS): SD e54→"Sauce Labs Backpack",
-e66→"Sauce Labs Bike Light", e90→"Sauce Labs Fleece Jacket"; OH edit-e288 & delete-e290 →
-"dfgsjsjdh" (each round-trips back to its own ref). And **S3 honest limit, proven**: 12/50 PIM
+`nearStability(text)` (pure, deterministic, no LLM): `+3` if id-like (`\d{3,}` run — id/SKU/order
+no.), `+0..1` for length (more specific = less transient), `-2` if free-text prose (has a space AND
+no digit — names/sentences). Among equally-correct (exactly-one-hit) anchors this prefers the
+DURABLE one, honoring #3 ("store what doesn't change") at zero cost to the never-guess invariant.
+**Verified against the committed fixtures** (prototype, all 12 cases PASS): SD e54→"Sauce Labs
+Backpack", e66→"Sauce Labs Bike Light", e90→"Sauce Labs Fleece Jacket"; OH edit-e288 & delete-e290
+→ **"123445 34"** (the id-like value, chosen OVER the free-text first-name "dfgsjsjdh" by
+`nearStability` — D3), each round-trips back to its own ref. **S3 honest limit, proven**: 12/50 PIM
 edit buttons sit in content-identical rows → `deriveNear` returns null → correctly unresolvable
 (escalate), never wrong-resolved.
 
-**Durability refinement (noted, non-blocking):** "first uniquely-resolving text in doc order"
-can pick a less-stable text when several qualify — e.g. OH picked the first-name "dfgsjsjdh"
-over the more-stable id "444444" (both unique in that row). Correctness is unaffected
-(exactly-one-hit guarantees no wrong-click; a churned text just re-escalates later and re-heals).
-A v1.1 refinement may PREFER more-stable texts (numeric ids, longer/labelled values) among the
-qualifying set — but v1 ships the proven "first uniquely-resolving" rule. Recording MAY also let
-the agent-in-the-loop override the auto-picked `near` (it already has the page open).
+Recording MAY also let the agent-in-the-loop override the auto-picked `near` (it already has the
+page open), and SHOULD echo the auto-derived `near` in the `use click` JSON so the write is
+surfaced evidence, not silent.
+
+**D1 — null-name semantics (matching + heal).** A `null` accessible name (icon-only glyphless
+node) matches ONLY null-named nodes and is NOT a usable layer-1 key on its own: when
+`elementFp.name === null`, resolution REQUIRES a `near` (or testId) — a bare `{role, name:null}`
+selects every null-named node (e.g. 54 generics on the saucedemo page) and `deriveNear` over that
+set is meaningless. Heal guard (replaces walk.ts:142's `if (chosen?.name)`): only persist an
+`elementFp` when the chosen node has a non-null name OR `deriveNear` produced a non-null `near`;
+otherwise store nothing and let the step stay a per-walk escalation (a heal of a truly
+unidentifiable null-named element can never stick — don't pretend it can). Add a `resolveStep`
+unit for `name === null`.
 
 ## Authoring guarantees uniqueness (the chosen rule)
 
@@ -273,9 +305,9 @@ indents are the actual leading-space counts in the captures.
  8    link "Sauce Labs Backpack" e45    (image link)
  8    generic e47
 10      generic e48
-12        link "Sauce Labs Backpack" e49
-14          generic "Sauce Labs Backpack" e50   ← a node matching near
-12        generic "carry.allTheThings()…" e51
+12        link "Sauce Labs Backpack" e49      ← THE near anchor (quoted accessible name)
+14          generic e50 :Sauce Labs Backpack  ← post-colon TEXT → parses to name=null (NOT a near)
+12        generic e51 :carry.allTheThings()…  ← post-colon text → name=null
 10      generic e52                     ← the price-box (the button's nearest wrapper)
 12        generic "$29.99" e53
 12        button "Add to cart" e54      ← TARGET
@@ -283,12 +315,21 @@ indents are the actual leading-space counts in the captures.
 Trace for `fingerprint{role:'button', name:'Add to cart', near:'Sauce Labs Backpack'}`
 (VERIFIED by running the algorithm over the fixture — resolves e54; Bike Light→e66; Fleece→e90):
 - step 3: 6 nodes match role+name → >1 → step 4.
-- `anchorRef(e54)`: climb e52(d10)→clean→ e47(d8)→clean→ e43(d6, the card)→clean→ e42(d4, the
+- `anchorScope(e54)`: climb e52(d10)→clean→ e47(d8)→clean→ e43(d6, the card)→clean→ e42(d4, the
   product GRID)→ its subtree contains the OTHER 5 Add-to-cart buttons → STOP, return the
   previous clean scope = **card e43 (d6)**.
 - card e43's bounded subtree holds `link "Sauce Labs Backpack" e49` (≠ target) → hit.
 - Each other button's clean scope is its own card holding its own product name → exactly 1
   candidate hits for `near:"Sauce Labs Backpack"` → **resolves e54.** ✅
+
+**D2 — eligibility constraint (matters for authoring + `deriveNear`):** only nodes with a parsed
+QUOTED accessible name are eligible as `near`. The parser (`NODE_RE`) captures the quoted name
+*before* the brackets; **post-colon text content** (`generic [ref=e50]: Sauce Labs Backpack`, a
+price `…: $29.99`, an id `…: "444444"`) parses to `name=null` and is INVISIBLE to the matcher
+(`resolve(…, '$29.99')` → escalate-0). So `near` must be a quoted-name node (here `link e49`, and
+in the table `cell "444444" e280`), not the post-colon text node. (Optional future widening:
+capture post-colon text in the parser to grow anchor availability + shrink the 12/50 null-derive
+rate — out of scope for v1.)
 
 ### OrangeHRM PIM table (`tests/fixtures/orangehrm-pim-table.yml`) — 50× edit + 50× delete icon buttons
 The icon buttons are named by Font-Awesome **glyph codepoints** (edit = ``, delete =
@@ -297,8 +338,8 @@ role+name alone is useless, `near` does the work.
 ```
 12  row " dfgsjsjdh 123445 34 444444 " e268   ← the ROW (50 rows are siblings under the table)
 14    cell "dfgsjsjdh" e276                    ← employee name (another usable `near`)
-14    cell "444444" e280
-16      generic "444444" e281                  ← node matching near:"444444"
+14    cell "444444" e280                       ← THE near anchor (quoted name on the cell; D2)
+16      generic e281 :444444                   ← post-colon text → name=null (NOT the anchor)
 14    cell " " e286
 18      button "" e288                    ← TARGET edit
 18      button "" e290                    ← delete (distinct action, same row)
@@ -308,7 +349,7 @@ Trace for `elementFp{role:'button', name:<edit glyph>, near:<derived>}`
 both ALSO resolve via `near:'444444'` — **distinct refs in the same row**, of 50 candidates
 each. S3: 12/50 rows are content-identical → `deriveNear`→null → those correctly escalate):
 - step 3: 50 edit-glyph buttons match role+name → >1 → step 4.
-- `anchorRef(e288)`: climb its cell/generic ancestors → up to `row e268` (d12) → clean (the row
+- `anchorScope(e288)`: climb its cell/generic ancestors → up to `row e268` (d12) → clean (the row
   holds only this row's edit button among edit-candidates) → the table body that holds the
   other 49 edit buttons → STOP, return **row e268**.
 - row e268's subtree holds `e281 "444444"` (≠ target) → hit. Each row holds its own id →
@@ -408,13 +449,15 @@ single-page** (the `--session` browser is on ONE page), so it verifies exactly t
 
 ## Testing
 
-- **resolve + deriveNear (the proof):** a vitest test READS the two committed fixtures and
-  asserts the exact refs the prototype proved — MATCH: SD Backpack→e54, Bike Light→e66,
-  Fleece→e90; OH edit-row→e288, delete→e290. DERIVE round-trip: `deriveNear(target)` →
-  `resolveStep(that)` → same ref, for each. S3: ≥1 content-identical PIM row → `deriveNear`→null
-  → escalate (locks the honest limit as proven behavior). This ports
-  `docs/superpowers/artifacts/fingerprint-algo-prototype.mjs` into the real code (no hand-drawn
-  fixtures; locked to real bytes).
+- **resolve + deriveNear (the proof) — Phase 1, PURE helpers:** a vitest test READS the two
+  committed fixtures and asserts the exact refs the prototype proved — MATCH: SD Backpack→e54,
+  Bike Light→e66, Fleece→e90; OH edit-row→e288, delete→e290. DERIVE round-trip:
+  `deriveNear(target)` → `resolveByNear`/`anchorScope` (the PURE helpers, mirroring the prototype
+  — D7a: NOT `resolveStep`, which isn't rewritten until Phase 2) → same ref, for each. D3:
+  `deriveNear` for the OH edit button returns an id-like text (`\d{3,}`), not the free-text
+  first-name. S3: ≥1 content-identical PIM row → `deriveNear`→null → escalate (locks the honest
+  limit as proven behavior). This ports `docs/superpowers/artifacts/fingerprint-algo-prototype.mjs`
+  into the real code (no hand-drawn fixtures; locked to real bytes).
 - resolveStep units: legacy name-only unchanged (the hard invariant — `resolve.test.ts`/
   `replay.test.ts` stay green untouched); role+name disambiguates heading-vs-button; testId step
   SKIPPED when absent (S2 guard); 0-match → escalate; residual >1 → escalate. NO index test.

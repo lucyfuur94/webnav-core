@@ -28,23 +28,38 @@ export function resolve(nodes,role,name,near){
   return{status:hits.length===0?'escalate-0':'escalate-multi',candidates:cands.length,nearHits:hits.length};
 }
 
+// Stability score for a candidate `near` text (HIGHER = more durable; D3). Pure, deterministic,
+// no LLM — prefers anchors that survive content edits/i18n over free-text labels:
+//  +3 id-like (a 3+ digit run: employee id, SKU, order no.)
+//  +0..1 longer texts (more specific, less likely a transient label)
+//  -2 free-text prose (has a space AND no digits: names, sentences)
+export function nearStability(text){
+  let s=0;
+  if(/\d{3,}/.test(text)) s+=3;
+  s+=Math.min(text.length,40)/40;
+  if(/\s/.test(text)&&!/\d/.test(text)) s-=2;
+  return s;
+}
 // THE SELECTOR (B2/B3 keystone): WHICH text to store as `near` for a target candidate.
 // Used at BOTH record-time and step-5 heal so they never diverge. Deterministic:
-// enumerate text-bearing names in the target's clean scope (doc order), return the FIRST
-// that — fed back through the matcher against the full candidate set — yields EXACTLY this
-// candidate (i.e. a near that uniquely identifies it). null = honest "can't make unique"
-// flag (a truly-identical sibling row). Note this naturally SKIPS a churny-but-non-unique
-// first text (e.g. a repeated first-name) because it wouldn't resolve uniquely.
+// collect every text-bearing name in the target's clean scope that UNIQUELY resolves to this
+// candidate (fed back through the matcher), then (D3) pick the MOST STABLE among them
+// (nearStability desc; doc-order is the stable tiebreak). null = honest "can't make unique"
+// flag (a truly-identical sibling row) -> escalate.
 export function deriveNear(nodes,candIdx,role,name){
   const cands=nodes.map((n,i)=>({n,i})).filter(x=>x.n.role===role&&x.n.name===name&&x.n.ref);
+  if(cands.length<=1)return null;                       // unique by role+name -> no near needed
   const me=cands.find(c=>c.i===candIdx); if(!me)return null;
   const set=new Set(cands.map(c=>c.i));
   const scope=anchorScope(nodes,candIdx,set); if(!scope)return null;
+  const qualifying=[];
   for(const text of scopeTexts(nodes,scope,candIdx)){
     const hits=matchByNear(nodes,cands,text);
-    if(hits.length===1&&hits[0].i===candIdx)return text;  // uniquely identifies ME
+    if(hits.length===1&&hits[0].i===candIdx) qualifying.push(text);  // uniquely identifies ME
   }
-  return null;  // no in-scope text makes this candidate unique -> honest flag, escalate
+  if(qualifying.length===0)return null;                 // honest flag, escalate
+  qualifying.sort((a,b)=>nearStability(b)-nearStability(a));  // D3: prefer durable anchors
+  return qualifying[0];
 }
 if(import.meta.url===`file://${process.argv[1]}`){
   const sd=parse(readFileSync(join(FIX,'saucedemo-inventory.yml'),'utf8'));
@@ -77,8 +92,11 @@ if(import.meta.url===`file://${process.argv[1]}`){
   roundtrip('SD e54',sd,'button','Add to cart','e54');
   roundtrip('SD e66',sd,'button','Add to cart','e66');
   roundtrip('SD e90',sd,'button','Add to cart','e90');
-  roundtrip('OH edit e288',oh,'button',EDIT,'e288');   // must SKIP churny first-name, pick unique id
+  roundtrip('OH edit e288',oh,'button',EDIT,'e288');
   roundtrip('OH delete e290',oh,'button',DEL,'e290');
+  // D3: among qualifying anchors deriveNear must pick the DURABLE id, not the churny first-name
+  const ohEditNear=deriveNear(oh,idxOfRef(oh,'e288'),'button',EDIT);
+  check('D3 OH picks durable id over free-text name', /\d{3,}/.test(ohEditNear||''), 'near='+JSON.stringify(ohEditNear));
 
   // (C) S3 honest-limit proof: content-identical rows must be unresolvable (deriveNear=null), not wrong-resolved.
   const editIdxs=oh.map((n,i)=>({n,i})).filter(x=>x.n.role==='button'&&x.n.name===EDIT&&x.n.ref).map(x=>x.i);
