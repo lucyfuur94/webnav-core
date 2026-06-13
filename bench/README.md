@@ -149,3 +149,15 @@ on tokens, on reliability (render races / bot-walls Arm C hit)? Honest read.
 - Live values drift; rubric scoring handles it; run timestamped above.
 - Sample size <N>; directional evidence, not a significance test.
 ```
+
+## Navigation task set (saucedemo) — 2026-06-13
+
+`bench/tasks-nav.yml` (category `saucedemo-nav`, 4 tasks) re-points the
+navigation benchmark at saucedemo walk flows per the 2026-06-12 addendum in
+`docs/superpowers/specs/2026-06-03-navigation-benchmark-design.md`. Arms A/C as
+above (A's prompt teaches the walk/pause/resume protocol); arm B run once as
+the honest can't-do demonstration. Each arm additionally ends with a TRACE list
+(numbered tool calls) the orchestrator uses to tag reliability
+(clean/recovered/lost). Quality is orchestrator-scored against the objective
+dollar-value rubrics (deviation from the anonymized judge — noted in the
+report). Results: `bench/results/2026-06-13-nav.md`.

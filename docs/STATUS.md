@@ -221,7 +221,7 @@ against an unseeded map returns `failed`/empty). States carry a `node_id` column
 `MapStore` implements the `IMapStore` interface — the swappable seam the hosted backend
 uses. Spec/plan: `docs/superpowers/specs/2026-06-02-live-graph-viewer-design.md`.
 
-## R1/R1.1 — A/B benchmarks (DONE) + the navigation benchmark (PENDING, saucedemo)
+## R1/R1.1/Nav — benchmarks (ALL RUN)
 
 `bench/` holds a re-runnable A/B benchmark: agent+webnav (CLI only) vs
 agent+plain-search (WebSearch+WebFetch), scored by an anonymized judge against
@@ -236,12 +236,15 @@ gold answers (`bench/tasks.yml`, loader `bench/load.ts`, recipe in
   bot-walled category, and beat the API's subtly-wrong `open_issues_count`. Tokens
   ~equal across arms (~19–22k; every task forces a real fetch). webnav's proven edge
   is QUALITY on data search/APIs get wrong or can't reach — and honest failure on walls.
-- **Navigation benchmark (designed, NOT run):** single-page lookups structurally can't
-  show the navigation thesis. `2026-06-03-navigation-benchmark-design.md` designed the
-  multi-page version against GitHub — **re-pointed (2026-06-12): run it on saucedemo**
-  (`walk` vs an agent raw-driving the same login→cart→checkout flows; quality +
-  reliability + tool-calls), matching the saucedemo-only positioning. Needs a machine
-  with playwright-cli + open network (NOT runnable from a sandboxed cloud session).
+- **Navigation benchmark (`2026-06-13-nav.md`, saucedemo walk flows, RUN 2026-06-13):**
+  quality TIED A 4/4 vs raw-browser C 4/4; **reliability separated** (A 3 clean/1
+  recovered vs C 1 clean/3 recovered — saucedemo's session-drop trap snared raw driving
+  in 3/4 tasks). KEY finding: Sonnet agents mostly ignored `walk` for manual `use`
+  driving; the one walk-led run was the benchmark's cheapest/cleanest (9 tool calls,
+  68s). Orchestrator-measured walk: login→checkout-overview in **4 agent-visible CLI
+  calls** (form auto-filled) vs 16–22 manual actions. Follow-up filed: **R5.1
+  bare-continue resume** (no "gate satisfied, continue" answer kind exists; agent must
+  re-answer with a ref on icon-only elements). Tasks: `bench/tasks-nav.yml`.
 
 ## DONE (merged to main, verified)
 
@@ -312,10 +315,14 @@ engine + verbs: `docs/superpowers/specs/2026-06-06-interactive-walk-design.md`.)
 
 In roughly recommended order:
 
-1. **Saucedemo navigation benchmark (the thesis test):** run the re-pointed multi-page
-   benchmark — `walk` vs an agent raw-driving saucedemo's login→cart→checkout flows
-   (quality + reliability + tool-calls). Design: `2026-06-03-navigation-benchmark-design.md`
-   (+ the 2026-06-12 re-point note above). Needs playwright-cli + open network.
+1. ~~**Saucedemo navigation benchmark**~~ ✅ **RUN (2026-06-13):** quality tied with
+   raw-browser; reliability separated (A 3 clean/1 recovered vs C 1/3); walk-led run was
+   cheapest+cleanest; walk = 4 agent CLI calls login→checkout-overview vs 16–22 manual.
+   Report: `bench/results/2026-06-13-nav.md`.
+1b. **R5.1 — bare-continue resume (from the benchmark):** `walk-resume` needs a
+   "gate satisfied, just continue" answer kind (today only `--ref`/`--classify`); on
+   icon-only elements the agent stumbles re-answering a satisfied gate. Plus walk
+   discoverability (agents default to manual `use` driving — consider `webnav go <goal>`).
 2. **One-command `map <url>` flow + shareable map packs:** the record→analyse→edit
    authoring flow works but is expert-ish; the README promises this on the roadmap.
    `dev export-map` already emits the pack — import + a guided flow are the gap.
