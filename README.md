@@ -87,8 +87,11 @@ honestly what you get and how it grows, so there are no surprises:
   that into a SELF-VERIFIED map (absolute URLs, unique element fingerprints, the in-page affordance
   repertoire, the declared domain shadow) which it persists with `dev graph-edit`. No hand-authoring
   of fingerprints or URLs. (That prompt learned the seeded OrangeHRM map — login + 11 modules,
-  exercised — in a single one-shot run.) Re-learn cleanly with `dev node-clear`; share a finished map
-  with `dev export-map` (so maps travel between users instead of every install being an island).
+  exercised — in a single one-shot run.) Re-learn cleanly with `dev node-clear`.
+- **Or skip learning — import a map pack someone already made.** A map travels as a pack, so only the
+  first person learns a site. `webnav dev import-map <pack.json>` loads a site's skeleton; set your own
+  login with `dev creds set` (packs are skeleton-only, never carry credentials). Two packs ship in
+  **[`mappacks/`](mappacks/)** (saucedemo, OrangeHRM); `dev export-map <site>` makes your own to share.
 - **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
   sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
 
