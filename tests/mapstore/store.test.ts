@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MapStore } from '../../src/mapstore/store.js';
 import { makeEdge, makeNodeEdge } from '../../src/mapstore/types.js';
-import { seedGraph, seedGitHubAndGraph, INTERNET_GRAPH_SEED } from '../../src/graph/seed.js';
 
 function freshStore() { return new MapStore(':memory:'); }
 
@@ -30,12 +29,6 @@ describe('MapStore', () => {
   it('recordSelector is a no-op for an unknown edge (no throw)', () => {
     const s = freshStore();
     expect(() => s.recordSelector('nope', 'x', 'y', 'z')).not.toThrow();
-  });
-
-  it('stores and retrieves a goal', () => {
-    const s = freshStore();
-    s.upsertGoal({ name: 'g', site: null, entry: null, extractor: null, visit: ['detail'], surface: { detail: ['stars'] }, candidateLimit: 5 });
-    expect(s.getGoal('g')?.candidateLimit).toBe(5);
   });
 
   // ─── Internet graph (inter-site) ───────────────────────────────────────────
@@ -84,7 +77,8 @@ describe('MapStore', () => {
 
   it('allNodeEdges returns every edge', () => {
     const s = freshStore();
-    seedGitHubAndGraph(s);   // the internet-graph nodes/edges are opt-in, not default-seeded
-    expect(s.allNodeEdges()).toHaveLength(INTERNET_GRAPH_SEED.edges.length);
+    s.upsertNodeEdge(makeNodeEdge({ fromNode: 'a.com', toNode: 'b.com', kind: 'hyperlink' }));
+    s.upsertNodeEdge(makeNodeEdge({ fromNode: 'b.com', toNode: 'a.com', kind: 'capability' }));
+    expect(s.allNodeEdges()).toHaveLength(2);
   });
 });

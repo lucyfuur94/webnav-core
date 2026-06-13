@@ -7,7 +7,6 @@ export type ParsedArgs =
   | { cmd: 'help'; command?: string }
   | { cmd: 'version' }
   | { cmd: 'list' }
-  | { cmd: 'describe'; place: string }
   | { cmd: 'read'; url: string; raw: boolean; browser: BrowserOpts }
   | { cmd: 'search'; query: string; top: number }
   | { cmd: 'node-add'; id: string; url: string; capabilities: string[]; topics: string[] }
@@ -108,7 +107,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
 
   if (cmd === 'list') return { cmd };
-  if (cmd === 'describe') return { cmd, place: rest[0] };
   if (cmd === 'read') {
     // First non-flag positional is the URL, so `read --raw <url>` and
     // `read <url> --raw` both work (agents write the flag in either order).
@@ -232,15 +230,10 @@ async function main() {
     return;
   }
   if (args.cmd === 'list') {
-    // "what's on this map?" — known sites, places, goals. No browser needed.
+    // "what's on this map?" — the sites webnav has a map for + their state counts.
+    const { MapStore } = await import('./mapstore/store.js');
     const { listCoverage } = await import('./router/catalog.js');
-    console.log(JSON.stringify(listCoverage(), null, 2));
-    return;
-  }
-  if (args.cmd === 'describe') {
-    // "what's at A / what can I do here?" — affordances + address. No browser.
-    const { describePlace } = await import('./router/catalog.js');
-    console.log(JSON.stringify(describePlace(args.place), null, 2));
+    console.log(JSON.stringify(listCoverage(new MapStore(dbPath())), null, 2));
     return;
   }
   if (args.cmd === 'read') {

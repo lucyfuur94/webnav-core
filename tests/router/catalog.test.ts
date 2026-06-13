@@ -1,61 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { listCoverage, describePlace } from '../../src/router/catalog.js';
-import { GITHUB_GAZETTEER } from '../../src/router/locate.js';
-import { FIND_BATTLE_TESTED_REPOS } from '../../src/goals/find-battle-tested-repos.js';
+import { listCoverage } from '../../src/router/catalog.js';
+import { MapStore } from '../../src/mapstore/store.js';
+import { makeState } from '../../src/mapstore/types.js';
+import type { SiteNode } from '../../src/mapstore/types.js';
 
-// catalog's gazetteer/goals are now INJECTED (defaults are empty — the GitHub
-// gazetteer + github-repos goal are parked fixture data, not surfaced by the
-// kept `dev list`/`describe` surface). These tests exercise the module logic by
-// passing the fixture gazetteer/goal explicitly.
+const node = (id: string, homeUrl: string): SiteNode => ({ id, homeUrl, capabilities: [], topics: [] });
 
-describe('listCoverage (the map table of contents)', () => {
-  it('defaults to empty when no gazetteer/goals are injected', () => {
-    const c = listCoverage();
-    expect(c.sites).toEqual([]);
-    expect(c.places).toEqual([]);
-    expect(c.goals).toEqual([]);
+// `list` is the table of contents: the sites webnav has a map for + their state counts.
+// It reads the LIVE store (the old gazetteer/goals version always returned empty — a bug).
+describe('listCoverage — sites in the map', () => {
+  it('returns empty when the store has no sites', () => {
+    expect(listCoverage(new MapStore(':memory:'))).toEqual({ sites: [] });
   });
 
-  it('lists known sites, locatable places, and runnable goals from injected data', () => {
-    const c = listCoverage(GITHUB_GAZETTEER, [FIND_BATTLE_TESTED_REPOS]);
-    expect(c.sites).toContain('github.com');
-    expect(c.places.length).toBeGreaterThan(0);
-    expect(c.places.some((p) => p.place === 'trending repositories')).toBe(true);
-    expect(c.goals.some((g) => g.name === 'github-repos')).toBe(true);
-  });
-
-  it('reports the signals each goal surfaces', () => {
-    const c = listCoverage(GITHUB_GAZETTEER, [FIND_BATTLE_TESTED_REPOS]);
-    const goal = c.goals.find((g) => g.name === 'github-repos');
-    expect(goal?.surfaces).toEqual(expect.arrayContaining(['stars', 'license']));
-  });
-
-  it('every listed place carries its site and url', () => {
-    const c = listCoverage(GITHUB_GAZETTEER, [FIND_BATTLE_TESTED_REPOS]);
-    for (const p of c.places) {
-      expect(p.site).toBeTruthy();
-      expect(p.url).toContain('github.com');
-    }
-  });
-});
-
-describe('describePlace (what is at A / what can I do here)', () => {
-  it('returns affordances and address for a known place', () => {
-    const d = describePlace('trending repositories', GITHUB_GAZETTEER);
-    expect(d.status).toBe('found');
-    if (d.status !== 'found') throw new Error('expected found');
-    expect(d.url).toBe('https://github.com/trending');
-    expect(d.affordances.length).toBeGreaterThan(0);
-  });
-
-  it('matches by alias', () => {
-    const d = describePlace('repo overview', GITHUB_GAZETTEER);
-    expect(d.status).toBe('found');
-    if (d.status !== 'found') throw new Error('expected found');
-    expect(d.affordances.join(' ')).toMatch(/stars/i);
-  });
-
-  it('returns unknown for an unmapped place', () => {
-    expect(describePlace('private billing settings', GITHUB_GAZETTEER).status).toBe('unknown');
+  it('lists each site with its state count, sorted by id', () => {
+    const store = new MapStore(':memory:');
+    store.upsertNode(node('www.saucedemo.com', 'https://www.saucedemo.com'));
+    store.upsertNode(node('a.example.com', 'https://a.example.com'));
+    store.upsertState(makeState({ id: 'www.saucedemo.com:login', nodeId: 'www.saucedemo.com', semanticName: 'login', urlPattern: 'https://www.saucedemo.com', role: 'detail' }));
+    store.upsertState(makeState({ id: 'www.saucedemo.com:inventory', nodeId: 'www.saucedemo.com', semanticName: 'inventory', urlPattern: 'https://www.saucedemo.com/inventory.html', role: 'result-list' }));
+    const c = listCoverage(store);
+    expect(c.sites.map((s) => s.site)).toEqual(['a.example.com', 'www.saucedemo.com']);  // sorted
+    expect(c.sites.find((s) => s.site === 'www.saucedemo.com')?.states).toBe(2);
+    expect(c.sites.find((s) => s.site === 'a.example.com')?.states).toBe(0);
+    expect(c.sites.find((s) => s.site === 'www.saucedemo.com')?.homeUrl).toBe('https://www.saucedemo.com');
   });
 });

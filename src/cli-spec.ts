@@ -178,19 +178,10 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
 export const DEV_COMMANDS: CommandSpec[] = [
   {
     name: 'list',
-    summary: 'List everything webnav knows: sites, locatable places, goals.',
+    summary: 'List the sites webnav has a map for, with each site\'s state count. The index of your maps; inspect one with `dev graph-show` / `dev outline`.',
     args: [],
     flags: [],
-    example: 'webnav list',
-  },
-  {
-    name: 'describe',
-    summary: 'Describe a known place: its address and what you can do there.',
-    args: [
-      { name: 'place', required: true, description: 'Name of a known place to describe.' },
-    ],
-    flags: [],
-    example: 'webnav describe "trending repositories"',
+    example: 'webnav dev list',
   },
   {
     name: 'node-add',
