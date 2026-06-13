@@ -1,3 +1,5 @@
+import type { ElementFingerprint } from '../playwright/fingerprint.js';
+export type { ElementFingerprint };
 export type StateRole = 'search-entry' | 'result-list' | 'detail' | 'sub-detail';
 // 'unclassified' = webnav read this action but does NOT decide if it's safe;
 // the agent classifies it via needs-classification only if a route must traverse it.
@@ -16,6 +18,7 @@ export interface Affordance {
   id: string;                   // stable within its owning state, e.g. 'aff_cart'
   label: string;                // human/agent-readable, e.g. 'open the shopping cart'
   kind: AffordanceKind;
+  elementFp?: ElementFingerprint | null;  // durable element key (role+name+content anchor); absent/null = legacy name-only resolution
   commit: boolean;              // irreversible (Place Order/Pay/Delete) — NEVER auto-fired (#2)
   toState: string | null;       // navigate/reveal destination; null = unexplored or n/a
   addressableUrl: string | null;// tier-1 coordinate: if the destination has a stable
@@ -39,7 +42,7 @@ export function makeAffordance(
 ): Affordance {
   return {
     commit: false, toState: null, addressableUrl: null, children: null, needs: [], acceptsInput: null, core: false,
-    semanticStep: init.label, selectorCache: null, cost: 0,
+    semanticStep: init.label, selectorCache: null, elementFp: null, cost: 0,
     ...init,
   };
 }
@@ -72,12 +75,15 @@ export interface Edge {
   toState: string;
   semanticStep: string;         // DURABLE intent
   selectorCache: string | null; // DISPOSABLE last-known ref/selector
+  elementFp: ElementFingerprint | null;  // durable element key (role+name+content anchor); null = legacy name-only
   kind: EdgeKind;
   acceptsInput: string | null;  // runtime slot name, e.g. "query"
   addressableUrl: string | null; // tier-1 coordinate: jump here (goto) instead of resolving a ref; null = resolve
   requiresAffordances: string[];  // in-page affordances to fire before traversing this edge; [] = none
   core: boolean;                // on the main/core path (agent-declared); default false
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
+  viaAffordance?: string;       // id of the affordance this edge was PROJECTED from (so a heal can
+                                // write elementFp back onto that affordance); absent for stored/legacy rows
 }
 
 // Viewer-facing edge (one node's interior). `viaAffordance` = the affordance id
@@ -109,6 +115,8 @@ export function makeEdge(
   return {
     selectorCache: null, acceptsInput: null, addressableUrl: null, requiresAffordances: [], core: false, cost: 0,
     ...init,
+    // coalesce AFTER the spread: an explicit `undefined` in init must not slip through (D4)
+    elementFp: init.elementFp ?? null,
   };
 }
 

@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { State, Edge, Affordance, InteriorEdge, Goal, SiteNode, NodeEdge } from './types.js';
+import type { State, Edge, Affordance, InteriorEdge, Goal, SiteNode, NodeEdge, ElementFingerprint } from './types.js';
 import { makeEdge, makeNodeEdge } from './types.js';
 import { dbPath } from '../paths.js';
 
@@ -23,6 +23,7 @@ export interface IMapStore {
   allEdges(): Edge[];
   interiorEdges(nodeId: string): InteriorEdge[];
   recordSelector(fromState: string, toState: string, semanticStep: string, selector: string): void;
+  recordElementFp(fromState: string, affordanceId: string, fp: ElementFingerprint): boolean;
   upsertGoal(g: Goal): void;
   getGoal(name: string): Goal | null;
   allGoals(): Goal[];
@@ -88,6 +89,10 @@ export class MapStore implements IMapStore {
     if (!ecols2.some((c) => c.name === 'core')) {
       this.db.exec('ALTER TABLE edges ADD COLUMN core INTEGER');
     }
+    const ecols3: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
+    if (!ecols3.some((c) => c.name === 'element_fp')) {
+      this.db.exec('ALTER TABLE edges ADD COLUMN element_fp TEXT');
+    }
   }
 
   /** Run `fn` atomically — all writes commit together or none do (no torn skeleton). */
@@ -124,16 +129,17 @@ export class MapStore implements IMapStore {
 
   upsertEdge(e: Edge): void {
     this.db.prepare(`INSERT INTO edges
-      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,requires_affordances,core)
-      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@requiresAffordances,@core)
+      (from_state,to_state,semantic_step,selector_cache,kind,accepts_input,cost,requires_affordances,core,element_fp)
+      VALUES (@fromState,@toState,@semanticStep,@selectorCache,@kind,@acceptsInput,@cost,@requiresAffordances,@core,@elementFp)
       ON CONFLICT(from_state,to_state,semantic_step) DO UPDATE SET
-      selector_cache=@selectorCache, cost=@cost, requires_affordances=@requiresAffordances, core=@core`)
+      selector_cache=@selectorCache, cost=@cost, requires_affordances=@requiresAffordances, core=@core, element_fp=@elementFp`)
       .run({
         fromState: e.fromState, toState: e.toState, semanticStep: e.semanticStep,
         selectorCache: e.selectorCache, kind: e.kind, acceptsInput: e.acceptsInput,
         cost: e.cost,
         requiresAffordances: JSON.stringify(e.requiresAffordances ?? []),
         core: e.core ? 1 : 0,
+        elementFp: e.elementFp ? JSON.stringify(e.elementFp) : null,
       });
   }
   deleteEdgesFromPrefix(prefix: string): void {
@@ -164,6 +170,8 @@ export class MapStore implements IMapStore {
             // agent must fire first, e.g. a real add-to-cart-before-checkout gate).
             requiresAffordances: a.acceptsInput ? [] : a.needs,
             cost: a.cost,
+            elementFp: a.elementFp ?? null,   // D4: normalize undefined (legacy blob, no key) → null
+            viaAffordance: a.id,              // D5: so a heal writes elementFp back onto THIS affordance
           }));
         }
         if (a.children) walk(a.children);
@@ -266,6 +274,27 @@ export class MapStore implements IMapStore {
     this.db.prepare('UPDATE edges SET selector_cache=? WHERE id=?').run(selector, row.id);
   }
 
+  /** SELF-HEAL write-back, fingerprint flavor (B1): persist a `{role,name,near}` element
+   *  fingerprint onto the OWNING AFFORDANCE in `fromState` (located by its id), so the next
+   *  walk resolves the once-ambiguous step deterministically. Writes the affordance blob —
+   *  NOT the edges table — because both motivating maps store affordances only (no edge rows),
+   *  where an `UPDATE edges` would no-op. Recurses reveal children. No-op if the affordance
+   *  isn't found (caller falls back to recordSelector for a legacy stored row). */
+  recordElementFp(fromState: string, affordanceId: string, fp: ElementFingerprint): boolean {
+    const state = this.getState(fromState);
+    if (!state) return false;
+    let found = false;
+    const walk = (affs: Affordance[]): void => {
+      for (const a of affs) {
+        if (a.id === affordanceId) { a.elementFp = fp; found = true; return; }
+        if (a.children) walk(a.children);
+      }
+    };
+    walk(state.affordances ?? []);
+    if (found) this.upsertState(state);
+    return found;
+  }
+
   upsertGoal(g: Goal): void {
     this.db.prepare(`INSERT INTO goals (name,site,entry,extractor,visit,surface,candidate_limit)
       VALUES (@name,@site,@entry,@extractor,@visit,@surface,@candidateLimit)
@@ -358,5 +387,6 @@ function rowToEdge(r: any): Edge {
     cost: r.cost,
     requiresAffordances: r.requires_affordances ? JSON.parse(r.requires_affordances) : [],
     core: r.core === 1,
+    elementFp: r.element_fp ? JSON.parse(r.element_fp) : null,
   });
 }

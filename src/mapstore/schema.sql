@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS edges (
   from_state TEXT NOT NULL, to_state TEXT NOT NULL, semantic_step TEXT NOT NULL,
   selector_cache TEXT, kind TEXT NOT NULL, accepts_input TEXT,
   cost REAL NOT NULL DEFAULT 0,
-  requires_affordances TEXT, core INTEGER,
+  requires_affordances TEXT, core INTEGER, element_fp TEXT,
   UNIQUE(from_state, to_state, semantic_step)
 );
 CREATE TABLE IF NOT EXISTS goals (

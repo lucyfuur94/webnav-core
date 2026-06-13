@@ -1,10 +1,32 @@
-import type { State } from '../mapstore/types.js';
+import type { State, Edge } from '../mapstore/types.js';
 import type { MapStore } from '../mapstore/store.js';
 import type { RecallResponse } from '../protocol.js';
-import { parseSnapshot } from '../playwright/snapshot.js';
+import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 import { matchState } from '../explorer/fingerprint.js';
 import { replayStep } from './replay.js';
 import { resolveStep } from './resolve.js';
+import { deriveNear } from '../playwright/fingerprint.js';
+
+/**
+ * SELF-HEAL write-back after an agent picks an element at a fork. Persist a DURABLE
+ * fingerprint so the next walk resolves the once-ambiguous step without re-asking (#3):
+ *  - compute `near` for the chosen node via the SHARED deriveNear (so record + heal agree);
+ *  - if the edge was projected from an affordance (viaAffordance), write {role,name,near}
+ *    onto that AFFORDANCE (recordElementFp — both motivating maps have no edge rows);
+ *  - else fall back to recordSelector on the legacy stored row.
+ * A chosen node with a null name and no derivable `near` can't be made durable → store
+ * nothing (the step honestly stays a per-walk escalation; D1).
+ */
+function healStep(store: MapStore, edge: Edge, beforeNodes: SnapNode[], chosen: SnapNode | undefined, chosenIdx: number): void {
+  if (!chosen) return;
+  const near = chosenIdx >= 0 ? deriveNear(beforeNodes, chosenIdx, chosen.role, chosen.name) : null;
+  if (edge.viaAffordance && (chosen.name || near)) {
+    store.recordElementFp(edge.fromState, edge.viaAffordance, { role: chosen.role, name: chosen.name, near });
+    return;
+  }
+  // legacy stored-edge fallback (no backing affordance): name-only selector cache, as before.
+  if (chosen.name) store.recordSelector(edge.fromState, edge.toState, edge.semanticStep, chosen.name);
+}
 
 // Minimal browser the walk drives. The live adapter implements this; tests fake it.
 // ASYNC so ONE walk loop serves both the scripted unit fake and the real
@@ -122,15 +144,13 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         continue;
       } else {
         // 'ref': act on the agent-chosen element, skip replayStep for THIS step.
-        // SELF-HEAL: before acting, recover the chosen element's durable NAME
-        // from the current page (the raw ref `e42` is ephemeral — reassigned per
-        // snapshot — so we never persist it; the NAME is what re-resolves next
-        // time). We only reach here because deterministic resolution MISSED, so
-        // the page name differs from the step's quoted name (drift / icon-only /
-        // renamed). On success we write that name back as the edge's selector
-        // cache, so the next walk resolves this step deterministically (#3).
+        // SELF-HEAL: recover a DURABLE element fingerprint for the chosen node from
+        // the current page (the raw ref `e42` is ephemeral — reassigned per snapshot —
+        // so we never persist it). We only reach here because resolution MISSED, so
+        // the durable role+name+near is what re-resolves next time (#3).
         const beforeNodes = parseSnapshot(await browser.snapshot());
         const chosen = beforeNodes.find((n) => n.ref === ans.ref);
+        const chosenIdx = beforeNodes.findIndex((n) => n.ref === ans.ref);
         await browser.act(ans.ref, edge.acceptsInput);
         const afterYaml = await browser.snapshot();
         const observed = matchState(parseSnapshot(afterYaml), states);
@@ -139,7 +159,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
             question: 'after applying the supplied ref, expected ' + edge.toState + ' but observed '
               + (observed.status === 'matched' ? observed.state.id : observed.status) };
         }
-        if (chosen?.name) store.recordSelector(edge.fromState, edge.toState, edge.semanticStep, chosen.name);
+        healStep(store, edge, beforeNodes, chosen, chosenIdx);
         current = edge.toState; at++;
         continue;
       }
