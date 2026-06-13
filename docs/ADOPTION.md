@@ -26,7 +26,11 @@ fit; the MCP registries directly answer "agents need to find it" (webnav already
 
 ### 1. MCP registries/directories — DO FIRST (the literal "where agents find tools")
 - ✅ **`punkpeye/awesome-mcp-servers`** (89k★) — **PR #7998 opened 2026-06-13** (Browser Automation,
-  agent fast-track `🤖🤖🤖`). Awaiting merge.
+  agent fast-track `🤖🤖🤖`). Format check `check-submission` PASSED. A Glama bot then asked (optional,
+  for a score badge) to **list the server on glama.ai/mcp/servers + add a Dockerfile there**, then add
+  a `…/badges/score.svg` badge to the entry. That's a web-form submission on a third party + wants the
+  server to start (effectively npm-gated) → **USER step**, do alongside npm. The PR can merge without
+  it (many entries have no Glama badge); the badge just adds a quality score.
 - ⏳ **Official MCP Server Registry** (`registry.modelcontextprotocol.io`) — the `modelcontextprotocol/
   servers` README list is RETIRED; servers now publish a `server.json` to the registry via its
   quickstart. This validates the package exists, so it's effectively **gated on the npm publish** —
