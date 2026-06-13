@@ -24,6 +24,9 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses node-clear', () => {
     expect(parseArgs(['dev', 'node-clear', '--node', 'example.com'])).toEqual({ cmd: 'node-clear', node: 'example.com' });
   });
+  it('parses node-rm', () => {
+    expect(parseArgs(['dev', 'node-rm', '--node', 'example.com'])).toEqual({ cmd: 'node-rm', node: 'example.com' });
+  });
   it('parses dev sessions list (default sub)', () => {
     expect(parseArgs(['dev', 'sessions'])).toEqual({ cmd: 'sessions', sub: 'list', all: false, maxAgeHours: undefined });
   });

@@ -20,6 +20,7 @@ export interface IMapStore {
   upsertEdge(e: Edge): void;
   deleteEdgesFromPrefix(prefix: string): void;
   clearNode(nodeId: string): void;
+  removeNode(nodeId: string): void;
   edgesFrom(fromState: string): Edge[];
   allEdges(): Edge[];
   interiorEdges(nodeId: string): InteriorEdge[];
@@ -159,6 +160,16 @@ export class MapStore implements IMapStore {
       const ids: any[] = this.db.prepare('SELECT id FROM states WHERE node_id=?').all(nodeId);
       for (const { id } of ids) this.db.prepare("DELETE FROM edges WHERE from_state=? OR to_state=?").run(id, id);
       this.db.prepare('DELETE FROM states WHERE node_id=?').run(nodeId);
+    });
+  }
+  /** Fully DELETE a node: its interior (states + edges, via clearNode), its node_edges (both
+   *  directions), AND the node row itself — so a stale/empty site disappears entirely. For
+   *  cleaning up dashboard cruft; never raw sqlite. No-op if unknown. Touches ONLY this node. */
+  removeNode(nodeId: string): void {
+    this.transaction(() => {
+      this.clearNode(nodeId);
+      this.db.prepare('DELETE FROM node_edges WHERE from_node=? OR to_node=?').run(nodeId, nodeId);
+      this.db.prepare('DELETE FROM nodes WHERE id=?').run(nodeId);
     });
   }
   /**
