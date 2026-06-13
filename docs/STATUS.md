@@ -9,7 +9,7 @@
 > #4 rewritten in CLAUDE.md). Usage-learned weighting is a hosted feature: webnav-site will
 > aggregate walk outcomes across users and fold weights into the served map's `cost` (design:
 > webnav-site `docs/superpowers/specs/2026-06-12-usage-weights-design.md`). Contract note: the
-> next `@lucyfuur94/webnav` release drops those fields from `Affordance`/`Edge`/`NodeEdge`.
+> next `@dikshanty94/webnav` release drops those fields from `Affordance`/`Edge`/`NodeEdge`.
 
 > **2026-06-12 (later) — PR #1 restored + walk-resume input fix.** PR #1 (the MCP/repositioning
 > work below) was accidentally reverted on GitHub and has been reapplied (`git revert` of the

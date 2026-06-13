@@ -38,7 +38,7 @@ $ webnav walk-resume walk-w-… --ref e124 # continue past the icon-only cart li
 ```
 
 **On-screen caption / end card:** "4 agent calls. Zero tokens spent re-finding the route.
-The agent only decided what to buy." Then: `npx @lucyfuur94/webnav mcp` + the repo URL.
+The agent only decided what to buy." Then: `npx @dikshanty94/webnav mcp` + the repo URL.
 
 **Note:** trim the real `--session`/`walk-w-` ids to `…` in captions for readability, but
 the GIF should show a *real* run (don't fake the JSON).
@@ -82,7 +82,7 @@ Zero-LLM, TypeScript, SQLite map, built on Microsoft's playwright-cli. MCP serve
 drops into any MCP client. Apache-2.0.
 
 Repo: https://github.com/lucyfuur94/webnav-core
-Try it: npx @lucyfuur94/webnav --help   (or add it as an MCP server)
+Try it: npx @dikshanty94/webnav --help   (or add it as an MCP server)
 
 Honest about what it's not yet: mapping a new site is still a multi-step authoring flow
 (one-command `map <url>` + shareable map packs are on the roadmap), and there's one
@@ -156,14 +156,14 @@ SQLite, built on @playwright. MCP server included.
 
 Apache-2.0, open source:
 https://github.com/lucyfuur94/webnav-core
-npx @lucyfuur94/webnav --help
+npx @dikshanty94/webnav --help
 ```
 
 ---
 
 ## 5. MCP directory submissions (passive, compounding discovery)
 
-After npm publish, submit the server (entry: `npx -y @lucyfuur94/webnav mcp`) to:
+After npm publish, submit the server (entry: `npx -y @dikshanty94/webnav mcp`) to:
 - **Smithery** (smithery.ai) — PR/registration flow.
 - **Glama** (glama.ai/mcp/servers) — auto-indexes; can submit.
 - **PulseMCP** (pulsemcp.com) — submission form.
@@ -178,7 +178,7 @@ Each needs: name, one-line description, the `npx` command, and (ideally) the GIF
 ## Checklist
 
 - [ ] `NPM_TOKEN` secret added; `npm version` + tag pushed; package live on npm
-- [ ] `npx @lucyfuur94/webnav --help` works from a clean machine
+- [ ] `npx @dikshanty94/webnav --help` works from a clean machine
 - [ ] Demo GIF recorded, hosted, embedded in README hero
 - [ ] A second recognizable site mapped (OrangeHRM) — proves "record your own"
 - [ ] Show HN posted (Tue–Thu morning ET); first comment = honest limitations

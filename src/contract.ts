@@ -1,7 +1,7 @@
 // The CLI <-> hosted-service CONTRACT — single source of truth for every shape
 // that crosses the wire between the open-source CLI (this repo) and the hosted
 // shared-knowledge service (webnav-site). The site imports this module
-// types-only from `@lucyfuur94/webnav/contract`; nothing here may import
+// types-only from `@dikshanty94/webnav/contract`; nothing here may import
 // runtime code, so consuming it never pulls in better-sqlite3 etc.
 //
 // HARD INVARIANT (CLAUDE.md): the wire carries the MAP SKELETON ONLY —

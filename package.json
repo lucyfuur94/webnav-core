@@ -1,5 +1,5 @@
 {
-  "name": "@lucyfuur94/webnav",
+  "name": "@dikshanty94/webnav",
   "version": "0.1.0",
   "description": "A navigation memory for AI agents — zero-LLM web-navigation CLI that recalls cheap, reliable routes instead of re-exploring.",
   "license": "Apache-2.0",
