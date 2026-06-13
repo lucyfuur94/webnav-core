@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { State, Edge, Affordance, InteriorEdge, Goal, SiteNode, NodeEdge, ElementFingerprint } from './types.js';
+import type { State, Edge, Affordance, InteriorEdge, SiteNode, NodeEdge, ElementFingerprint } from './types.js';
 import { makeEdge, makeNodeEdge } from './types.js';
 import { dbPath } from '../paths.js';
 
@@ -26,9 +26,6 @@ export interface IMapStore {
   interiorEdges(nodeId: string): InteriorEdge[];
   recordSelector(fromState: string, toState: string, semanticStep: string, selector: string): void;
   recordElementFp(fromState: string, affordanceId: string, fp: ElementFingerprint): boolean;
-  upsertGoal(g: Goal): void;
-  getGoal(name: string): Goal | null;
-  allGoals(): Goal[];
   upsertNode(n: SiteNode): void;
   getNode(id: string): SiteNode | null;
   allNodes(): SiteNode[];
@@ -70,13 +67,6 @@ export class MapStore implements IMapStore {
       const prefix = String(r.id).split(':')[0];
       const node = prefixToNode[prefix];
       if (node) upd.run(node, r.id);
-    }
-    // goals: add site/entry/extractor if an older DB lacks them.
-    const gcols: any[] = this.db.prepare('PRAGMA table_info(goals)').all();
-    for (const col of ['site', 'entry', 'extractor']) {
-      if (!gcols.some((c) => c.name === col)) {
-        this.db.exec(`ALTER TABLE goals ADD COLUMN ${col} TEXT`);
-      }
     }
     // edges: add requires_affordances if an older DB lacks it.
     const ecols: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
@@ -320,28 +310,6 @@ export class MapStore implements IMapStore {
     walk(state.affordances ?? []);
     if (found) this.upsertState(state);
     return found;
-  }
-
-  upsertGoal(g: Goal): void {
-    this.db.prepare(`INSERT INTO goals (name,site,entry,extractor,visit,surface,candidate_limit)
-      VALUES (@name,@site,@entry,@extractor,@visit,@surface,@candidateLimit)
-      ON CONFLICT(name) DO UPDATE SET site=@site, entry=@entry, extractor=@extractor,
-      visit=@visit, surface=@surface, candidate_limit=@candidateLimit`)
-      .run({ name: g.name, site: g.site ?? null, entry: g.entry ?? null,
-        extractor: g.extractor ?? null, visit: JSON.stringify(g.visit),
-        surface: JSON.stringify(g.surface), candidateLimit: g.candidateLimit });
-  }
-  getGoal(name: string): Goal | null {
-    const r: any = this.db.prepare('SELECT * FROM goals WHERE name=?').get(name);
-    return r ? { name: r.name, site: r.site ?? null, entry: r.entry ?? null,
-      extractor: r.extractor ?? null, visit: JSON.parse(r.visit),
-      surface: JSON.parse(r.surface), candidateLimit: r.candidate_limit } : null;
-  }
-  allGoals(): Goal[] {
-    const rows: any[] = this.db.prepare('SELECT * FROM goals ORDER BY name').all();
-    return rows.map((r) => ({ name: r.name, site: r.site ?? null, entry: r.entry ?? null,
-      extractor: r.extractor ?? null, visit: JSON.parse(r.visit),
-      surface: JSON.parse(r.surface), candidateLimit: r.candidate_limit }));
   }
 
   // ─── Internet graph (inter-site) — Phase 2 ─────────────────────────────────

@@ -22,7 +22,7 @@ describe('CLI surface', () => {
 
   it('dev help lists the admin verbs', () => {
     const h = devHelp();
-    for (const v of ['graph', 'node-add', 'edge-add', 'list', 'describe', 'capture']) {
+    for (const v of ['graph', 'node-add', 'edge-add', 'list', 'node-clear', 'capture']) {
       expect(h).toContain(v);
     }
   });

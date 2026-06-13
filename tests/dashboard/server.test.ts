@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server, AddressInfo } from 'node:net';
 import { MapStore } from '../../src/mapstore/store.js';
-import { seedGraph, seedGitHubAndGraph } from '../../src/graph/seed.js';
+import { seedGraph } from '../../src/graph/seed.js';
+import { makeState } from '../../src/mapstore/types.js';
 import { CredStore } from '../../src/creds.js';
 import { startDashboard } from '../../src/dashboard/server.js';
 
@@ -19,7 +20,11 @@ describe('startDashboard', () => {
   beforeAll(async () => {
     const store = new MapStore(':memory:');
     seedGraph(store);            // default: saucedemo
-    seedGitHubAndGraph(store);   // + GitHub interior + internet-graph nodes (this test asserts on github.com)
+    // a second site with a small interior, so the dashboard's multi-site / per-site endpoints are exercised.
+    store.upsertNode({ id: 'example.com', homeUrl: 'https://example.com', capabilities: ['code-search'], topics: ['code'] });
+    for (const id of ['home', 'list', 'detail']) {
+      store.upsertState(makeState({ id: `example.com:${id}`, nodeId: 'example.com', semanticName: id, urlPattern: `https://example.com/${id}`, role: 'detail' }));
+    }
     tmp = mkdtempSync(join(tmpdir(), 'webnav-dash-'));
     credsFile = join(tmp, 'credentials.json');
     const creds = new CredStore(credsFile);
@@ -44,15 +49,15 @@ describe('startDashboard', () => {
 
   it('GET /api/sites lists seeded nodes with stateCount', async () => {
     const sites = await (await get('/api/sites')).json();
-    const gh = sites.find((s: any) => s.id === 'github.com');
-    expect(gh).toBeTruthy();
-    expect(gh.stateCount).toBe(3);            // search-entry, result-list, repo-detail
-    expect(gh.capabilities).toContain('code-search');
+    const ex = sites.find((s: any) => s.id === 'example.com');
+    expect(ex).toBeTruthy();
+    expect(ex.stateCount).toBe(3);            // home, list, detail
+    expect(ex.capabilities).toContain('code-search');
   });
 
   it('GET /api/sites/:id returns node + states + interiorEdges; 404 unknown', async () => {
-    const full = await (await get('/api/sites/github.com')).json();
-    expect(full.node.id).toBe('github.com');
+    const full = await (await get('/api/sites/example.com')).json();
+    expect(full.node.id).toBe('example.com');
     expect(full.states.length).toBe(3);
     expect(Array.isArray(full.interiorEdges)).toBe(true);
     const r404 = await get('/api/sites/nope.example');

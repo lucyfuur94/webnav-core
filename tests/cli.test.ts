@@ -9,10 +9,6 @@ describe('parseArgs', () => {
   it('parses list', () => {
     expect(parseArgs(['list'])).toEqual({ cmd: 'list' });
   });
-  it('parses describe', () => {
-    expect(parseArgs(['describe', 'trending repositories']))
-      .toEqual({ cmd: 'describe', place: 'trending repositories' });
-  });
   it('parses search with default top', () => {
     expect(parseArgs(['search', 'who won the 2018 world cup']))
       .toEqual({ cmd: 'search', query: 'who won the 2018 world cup', top: 3 });
