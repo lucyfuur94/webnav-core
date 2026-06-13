@@ -27,6 +27,12 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses node-rm', () => {
     expect(parseArgs(['dev', 'node-rm', '--node', 'example.com'])).toEqual({ cmd: 'node-rm', node: 'example.com' });
   });
+  it('parses import-map with a file', () => {
+    expect(parseArgs(['dev', 'import-map', 'packs/saucedemo.json'])).toEqual({ cmd: 'import-map', file: 'packs/saucedemo.json' });
+  });
+  it('parses import-map with --file', () => {
+    expect(parseArgs(['dev', 'import-map', '--file', 'packs/x.json'])).toEqual({ cmd: 'import-map', file: 'packs/x.json' });
+  });
   it('parses dev sessions list (default sub)', () => {
     expect(parseArgs(['dev', 'sessions'])).toEqual({ cmd: 'sessions', sub: 'list', all: false, maxAgeHours: undefined });
   });

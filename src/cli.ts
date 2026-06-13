@@ -23,6 +23,7 @@ export type ParsedArgs =
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'node-clear'; node: string }
   | { cmd: 'node-rm'; node: string }
+  | { cmd: 'import-map'; file: string }
   | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
@@ -156,6 +157,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-rm') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  if (cmd === 'import-map') return { cmd, file: flagValue(rest, '--file') ?? rest[0] ?? '' };
   if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -492,6 +494,25 @@ async function main() {
       process.exitCode = 3; return;
     }
     console.log(JSON.stringify({ node, states }, null, 2));
+    return;
+  }
+  if (args.cmd === 'import-map') {
+    // Load a map pack (export-map's JSON) into the local map — import a site someone
+    // else mapped, no re-learning. Skeleton only; creds are set separately.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { importMapPack } = await import('./hosted.js');
+    const { readFileSync } = await import('node:fs');
+    if (!args.file) { console.log(JSON.stringify({ status: 'error', hint: 'pass a map-pack file path (or --file)' })); process.exitCode = 2; return; }
+    let pack: any;
+    try { pack = JSON.parse(readFileSync(args.file, 'utf8')); }
+    catch (e: any) { console.log(JSON.stringify({ status: 'error', hint: `could not read/parse ${args.file}: ${e.message}` })); process.exitCode = 2; return; }
+    if (!pack || !pack.node || !Array.isArray(pack.states)) {
+      console.log(JSON.stringify({ status: 'error', hint: 'not a map pack — expected {node, states:[...]} (from `dev export-map`)' })); process.exitCode = 2; return;
+    }
+    const store = new MapStore(dbPath());
+    importMapPack(store, pack);
+    console.log(JSON.stringify({ status: 'done', node: pack.node.id, statesImported: pack.states.length,
+      hint: `set login creds with: webnav dev creds set ${pack.node.id} username=… password=…` }, null, 2));
     return;
   }
   if (args.cmd === 'outline' || args.cmd === 'mermaid') {
