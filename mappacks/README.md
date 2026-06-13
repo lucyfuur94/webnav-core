@@ -25,6 +25,7 @@ webnav walk --start opensource-demo.orangehrmlive.com:auth-login \
 |---|---|---|
 | `saucedemo.mappack.json` | 7 | the seeded worked example (login → checkout-complete) |
 | `orangehrm.mappack.json` | 17 | the OrangeHRM demo HR app — 11 modules, full in-page repertoire + domain shadow (16/17 states) |
+| `automationexercise.mappack.json` | 11 | automationexercise.com e-commerce — products/categories/detail/cart/login/contact, 115 affordances, shadow on all 11 states |
 
 (saucedemo is also seeded by default, so you only need to import it on a DB that's been cleared.)
 

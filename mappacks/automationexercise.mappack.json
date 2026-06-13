@@ -1,0 +1,2993 @@
+{
+  "node": {
+    "id": "automationexercise.com",
+    "homeUrl": "https://automationexercise.com",
+    "capabilities": [],
+    "topics": []
+  },
+  "states": [
+    {
+      "id": "automationexercise.com:api-list",
+      "nodeId": "automationexercise.com",
+      "semanticName": "api-list",
+      "urlPattern": "https://automationexercise.com/api_list",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:APIs List for practice",
+        "heading:Below is the list of APIs for you to practice the API testing in Automation. Click on the scenario for detailed API:",
+        "heading:Feedback for Us",
+        "heading:Subscription",
+        "button:",
+        "textbox:Your email address",
+        "link:Website for practice automation",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:Feedback for Us",
+        "link:feedback@automationexercise.com"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_65_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_66_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_67_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_68_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_69_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_114_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_115_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:brand-products-polo",
+      "nodeId": "automationexercise.com",
+      "semanticName": "brand-products-polo",
+      "urlPattern": "https://automationexercise.com/brand_products/Polo",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Category"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_70_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_71_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_72_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_73_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_74_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_75_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_116_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_117_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:category-products-1",
+      "nodeId": "automationexercise.com",
+      "semanticName": "category-products-1",
+      "urlPattern": "https://automationexercise.com/category_products/1",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Category",
+        "heading: Women",
+        "heading: Men",
+        "heading: Kids",
+        "heading:Brands",
+        "heading:Women - Dress Products",
+        "heading:Rs. 1000",
+        "heading:Rs. 1500",
+        "heading:Rs. 2300",
+        "heading:Subscription",
+        "button:",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:Products",
+        "link: Women",
+        "link: Men",
+        "link: Kids",
+        "link:(6) Polo",
+        "link:(5) H&M",
+        "link:(5) Madame",
+        "link:(3) Mast & Harbour",
+        "link:(4) Babyhug",
+        "link:(3) Allen Solly Junior",
+        "link:(3) Kookie Kids",
+        "link:(5) Biba",
+        "link: Add to cart",
+        "link: View Product"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "View Cart",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "link",
+                "name": "View Cart",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_4_view-cart",
+              "label": "View Cart",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Continue Shopping",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Continue Shopping",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_5_continue-shopping",
+              "label": "Continue Shopping",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Add to cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Add to cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_6_add-to-cart",
+          "label": " Add to cart",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "View Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "View Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_7_view-cart",
+          "label": "View Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_37_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_38_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_39_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_40_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_41_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:brand-products-polo",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "(6) Polo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "(6) Polo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_42_brand-products-polo",
+          "label": "(6) Polo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:product-details-3",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " View Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " View Product",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_43_product-details-3",
+          "label": " View Product",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_93_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_94_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:contact-us",
+      "nodeId": "automationexercise.com",
+      "semanticName": "contact-us",
+      "urlPattern": "https://automationexercise.com/contact_us",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Contact Us",
+        "heading:Get In Touch",
+        "heading:Feedback For Us",
+        "heading:Subscription",
+        "button:Choose File",
+        "button:Submit",
+        "button:",
+        "textbox:Name",
+        "textbox:Email",
+        "textbox:Subject",
+        "textbox:Your Message Here",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:feedback@automationexercise.com"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_60_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_61_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_62_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_63_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_64_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Name",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Name",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_106_name",
+          "label": "Name",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Email",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Email",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_107_email",
+          "label": "Email",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Subject",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Subject",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_108_subject",
+          "label": "Subject",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your Message Here",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your Message Here",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_109_your-message-here",
+          "label": "Your Message Here",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Choose File",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Choose File",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_110_choose-file",
+          "label": "Choose File",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Submit",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Submit",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_111_submit",
+          "label": "Submit",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_112_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_113_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Name",
+            "control": "text"
+          },
+          {
+            "field": "Email",
+            "control": "text"
+          },
+          {
+            "field": "Subject",
+            "control": "text"
+          },
+          {
+            "field": "Your Message Here",
+            "control": "text"
+          },
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:home",
+      "nodeId": "automationexercise.com",
+      "semanticName": "home",
+      "urlPattern": "https://automationexercise.com/",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:AutomationExercise",
+        "heading:Full-Fledged practice website for Automation Engineers",
+        "heading:Category",
+        "heading: Women",
+        "heading: Men",
+        "heading: Kids",
+        "heading:Brands",
+        "heading:Features Items",
+        "heading:Rs. 500",
+        "heading:Rs. 400",
+        "heading:Rs. 1000",
+        "heading:Rs. 1500",
+        "heading:Rs. 600",
+        "heading:Rs. 700",
+        "heading:Rs. 499",
+        "heading:Rs. 359",
+        "heading:Rs. 278",
+        "heading:Rs. 679",
+        "heading:Rs. 315",
+        "heading:Rs. 478",
+        "heading:Rs. 1200",
+        "heading:Rs. 1050",
+        "heading:Rs. 1190",
+        "heading:Rs. 1530",
+        "heading:Rs. 1600",
+        "heading:Rs. 1100",
+        "heading:Rs. 849",
+        "heading:Rs. 1299",
+        "heading:Rs. 850",
+        "heading:Rs. 799",
+        "heading:Rs. 1400",
+        "heading:Rs. 2300",
+        "heading:Rs. 3000",
+        "heading:Rs. 3500",
+        "heading:Rs. 5000",
+        "heading:Rs. 1389",
+        "heading:recommended items",
+        "heading:Subscription",
+        "button:Test Cases",
+        "button:APIs list for practice",
+        "button:",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:Test Cases",
+        "link:APIs list for practice",
+        "link:",
+        "link:",
+        "link: Women",
+        "link: Men",
+        "link: Kids",
+        "link:(6) Polo",
+        "link:(5) H&M",
+        "link:(5) Madame",
+        "link:(3) Mast & Harbour",
+        "link:(4) Babyhug",
+        "link:(3) Allen Solly Junior",
+        "link:(3) Kookie Kids",
+        "link:(5) Biba",
+        "link: View Product"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_8_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_9_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_10_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_11_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_12_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_13_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:brand-products-polo",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "(6) Polo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "(6) Polo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_14_brand-products-polo",
+          "label": "(6) Polo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:product-details-3",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " View Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " View Product",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_15_product-details-3",
+          "label": " View Product",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_76_test-cases",
+          "label": "Test Cases",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "APIs list for practice",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "APIs list for practice",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_77_apis-list-for-practice",
+          "label": "APIs list for practice",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_78_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_79_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:login",
+      "nodeId": "automationexercise.com",
+      "semanticName": "login",
+      "urlPattern": "https://automationexercise.com/login",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Login to your account",
+        "heading:OR",
+        "heading:New User Signup!",
+        "heading:Subscription",
+        "button:Login",
+        "button:Signup",
+        "button:",
+        "textbox:Email Address",
+        "textbox:Password",
+        "textbox:Name",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_50_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_51_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_52_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_53_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_54_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Password",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Password",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_98_password",
+          "label": "Password",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_99_login",
+          "label": "Login",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Name",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Name",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_100_name",
+          "label": "Name",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Signup",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Signup",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_101_signup",
+          "label": "Signup",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_102_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_103_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Email Address",
+            "control": "text"
+          },
+          {
+            "field": "Password",
+            "control": "text"
+          },
+          {
+            "field": "Name",
+            "control": "text"
+          },
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:product-details-3",
+      "nodeId": "automationexercise.com",
+      "semanticName": "product-details-3",
+      "urlPattern": "https://automationexercise.com/product_details/3",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Category",
+        "heading: Women",
+        "heading: Men",
+        "heading: Kids",
+        "heading:Brands",
+        "heading:Sleeveless Dress",
+        "heading:Subscription",
+        "button: Add to cart",
+        "button:Submit",
+        "button:",
+        "textbox:Your Name",
+        "textbox:Email Address",
+        "textbox:Add Review Here!",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link: Women",
+        "link: Men",
+        "link: Kids",
+        "link:(6) Polo",
+        "link:(5) H&M",
+        "link:(5) Madame",
+        "link:(3) Mast & Harbour",
+        "link:(4) Babyhug",
+        "link:(3) Allen Solly Junior",
+        "link:(3) Kookie Kids",
+        "link:(5) Biba",
+        "link:Write Your Review"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_30_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_31_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_32_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_33_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_34_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_35_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:brand-products-polo",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "(6) Polo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "(6) Polo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_36_brand-products-polo",
+          "label": "(6) Polo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Add to cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": " Add to cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_86_add-to-cart",
+          "label": " Add to cart",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your Name",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your Name",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_87_your-name",
+          "label": "Your Name",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Email Address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Email Address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_88_email-address",
+          "label": "Email Address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Add Review Here!",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Add Review Here!",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_89_add-review-here",
+          "label": "Add Review Here!",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Submit",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Submit",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_90_submit",
+          "label": "Submit",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_91_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_92_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your Name",
+            "control": "text"
+          },
+          {
+            "field": "Email Address",
+            "control": "text"
+          },
+          {
+            "field": "Add Review Here!",
+            "control": "text"
+          },
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ],
+        "createsEntity": "Sleeveless Dress"
+      }
+    },
+    {
+      "id": "automationexercise.com:products",
+      "nodeId": "automationexercise.com",
+      "semanticName": "products",
+      "urlPattern": "https://automationexercise.com/products",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Category",
+        "heading: Women",
+        "heading: Men",
+        "heading: Kids",
+        "heading:Brands",
+        "heading:All Products",
+        "heading:Rs. 500",
+        "heading:Rs. 400",
+        "heading:Rs. 1000",
+        "heading:Rs. 1500",
+        "heading:Rs. 600",
+        "heading:Rs. 700",
+        "heading:Rs. 499",
+        "heading:Rs. 359",
+        "heading:Rs. 278",
+        "heading:Rs. 679",
+        "heading:Rs. 315",
+        "heading:Rs. 478",
+        "heading:Rs. 1200",
+        "heading:Rs. 1050",
+        "heading:Rs. 1190",
+        "heading:Rs. 1530",
+        "heading:Rs. 1600",
+        "heading:Rs. 1100",
+        "heading:Rs. 849",
+        "heading:Rs. 1299",
+        "heading:Rs. 850",
+        "heading:Rs. 799",
+        "heading:Rs. 1400",
+        "heading:Rs. 2300",
+        "heading:Rs. 3000",
+        "heading:Rs. 3500",
+        "heading:Rs. 5000",
+        "heading:Rs. 1389",
+        "heading:Subscription",
+        "button:",
+        "button:",
+        "textbox:Search Product",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link: Women",
+        "link: Men",
+        "link: Kids",
+        "link:(6) Polo",
+        "link:(5) H&M",
+        "link:(5) Madame",
+        "link:(3) Mast & Harbour",
+        "link:(4) Babyhug",
+        "link:(3) Allen Solly Junior",
+        "link:(3) Kookie Kids",
+        "link:(5) Biba",
+        "link: View Product"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search Product",
+            "near": null
+          },
+          "cost": 0,
+          "id": "inp_search-product",
+          "label": "Search Product",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Your email address",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Your email address",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_0_your-email-address",
+              "label": "Your email address",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_1_state",
+              "label": "",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_2_state",
+          "label": "",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_16_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_17_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_18_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_19_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_20_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:brand-products-polo",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "(6) Polo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "(6) Polo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_21_brand-products-polo",
+          "label": "(6) Polo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:product-details-3",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " View Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " View Product",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_22_product-details-3",
+          "label": " View Product",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_80_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_81_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search Product",
+            "control": "text"
+          },
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:products-2",
+      "nodeId": "automationexercise.com",
+      "semanticName": "products-2",
+      "urlPattern": "https://automationexercise.com/products?search=dress",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Category",
+        "heading: Women",
+        "heading: Men",
+        "heading: Kids",
+        "heading:Brands",
+        "heading:Searched Products",
+        "heading:Rs. 1000",
+        "heading:Rs. 1500",
+        "heading:Rs. 478",
+        "heading:Rs. 1050",
+        "heading:Rs. 1190",
+        "heading:Rs. 1530",
+        "heading:Rs. 1600",
+        "heading:Rs. 1100",
+        "heading:Rs. 2300",
+        "heading:Subscription",
+        "button:",
+        "button:",
+        "textbox:Search Product",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link: Women",
+        "link: Men",
+        "link: Kids",
+        "link:(6) Polo",
+        "link:(5) H&M",
+        "link:(5) Madame",
+        "link:(3) Mast & Harbour",
+        "link:(4) Babyhug",
+        "link:(3) Allen Solly Junior",
+        "link:(3) Kookie Kids",
+        "link:(5) Biba",
+        "link: View Product"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:product-details-3",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " View Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " View Product",
+            "near": "Rs. 1000"
+          },
+          "cost": 0,
+          "id": "aff_3_product-details-3",
+          "label": " View Product",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_23_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_24_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_25_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_26_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_27_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_28_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:brand-products-polo",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "(6) Polo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "(6) Polo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_29_brand-products-polo",
+          "label": "(6) Polo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search Product",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search Product",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_82_search-product",
+          "label": "Search Product",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_83_state",
+          "label": "",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_84_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_85_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search Product",
+            "control": "text"
+          },
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:test-cases",
+      "nodeId": "automationexercise.com",
+      "semanticName": "test-cases",
+      "urlPattern": "https://automationexercise.com/test_cases",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Test Cases",
+        "heading:Below is the list of test Cases for you to practice the Automation. Click on the scenario for detailed Test Steps:",
+        "heading:Feedback for Us",
+        "heading:Subscription",
+        "button:",
+        "textbox:Your email address",
+        "link:Website for practice automation",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:Feedback for Us",
+        "link:feedback@automationexercise.com"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_55_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:view-cart",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Cart",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Cart",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_56_view-cart",
+          "label": " Cart",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_57_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_58_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_59_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_104_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_105_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "automationexercise.com:view-cart",
+      "nodeId": "automationexercise.com",
+      "semanticName": "view-cart",
+      "urlPattern": "https://automationexercise.com/view_cart",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Sleeveless Dress",
+        "heading:Subscription",
+        "button:1",
+        "button:",
+        "textbox:Your email address",
+        "link:Website for automation practice",
+        "link: Home",
+        "link: Products",
+        "link: Cart",
+        "link: Signup / Login",
+        "link: Test Cases",
+        "link: API Testing",
+        "link: Video Tutorials",
+        "link: Contact us",
+        "link:Home",
+        "link:Product Image",
+        "link:Sleeveless Dress"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "automationexercise.com:products",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Products",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Products",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_44_products",
+          "label": " Products",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:login",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Signup / Login",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Signup / Login",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_45_login",
+          "label": " Signup / Login",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:test-cases",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Test Cases",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Test Cases",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_46_test-cases",
+          "label": " Test Cases",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:api-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " API Testing",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " API Testing",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_47_api-list",
+          "label": " API Testing",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:contact-us",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": " Contact us",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": " Contact us",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_48_contact-us",
+          "label": " Contact us",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "automationexercise.com:product-details-3",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Sleeveless Dress",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Sleeveless Dress",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_49_product-details-3",
+          "label": "Sleeveless Dress",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "1",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "1",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_95_1",
+          "label": "1",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Your email address",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Your email address",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_96_your-email-address",
+          "label": "Your email address",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_97_state",
+          "label": "",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Your email address",
+            "control": "text"
+          }
+        ]
+      }
+    }
+  ]
+}
