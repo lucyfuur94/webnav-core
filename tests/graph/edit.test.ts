@@ -252,3 +252,17 @@ describe('editGraph — elementFp authoring', () => {
     expect(store.edgesFrom('ohrm.example:login')[0].elementFp).toEqual({ role: 'button', name: 'Login' });
   });
 });
+
+describe('editGraph — tolerates a graph missing edges/states (draft pipe-compat)', () => {
+  it('accepts {states} with NO edges key (jq \'{node,states}\' of a --draft) without throwing', () => {
+    const store = freshStore();
+    // the exact shape that produced "graph.edges is not iterable" during the automationexercise learn
+    const r = editGraph(store, 'ae.example', { states: [{ label: 'home', urlPattern: 'https://ae.example' }] } as any);
+    expect(r.statesWritten).toBe(1);
+    expect(store.getState('ae.example:home')).toBeTruthy();
+  });
+  it('accepts a fully empty graph {} without throwing', () => {
+    const store = freshStore();
+    expect(() => editGraph(store, 'empty.example', {} as any)).not.toThrow();
+  });
+});
