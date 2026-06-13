@@ -48,16 +48,31 @@ internal tools, automation testing, back-office workflows — that navigation sh
 deterministically, self-heals when the site drifts, and **never** auto-fires an irreversible
 action: commit points always pause for the agent (or you) to decide.
 
-## Quickstart
+## Quickstart (≈60 seconds to a working walk)
 
 ```bash
-npm install                 # Node 18+ (better-sqlite3 native build)
-npm link                    # install `webnav` on PATH (runs src via tsx — NO build needed)
+npm install && npm link     # Node 18+; installs `webnav` on PATH (runs src via tsx — NO build step)
+                            # also needs `playwright-cli` on PATH
+
+# walk a site WITHOUT learning it — import a map someone already made:
+webnav dev import-map mappacks/orangehrm.mappack.json     # 17 states, in-page repertoire + domain shadow
+webnav dev creds set opensource-demo.orangehrmlive.com username=Admin password=admin123   # YOUR creds, local only
+webnav walk --start opensource-demo.orangehrmlive.com:auth-login \
+            --goal  opensource-demo.orangehrmlive.com:recruitment-viewcandidates --headless
+#  → webnav drives login → dashboard → … → the Candidates list, pausing only at genuine forks.
+
+webnav dev list             # the sites you have maps for (saucedemo ships seeded by default)
+```
+
+Three packs ship in [`mappacks/`](mappacks/) (saucedemo · OrangeHRM · automationexercise) — skeleton
+only, never credentials. To map **your own** site, hand an agent the prompt in
+[`docs/LEARNING-A-SITE.md`](docs/LEARNING-A-SITE.md). Dev/contributor commands:
+
+```bash
 webnav --help               # the tool menu (a peer of playwright-cli)
 npm test                    # unit tests (+ gated browser e2e)
-npm run build               # tsc -> dist/ (only needed for the dist build; the `webnav` CLI runs src directly)
+npm run build               # tsc -> dist/ (only for the published build; the CLI runs src directly)
 ```
-Needs `playwright-cli` on PATH.
 
 ## How the map grows (start here if you're new)
 
