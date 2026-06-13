@@ -88,41 +88,53 @@ the state-fingerprint path. (Throughout the rest of this spec, "the fingerprint"
 The walk/resolve path consumes **`Edge`**, and edges are *projected* from affordances by
 `store.projectFromAffordances` — a field not explicitly copied there is dropped. So the
 fingerprint must be carried end-to-end, or `resolveStep` receives nothing:
-1. add `fingerprint` to the `Edge` interface (`types.ts`) + `makeEdge` defaults (null);
-2. copy it in `projectFromAffordances` (`store.ts`) `makeEdge({...})` when projecting navigate/reveal affordances;
-3. add a `fingerprint` column to the `edges` table (`schema.sql` + the idempotent migration in
+1. add `elementFp` to the `Edge` interface (`types.ts`) + `makeEdge` defaults (null) — the
+   field is `elementFp`, NEVER `fingerprint` (S7: collides with `State.fingerprint`);
+2. copy `elementFp` in `projectFromAffordances` (`store.ts`) `makeEdge({...})` when projecting navigate/reveal affordances;
+3. add an `element_fp` column to the `edges` table (`schema.sql` + the idempotent migration in
    `store.ts`) — JSON-encoded, nullable. Stored rows win on dedup in `edgesFrom`, so an
    edge-row-authored step must carry it too;
-4. **`upsertEdge` writes the column** (add to the INSERT/UPDATE column list + `@fp` bind,
-   `JSON.stringify(e.fingerprint ?? null)`) **and `rowToEdge` parses it back**
-   (`r.fingerprint ? JSON.parse(r.fingerprint) : null`) — the exact pair the prior B1 missed;
+4. **`upsertEdge` writes the column** (add `element_fp` to the INSERT/UPDATE column list +
+   `@elementFp` bind, `JSON.stringify(e.elementFp ?? null)`) **and `rowToEdge` parses it back**
+   (`r.element_fp ? JSON.parse(r.element_fp) : null`) — the exact pair the prior B1 missed;
    a stored row that doesn't round-trip the column silently falls to legacy name-only;
-5. change `resolveStep`/`replayStep` to take the `Edge` (or its fingerprint) and use it;
-6. update the TWO direct `resolveStep` call sites in `walk.ts` (the classify-safe path and
-   the ref-answer self-heal path);
-7. **fingerprint-aware self-heal write-back.** When the agent picks an element at a fork, the
-   heal must persist enough to resolve uniquely next time — `recordSelector` is extended to
-   write the **full `{role, name, near}` of the chosen node into the edge row's
-   `elementFp`** (the new field; see naming below), NOT a bare name into `selector_cache`.
-   - role+name alone is NOT enough when the fork was reached via step 5 (the N-identical case):
-     the heal MUST compute `near` for the chosen node using the SAME `resolveByNear` scope
-     logic recording uses (the chosen node + its snapshot are in hand at the heal site —
-     `walk.ts:132-133` holds `beforeNodes` + `chosen`), else the next walk re-collides at
-     step 3, has no `near`, and re-escalates forever (S2/S4). If no distinguishing `near`
-     exists in the chosen node's clean scope, the heal stores `{role,name}` and the step
-     honestly remains a per-walk escalation (don't claim a heal that can't stick).
-   - `recordSelector`'s signature changes from `(from,to,step,selector:string)` to
-     `(from,to,step,fp: ElementFingerprint)`; it does `UPDATE edges SET element_fp=?`. The
-     `walk.ts:142` call site passes the computed fp instead of `chosen.name`. `selector_cache`
-     is RETAINED only for legacy name-only edges (the legacy resolver still reads it); new
-     heals never write it.
-   - (Unchanged limitation: a purely-projected edge with no stored row still can't persist a
-     heal — `recordSelector` no-ops on no row; fingerprints make this rare since
-     authored/recorded affordances carry the fp up front.)
+5. change `resolveStep`/`replayStep` to take the `Edge` (or its `elementFp`) and use it;
+6. update **all** `resolveStep` reachers in `walk.ts`: the two DIRECT calls (`walk.ts:108`
+   classify-safe, `walk.ts:132`-area ref-answer) AND the indirect path via `replayStep`
+   (`walk.ts:171`); plus the walk-live `fieldRef` input path (SF4);
+7. **fingerprint-aware self-heal write-back — writes to `states.affordances`, NOT the edges
+   table (B1 fix).** When the agent picks an element at a fork, the heal must persist
+   `{role,name,near}` so the next walk resolves uniquely. CRITICAL: the fp `resolveStep`
+   consumes is PROJECTED from the affordance blob (`projectFromAffordances`), and BOTH
+   motivating maps have **no edge rows** — saucedemo seeds affordances only; the 2026-06-13
+   gate fix authors gates onto the affordance and `continue`s past `upsertEdge`. So an
+   `UPDATE edges` heal no-ops on the common case. Therefore:
+   - New store method `recordElementFp(fromState, toState, semanticStep, fp)` that LOCATES THE
+     OWNING AFFORDANCE in `fromState`'s affordance tree (matching by `toState` + `semanticStep`,
+     recursing reveal `children` exactly as `interiorEdges`/`findNavTarget` already do), sets
+     its `elementFp`, and re-`upsertState`s. Falls back to `UPDATE edges SET element_fp` ONLY
+     for a legacy/explorer stored row with no backing affordance.
+   - The heal computes `near` via the shared **`deriveNear`** (see §near selection) on the
+     chosen node + its live snapshot (in hand at `walk.ts:132-133`: `beforeNodes` + `chosen`).
+     If `deriveNear` returns null (a truly content-identical sibling), store `{role,name}` and
+     the step honestly stays a per-walk escalation — don't claim a heal that can't stick.
+   - This RETIRES `recordSelector`'s bare-string signature. **S1 fallout (must do in Phase 2):**
+     update the `IMapStore` interface decl (store.ts:25), the `walk.ts` call site, and migrate
+     the three green tests asserting `selectorCache==='Shopping cart'` (walk.test.ts:168,
+     store.test.ts, project-edges.test.ts) to assert `elementFp` instead. `selector_cache`
+     column stays only as the legacy-name resolver's read path (replay.ts:20); new heals on a
+     legacy name-only edge may still write it (decide per-edge: fingerprinted edge → affordance
+     `elementFp`; legacy edge → `selector_cache` as today).
 
-`semanticStep` stays (durable prose, drives `--help`/viewer readability). The fingerprint
-is the machine key; `semanticStep` no longer needs to encode the name in quotes once a
-fingerprint exists (but keep it for legacy + human readability).
+`semanticStep` stays. The `elementFp` is the machine key; `semanticStep` no longer needs to
+encode the name in quotes once a fingerprint exists. **S6 — it MUST stay self-sufficient prose**
+not because of viewer/`--help` nicety, but because it is the **agent-facing payload in every
+`needs-*` response** (`walk.ts` builds each escalation `question` from `edge.semanticStep`;
+`protocol.ts`): when webnav escalates, the agent reads `semanticStep` to decide. So it is part
+of the #5 "surface evidence, agent judges" channel — trimming it to a bare verb would blind the
+agent at exactly the fork. It is ALSO part of the edge identity key (`edgeKey`, the UNIQUE
+constraint, the `recordSelector`/heal WHERE clause) → must stay STABLE; never rewrite it on an
+existing edge. The step-5 escalation message MUST thread `semanticStep` (not a generic string).
 
 ## Resolution algorithm (resolveStep rewrite)
 
@@ -132,8 +144,13 @@ parsed snapshot nodes.
 ```
 1. legacy path: no fingerprint → today's behavior (single name match else null). [back-compat]
 2. testId present → match nodes by data-testid AND `role==fp.role` (and name if set); unique?
-   return it. (A reassigned-but-unique testId must still match role/name, else fall to step 3
-   — testId is a hint, not an override of the durable layer-1 key.)   [layer 2 exact]
+   return it. (HARD INVARIANT, not an optimization: testId never overrides role+name — a
+   reassigned-but-unique testId must still match them, else fall to step 3.)   [layer 2 exact]
+   **S2 — v1 SCOPE:** playwright-cli's a11y snapshot emits no data-testid/placeholder tokens
+   (verified: zero across all 5 fixtures; only `[ref=]`/`[cursor=]`/`[level=]`). So `SnapNode`
+   carries no testId in v1 and step 2 is INERT — ship the proven role+name+`near` core; add a
+   guard test that step 2 is skipped when testId is absent. Wire testId only if/when the
+   snapshot format carries it (then the role-match invariant above applies).
 3. candidates = nodes where role == fp.role AND name == fp.name.       [layer 1]
    - 1 match  → return it.                                             [OrangeHRM heading-vs-button solved here]
    - 0 match  → escalate (real drift; self-heal can repair).
@@ -150,13 +167,15 @@ parsed snapshot nodes.
    and hand-authored maps may be unverified), NOT a "can't happen".
 ```
 
-`near` containment uses snapshot **indentation depth** (added to `SnapNode`). The rule is
-**smallest-ancestor-that-CONTAINS-`near`**, NOT nearest-container — derived from and verified
-against the committed real captures (`tests/fixtures/saucedemo-inventory.yml`,
-`tests/fixtures/orangehrm-pim-table.yml`); see §Worked examples (verified) below. The earlier
-"stop at the first container" rule was WRONG — it picks the target's immediate wrapper (the
-saucedemo price-box, the OrangeHRM action-cell), whose subtree EXCLUDES the sibling carrying
-`near`, so every candidate fails and the walk escalates on its own motivating case.
+`near` containment uses snapshot **indentation depth** (added to `SnapNode`), derived from and
+verified against the committed real captures (`tests/fixtures/saucedemo-inventory.yml`,
+`tests/fixtures/orangehrm-pim-table.yml`) by the runnable proof in
+`docs/superpowers/artifacts/fingerprint-algo-prototype.mjs`; see §Worked examples below. Two
+earlier rules were WRONG and are recorded so they're not re-attempted: "nearest container, stop
+at first" (too small — picks the target's price-box/action-cell, excluding the sibling holding
+`near` → all candidates fail → escalate on the motivating case), and "smallest ancestor that
+contains `near`" (too big — a high ancestor contains every candidate's `near` → all match →
+escalate). The correct rule is below.
 
 **The rule (verified against real bytes — see §Worked examples):** a candidate's anchor scope
 is the **LARGEST enclosing ancestor whose bounded subtree still EXCLUDES every OTHER candidate**
@@ -189,6 +208,36 @@ contains card B's `near`. And exactly-one-hit is required: a `near` generic enou
 two candidates' scopes → >1 → escalate, never a guess. No container-role allow-list is needed —
 the cross-candidate exclusion does all the bounding, so it works whether the card/row is a
 `generic`, `row`, `listitem`, or unlabeled. Pure structural, no LLM.
+
+## `deriveNear` — WHICH text to store (B2/B3 keystone; the matcher's twin)
+
+`resolveByNear`/`anchorScope` are MATCHERS — given a `near` string they find hits; they cannot
+PRODUCE the string. Both record-time auto-capture AND step-5 heal need to choose WHICH in-scope
+text to store. This is one shared function so the two sides cannot diverge (proven in the
+prototype):
+```
+deriveNear(nodes, candIdx, role, name) -> string | null
+  cands = nodes matching (role, name) with a ref
+  scope = anchorScope(nodes, candIdx, {other cands})         // candidate's clean per-row/card scope
+  if !scope: return null
+  for each text-bearing name T in scope (doc order, excluding candIdx, skip empty/whitespace):
+      if resolveByNear(nodes, cands, T) == [candIdx]:          // T uniquely identifies THIS candidate
+          return T
+  return null                                                  // honest flag: truly-identical sibling → escalate
+```
+**Verified against the committed fixtures** (prototype, all PASS): SD e54→"Sauce Labs Backpack",
+e66→"Sauce Labs Bike Light", e90→"Sauce Labs Fleece Jacket"; OH edit-e288 & delete-e290 →
+"dfgsjsjdh" (each round-trips back to its own ref). And **S3 honest limit, proven**: 12/50 PIM
+edit buttons sit in content-identical rows → `deriveNear` returns null → correctly unresolvable
+(escalate), never wrong-resolved.
+
+**Durability refinement (noted, non-blocking):** "first uniquely-resolving text in doc order"
+can pick a less-stable text when several qualify — e.g. OH picked the first-name "dfgsjsjdh"
+over the more-stable id "444444" (both unique in that row). Correctness is unaffected
+(exactly-one-hit guarantees no wrong-click; a churned text just re-escalates later and re-heals).
+A v1.1 refinement may PREFER more-stable texts (numeric ids, longer/labelled values) among the
+qualifying set — but v1 ships the proven "first uniquely-resolving" rule. Recording MAY also let
+the agent-in-the-loop override the auto-picked `near` (it already has the page open).
 
 ## Authoring guarantees uniqueness (the chosen rule)
 
@@ -254,10 +303,11 @@ role+name alone is useless, `near` does the work.
 18      button "" e288                    ← TARGET edit
 18      button "" e290                    ← delete (distinct action, same row)
 ```
-Trace for `fingerprint{role:'button', name:''(edit), near:'444444'}`
-(VERIFIED running the algorithm: edit→e288, delete `name:''`→e290 — **distinct refs in
-the same row**, out of 50 candidates each; `near:'dfgsjsjdh'` also → e288):
-- step 3: 50 `button ""` match → >1 → step 4.
+Trace for `elementFp{role:'button', name:<edit glyph>, near:<derived>}`
+(VERIFIED: `deriveNear(e288)`→"dfgsjsjdh" round-trips back to e288; delete→e290 likewise;
+both ALSO resolve via `near:'444444'` — **distinct refs in the same row**, of 50 candidates
+each. S3: 12/50 rows are content-identical → `deriveNear`→null → those correctly escalate):
+- step 3: 50 edit-glyph buttons match role+name → >1 → step 4.
 - `anchorRef(e288)`: climb its cell/generic ancestors → up to `row e268` (d12) → clean (the row
   holds only this row's edit button among edit-candidates) → the table body that holds the
   other 49 edit buttons → STOP, return **row e268**.
@@ -315,21 +365,36 @@ fixtures are unchanged.
 the CLI uses) and a near-duplicate `fieldRef`/`act` inline in `runWalkLive`. BOTH must migrate to
 the fingerprint mechanism, or one path stays on hardcoded names — a latent split. Prefer collapsing
 to the single `makeLiveWalkBrowser` (the inline one looks redundant) while doing this. Saucedemo
-login stays byte-identical via the no-fingerprint fallback regardless.
+login stays byte-identical via the no-fingerprint fallback regardless. (NB: the two closures
+differ in shipping defaults — `makeLiveWalkBrowser` defaults firstName='A'/lastName='B', the inline
+one has none — so collapsing changes behavior on the no-input path; lock whichever is kept with a test.)
+
+**S4 — prove the unification actually RUNS, not just the fallback.** OrangeHRM's fields are
+literally named "Username"/"Password" — identical to the hardcoded strings — so an authored input
+`elementFp` would be delivered by the back-compat fallback anyway, and the unified path would never
+be exercised. Phase 3 MUST add a walk-live test where an input affordance's
+`elementFp.name` (the accessible name) DIFFERS from both its `label` and the hardcoded strings,
+asserting the field still resolves — proving the fingerprint path runs. Also: `findByRoleAndName`
+is first-match-wins today; the fingerprint path should escalate on >1 (consistency with resolveStep)
+— test a two-same-name-field page.
 
 ## `dev verify --session` (S8) — the live uniqueness backstop for hand-authored maps
 
 graph-edit is offline so it can't check live uniqueness; `dev verify` is the only place a
 hand-authored `elementFp` is checked against a real page. Spec it as a normal verb (uniform
-JSON stdout + cli-spec registration + MCP-generated, per CLAUDE.md CLI rules):
-- **Input:** `--node <id>` (the site) + `--session <S>` (a live browser already driven to the
-  states, OR drive-to-each-state via the map's edges from the entry — v1: verify whatever state
-  the session's browser is currently on; full drive-through is a follow-up).
-- **Output (stdout):** `{ status, node, states: [{ id, affordances: [{ id, unique: bool,
-  collidesWith: [refs] }] }] }`. `unique:false` lists the other live nodes the `elementFp`
-  matched.
-- **Exit codes:** 0 = all unique · 3 = some affordance non-unique (ran fine, found collisions)
-  · 2 = error (no session / unknown node).
+JSON stdout + cli-spec registration + MCP-generated, per CLAUDE.md CLI rules). **S5 — v1 is
+single-page** (the `--session` browser is on ONE page), so it verifies exactly the matched state:
+- **Input:** `--node <id>` + `--session <S>`. Snapshot the session's current page; run
+  `matchState(snapshot, store.statesForNode(node))` (the existing `explorer/fingerprint.ts:15`)
+  to identify WHICH stored state we're on.
+- **Output (stdout):** ONE state entry —
+  `{ status, node, state: <id|null>, affordances: [{ id, unique: bool, matchedRefs: [refs] }] }`.
+  For each navigate/input affordance of the matched state, run `resolveStep` against the live
+  snapshot; `unique:false` lists every ref its `elementFp` matched (>1 or 0).
+- **Exit codes:** 0 = matched state, all affordances unique · 3 = matched but some non-unique,
+  OR `matchState` returned `none`/`ambiguous` (ran fine, nothing conclusive to verify) · 2 =
+  error (no session / unknown node). Multi-state drive-through (walk each state, verify each) is
+  an explicit follow-up.
 
 ## Migration
 
@@ -338,43 +403,56 @@ JSON stdout + cli-spec registration + MCP-generated, per CLAUDE.md CLI rules):
 - saucedemo keeps working unchanged (name-only fallback; its affordances have no `elementFp`).
 - OrangeHRM: author login affordance with `elementFp:{role:'button',name:'Login'}` → resolves
   uniquely (heading excluded) → login works; PIM-table buttons get `elementFp` with `near` →
-  rows resolve (proven by the prototype against the committed fixture).
+  **unique-content rows resolve; content-identical rows correctly escalate** (S3: 12/50 in the
+  fixture) — both proven by the prototype against the committed fixture.
 
 ## Testing
 
-- **resolve (the proof):** a vitest test READS the two committed fixtures
-  (`tests/fixtures/saucedemo-inventory.yml`, `orangehrm-pim-table.yml`) and asserts the exact
-  refs the prototype proved: SD Backpack→e54, Bike Light→e66, Fleece→e90; OH edit-row-444444→
-  e288, delete→e290. This ports `docs/superpowers/artifacts/fingerprint-algo-prototype.mjs`
-  into the real `resolveStep` and locks the algorithm to real bytes (no hand-drawn fixtures).
-- resolveStep units: legacy name-only unchanged; role+name disambiguates heading-vs-button;
-  testId requires role match (S1); 0-match → escalate; residual >1 → escalate. NO index test.
+- **resolve + deriveNear (the proof):** a vitest test READS the two committed fixtures and
+  asserts the exact refs the prototype proved — MATCH: SD Backpack→e54, Bike Light→e66,
+  Fleece→e90; OH edit-row→e288, delete→e290. DERIVE round-trip: `deriveNear(target)` →
+  `resolveStep(that)` → same ref, for each. S3: ≥1 content-identical PIM row → `deriveNear`→null
+  → escalate (locks the honest limit as proven behavior). This ports
+  `docs/superpowers/artifacts/fingerprint-algo-prototype.mjs` into the real code (no hand-drawn
+  fixtures; locked to real bytes).
+- resolveStep units: legacy name-only unchanged (the hard invariant — `resolve.test.ts`/
+  `replay.test.ts` stay green untouched); role+name disambiguates heading-vs-button; testId step
+  SKIPPED when absent (S2 guard); 0-match → escalate; residual >1 → escalate. NO index test.
 - snapshot: `depth` parse; `anchorScope`/`resolveByNear` over the nested fixtures AND a
   flattened fixture (asserts 0 hits → escalate, never a wrong match).
-- self-heal: `recordSelector` writes `{role,name,near}` to `element_fp`; a re-resolve after a
-  step-5 heal resolves WITHOUT re-escalating (S2/S4 regression test).
+- self-heal (B1/S1/S2): the heal writes `{role,name,near}` onto the owning AFFORDANCE
+  (`recordElementFp`), re-`upsertState`; a re-resolve after a step-5 heal resolves WITHOUT
+  re-escalating — using a saucedemo/OrangeHRM-shaped fixture that has NO edge row (proving the
+  affordance-write path, since `UPDATE edges` would no-op). The three existing tests asserting
+  `selectorCache==='Shopping cart'` migrate to assert the affordance `elementFp`. `IMapStore`
+  interface decl updated.
 - edit.ts: `elementFp` round-trips through graph-edit.
-- walk-live: credential fill resolves fields by input-affordance `elementFp`; falls back to
-  hardcoded names when absent (saucedemo login byte-identical).
+- walk-live (S4): an input affordance whose `elementFp.name` DIFFERS from its label AND from the
+  hardcoded strings still resolves (proves the unified path RUNS, not the fallback); a
+  two-same-name-field page escalates (>1) rather than first-match-wins; saucedemo login
+  byte-identical via fallback.
 - Live e2e (gated): OrangeHRM login→dashboard→PIM walk completes; saucedemo walk still completes.
 
 ## Phasing (implementation order, once spec approved)
 
-1. snapshot `depth` + `ancestorsOf`/`anchorScope`/`resolveByNear` (+ tests reading the committed
-   fixtures — the ported prototype proof; + a flattened fixture for safe degradation).
-2. `ElementFingerprint` type (field `elementFp`) + Edge thread-through (types/makeEdge/projection/
-   `edges.element_fp` column + `upsertEdge` write + `rowToEdge` parse + dedup) + `resolveStep`
-   rewrite with legacy fallback + fingerprint-aware `recordSelector` (full `{role,name,near}`,
-   computes `near` at heal) (+ tests) — fixes OrangeHRM heading-vs-button.
-3. graph-edit `elementFp` authoring + BOTH walk-live credential closures on `elementFp` (+ tests);
-   author OrangeHRM (login + PIM buttons) + verify the walk live end-to-end.
-4. recording auto-captures `elementFp` — extend the `use click` verb / `ActionRef` to recover
-   role+name (+`near` via `resolveByNear`) from `fromSnapshot` by ref-lookup (today cli.ts passes
-   `{role:'',name:null}` — B4), thread through `ActionEffect`→`analyseActionEffects`→graph-edit
-   payload (+ tests).
-5. `dev verify --session` (spec above) + cli-spec registration; docs (CLAUDE.md principle #3
-   amended: "store a durable element fingerprint (role+name+content-anchor `near`); cache
-   disposable selectors; escalation stays the permanent backstop for true ambiguity").
+1. snapshot `depth` + `ancestorsOf`/`anchorScope`/`resolveByNear` + **`deriveNear`** (+ tests
+   reading the committed fixtures — the ported MATCH + DERIVE-round-trip + S3 proof; + a
+   flattened fixture for safe degradation). Pure, no thread-through/heal dependency.
+2. `ElementFingerprint` type (field `elementFp` — NEVER `fingerprint`, S7) + Edge thread-through
+   (types/makeEdge/projection/`edges.element_fp` column + `upsertEdge` write + `rowToEdge` parse
+   + dedup) + `resolveStep` rewrite with the legacy-edges-green hard-invariant + **self-heal via
+   `recordElementFp` writing the owning AFFORDANCE (B1), `deriveNear` at heal**. S1 fallout in
+   THIS phase: update `IMapStore` decl + migrate the 3 `recordSelector`/`selectorCache` tests.
+   Fixes OrangeHRM heading-vs-button + the PIM-table rows.
+3. graph-edit `elementFp` authoring + BOTH walk-live credential closures on `elementFp` (+ the
+   S4 name≠label test); author OrangeHRM (login + PIM buttons) + verify the walk live end-to-end.
+4. recording auto-captures `elementFp` (B4 — the recovery chain): extend `use click`/`ActionRef`
+   to recover role+name from `fromSnapshot` by ref-lookup (today cli.ts passes `{role:'',
+   name:null}`), compute `near` via the SHARED `deriveNear`, thread through
+   `ActionEffect`→`analyseActionEffects`→graph-edit payload (+ tests).
+5. `dev verify --session` (S5 single-page spec above) + cli-spec registration; docs (CLAUDE.md
+   principle #3 amended: "store a durable element fingerprint (role+name+content-anchor `near`);
+   cache disposable selectors; escalation stays the permanent backstop for true ambiguity").
 
 ## Out of scope
 
