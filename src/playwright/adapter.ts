@@ -62,7 +62,7 @@ export class PlaywrightAdapter {
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
   press(key: string) { return this.exec('press', key); }
-  evalJs(func: string) { return this.exec('eval', func); }
+  evalJs(func: string, ref?: string) { return this.exec('eval', func, ...(ref ? [ref] : [])); }
   network() { return this.exec('network'); }
   goBack() { return this.exec('go-back'); }
   reload() { return this.exec('reload'); }
