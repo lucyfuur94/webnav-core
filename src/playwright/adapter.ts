@@ -89,6 +89,16 @@ export class PlaywrightAdapter {
     return this.readFile(m[1]);
   }
 
+  /** Screenshot the current page; returns the .png path playwright-cli printed, or
+   *  null if none was found (callers treat shots as optional decoration). */
+  async screenshot(): Promise<string | null> {
+    try {
+      const out = await this.exec('screenshot');
+      const m = out.match(/\(([^)]+\.png)\)/) ?? out.match(/(\/\S+\.png)/);
+      return m ? m[1] : null;
+    } catch { return null; }
+  }
+
   /**
    * Snapshot, but RETRY until the page is `ready` (a JS-SPA renders after first paint, so an
    * immediate snapshot catches an unfinished shell — the OrangeHRM symptom). Re-snapshots up

@@ -2,7 +2,7 @@
 // buffer of REAL a11y snapshots, pair events to ticks, append ActionEffects.
 // Deps injected so tests drive it with a scripted fake adapter.
 import {
-  INSTALLER_JS, DRAIN_JS, resolveEvent, fromTickFor, chooseToTick, assembleEffect,
+  INSTALLER_JS, DRAIN_JS, MODE_JS, resolveEvent, fromTickFor, chooseToTick, assembleEffect,
   type LiveEvent, type Tick,
 } from './live.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
@@ -14,10 +14,15 @@ import type { ActionEffect } from '../mapstore/record.js';
 export interface LiveRecordDeps {
   adapter: { evalJs(f: string, ref?: string): Promise<string>; snapshot(): Promise<string>;
     currentUrl(): Promise<string>; close(): Promise<unknown> };
-  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect): void };
+  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect): void;
+    start(s: string): unknown; stop(s: string): void };
   sessionId: string; intervalMs: number;
   log: (line: string) => void; isStopped: () => boolean;
   sleep?: (ms: number) => Promise<void>;
+  // Armed = the overlay is open before recording starts; the loop keeps polling
+  // (installer/toggle) regardless of store.isActive, and only capture (append) stays
+  // gated on isActive. Ends on isStopped() OR 5 consecutive tick errors (browser closed).
+  armed?: boolean;
 }
 
 interface Pending { ev: LiveEvent; drainIdx: number; waits: number }
@@ -27,13 +32,21 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   const ticks: Tick[] = [];
   const pending: Pending[] = [];
   let appended = 0;
+  let errStreak = 0;
   try {
-    while (!deps.isStopped() && deps.store.isActive(deps.sessionId)) {
+    while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
       await deps.adapter.evalJs(INSTALLER_JS).catch(() => {});          // idempotent re-inject
       const raw = parseEvalResult(await deps.adapter.evalJs(DRAIN_JS).catch(() => '[]'));
       let events: LiveEvent[] = [];
       try { events = JSON.parse(raw || '[]'); } catch { deps.log(`skip: undrainable batch`); }
-      for (const ev of events) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
+      // toggle events flip capture; they are control, not data — never pended.
+      const toggles = events.filter((e) => e.kind === 'toggle');
+      const data = events.filter((e) => e.kind !== 'toggle');
+      for (const _t of toggles) {
+        if (deps.store.isActive(deps.sessionId)) deps.store.stop(deps.sessionId);
+        else deps.store.start(deps.sessionId);
+      }
+      for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
 
       // Ctrl-C reaches the playwright daemon (same process group) and tears the
       // browser down while a tick is in flight — an unguarded snapshot/currentUrl
@@ -44,8 +57,10 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       try {
         snap = await deps.adapter.snapshot();
         url = await deps.adapter.currentUrl();
+        errStreak = 0;
       } catch (e) {
-        if (deps.isStopped() || !deps.store.isActive(deps.sessionId)) break;
+        if (deps.isStopped() || (!deps.armed && !deps.store.isActive(deps.sessionId))) break;
+        if (++errStreak >= 5) { deps.log('browser gone — ending'); break; }
         deps.log(`tick error (retrying): ${String(e).split('\n')[0]}`);
         await sleep(deps.intervalMs);
         continue;
@@ -86,6 +101,7 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}`); }
         else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
       }
+      await deps.adapter.evalJs(MODE_JS(deps.store.isActive(deps.sessionId))).catch(() => {});
       await sleep(deps.intervalMs);
     }
   } finally {
