@@ -54,6 +54,38 @@ describe('ingest', () => {
     expect(store.actionEffects('human-2')[0].action).toBeNull();
   });
 
+  it('recomputes navigated server-side (ignores the extension flag; host+path, not query/hash)', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    ingest({
+      sessionId: 'nav-1',
+      steps: [
+        // same host+path, only query differs → NOT a navigation, even though extension says true
+        { fromUrl: 'https://s.test/x?a=1', fromSnapshot: serializeSnapshot(page('X')),
+          toUrl: 'https://s.test/x?a=2', toSnapshot: serializeSnapshot(page('X')),
+          navigated: true, ref: 'e2' },
+        // different path → IS a navigation, even though extension says false
+        { fromUrl: 'https://s.test/x', fromSnapshot: serializeSnapshot(page('X')),
+          toUrl: 'https://s.test/y', toSnapshot: serializeSnapshot(page('Y')),
+          navigated: false, ref: 'e2' },
+      ],
+    }, store);
+    const fx = store.actionEffects('nav-1');
+    expect(fx[0].navigated).toBe(false);  // query-only change → same page
+    expect(fx[1].navigated).toBe(true);   // path change → navigation
+  });
+
+  it('re-ingesting the same session replaces, does not duplicate', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestBody = {
+      sessionId: 'dup-1',
+      steps: [{ fromUrl: 'https://s.test/a', fromSnapshot: serializeSnapshot(page('A')),
+        toUrl: 'https://s.test/b', toSnapshot: serializeSnapshot(page('B')), ref: 'e2' }],
+    };
+    ingest(body, store);
+    ingest(body, store);  // same session id again
+    expect(store.actionEffects('dup-1').length).toBe(1);  // replaced, not 2
+  });
+
   it('serveIngest accepts a POST and appends', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const server = serveIngest(0, store); // port 0 = OS-assigned

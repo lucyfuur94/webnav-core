@@ -63,6 +63,11 @@ export class RecordStore {
     this.db.prepare('UPDATE record_sessions SET active=0, stopped_at=? WHERE session_id=?')
       .run(nowMs, sessionId);
   }
+  /** Drop all buffered observations for a session (so re-recording into the same
+   *  session id replaces, not appends — the ingest receiver's default session is reused). */
+  clearSession(sessionId: string): void {
+    this.db.prepare('DELETE FROM record_observations WHERE session_id=?').run(sessionId);
+  }
   isActive(sessionId: string): boolean {
     const r: any = this.db.prepare('SELECT active FROM record_sessions WHERE session_id=?').get(sessionId);
     return !!r && r.active === 1;
