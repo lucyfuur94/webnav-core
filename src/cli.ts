@@ -654,12 +654,20 @@ async function main() {
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     let videoOn = false;
     const videoSync = (session: string, recording: boolean) => {
-      if (recording && !videoOn && activeAdapter) { videoOn = true; void activeAdapter.videoStart(); }
-      else if (!recording && videoOn && activeAdapter) {
+      if (recording && !videoOn && activeAdapter) {
+        videoOn = true;
+        void activeAdapter.videoStart().then(
+          () => process.stderr.write('video: recording started\n'),
+          () => process.stderr.write('video: START FAILED\n'));
+      } else if (!recording && videoOn && activeAdapter) {
         videoOn = false;
         const dir = join(videosRoot, session);
         try { mkdirSync(dir, { recursive: true }); } catch { /* decoration */ }
-        void activeAdapter.videoStop(join(dir, 'take-' + Date.now() + '.webm')).then(() => emit('sessions'));
+        const file = join(dir, 'take-' + Date.now() + '.webm');
+        void activeAdapter.videoStop(file).then((ok) => {
+          process.stderr.write(ok ? 'video: saved ' + file + '\n' : 'video: SAVE FAILED (' + file + ')\n');
+          emit('sessions');
+        });
       }
     };
     let activeCtl: InstanceType<typeof ReplayController> | null = null;

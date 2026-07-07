@@ -91,7 +91,7 @@ export class PlaywrightAdapter {
 
   /** Session video: start/stop recording of the driven window. stop() writes to the
    *  given filename (playwright-cli --filename) — best-effort, never throws. */
-  async videoStart(): Promise<void> { await this.exec('video-start').catch(() => {}); }
+  async videoStart(): Promise<void> { await this.exec('video-start'); }   // caller logs failure
   async videoStop(filename: string): Promise<boolean> {
     try { await this.exec('video-stop', '--filename', filename); return true; }
     catch { return false; }
