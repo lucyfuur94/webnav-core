@@ -133,3 +133,14 @@ describe('assembleEffect', () => {
     expect(JSON.stringify(fx)).not.toContain('secret');
   });
 });
+
+describe('field clicks never navigate (live finding: "nav: First Name")', () => {
+  it('a click on a textbox paired with a landing tick stays navigated:false', () => {
+    const e = ev({ kind: 'click', tagName: 'input', inputType: 'text', placeholder: 'First Name' });
+    const from: Tick = { url: 'https://s.test/form', snapshot: 'RootWebArea "Form" [ref=e1]\n  textbox "First Name" [ref=e2]' };
+    const to: Tick = { url: 'https://s.test/next', snapshot: 'RootWebArea "Next" [ref=e1]' };
+    const fx = assembleEffect(e, 'e2', from, to)!;
+    expect(fx.navigated).toBe(false);
+    expect(fx.action?.role).toBe('textbox');
+  });
+});
