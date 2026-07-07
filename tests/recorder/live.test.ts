@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import {
   INSTALLER_JS, DRAIN_JS, descriptorRole, descriptorName, resolveEvent, type LiveEvent,
+  fromTickFor, chooseToTick, assembleEffect, type Tick,
 } from '../../src/recorder/live.js';
 
 const ev = (over: Partial<LiveEvent>): LiveEvent => ({
@@ -67,5 +68,51 @@ describe('resolveEvent', () => {
     expect(resolveEvent(ev({ tagName: 'div', leafText: 'Login' }), nodes)).toBeNull();
     expect(resolveEvent(ev({ tagName: 'button' }), nodes)).toBeNull();
     expect(resolveEvent(ev({ tagName: 'button', leafText: 'Nope' }), nodes)).toBeNull();
+  });
+});
+
+const LOGIN_SNAP = ['RootWebArea "Login" [ref=e1]', '  textbox "Username" [ref=e2]',
+  '  button "Login" [ref=e3]'].join('\n');
+const INV_SNAP = ['RootWebArea "Products" [ref=e1]', '  button "Open Menu" [ref=e2]'].join('\n');
+const tLogin: Tick = { url: 'https://s.test/', snapshot: LOGIN_SNAP };
+const tInv: Tick = { url: 'https://s.test/inventory.html', snapshot: INV_SNAP };
+
+describe('tick pairing', () => {
+  it('fromTickFor picks the latest same-page tick', () => {
+    expect(fromTickFor(ev({ url: 'https://s.test/?q=1' }), [tLogin, tInv], 1)).toBe(0); // query ≠ nav
+    expect(fromTickFor(ev({ url: 'https://nowhere.test/' }), [tLogin, tInv], 1)).toBe(-1);
+  });
+  it('chooseToTick waits for the lookahead tick, then attributes a late landing', () => {
+    expect(chooseToTick(0, [tLogin], false)).toBe(-1);              // no lookahead yet
+    expect(chooseToTick(0, [tLogin, tInv], false)).toBe(1);         // nav landed at next tick → it's ours
+    expect(chooseToTick(0, [tLogin, tInv], true)).toBe(0);          // a later click owns the landing
+    expect(chooseToTick(0, [tLogin, tLogin], false)).toBe(0);       // stable → same tick
+  });
+});
+
+describe('assembleEffect', () => {
+  it('navigated click with resolved ref → full action + recovered fp + navigated true', () => {
+    const e = ev({ tagName: 'button', leafText: 'Login' });
+    const fx = assembleEffect(e, 'e3', tLogin, tInv)!;
+    expect(fx.navigated).toBe(true);
+    expect(fx.action?.ref).toBe('e3');
+    expect(fx.action?.elementFp?.role).toBe('button');
+    expect(fx.action?.elementFp?.name).toBe('Login');
+    expect(fx.diff).toBeTruthy();
+  });
+  it('navigated click UNRESOLVED → emits with action:null (draft link-scan fallback)', () => {
+    const fx = assembleEffect(ev({ tagName: 'div' }), null, tLogin, tInv)!;
+    expect(fx.action).toBeNull();
+    expect(fx.navigated).toBe(true);
+  });
+  it('same-page click unresolved → null (dropped noise)', () => {
+    expect(assembleEffect(ev({ tagName: 'div' }), null, tLogin, tLogin)).toBeNull();
+  });
+  it('input event always emits, with the FIELD identity and never a value', () => {
+    const e = ev({ kind: 'input', tagName: 'input', inputType: 'text', placeholder: 'Username' });
+    const fx = assembleEffect(e, null, tLogin, tLogin)!;
+    expect(fx.action?.role).toBe('textbox');
+    expect(fx.action?.name).toBe('Username');
+    expect(JSON.stringify(fx)).not.toContain('secret');
   });
 });

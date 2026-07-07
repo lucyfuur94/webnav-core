@@ -4,7 +4,10 @@
 // snapshotting is playwright's. No in-page tree serialization, no .value reads.
 
 import type { SnapNode } from '../playwright/snapshot.js';
-import { didNavigate } from '../explorer/diff.js';
+import { didNavigate, diffSnapshots } from '../explorer/diff.js';
+import { parseSnapshot } from '../playwright/snapshot.js';
+import { recoverFingerprint } from '../playwright/fingerprint.js';
+import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 
 export interface LiveEvent {
   seq: number; kind: 'click' | 'input'; url: string; tagName: string;
@@ -99,4 +102,52 @@ export function resolveEvent(ev: LiveEvent, nodes: SnapNode[]): Resolution {
     if (byHref.length === 1) return { ref: byHref[0].ref! };
   }
   return { candidates: cands.map((n) => n.ref!) };
+}
+
+export interface Tick { url: string; snapshot: string }
+
+/** Latest tick ≤ uptoIdx on the same page as the event (query/hash ignored). */
+export function fromTickFor(ev: LiveEvent, ticks: Tick[], uptoIdx: number): number {
+  for (let i = Math.min(uptoIdx, ticks.length - 1); i >= 0; i--) {
+    if (!didNavigate(ticks[i].url, ev.url)) return i;
+  }
+  return -1;
+}
+
+/** Which tick is the event's landing? -1 = wait (need the lookahead tick).
+ *  A navigation often lands AFTER the drain tick; the one-tick lookahead
+ *  attributes it — unless a later click was drained, which then owns it.
+ *  ponytail: bursts inside one interval can misattribute; interval default
+ *  500ms makes that rare for deliberate QA clicking. */
+export function chooseToTick(drainIdx: number, ticks: Tick[], hasLaterClick: boolean): number {
+  const t0 = ticks[drainIdx], t1 = ticks[drainIdx + 1];
+  if (!t0) return -1;
+  if (!t1) return -1;
+  if (didNavigate(t0.url, t1.url) && !hasLaterClick) return drainIdx + 1;
+  return drainIdx;
+}
+
+/** Build the ActionEffect. Unresolved same-page CLICKS are dropped (noise);
+ *  unresolved NAVIGATED clicks still emit with action:null (the draft's
+ *  link-scan + cross-link mesh recover link edges); inputs always emit —
+ *  the field identity powers the draft's login/credentials linkage. */
+export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to: Tick): ActionEffect | null {
+  const navigated = didNavigate(ev.url, to.url);
+  const role = descriptorRole(ev), name = descriptorName(ev);
+  let action: ActionRef | null = null;
+  if (ref) {
+    const fromNodes = parseSnapshot(from.snapshot);
+    action = { role: role ?? '', name, ref, elementFp: recoverFingerprint(fromNodes, ref) };
+  } else if (ev.kind === 'input' && role && name) {
+    action = { role, name, ref: null, elementFp: { role, name, near: null } };
+  } else if (!navigated) {
+    return null;   // unresolved same-page click → honest drop
+  }
+  return {
+    fromUrl: ev.url, fromSnapshot: from.snapshot,
+    action,
+    toUrl: to.url, toSnapshot: to.snapshot,
+    navigated,
+    diff: diffSnapshots(parseSnapshot(from.snapshot), parseSnapshot(to.snapshot)),
+  };
 }
