@@ -52,6 +52,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <nav>
   <button data-tab="sites" class="active">Sites</button>
   <button data-tab="creds">Credentials</button>
+  <button data-tab="recordings">Recordings</button>
 </nav>
 <main id="main"></main>
 
@@ -76,6 +77,7 @@ async function render() {
   main.style.gridTemplateColumns = tab === 'sites' ? '280px 1fr' : '1fr';
   if (tab === 'sites') return renderSites();
   if (tab === 'creds') return renderCreds();
+  if (tab === 'recordings') return renderRecordings();
 }
 
 // ---------- SITES ----------
@@ -217,6 +219,96 @@ function addSiteCard() {
   };
   card.append(row);
   return card;
+}
+
+// ---------- RECORDINGS ----------
+let replayPoll = null;
+async function renderRecordings() {
+  clearInterval(replayPoll); replayPoll = null;
+  main.style.gridTemplateColumns = '280px 1fr';
+  const recs = await getJSON('/api/recordings');
+  main.innerHTML = '';
+  const list = el('<div class="list"></div>');
+  const detail = el('<div class="detail"><div class="empty">select a recording — or open a window below</div></div>');
+  recs.forEach(r => {
+    const when = new Date(r.startedAt).toLocaleString();
+    const row = el('<div class="row"><div class="name">'+esc(r.sessionId)+(r.active?' <span style="color:#e5484d">●</span>':'')+'</div><div class="meta">'+esc(r.site||'?')+' · '+r.steps+' steps · '+esc(when)+'</div></div>');
+    row.onclick = () => showRecording(r, detail, list, row);
+    list.append(row);
+  });
+  if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
+  list.append(newRecordingCard());
+  main.append(list, detail);
+}
+function newRecordingCard() {
+  const card = el('<div style="padding:12px;border-top:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="https://site-to-record" /><input placeholder="session name" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window (armed)</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const [urlIn, sessIn] = card.querySelectorAll('input:not([type=checkbox])');
+  const persistIn = card.querySelector('input[type=checkbox]');
+  card.querySelector('button').onclick = async () => {
+    const msg = card.querySelector('#openmsg');
+    if (!urlIn.value || !sessIn.value) { msg.textContent = 'url + session name required'; return; }
+    const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value, session: sessIn.value, persistent: persistIn.checked }) });
+    msg.textContent = r.ok ? 'window opened (grey border = armed). Hit Record here or \\u23FA in the window.' : (await r.json()).error;
+    if (r.ok) setTimeout(renderRecordings, 800);
+  };
+  return card;
+}
+async function showRecording(r, detail, list, row) {
+  list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
+  const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
+  detail.innerHTML = '';
+  const head = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span><span style="flex:1"></span></div>');
+  const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
+  const recB = btn(r.active ? 'Stop' : 'Record'), repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
+  recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(); };
+  delB.onclick = async () => { if (confirm('Delete recording '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
+  anB.onclick = async () => { const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft'); stepsBox.innerHTML = ''; stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>')); };
+  repB.onclick = async () => {
+    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay', { method:'POST' });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    pollReplay(stepsBox, r.sessionId);
+  };
+  head.append(recB, repB, anB, delB);
+  const stepsBox = el('<div></div>');
+  stepsBox.append(stepTable(steps.map(s => ({ ...s, status: '' }))));
+  detail.append(head, stepsBox);
+}
+function stepTable(steps, session) {
+  const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
+  const ICON = { ok: '\\u2713', fail: '\\u2717', running: '\\u25B6', jumped: '\\u21AA', skipped: '\\u2298', pending: '\\u00B7', '': '' };
+  steps.forEach(s => {
+    const color = s.status==='ok'?'#3fb950':s.status==='fail'?'#ff6b6b':'var(--muted)';
+    const shot = s.shot && session ? '<img src="/replays/'+encodeURIComponent(session)+'/'+encodeURIComponent(s.shot)+'" style="height:44px;border-radius:4px;border:1px solid var(--border)" />' : '';
+    tb.append(el('<tr><td style="width:28px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td>'+esc(s.label||s.kind||'step '+s.seq)+(s.note?' <span class="muted">('+esc(s.note)+')</span>':'')+'</td><td style="text-align:right">'+shot+'</td></tr>'));
+  });
+  return t;
+}
+function pollReplay(box, session) {
+  clearInterval(replayPoll);
+  const controls = el('<div style="display:flex;gap:8px;margin:10px 0"><button class="btn">Pause</button><button class="btn">Next</button><button class="btn">Resume</button><button class="btn danger">Abort</button></div>');
+  const [pauseB, nextB, resumeB, abortB] = controls.querySelectorAll('button');
+  const ctl = a => body => fetch('/api/replay/control', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(Object.assign({ action: a }, body||{})) });
+  pauseB.onclick = () => ctl('pause')(); nextB.onclick = () => ctl('next')(); resumeB.onclick = () => ctl('resume')(); abortB.onclick = () => ctl('abort')();
+  const prompt = el('<div></div>');
+  replayPoll = setInterval(async () => {
+    const st = await getJSON('/api/replay/status');
+    if (!st || st.running === false) { clearInterval(replayPoll); }
+    box.innerHTML = ''; box.append(controls, prompt, stepTable(st.steps || [], session));
+    prompt.innerHTML = '';
+    if (st.waiting === 'value') {
+      const p = el('<div class="addrow" style="margin:8px 0"><span class="muted">value for \\u201C'+esc(st.waitingLabel||'')+'\\u201D: </span><input type="password" /><button class="btn">Use once</button><button class="btn">Use &amp; save</button></div>');
+      const inp = p.querySelector('input'); const [once, save] = p.querySelectorAll('button');
+      once.onclick = () => ctl('supply')({ value: inp.value, save: false });
+      save.onclick = () => ctl('supply')({ value: inp.value, save: true });
+      prompt.append(p);
+    } else if (st.waiting === 'confirm') {
+      const p = el('<div class="addrow" style="margin:8px 0"><span style="color:#ff6b6b">\\u26A0 \\u201C'+esc(st.waitingLabel||'')+'\\u201D looks like a commit (order/pay/delete). Fire it?</span> <button class="btn danger">Fire</button><button class="btn">Skip</button></div>');
+      const [fire, skip] = p.querySelectorAll('button');
+      fire.onclick = () => ctl('confirm')({ fire: true }); skip.onclick = () => ctl('confirm')({ fire: false });
+      prompt.append(p);
+    }
+    if (st.done) clearInterval(replayPoll);
+  }, 700);
 }
 
 render();
