@@ -132,7 +132,13 @@ export function chooseToTick(drainIdx: number, ticks: Tick[], hasLaterClick: boo
  *  link-scan + cross-link mesh recover link edges); inputs always emit —
  *  the field identity powers the draft's login/credentials linkage. */
 export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to: Tick): ActionEffect | null {
-  const navigated = didNavigate(ev.url, to.url);
+  // An input event NEVER navigates, by definition — correct-by-construction guard.
+  // Without it, a password-field change drained in the SAME batch as the Login click
+  // can pair with the landing tick and record navigated:true, which downstream makes
+  // draftFromEffects skip the input-affordance branch → the credentials linkage
+  // (needs/acceptsInput) never fires, plus a junk textbox "navigate" edge that
+  // passes self-verify (final-review finding #1).
+  const navigated = ev.kind === 'input' ? false : didNavigate(ev.url, to.url);
   const role = descriptorRole(ev), name = descriptorName(ev);
   let action: ActionRef | null = null;
   if (ref) {
