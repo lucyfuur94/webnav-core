@@ -26,7 +26,10 @@ export interface DraftAffordance {
 const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkbox', 'combobox', 'textbox']);
 // Conservative commit-word match on a DECLARED label — surfaces a CANDIDATE for the agent to
 // classify; it is a string match, not a judgment (commit is never auto-set true, #2/#5a).
-const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply)\b/i;
+// (live finding 2026-07-07: a human recording fired saucedemo's "Finish" — the order-placing
+// button — and it drafted as a PLAIN navigate a walk would auto-fire, violating #2. finish/
+// purchase/buy/send added; still only a CANDIDATE flag the agent classifies, #5a.)
+const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply|finish|purchase|buy|send)\b/i;
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
   declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
@@ -185,6 +188,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       const id = `aff_${affSeq++}_${toLabel}`;
       const aff: DraftAffordance = { id, label: fp?.name ?? toLabel, kind: 'navigate', to: toLabel };
       if (fp) aff.elementFp = fp;
+      // a NAVIGATING commit-word ("Finish", "Place Order") must be flagged too — only the
+      // mutate branch checked, so a recorded commit drafted as a plain navigate a walk
+      // would auto-fire (#2). Candidate flag only; the agent classifies (#5a).
+      if (fp?.name && COMMIT_WORDS.test(fp.name)) aff.needsClassification = true;
       // login: if this from-page accumulated input affordances, this navigate consumes them.
       const inputs = (affById.get(fromLabel) ?? []).filter((x) => x.kind === 'input');
       if (inputs.length) { aff.needs = inputs.map((x) => x.id); aff.acceptsInput = 'credentials'; }

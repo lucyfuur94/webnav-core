@@ -163,8 +163,12 @@ export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to
   // draftFromEffects skip the input-affordance branch → the credentials linkage
   // (needs/acceptsInput) never fires, plus a junk textbox "navigate" edge that
   // passes self-verify (final-review finding #1).
-  const navigated = ev.kind === 'input' ? false : didNavigate(ev.url, to.url);
   const role = descriptorRole(ev), name = descriptorName(ev);
+  // A CLICK on a form field never navigates either (live finding: a click into
+  // "First Name" around a fast page transition paired with the landing tick and
+  // recorded "nav: First Name"). Field clicks are input evidence, not edges.
+  const fieldClick = ev.kind === 'click' && (role === 'textbox' || role === 'searchbox');
+  const navigated = ev.kind === 'input' || fieldClick ? false : didNavigate(ev.url, to.url);
   let action: ActionRef | null = null;
   if (ref) {
     const fromNodes = parseSnapshot(from.snapshot);

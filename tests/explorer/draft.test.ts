@@ -284,3 +284,19 @@ describe('fingerprint exclusivity (live walk finding: ambiguous landing)', () =>
     expect(sparseState.fingerprint).toContain('button:Continue');
   });
 });
+
+describe('navigating commit-words (live finding: human fired Finish)', () => {
+  it('a navigate whose element label is a commit word gets needsClassification', () => {
+    const FROM = ['RootWebArea "Overview" [ref=e1]', '  heading "Checkout: Overview" [ref=e2]',
+      '  button "Finish" [ref=e3]'].join('\n');
+    const TO = ['RootWebArea "Complete" [ref=e1]', '  heading "Thank you for your order!" [ref=e2]'].join('\n');
+    const effs = [{ seq: 0, capturedAt: 0, fromUrl: 'https://x.test/overview', fromSnapshot: FROM,
+      action: { role: 'button', name: 'Finish', ref: 'e3', elementFp: { role: 'button', name: 'Finish', near: null } },
+      toUrl: 'https://x.test/complete', toSnapshot: TO, navigated: true, diff: { added: [], removed: [] } }];
+    const draft = draftFromEffects(effs as any);
+    const overview = draft.states.find((s) => s.label === 'overview')!;
+    const finish = overview.affordances.find((a) => a.kind === 'navigate' && a.label === 'Finish')!;
+    expect(finish.needsClassification).toBe(true);   // a walk must NOT auto-fire this (#2)
+    expect((finish as any).commit).not.toBe(true);   // candidate flag only — agent classifies (#5a)
+  });
+});
