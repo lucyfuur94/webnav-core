@@ -25,13 +25,29 @@ function serialize(root: SNode): string {
 }
 function implicitRole(el: Element): string {
   const t = el.tagName.toLowerCase();
-  const map: Record<string, string> = { a: 'link', button: 'button', input: 'textbox',
-    h1: 'heading', h2: 'heading', h3: 'heading', nav: 'navigation', main: 'main', body: 'RootWebArea' };
+  if (t === 'input') {
+    const ty = (el as HTMLInputElement).type;
+    if (ty === 'submit' || ty === 'button') return 'button';
+    if (ty === 'checkbox') return 'checkbox';
+    return 'textbox';
+  }
+  const map: Record<string, string> = { a: 'link', button: 'button', select: 'combobox',
+    textarea: 'textbox', img: 'img', h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading',
+    nav: 'navigation', main: 'main', body: 'RootWebArea' };
   return map[t] ?? 'generic';
 }
+// Accessible name — approximates the a11y computation. CRUCIAL: only leaf/interactive
+// elements take their text; a CONTAINER's textContent is the concatenation of ALL its
+// descendants (e.g. a 151-char blob of a whole login form), which pollutes fingerprints
+// and never matches playwright's per-element names. Containers get aria-label or nothing.
 function accessibleName(el: Element): string | null {
-  const aria = el.getAttribute('aria-label'); if (aria) return aria;
-  const txt = (el.textContent || '').trim(); return txt || null;
+  const aria = el.getAttribute('aria-label'); if (aria) return aria.trim() || null;
+  if (el instanceof HTMLInputElement) return (el.getAttribute('placeholder') || el.getAttribute('name') || '').trim() || null;
+  if (el instanceof HTMLImageElement) return (el.getAttribute('alt') || '').trim() || null;
+  // Only take text if this element has NO element children (a leaf: button label, link
+  // text, heading). Containers → null (their meaningful children are captured separately).
+  if (el.children.length === 0) return (el.textContent || '').trim() || null;
+  return null;
 }
 // Secret-field rule: NEVER read an input's .value. domToSNode reads role/name/href only.
 function domToSNode(el: Element): SNode {
