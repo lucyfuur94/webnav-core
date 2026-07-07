@@ -163,3 +163,12 @@ describe('armed-mode overlay', () => {
     new Function('return (' + MODE_JS(true) + ')')();   // parses as JS
   });
 });
+
+describe('storage-denied pages never produce junk (false window-closed)', () => {
+  it('DRAIN_JS and push are try/catch-safe in-page', () => {
+    // about:blank (opaque origin) THROWS on sessionStorage access while the window
+    // is alive; unguarded, the loop closed the armed window ~1s after opening.
+    expect(DRAIN_JS).toContain('catch');
+    expect(INSTALLER_JS.split('const push')[1].split('};')[0]).toContain('catch');
+  });
+});

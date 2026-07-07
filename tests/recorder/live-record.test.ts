@@ -131,7 +131,7 @@ it('armed: 5 consecutive tick errors end the loop (browser closed by user)', asy
   expect(res.ticks).toBe(0);   // never archived a tick; loop exited on error streak, not hung
 });
 
-it('armed: 3 undrainable batches = window closed → session ends (daemon must not resurrect)', async () => {
+it('armed: a sustained undrainable streak = window closed → session ends (daemon must not resurrect)', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
   const adapter = { evalJs: async (f: string) => (f.includes('__webnav_evq') ? 'Error: no open page' : 'ok'),
     snapshot: async () => 'RootWebArea "X" [ref=e1]',
