@@ -20,10 +20,28 @@
 >   `walk`, same as an agent-recorded session.
 > - **Secret-field rule:** password/credit-card field VALUES are never recorded — only element
 >   fingerprints, never `.value`.
-> - **Tests:** +5 unit tests (2 serializer parity between the extension's DOM-walk and the repo's
->   a11y serializer, 3 for `dev ingest` incl. an HTTP round-trip); full suite 454 pass / 7 skip;
->   the extension compiles via `tsc -p`. Manual browser smoke (load-unpacked, record a real page,
->   confirm the ingested session walks) is the one remaining human step — not yet run.
+> - **Capture survives navigation:** the click→settle correlation lives in the background worker
+>   (persisted in `chrome.storage.session`), NOT in the content script — a real page-to-page
+>   navigation destroys the content-script context. Captures page-to-page navs, same-page
+>   (`navigated:false`) clicks, and SPA History-API navigations. `navigated` is recomputed
+>   server-side (`didNavigate`, host+path) so it matches the agent path; re-recording into the same
+>   session id replaces (never duplicates) via `RecordStore.clearSession`.
+> - **Tests:** +7 unit tests (2 serializer parity, 5 for `dev ingest` incl. HTTP round-trip,
+>   server-side `navigated`, and re-ingest-replaces); full suite **456 pass / 7 skip**; the
+>   extension compiles via `tsc -p`; the serializer twin is byte-identical to the in-repo oracle
+>   and content.ts's ref numbering aligns with it.
+> - **⚠️ Pending — manual browser smoke (the one human step):** `webnav dev ingest` → load
+>   `webnav-recorder/` unpacked → record saucedemo login→cart → Stop & send → `graph-analyse
+>   --draft` → `graph-edit` → `walk`. This validates the DOM-walk role/name fidelity against a real
+>   page (the plan's flagged #1 risk — `domToSNode` approximates the a11y tree; `draft` verify-
+>   before-emit drops unresolvable fingerprints rather than mis-clicking, so it's a quality ceiling,
+>   not a correctness hole). If human-recorded elements fail to resolve on the walk, upgrade
+>   `domToSNode` toward `chrome.automation` (real a11y tree) before suspecting the pipeline.
+> - **Follow-up (not built, v1 scope):** a human recording captures clicks/navigation only — no
+>   typing (secret-field rule) — so `draft`'s login `needs`/`acceptsInput:credentials` linkage
+>   (which keys off recorded `textbox` input actions) won't fire for human sessions; a walked login
+>   won't auto-fill creds at that step. Fine for click-navigation flows; revisit if needed after the
+>   smoke (a `focus`/`change`-triggered input step carrying only the field fingerprint, never the value).
 > - Design: `docs/superpowers/specs/2026-07-07-human-session-recorder-design.md`; plan:
 >   `docs/superpowers/plans/2026-07-07-human-session-recorder.md`.
 
