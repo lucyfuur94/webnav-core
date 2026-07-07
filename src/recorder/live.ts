@@ -42,13 +42,24 @@ export const INSTALLER_JS = `() => {
     d.setAttribute('aria-hidden', 'true');
     d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;box-shadow:inset 0 0 0 4px #e5484d;';
     const p = document.createElement('button');
-    p.style.cssText = 'position:absolute;top:10px;right:10px;background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:5px 9px;border-radius:999px;pointer-events:auto;cursor:pointer;border:0;';
+    p.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:6px 12px;border-radius:999px;pointer-events:auto;cursor:pointer;border:0;';
     p.textContent = '\\u23FA record';
     d.appendChild(p);
     (document.body || document.documentElement).appendChild(d);
   }
   if (document.documentElement.dataset.webnavInstalled) return 'already';
   document.documentElement.dataset.webnavInstalled = '1';
+  // Keep the journey in THIS tab: a new tab escapes the recorder (one driven page).
+  // Standard recorder trick: _blank links open same-tab; window.open redirects inline.
+  // ponytail: OAuth-style popups get redirected into the tab — acceptable for v1.
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (t instanceof Element) {
+      const a = t.closest('a[target]');
+      if (a && a.getAttribute('target') !== '_self') a.setAttribute('target', '_self');
+    }
+  }, true);
+  window.open = (u) => { if (u) location.href = String(u); return null; };
   const push = (e) => {
     const q = JSON.parse(sessionStorage.getItem('__webnav_evq') || '[]');
     const seq = (Number(sessionStorage.getItem('__webnav_seq')) || 0) + 1;
@@ -97,7 +108,7 @@ export const MODE_JS = (recording: boolean) => `() => {
   if (!d) return 'no-badge';
   d.style.boxShadow = 'inset 0 0 0 4px ${recording ? '#e5484d' : '#8b93a3'}';
   const p = d.querySelector('button');
-  if (p) { p.style.background = '${recording ? '#e5484d' : '#8b93a3'}'; p.textContent = '${recording ? '\\u25CF REC' : '\\u23FA record'}'; }
+  if (p) { p.style.background = '${recording ? '#e5484d' : '#8b93a3'}'; p.textContent = '${recording ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'}'; }
   return 'ok';
 }`;
 
