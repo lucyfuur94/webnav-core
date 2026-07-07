@@ -61,12 +61,14 @@ export const INSTALLER_JS = `() => {
   }, true);
   window.open = (u) => { if (u) location.href = String(u); return null; };
   const push = (e) => {
-    const q = JSON.parse(sessionStorage.getItem('__webnav_evq') || '[]');
-    const seq = (Number(sessionStorage.getItem('__webnav_seq')) || 0) + 1;
-    sessionStorage.setItem('__webnav_seq', String(seq));
-    q.push(Object.assign({ seq, url: location.href }, e));
-    sessionStorage.setItem('__webnav_evq', JSON.stringify(q));
-    return seq;
+    try {
+      const q = JSON.parse(sessionStorage.getItem('__webnav_evq') || '[]');
+      const seq = (Number(sessionStorage.getItem('__webnav_seq')) || 0) + 1;
+      sessionStorage.setItem('__webnav_seq', String(seq));
+      q.push(Object.assign({ seq, url: location.href }, e));
+      sessionStorage.setItem('__webnav_evq', JSON.stringify(q));
+      return seq;
+    } catch { return 0; }   // storage-denied page (opaque origin): drop, never explode
   };
   const badgeBtn = document.querySelector('#__webnav_rec_badge button');
   if (badgeBtn) badgeBtn.onclick = () => push({ kind: 'toggle' });
@@ -113,10 +115,18 @@ export const MODE_JS = (recording: boolean) => `() => {
 }`;
 
 // Atomic read+clear: draining and processing are one step, so no event is seen twice.
+// The in-page try/catch is LOAD-BEARING: on about:blank (opaque origin) or mid-
+// navigation, sessionStorage access THROWS while the window is perfectly alive —
+// without it, playwright-cli returns junk, and the loop's window-closed detector
+// false-positived and CLOSED the armed window ~1s after opening (live finding).
+// A page that is alive-but-storage-denied must drain '[]'; only a truly dead
+// page (eval cannot run at all) produces unparseable output.
 export const DRAIN_JS = `() => {
-  const q = sessionStorage.getItem('__webnav_evq') || '[]';
-  sessionStorage.removeItem('__webnav_evq');
-  return q;
+  try {
+    const q = sessionStorage.getItem('__webnav_evq') || '[]';
+    sessionStorage.removeItem('__webnav_evq');
+    return q;
+  } catch { return '[]'; }
 }`;
 
 const TAG_ROLE: Record<string, string> = {

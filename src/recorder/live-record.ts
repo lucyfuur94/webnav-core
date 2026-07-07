@@ -27,8 +27,8 @@ export interface LiveRecordDeps {
   sleep?: (ms: number) => Promise<void>;
   // Armed = the overlay is open before recording starts; the loop keeps polling
   // (installer/toggle) regardless of store.isActive, and only capture (append) stays
-  // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or 3
-  // consecutive undrainable batches (the human closed the window — playwright-cli's
+  // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or a SUSTAINED
+  // undrainable-drain streak (~2.4s — the human closed the window; playwright-cli's
   // daemon would otherwise RESURRECT the browser on our next eval; live finding).
   armed?: boolean;
 }
@@ -73,8 +73,13 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         events = JSON.parse(raw || '[]');
         undrainStreak = 0;
       } catch {
+        // Threshold is deliberately generous: DRAIN_JS is in-page try/catch-safe, so an
+        // ALIVE page never produces junk — but the eval itself can fail transiently
+        // mid-navigation. Only a sustained streak (~2.4s at 300ms) means the window is
+        // really gone (live finding: 3 fired during a plain page load and closed the
+        // armed window out from under the user).
         if (++undrainStreak === 1) deps.log('skip: undrainable batch');
-        if (undrainStreak >= 3) { deps.log('browser window closed — ending session'); break; }
+        if (undrainStreak >= 8) { deps.log('browser window closed — ending session'); break; }
         await sleep(deps.intervalMs);
         continue;
       }
