@@ -5,15 +5,15 @@
 import http from 'node:http';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { recoverFingerprint } from '../playwright/fingerprint.js';
-import { diffSnapshots } from '../explorer/diff.js';
+import { diffSnapshots, didNavigate } from '../explorer/diff.js';
 import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 import { RecordStore } from '../mapstore/record.js';
 
 export interface RawStep {
   fromUrl: string; fromSnapshot: string;
   toUrl: string; toSnapshot: string;
-  navigated: boolean;
   ref: string | null;   // synthetic ref of the clicked node in fromSnapshot, or null for a pure nav
+  navigated?: boolean;  // ignored — recomputed server-side via didNavigate (don't trust the extension)
 }
 export interface IngestBody { sessionId: string; steps: RawStep[] }
 
@@ -32,12 +32,13 @@ export function reconstructEffect(step: RawStep): ActionEffect {
     fromUrl: step.fromUrl, fromSnapshot: step.fromSnapshot,
     action,
     toUrl: step.toUrl, toSnapshot: step.toSnapshot,
-    navigated: step.navigated,
+    navigated: didNavigate(step.fromUrl, step.toUrl),  // recompute — matches the agent path's semantic (host+path, not query/hash)
     diff: diffSnapshots(fromNodes, toNodes),
   };
 }
 
 export function ingest(body: IngestBody, store: RecordStore): number {
+  store.clearSession(body.sessionId);  // re-ingest into the same session replaces, never appends duplicates
   store.start(body.sessionId);
   let n = 0;
   for (const step of body.steps) { store.appendActionEffect(body.sessionId, reconstructEffect(step)); n++; }
