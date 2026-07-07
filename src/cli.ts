@@ -371,21 +371,26 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     const store = new RecordStore(dbPath());
     store.start(args.session);
-    const adapter = new PlaywrightAdapter(args.session); // headed by default
-    await adapter.open(args.url);
-    let stopped = false;
-    process.on('SIGINT', () => { stopped = true; });
-    process.stderr.write(`recording — click around in the browser window; stop with Ctrl-C or \`webnav dev record-stop --session ${args.session}\`\n`);
-    const res = await runLiveRecord({
-      adapter, store, sessionId: args.session, intervalMs: args.interval,
-      log: (l) => process.stderr.write(l + '\n'), isStopped: () => stopped,
-    });
-    store.stop(args.session);
-    console.log(JSON.stringify({
-      status: 'stopped', session: args.session, appended: res.appended,
-      next: `webnav dev graph-analyse ${args.session} --draft`,
-    }, null, 2));
-    if (res.appended === 0) process.exitCode = 3;
+    // finally-guard: a throw anywhere below (adapter.open on a dead URL, the loop
+    // itself) must not leave the record session dangling active=1 in the DB.
+    try {
+      const adapter = new PlaywrightAdapter(args.session); // headed by default
+      await adapter.open(args.url);
+      let stopped = false;
+      process.on('SIGINT', () => { stopped = true; });
+      process.stderr.write(`recording — click around in the browser window; stop with Ctrl-C or \`webnav dev record-stop --session ${args.session}\`\n`);
+      const res = await runLiveRecord({
+        adapter, store, sessionId: args.session, intervalMs: args.interval,
+        log: (l) => process.stderr.write(l + '\n'), isStopped: () => stopped,
+      });
+      console.log(JSON.stringify({
+        status: 'stopped', session: args.session, appended: res.appended,
+        next: `webnav dev graph-analyse ${args.session} --draft`,
+      }, null, 2));
+      if (res.appended === 0) process.exitCode = 3;
+    } finally {
+      store.stop(args.session);
+    }
     return;
   }
   if (args.cmd === 'graph-analyse') {
