@@ -42,6 +42,8 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .cat-head { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:10px 0 2px; }
   .muted { color:var(--muted); }
   .empty { color:var(--muted); padding:40px 0; text-align:center; }
+  .pulse { animation: webnavpulse 1.2s ease-in-out infinite; }
+  @keyframes webnavpulse { 50% { opacity:.35; } }
 </style>
 </head>
 <body>
@@ -224,33 +226,42 @@ function addSiteCard() {
 
 // ---------- RECORDINGS ----------
 let replayPoll = null;
-async function renderRecordings() {
+async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
   main.style.gridTemplateColumns = '280px 1fr';
   const recs = await getJSON('/api/recordings');
   main.innerHTML = '';
   const list = el('<div class="list"></div>');
-  const detail = el('<div class="detail"><div class="empty">select a recording — or open a window below</div></div>');
+  const detail = el('<div class="detail"><div class="empty">open a window above, or select a recording</div></div>');
+  list.append(newRecordingCard());                                 // new recording FIRST (top)
+  let reopen = null;
   recs.forEach(r => {
     const when = new Date(r.startedAt).toLocaleString();
-    const row = el('<div class="row"><div class="name">'+esc(r.sessionId)+(r.active?' <span style="color:#e5484d">●</span>':'')+'</div><div class="meta">'+esc(r.site||'?')+' · '+r.steps+' steps · '+esc(when)+'</div></div>');
+    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div class="name">'+esc(r.sessionId)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'')+'</div><div class="meta">'+esc(r.site||'?')+' · '+r.steps+' steps · '+esc(when)+'</div></div><button class="btn danger" title="delete" style="padding:2px 8px">\\u2715</button></div>');
     row.onclick = () => showRecording(r, detail, list, row);
+    row.querySelector('button').onclick = async (e) => {           // per-row delete
+      e.stopPropagation();
+      if (!confirm('Delete recording '+r.sessionId+'?')) return;
+      await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' });
+      renderRecordings();
+    };
     list.append(row);
+    if (openId && r.sessionId === openId) reopen = () => showRecording(r, detail, list, row);
   });
   if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
-  list.append(newRecordingCard());
   main.append(list, detail);
+  if (reopen) reopen();                                            // keep the detail open across actions
 }
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-top:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="https://site-to-record" /><input placeholder="session name" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window (armed)</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
-  const [urlIn, sessIn] = card.querySelectorAll('input:not([type=checkbox])');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional \\u2014 blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window (armed)</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
   const persistIn = card.querySelector('input[type=checkbox]');
   card.querySelector('button').onclick = async () => {
     const msg = card.querySelector('#openmsg');
-    if (!urlIn.value || !sessIn.value) { msg.textContent = 'url + session name required'; return; }
-    const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value, session: sessIn.value, persistent: persistIn.checked }) });
-    msg.textContent = r.ok ? 'window opened (grey border = armed). Hit Record here or \\u23FA in the window.' : (await r.json()).error;
-    if (r.ok) setTimeout(renderRecordings, 800);
+    if (!sessIn.value) { msg.textContent = 'session name required'; return; }
+    const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: persistIn.checked }) });
+    msg.textContent = r.ok ? 'window opened (grey border = armed). Hit Record here or the \\u23FA pill in the window.' : (await r.json()).error;
+    if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 800);
   };
   return card;
 }
@@ -258,10 +269,12 @@ async function showRecording(r, detail, list, row) {
   list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
-  const head = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span><span style="flex:1"></span></div>');
+  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">\\u25CF recording\\u2026</span>' : '';
+  const head = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+recState+'<span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
-  const recB = btn(r.active ? 'Stop' : 'Record'), repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
-  recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(); };
+  const recB = btn(r.active ? '\\u25A0 Stop' : '\\u23FA Record'), repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
+  if (r.active) recB.style.borderColor = '#e5484d';
+  recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(r.sessionId); };   // reopen: Stop stays visible
   delB.onclick = async () => { if (confirm('Delete recording '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
   anB.onclick = async () => { const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft'); stepsBox.innerHTML = ''; stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>')); };
   repB.onclick = async () => {

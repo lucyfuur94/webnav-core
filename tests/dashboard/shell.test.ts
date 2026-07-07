@@ -55,3 +55,13 @@ describe('SHELL_HTML', () => {
     expect(SHELL_HTML).toContain('renderRecordings');
   });
 });
+
+it('recordings UX: card on top with optional url, per-row delete, recording pulse', () => {
+  expect(SHELL_HTML).toContain('about:blank');                       // url optional → blank window
+  expect(SHELL_HTML).toContain('session name required');             // only the session is mandatory
+  expect(SHELL_HTML).toContain('\\u2715');                     // per-row delete button (source-level escape)
+  expect(SHELL_HTML).toContain('recording\\u2026');            // live recording indicator (source-level escape)
+  expect(SHELL_HTML).toContain('webnavpulse');                       // pulse animation defined
+  // the New-recording card renders BEFORE the session rows (top of the list)
+  expect(SHELL_HTML.indexOf('list.append(newRecordingCard())')).toBeLessThan(SHELL_HTML.indexOf('recs.forEach'));
+});
