@@ -674,7 +674,7 @@ async function main() {
           // the overlay ⏺ was used — "Record from the dashboard" was unreachable).
           recordStore.start(session); recordStore.stop(session);
           activeAdapter = adapter;
-          void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 300, armed: true,
+          void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 200, armed: true,
             log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
             .finally(() => { busy = null; activeAdapter = null; recordStore.stop(session); });
           return { ok: true as const };
