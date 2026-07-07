@@ -29,7 +29,7 @@ const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkb
 // (live finding 2026-07-07: a human recording fired saucedemo's "Finish" — the order-placing
 // button — and it drafted as a PLAIN navigate a walk would auto-fire, violating #2. finish/
 // purchase/buy/send added; still only a CANDIDATE flag the agent classifies, #5a.)
-const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply|finish|purchase|buy|send)\b/i;
+export const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply|finish|purchase|buy|send)\b/i;
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
   declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
