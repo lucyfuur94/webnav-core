@@ -18,6 +18,7 @@ export type ParsedArgs =
   | { cmd: 'reload'; session: string | undefined }
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
+  | { cmd: 'record-live'; session: string; url: string; interval: number }
   | { cmd: 'graph-analyse'; session: string; draft: boolean }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
@@ -153,6 +154,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500) };
   if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '', draft: rest.includes('--draft') };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
@@ -354,6 +356,36 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     new RecordStore(dbPath()).stop(args.session);
     console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
+    return;
+  }
+  if (args.cmd === 'record-live') {
+    // Human-driven recording (vs. record-start's agent-driven `use` loop): opens a headed
+    // browser, then runs Task 3's poll loop until Ctrl-C or `record-stop` flips isActive off.
+    // Long-lived like `ingest`/`dashboard` — does NOT print-and-exit until stopped.
+    if (!args.session || !args.url) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev record-live --session <S> --url <U>' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { runLiveRecord } = await import('./recorder/live-record.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const store = new RecordStore(dbPath());
+    store.start(args.session);
+    const adapter = new PlaywrightAdapter(args.session); // headed by default
+    await adapter.open(args.url);
+    let stopped = false;
+    process.on('SIGINT', () => { stopped = true; });
+    process.stderr.write(`recording — click around in the browser window; stop with Ctrl-C or \`webnav dev record-stop --session ${args.session}\`\n`);
+    const res = await runLiveRecord({
+      adapter, store, sessionId: args.session, intervalMs: args.interval,
+      log: (l) => process.stderr.write(l + '\n'), isStopped: () => stopped,
+    });
+    store.stop(args.session);
+    console.log(JSON.stringify({
+      status: 'stopped', session: args.session, appended: res.appended,
+      next: `webnav dev graph-analyse ${args.session} --draft`,
+    }, null, 2));
+    if (res.appended === 0) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'graph-analyse') {

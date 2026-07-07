@@ -219,6 +219,17 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav capture https://github.com out.yml',
   },
   {
+    name: 'record-live',
+    summary: 'Record a site by BROWSING it yourself: opens a headed browser you click through; every action is captured (real-a11y snapshots) into the record buffer. Stop with `dev record-stop --session S` (or Ctrl-C), then `dev graph-analyse <S> --draft`. Secret rule: typed values are never recorded.',
+    args: [],
+    flags: [
+      { name: '--session', takesValue: true, description: 'Record session id (also the browser session).' },
+      { name: '--url', takesValue: true, description: 'Where the recording starts (the site to map).' },
+      { name: '--interval', takesValue: true, description: 'Poll interval ms (default 500).' },
+    ],
+    example: 'webnav dev record-live --session map-1 --url https://www.saucedemo.com',
+  },
+  {
     name: 'record-start',
     summary: 'Begin a record session: pages you browse via webnav are captured for mapping.',
     args: [],
