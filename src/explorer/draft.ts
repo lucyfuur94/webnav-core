@@ -1,6 +1,6 @@
 import type { StoredActionEffect } from '../mapstore/record.js';
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
-import { matchState } from './fingerprint.js';
+import { matchState, hasToken } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
@@ -123,7 +123,13 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       fp.push(tok);
       stubs[pi].fingerprint = fp;
       const m = matchState(pageList[pi].nodes, stubs);    // does THIS page now resolve uniquely?
-      if (m.status === 'matched' && m.state.id === stubs[pi].id) break;
+      // ALSO require exclusivity: the fp must not be fully satisfied by any OTHER page's
+      // nodes. Greedy that stops at self-match alone produced e.g. ["button:Open Menu"]
+      // for a sparse checkout page — a token every logged-in page satisfies — so a later
+      // WALK landing elsewhere matched two states (live finding: matchState 'ambiguous'
+      // at the login step of a human-recorded saucedemo map).
+      const exclusive = pageList.every((q, qi) => qi === pi || !fp.every((t) => hasToken(q.nodes, t)));
+      if (m.status === 'matched' && m.state.id === stubs[pi].id && exclusive) break;
     }
     if (fp.length === 0 && cands.length) fp.push(cands[0]);
     stubs[pi].fingerprint = fp;

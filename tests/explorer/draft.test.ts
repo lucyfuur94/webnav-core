@@ -249,3 +249,38 @@ describe('draftFromEffects — Layer 1 in-page repertoire (mutate/reveal/input/n
 function snapFor(label: string): string {
   return { 'auth-login': LOGIN, 'dashboard-index': DASHBOARD, 'admin-viewadminmodule': ADMIN, 'pim-viewpimmodule': PIM }[label] ?? '';
 }
+
+describe('fingerprint exclusivity (live walk finding: ambiguous landing)', () => {
+  // A sparse page whose first candidate token ("Open Menu") appears on EVERY page must
+  // keep growing its fingerprint until no OTHER page satisfies it — a self-match-only
+  // greedy stopped at ["button:Open Menu"], and a walk landing on the rich page then
+  // matched two states (matchState 'ambiguous').
+  const RICH = ['RootWebArea "Products" [ref=e1]', '  button "Open Menu" [ref=e2]',
+    '  link "Backpack" [ref=e3]', '    /url: https://x.test/item', '  button "Add to cart" [ref=e4]'].join('\n');
+  const SPARSE = ['RootWebArea "Checkout" [ref=e1]', '  button "Open Menu" [ref=e2]',
+    '  button "Continue" [ref=e3]'].join('\n');
+  const effs: StoredActionEffect[] = [
+    { seq: 0, capturedAt: 0, fromUrl: 'https://x.test/rich', fromSnapshot: RICH,
+      action: { role: 'button', name: 'Go', ref: 'e4', elementFp: { role: 'button', name: 'Add to cart', near: null } },
+      toUrl: 'https://x.test/sparse', toSnapshot: SPARSE, navigated: true, diff: { added: [], removed: [] } },
+  ] as any;
+
+  it('no drafted fingerprint is fully satisfied by another page', () => {
+    const draft = draftFromEffects(effs);
+    const rich = parseSnapshot(RICH), sparse = parseSnapshot(SPARSE);
+    const nodesFor = (label: string) => (label === 'rich' ? rich : sparse);
+    for (const s of draft.states) {
+      for (const other of draft.states) {
+        if (other.label === s.label) continue;
+        const satisfiedByOther = s.fingerprint.every((t) => {
+          const [role, name] = t.split(':');
+          return nodesFor(other.label).some((n) => n.role === role && (name === undefined || n.name === name));
+        });
+        expect(satisfiedByOther, `${s.label} fp ${JSON.stringify(s.fingerprint)} must not match ${other.label}`).toBe(false);
+      }
+    }
+    // concretely: sparse's fp must have grown past the shared "Open Menu" token
+    const sparseState = draft.states.find((st) => st.label === 'sparse')!;
+    expect(sparseState.fingerprint).toContain('button:Continue');
+  });
+});
