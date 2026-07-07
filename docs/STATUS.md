@@ -1,8 +1,38 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 454 unit pass + 7 skip · **Build:** green
+**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 472 unit pass + 7 skip · **Build:** green
 
-> **2026-07-07 — human-session recorder: a second, real-usage producer into the same map (DONE except manual browser smoke).**
+> **2026-07-07 (later) — capture pivot: `dev record-live` (playwright-cli) replaces the extension.**
+> - **The pivot (evidence, not argument):** the Chrome-extension capture below reconstructed the
+>   a11y tree from the raw DOM in JS; on a React SPA (saucedemo) that approximation collapsed —
+>   roles `generic`, names = whole-subtree textContent blobs → `graph-analyse` produced **0 edges**.
+>   The real in-browser a11y API (`chrome.automation`) is dev-channel-only, so it's not a fix. A
+>   live proof through playwright-cli's REAL a11y snapshot, capturing the same saucedemo login flow,
+>   produced a correct draft instead: a `home → inventory-html` navigate edge **with auto-detected
+>   credentials linkage** (`needs:[inp_username,inp_password]`, `acceptsInput:credentials`). Same
+>   site, same flow: extension 0 edges, playwright-cli correct map. The extension is now **shelved**
+>   — kept in-tree as a documented dead-end; `dev ingest` remains (harmless, reusable).
+> - **New verb:** `webnav dev record-live --session S --url U [--interval ms]` — opens a HEADED
+>   browser at `U`; the human clicks through the site naturally; every action is captured as
+>   `ActionEffect`s (REAL playwright a11y snapshots) into the record buffer. Stop with Ctrl-C or
+>   `dev record-stop --session S`. From there, the unchanged pipeline: `dev graph-analyse <S>
+>   --draft` → `graph-edit` → `walk`.
+> - **How it captures:** an injected in-page listener only reports WHICH element was touched (a
+>   one-element descriptor per click/change), via a `sessionStorage` queue that survives navigation
+>   — never the full page/tree. Typed values are **never** recorded (secret-field rule): an `input`
+>   event records that a field changed and which field, never its content.
+> - **Tests:** +16 unit (14 `live.test.ts` pure core, 2 `live-record.test.ts` loop); full suite
+>   **472 pass / 7 skip**; `tsc` clean.
+> - **⚠️ Live acceptance pending (human):** `record-live` on saucedemo, free-click
+>   login→add-to-cart→cart, `graph-analyse --draft` must show the login navigate edge + the `needs`
+>   linkage, then `walk` it.
+> - **Next increment (not built):** prompted credential-inject during recording — when a login
+>   field is reached and creds exist for the site, offer to inject; if none stored, offer to save
+>   (first login = enrollment). Rides the existing creds store + `walk` auto-fill.
+> - Design: `docs/superpowers/specs/2026-07-07-playwright-recorder-design.md`; plan:
+>   `docs/superpowers/plans/2026-07-07-playwright-recorder.md`.
+
+> **2026-07-07 — human-session recorder: a second, real-usage producer into the same map (DONE except manual browser smoke).** ⚠️ **Superseded the same day** — this capture approach (Chrome-extension DOM-walk a11y approximation) proved broken on SPAs; see the "capture pivot" entry above for the evidence and the replacement (`dev record-live`, playwright-cli-based). Kept here as a documented dead-end.
 > - **What it is:** a Chrome MV3 extension (`webnav-recorder/`, isolated package) records real
 >   human browsing and POSTs it to a new `webnav dev ingest --port 7778` localhost receiver, which
 >   writes `ActionEffect`s to `webnav.db` via the SAME `RecordStore` the agent-record path
