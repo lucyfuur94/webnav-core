@@ -26,6 +26,11 @@ export interface ActionEffect {
 }
 export interface StoredActionEffect extends ActionEffect { seq: number; capturedAt: number; }
 
+export interface RecordSessionInfo {
+  sessionId: string; active: boolean; startedAt: number; stoppedAt: number | null;
+  steps: number; site: string | null;
+}
+
 /** Persists raw page observations per record-session. Sibling of MapStore;
  *  same Database handle, separate tables. No clustering here — that's analyse. */
 export class RecordStore {
@@ -111,5 +116,18 @@ export class RecordStore {
       navigated: r.navigated === 1, diff: JSON.parse(r.diff),
       seq: r.seq, capturedAt: r.captured_at,
     }));
+  }
+  listSessions(): RecordSessionInfo[] {
+    const rows: any[] = this.db.prepare(
+      `SELECT s.session_id, s.active, s.started_at, s.stopped_at,
+        (SELECT COUNT(*) FROM record_observations o
+          WHERE o.session_id = s.session_id AND o.from_snapshot IS NOT NULL) AS steps,
+        (SELECT o2.from_url FROM record_observations o2
+          WHERE o2.session_id = s.session_id AND o2.from_snapshot IS NOT NULL
+          ORDER BY o2.seq LIMIT 1) AS first_url
+       FROM record_sessions s ORDER BY s.started_at DESC`).all();
+    const hostOf = (u: string | null) => { try { return u ? new URL(u).host : null; } catch { return null; } };
+    return rows.map((r) => ({ sessionId: r.session_id, active: r.active === 1,
+      startedAt: r.started_at, stoppedAt: r.stopped_at ?? null, steps: r.steps, site: hostOf(r.first_url) }));
   }
 }
