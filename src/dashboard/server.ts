@@ -187,8 +187,12 @@ export function startDashboard(
         if (shotM && method === 'GET') {
           const shotPath = rec.shotPath(decodeURIComponent(shotM[1]), decodeURIComponent(shotM[2]));
           if (!shotPath || !existsSync(shotPath)) return sendJson(404, { error: 'not found' });
+          const stream = createReadStream(shotPath);
+          // file can vanish between existsSync and open (recording deleted mid-view) —
+          // without this handler that's an unhandled stream error (final-review #4).
+          stream.on('error', () => { if (!res.headersSent) sendJson(404, { error: 'not found' }); else res.destroy(); });
           res.writeHead(200, { 'content-type': 'image/png' });
-          return createReadStream(shotPath).pipe(res);
+          return stream.pipe(res);
         }
 
         const delM = path.match(/^\/api\/recordings\/([^/]+)$/);

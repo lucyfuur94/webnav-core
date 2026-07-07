@@ -633,6 +633,7 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
+    const { rmSync } = await import('node:fs');
     const store = new MapStore(dbPath());
     ensureSeeded(store);
     const creds = new CredStore();
@@ -651,17 +652,33 @@ async function main() {
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
         toUrl: e.toUrl })),
-      del: (id: string) => recordStore.clearSession(id),
+      del: (id: string) => {
+        recordStore.clearSession(id);
+        // remove the session's replay screenshots too (spec: shots die with the recording).
+        // The same guard as shotPath: '.'/'..' here would rmSync ~/.webnav recursively.
+        if (/^[\w.-]+$/.test(id) && id !== '.' && id !== '..') {
+          try { rmSync(join(shotsRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
+        }
+      },
       draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
       open: async (url: string, session: string, persistent: boolean) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         busy = session;
-        const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent });
-        await adapter.open(url);
-        void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 500, armed: true,
-          log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
-          .finally(() => { busy = null; recordStore.stop(session); });
-        return { ok: true as const };
+        try {
+          const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent });
+          await adapter.open(url);
+          // create the session row INACTIVE so the dashboard lists it with a Record
+          // button immediately (final-review #3: an armed window was invisible until
+          // the overlay ⏺ was used — "Record from the dashboard" was unreachable).
+          recordStore.start(session); recordStore.stop(session);
+          void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 500, armed: true,
+            log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
+            .finally(() => { busy = null; recordStore.stop(session); });
+          return { ok: true as const };
+        } catch (e) {
+          busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
+          return { ok: false as const, error: String(e) };
+        }
       },
       record: (id: string) => { recordStore.start(id); return true; },
       stop: (id: string) => { recordStore.stop(id); return true; },
