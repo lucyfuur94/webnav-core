@@ -1,6 +1,9 @@
 import { createServer, type Server } from 'node:http';
+import { createReadStream, existsSync } from 'node:fs';
 import type { IMapStore } from '../mapstore/store.js';
 import type { CredStore, CredCategory } from '../creds.js';
+import type { RecordSessionInfo } from '../mapstore/record.js';
+import type { ReplayState } from '../recorder/replay.js';
 import { SHELL_HTML } from './shell.js';
 
 /**
@@ -15,10 +18,33 @@ export interface DashboardOpts {
   port?: number;
 }
 
+/**
+ * Human-session recording + replay, injected so the dashboard doesn't hard-depend
+ * on the recorder/playwright stack. Absent (undefined) → recordings routes 503.
+ */
+export interface RecordingsDeps {
+  list(): RecordSessionInfo[];
+  steps(id: string): { seq: number; label: string; kind: string; toUrl: string }[];
+  del(id: string): void;
+  draft(id: string): unknown;
+  open(url: string, session: string, persistent: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+  record(id: string): boolean;
+  stop(id: string): boolean;
+  replay(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  replayState(): ReplayState | null;
+  replayControl(action: string, payload: { value?: string; save?: boolean; fire?: boolean }): boolean;
+  shotPath(session: string, file: string): string | null;
+}
+
 const HTML = 'text/html; charset=utf-8';
 const VALID_CATEGORIES: CredCategory[] = ['login', 'personal', 'other'];
 
-export function startDashboard(store: IMapStore, creds: CredStore, opts: DashboardOpts = {}): Server {
+export function startDashboard(
+  store: IMapStore,
+  creds: CredStore,
+  opts: DashboardOpts = {},
+  rec?: RecordingsDeps,
+): Server {
   const port = opts.port ?? 7777;
 
   const server = createServer(async (req, res) => {
@@ -106,6 +132,70 @@ export function startDashboard(store: IMapStore, creds: CredStore, opts: Dashboa
         const site = decodeURIComponent(credSiteM[1]);
         const removed = creds.remove(site);
         return sendJson(removed ? 200 : 404, { site, removed });
+      }
+
+      // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/')) {
+        if (!rec) return sendJson(503, { error: 'recordings not wired' });
+
+        if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
+
+        const stepsM = path.match(/^\/api\/recordings\/([^/]+)\/steps$/);
+        if (stepsM && method === 'GET') return sendJson(200, rec.steps(decodeURIComponent(stepsM[1])));
+
+        const draftM = path.match(/^\/api\/recordings\/([^/]+)\/draft$/);
+        if (draftM && method === 'GET') return sendJson(200, rec.draft(decodeURIComponent(draftM[1])));
+
+        if (path === '/api/recordings/open' && method === 'POST') {
+          const body = await readBody(req);
+          let parsed: { url?: string; session?: string; persistent?: boolean };
+          try { parsed = JSON.parse(body || '{}'); } catch { return sendJson(400, { error: 'invalid JSON body' }); }
+          if (!parsed.url || !parsed.session) return sendJson(400, { error: 'body must be { url, session, persistent? }' });
+          const result = await rec.open(parsed.url, parsed.session, !!parsed.persistent);
+          return sendJson(result.ok ? 200 : 409, result);
+        }
+
+        const recordM = path.match(/^\/api\/recordings\/([^/]+)\/record$/);
+        if (recordM && method === 'POST') {
+          const ok = rec.record(decodeURIComponent(recordM[1]));
+          return sendJson(ok ? 200 : 404, { ok });
+        }
+        const stopM = path.match(/^\/api\/recordings\/([^/]+)\/stop$/);
+        if (stopM && method === 'POST') {
+          const ok = rec.stop(decodeURIComponent(stopM[1]));
+          return sendJson(ok ? 200 : 404, { ok });
+        }
+        const replayM = path.match(/^\/api\/recordings\/([^/]+)\/replay$/);
+        if (replayM && method === 'POST') {
+          const result = await rec.replay(decodeURIComponent(replayM[1]));
+          return sendJson(result.ok ? 200 : 409, result);
+        }
+
+        if (path === '/api/replay/status' && method === 'GET') {
+          return sendJson(200, rec.replayState() ?? { running: false });
+        }
+        if (path === '/api/replay/control' && method === 'POST') {
+          const body = await readBody(req);
+          let parsed: { action?: string; value?: string; save?: boolean; fire?: boolean };
+          try { parsed = JSON.parse(body || '{}'); } catch { return sendJson(400, { error: 'invalid JSON body' }); }
+          if (!parsed.action) return sendJson(400, { error: 'body must be { action, value?, save?, fire? }' });
+          const ok = rec.replayControl(parsed.action, { value: parsed.value, save: parsed.save, fire: parsed.fire });
+          return sendJson(ok ? 200 : 400, { ok });
+        }
+
+        const shotM = path.match(/^\/replays\/([^/]+)\/([^/]+\.png)$/);
+        if (shotM && method === 'GET') {
+          const shotPath = rec.shotPath(decodeURIComponent(shotM[1]), decodeURIComponent(shotM[2]));
+          if (!shotPath || !existsSync(shotPath)) return sendJson(404, { error: 'not found' });
+          res.writeHead(200, { 'content-type': 'image/png' });
+          return createReadStream(shotPath).pipe(res);
+        }
+
+        const delM = path.match(/^\/api\/recordings\/([^/]+)$/);
+        if (delM && method === 'DELETE') {
+          rec.del(decodeURIComponent(delM[1]));
+          return sendJson(200, { ok: true });
+        }
       }
 
       if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') {
