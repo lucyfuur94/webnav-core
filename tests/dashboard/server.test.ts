@@ -210,7 +210,8 @@ describe('realtime (SSE + toggle)', () => {
       open: async () => ({ ok: true as const }), record: () => true, stop: () => true,
       replay: async () => ({ ok: true as const }), replayState: () => null,
       replayControl: () => true, shotPath: () => null,
-      toggle: (id: string) => { events.push('toggled:' + id); push?.('sessions'); return { recording: true }; },
+      toggle: (id: string, desired?: boolean) => { events.push('toggled:' + id + ':' + desired); push?.('sessions'); return { recording: desired ?? true }; },
+      videos: () => ['take-1.webm'], videoPath: () => null,
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
     const s3 = startDashboard(new MapStore(':memory:'), new CredStore(join(mkdtempSync(join(tmpdir(), 'webnav-sse-')), 'c3.json')), { port: 0 }, rec2 as any);
@@ -222,9 +223,12 @@ describe('realtime (SSE + toggle)', () => {
     const reader = res.body!.getReader();
     await reader.read();                                        // ': connected'
 
-    const t = await (await fetch(b3 + '/api/recordings/r9/toggle', { method: 'POST' })).json() as any;
+    const t = await (await fetch(b3 + '/api/recordings/r9/toggle', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: true }) })).json() as any;
     expect(t.recording).toBe(true);
-    expect(events).toEqual(['toggled:r9']);
+    expect(events).toEqual(['toggled:r9:true']);          // DESIRED state forwarded (idempotent)
+    expect(await (await fetch(b3 + '/api/recordings/r9/videos')).json()).toEqual(['take-1.webm']);
+    expect((await fetch(b3 + '/recordings-media/r9/take-1.webm')).status).toBe(404);   // videoPath null → 404
     const chunk = new TextDecoder().decode((await reader.read()).value);
     expect(chunk).toContain('data: sessions');                  // the toggle was PUSHED to the stream
     reader.cancel();

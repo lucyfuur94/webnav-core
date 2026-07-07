@@ -634,7 +634,7 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
-    const { rmSync } = await import('node:fs');
+    const { rmSync, mkdirSync, readdirSync } = await import('node:fs');
     const store = new MapStore(dbPath());
     ensureSeeded(store);
     const creds = new CredStore();
@@ -649,6 +649,19 @@ async function main() {
     // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' pings
     const sseListeners = new Set<(t: string) => void>();
     const emit = (t: string) => { for (const f of sseListeners) f(t); };
+    // Session VIDEO: recording-active spans are captured as .webm takes (ground
+    // truth to verify the step capture against, and a session recording artifact).
+    const videosRoot = join(homedir(), '.webnav', 'recordings');
+    let videoOn = false;
+    const videoSync = (session: string, recording: boolean) => {
+      if (recording && !videoOn && activeAdapter) { videoOn = true; void activeAdapter.videoStart(); }
+      else if (!recording && videoOn && activeAdapter) {
+        videoOn = false;
+        const dir = join(videosRoot, session);
+        try { mkdirSync(dir, { recursive: true }); } catch { /* decoration */ }
+        void activeAdapter.videoStop(join(dir, 'take-' + Date.now() + '.webm')).then(() => emit('sessions'));
+      }
+    };
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
@@ -664,6 +677,7 @@ async function main() {
         // The same guard as shotPath: '.'/'..' here would rmSync ~/.webnav recursively.
         if (/^[\w.-]+$/.test(id) && id !== '.' && id !== '..') {
           try { rmSync(join(shotsRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
+          try { rmSync(join(videosRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
         }
       },
       draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
@@ -678,12 +692,14 @@ async function main() {
           // the window to the armed/grey state for another take.
           recordStore.start(session);
           activeAdapter = adapter;
+          videoSync(session, true);
           emit('sessions');
           void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 200, armed: true,
             tickExtras: { port, session },
             onEvent: emit,
+            onToggle: (recording: boolean) => videoSync(session, recording),
             log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
-            .finally(() => { busy = null; activeAdapter = null; recordStore.stop(session); emit('sessions'); });
+            .finally(() => { videoSync(session, false); busy = null; activeAdapter = null; recordStore.stop(session); emit('sessions'); });
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
@@ -691,16 +707,27 @@ async function main() {
         }
       },
       // instant overlay update: don't wait for the loop's next tick (live finding: lag)
-      record: (id: string) => { recordStore.start(id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
-      stop: (id: string) => { recordStore.stop(id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
-      // the window pill's realtime channel (POSTed directly from the page)
-      toggle: (id: string) => {
+      record: (id: string) => { recordStore.start(id); videoSync(id, true); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
+      stop: (id: string) => { recordStore.stop(id); videoSync(id, false); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
+      // the window pill's realtime channel (POSTed directly from the page).
+      // `desired` (from the pill) is IDEMPOTENT — a stale visual can't double-toggle.
+      toggle: (id: string, desired?: boolean) => {
         const was = recordStore.isActive(id);
-        if (was) recordStore.stop(id); else recordStore.start(id);
+        const next = desired ?? !was;
+        if (next === was) return { recording: was };
+        if (next) recordStore.start(id); else recordStore.stop(id);
+        videoSync(id, next);
         emit('sessions');
-        void activeAdapter?.evalJs(MODE_JS(!was)).catch(() => {});
-        return { recording: !was };
+        void activeAdapter?.evalJs(MODE_JS(next)).catch(() => {});
+        return { recording: next };
       },
+      videos: (id: string) => {
+        if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return [];
+        try { return readdirSync(join(videosRoot, id)).filter((f) => f.endsWith('.webm')).sort(); } catch { return []; }
+      },
+      videoPath: (session: string, file: string) =>
+        /^[\w.-]+$/.test(session) && session !== '.' && session !== '..' && /^take-\d+\.webm$/.test(file)
+          ? join(videosRoot, session, file) : null,
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };

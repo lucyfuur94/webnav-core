@@ -34,7 +34,9 @@ export interface RecordingsDeps {
   replayState(): ReplayState | null;
   replayControl(action: string, payload: { value?: string; save?: boolean; fire?: boolean }): boolean;
   shotPath(session: string, file: string): string | null;
-  toggle(id: string): { recording: boolean };
+  toggle(id: string, desired?: boolean): { recording: boolean };
+  videos(id: string): string[];
+  videoPath(session: string, file: string): string | null;
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
 }
 
@@ -137,7 +139,7 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path === '/api/events') {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path === '/api/events') {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
@@ -153,7 +155,16 @@ export function startDashboard(
         }
 
         const toggleM = path.match(/^\/api\/recordings\/([^/]+)\/toggle$/);
-        if (toggleM && method === 'POST') return sendJson(200, rec.toggle(decodeURIComponent(toggleM[1])));
+        if (toggleM && method === 'POST') {
+          // optional {recording: boolean} = DESIRED state (idempotent; the page pill
+          // sends this so a stale visual can't double-toggle). No body → flip.
+          let desired: boolean | undefined;
+          try { const b = JSON.parse((await readBody(req)) || '{}'); if (typeof b.recording === 'boolean') desired = b.recording; } catch { /* flip */ }
+          return sendJson(200, rec.toggle(decodeURIComponent(toggleM[1]), desired));
+        }
+
+        const vidsM = path.match(/^\/api\/recordings\/([^/]+)\/videos$/);
+        if (vidsM && method === 'GET') return sendJson(200, rec.videos(decodeURIComponent(vidsM[1])));
 
         const stepsM = path.match(/^\/api\/recordings\/([^/]+)\/steps$/);
         if (stepsM && method === 'GET') return sendJson(200, rec.steps(decodeURIComponent(stepsM[1])));
@@ -196,6 +207,16 @@ export function startDashboard(
           if (!parsed.action) return sendJson(400, { error: 'body must be { action, value?, save?, fire? }' });
           const ok = rec.replayControl(parsed.action, { value: parsed.value, save: parsed.save, fire: parsed.fire });
           return sendJson(ok ? 200 : 400, { ok });
+        }
+
+        const vidM = path.match(/^\/recordings-media\/([^/]+)\/([^/]+\.webm)$/);
+        if (vidM && method === 'GET') {
+          const vp = rec.videoPath(decodeURIComponent(vidM[1]), decodeURIComponent(vidM[2]));
+          if (!vp || !existsSync(vp)) return sendJson(404, { error: 'not found' });
+          const vs = createReadStream(vp);
+          vs.on('error', () => { if (!res.headersSent) sendJson(404, { error: 'not found' }); else res.destroy(); });
+          res.writeHead(200, { 'content-type': 'video/webm' });
+          return vs.pipe(res);
         }
 
         const shotM = path.match(/^\/replays\/([^/]+)\/([^/]+\.png)$/);

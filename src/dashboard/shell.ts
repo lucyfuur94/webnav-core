@@ -306,6 +306,16 @@ async function showRecording(r, detail, list, row) {
   const stepsBox = el('<div></div>');
   stepsBox.append(stepTable(steps.map(s => ({ ...s, status: '' }))));
   detail.append(head, stepsBox);
+  // Session video takes (ground truth): eyeball the video against the captured
+  // steps to verify nothing was missed; doubles as a session recording.
+  try {
+    const vids = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/videos');
+    if (vids.length) {
+      const vwrap = el('<div style="margin-top:14px"><div class="cat-head">Session video \u2014 verify steps against it</div></div>');
+      vids.forEach(v => vwrap.append(el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px;margin-top:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>')));
+      detail.append(vwrap);
+    }
+  } catch {}
   if (r.active) {
     // live feed while recording: refresh the captured steps every 1.5s; when the
     // session stops (from anywhere), re-render so the header flips out of recording.

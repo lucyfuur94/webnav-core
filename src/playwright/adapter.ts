@@ -89,6 +89,14 @@ export class PlaywrightAdapter {
     return this.readFile(m[1]);
   }
 
+  /** Session video: start/stop recording of the driven window. stop() writes to the
+   *  given filename (playwright-cli --filename) — best-effort, never throws. */
+  async videoStart(): Promise<void> { await this.exec('video-start').catch(() => {}); }
+  async videoStop(filename: string): Promise<boolean> {
+    try { await this.exec('video-stop', '--filename', filename); return true; }
+    catch { return false; }
+  }
+
   /** Screenshot the current page; returns the .png path playwright-cli printed, or
    *  null if none was found (callers treat shots as optional decoration). */
   async screenshot(): Promise<string | null> {
