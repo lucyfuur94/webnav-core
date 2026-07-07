@@ -150,3 +150,53 @@ describe('startDashboard', () => {
     expect((await get('/graph')).status).toBe(404);
   });
 });
+
+describe('recordings API', () => {
+  let base: string; let server: Server;
+  let tmp2: string;
+  const calls: string[] = [];
+  const rec = {
+    list: () => [{ sessionId: 'r1', active: false, startedAt: 1, stoppedAt: 2, steps: 3, site: 's.test' }],
+    steps: (id: string) => [{ seq: 1, label: 'Login', kind: 'navigate', toUrl: 'https://s.test/x' }],
+    del: (id: string) => { calls.push('del:' + id); },
+    draft: () => ({ states: [] }),
+    open: async () => ({ ok: true as const }),
+    record: (id: string) => { calls.push('rec:' + id); return true; },
+    stop: (id: string) => { calls.push('stop:' + id); return true; },
+    replay: async () => ({ ok: false as const, error: 'busy' }),
+    replayState: () => null,
+    replayControl: () => true,
+    shotPath: () => null,
+  };
+  beforeAll(async () => {
+    tmp2 = mkdtempSync(join(tmpdir(), 'webnav-dash-rec-'));
+    server = startDashboard(new MapStore(':memory:'), new CredStore(join(tmp2, 'c.json')), { port: 0 }, rec as any);
+    await new Promise((r) => server.on('listening', r));
+    base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
+  });
+  afterAll(() => { server.close(); rmSync(tmp2, { recursive: true, force: true }); });
+
+  it('lists recordings and steps', async () => {
+    expect(await (await fetch(base + '/api/recordings')).json()).toHaveLength(1);
+    expect(await (await fetch(base + '/api/recordings/r1/steps')).json()).toHaveLength(1);
+  });
+  it('record/stop/delete round-trip', async () => {
+    await fetch(base + '/api/recordings/r1/record', { method: 'POST' });
+    await fetch(base + '/api/recordings/r1/stop', { method: 'POST' });
+    await fetch(base + '/api/recordings/r1', { method: 'DELETE' });
+    expect(calls).toEqual(['rec:r1', 'stop:r1', 'del:r1']);
+  });
+  it('busy replay → 409; missing shot → 404; open validates body', async () => {
+    expect((await fetch(base + '/api/recordings/r1/replay', { method: 'POST' })).status).toBe(409);
+    expect((await fetch(base + '/replays/r1/step-1.png')).status).toBe(404);
+    expect((await fetch(base + '/api/recordings/open', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(400);
+  });
+  it('without rec deps the routes are 503', async () => {
+    const s2 = startDashboard(new MapStore(':memory:'), new CredStore(join(tmp2, 'c2.json')), { port: 0 });
+    await new Promise((r) => s2.on('listening', r));
+    const b2 = 'http://127.0.0.1:' + (s2.address() as AddressInfo).port;
+    expect((await fetch(b2 + '/api/recordings')).status).toBe(503);
+    s2.close();
+  });
+});
