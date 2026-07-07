@@ -15,13 +15,18 @@ export function seedGraph(store: MapStore): void {
 }
 
 /**
- * Ensure the default out-of-the-box map is present. Guard on a known saucedemo
- * interior state (NOT a node-only check): a pre-existing webnav.db may have older
- * data but lack the full saucedemo walk map. seedGraph's upserts are idempotent,
- * so re-running is cheap+safe.
+ * Ensure the default out-of-the-box map is present — but ONLY on a DB where the
+ * user has never touched saucedemo (no node row). The old guard keyed on a known
+ * interior STATE (checkout-complete), which meant any user-authored saucedemo map
+ * lacking that exact state was force-re-seeded on EVERY open: `dev node-clear`
+ * (the documented re-learn flow) was silently undone, and a human-recorded map
+ * collided with the resurrected seed (live finding: walk matched both the seeded
+ * `inventory` and the drafted `inventory-html` → ambiguous). A node-row guard
+ * respects clear/re-author; the trade-off: `node-rm` of saucedemo brings the
+ * shipped example back on next open (to re-learn, use node-clear — that sticks).
  */
 export function ensureSeeded(store: MapStore): void {
-  if (store.getState('www.saucedemo.com:checkout-complete') === null) {
+  if (store.getNode('www.saucedemo.com') === null) {
     seedGraph(store);
   }
 }

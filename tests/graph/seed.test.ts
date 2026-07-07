@@ -52,4 +52,17 @@ describe('ensureSeeded (guards on saucedemo)', () => {
     ensureSeeded(s);
     expect(s.statesForNode('www.saucedemo.com').length).toBe(before);
   });
+
+  it('respects a user-touched node: a cleared/re-authored saucedemo is NOT re-seeded', () => {
+    // node-clear is the documented re-learn flow; the old state-keyed guard
+    // resurrected the seed on every open, colliding with the user's own map
+    // (live finding: walk observed 'ambiguous' — seeded inventory + drafted
+    // inventory-html both matched the landing page).
+    const s = new MapStore(':memory:');
+    seedGraph(s);
+    s.clearNode('www.saucedemo.com');                      // user re-learns
+    ensureSeeded(s);                                       // next process open
+    expect(s.statesForNode('www.saucedemo.com').length).toBe(0);   // seed stays gone
+    expect(s.getState('www.saucedemo.com:checkout-complete')).toBeNull();
+  });
 });
