@@ -27,6 +27,7 @@ export interface LiveRecordDeps {
   sleep?: (ms: number) => Promise<void>;
   tickExtras?: { port?: number; session?: string };     // lets the pill POST toggles to the dashboard
   onEvent?: (type: 'step' | 'sessions') => void;        // realtime push hooks (SSE)
+  onToggle?: (recording: boolean) => void;              // pill/queue toggle side-effects (video)
   // Armed = the overlay is open before recording starts; the loop keeps polling
   // (installer/toggle) regardless of store.isActive, and only capture (append) stays
   // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or a SUSTAINED
@@ -108,8 +109,9 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       const toggles = events.filter((e) => e.kind === 'toggle');
       const data = events.filter((e) => e.kind !== 'toggle');
       for (const _t of toggles) {
-        if (deps.store.isActive(deps.sessionId)) deps.store.stop(deps.sessionId);
-        else deps.store.start(deps.sessionId);
+        const next = !deps.store.isActive(deps.sessionId);
+        if (next) deps.store.start(deps.sessionId); else deps.store.stop(deps.sessionId);
+        deps.onToggle?.(next);
         deps.onEvent?.('sessions');
       }
       for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });

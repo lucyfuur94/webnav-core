@@ -75,19 +75,23 @@ export const INSTALLER_JS = `() => {
     // OPTIMISTIC flip: paint the new state NOW (the server's truth repaints next tick).
     // (4-line paint duplicated from TICK_JS's painter — worlds are isolated, DOM isn't.)
     const on = document.documentElement.dataset.webnavRec === '1';
-    document.documentElement.dataset.webnavRec = on ? '0' : '1';
+    const desired = !on;
+    document.documentElement.dataset.webnavRec = desired ? '1' : '0';
+    document.documentElement.dataset.webnavPinT = String(Date.now());   // pin: stale ticks must not undo this
     const d0 = document.getElementById('__webnav_rec_badge');
-    if (d0) { d0.style.boxShadow = 'inset 0 0 0 4px ' + (on ? '#8b93a3' : '#e5484d');
+    if (d0) { d0.style.boxShadow = 'inset 0 0 0 4px ' + (desired ? '#e5484d' : '#8b93a3');
       const b0 = d0.querySelector('button');
-      if (b0) { b0.style.background = on ? '#8b93a3' : '#e5484d'; b0.textContent = on ? '\\u23FA record' : '\\u25CF REC \\u2014 stop'; } }
-    // REALTIME: POST the toggle straight to the dashboard server (Chrome exempts
-    // 127.0.0.1 from mixed-content blocking, so this works from https pages too).
-    // Fetch failure (strict CSP connect-src, or no dashboard) → queue for the loop.
+      if (b0) { b0.style.background = desired ? '#e5484d' : '#8b93a3'; b0.textContent = desired ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'; } }
+    // REALTIME: POST the DESIRED state straight to the dashboard server (idempotent —
+    // a flip could double-toggle if visual state was stale; desired-state can't).
+    // Chrome exempts 127.0.0.1 from mixed-content blocking, so this works from https
+    // pages too. Fetch failure (strict CSP, no dashboard) → queue for the loop.
     const port = document.documentElement.dataset.webnavPort;
     const sess = document.documentElement.dataset.webnavSession;
     if (port && sess) {
       fetch('http://127.0.0.1:' + port + '/api/recordings/' + encodeURIComponent(sess) + '/toggle',
-        { method: 'POST', keepalive: true }).catch(() => push({ kind: 'toggle' }));
+        { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ recording: desired }) }).catch(() => push({ kind: 'toggle' }));
     } else { push({ kind: 'toggle' }); }
   };
   const INTERACTIVE = ['a','button','select','textarea','summary','label'];
@@ -126,6 +130,12 @@ export const INSTALLER_JS = `() => {
 export const MODE_JS = (recording: boolean) => `() => {
   const d = document.getElementById('__webnav_rec_badge');
   if (!d) return 'no-badge';
+  // authoritative push: paint AND pin — an in-flight stale TICK (built before this
+  // state change, landing after) must not repaint the old state and poison the
+  // pill's memory (live bug: 'stop' then STARTED again — the stale tick had
+  // rewritten webnavRec, so the next click toggled the wrong way).
+  document.documentElement.dataset.webnavRec = '${recording ? '1' : '0'}';
+  document.documentElement.dataset.webnavPinT = String(Date.now());
   d.style.boxShadow = 'inset 0 0 0 4px ${recording ? '#e5484d' : '#8b93a3'}';
   const p = d.querySelector('button');
   if (p) { p.style.background = '${recording ? '#e5484d' : '#8b93a3'}'; p.textContent = '${recording ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'}'; }
@@ -156,13 +166,20 @@ export const DRAIN_JS = `() => {
 export const TICK_JS = (recording: boolean, extras?: { port?: number; session?: string }) => `() => {
   const installed = (${INSTALLER_JS})() === 'installed';
   const rec = ${recording ? 'true' : 'false'};
-  document.documentElement.dataset.webnavRec = rec ? '1' : '0';
   ${extras?.port ? `document.documentElement.dataset.webnavPort = '${Number(extras.port)}';` : ''}
   ${extras?.session ? `document.documentElement.dataset.webnavSession = '${String(extras.session).replace(/[^\w.-]/g, '')}';` : ''}
-  const d = document.getElementById('__webnav_rec_badge');
-  if (d) { d.style.boxShadow = 'inset 0 0 0 4px ' + (rec ? '#e5484d' : '#8b93a3');
-    const b = d.querySelector('button');
-    if (b) { b.style.background = rec ? '#e5484d' : '#8b93a3'; b.textContent = rec ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'; } }
+  // A tick built BEFORE an authoritative change can LAND AFTER it (daemon queue).
+  // A fresh pin (pill click / dashboard push) wins over this tick's stale mode —
+  // without this, a stale tick rewrote webnavRec and the next pill click toggled
+  // the wrong way ('stop' started recording again — live bug).
+  const pinT = Number(document.documentElement.dataset.webnavPinT || 0);
+  if (Date.now() - pinT > 1500) {
+    document.documentElement.dataset.webnavRec = rec ? '1' : '0';
+    const d = document.getElementById('__webnav_rec_badge');
+    if (d) { d.style.boxShadow = 'inset 0 0 0 4px ' + (rec ? '#e5484d' : '#8b93a3');
+      const b = d.querySelector('button');
+      if (b) { b.style.background = rec ? '#e5484d' : '#8b93a3'; b.textContent = rec ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'; } }
+  }
   let queue = [];
   try { queue = JSON.parse((${DRAIN_JS})()); } catch {}
   return JSON.stringify({ installed, queue });

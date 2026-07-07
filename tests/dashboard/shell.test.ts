@@ -65,3 +65,9 @@ it('recordings UX: card on top with optional url, per-row delete, recording puls
   // the New-recording card renders BEFORE the session rows (top of the list)
   expect(SHELL_HTML.indexOf('list.append(newRecordingCard())')).toBeLessThan(SHELL_HTML.indexOf('recs.forEach'));
 });
+
+it('detail offers session videos as capture ground-truth', () => {
+  expect(SHELL_HTML).toContain('/videos');
+  expect(SHELL_HTML).toContain('recordings-media');
+  expect(SHELL_HTML).toContain('<video controls');
+});
