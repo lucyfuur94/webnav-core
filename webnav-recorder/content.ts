@@ -44,8 +44,24 @@ function domToSNode(el: Element): SNode {
 }
 
 let recording = false;
-chrome.storage.local.get('recording', (v) => { recording = !!v.recording; });
-chrome.storage.onChanged.addListener((ch) => { if (ch.recording) recording = !!ch.recording.newValue; });
+
+// After the extension is reloaded, content scripts already injected in open tabs are
+// ORPHANED: their chrome.runtime is invalidated and any chrome.* call throws
+// "Extension context invalidated". Guard every call so an orphaned script fails quiet
+// (the page owner just needs to refresh the tab to get the fresh script).
+function alive(): boolean {
+  try { return !!chrome.runtime?.id; } catch { return false; }
+}
+function send(msg: unknown): void {
+  if (!alive()) return;
+  try { chrome.runtime.sendMessage(msg, () => void chrome.runtime.lastError); }
+  catch { /* context invalidated between check and call — ignore */ }
+}
+
+if (alive()) {
+  chrome.storage.local.get('recording', (v) => { recording = !!v.recording; });
+  chrome.storage.onChanged.addListener((ch) => { if (ch.recording) recording = !!ch.recording.newValue; });
+}
 
 /** Build the parity snapshot + a map from each element to the synthetic eN ref
  *  serialize() emits for it. Refs are numbered in the SAME pre-order serialize()
@@ -69,7 +85,7 @@ document.addEventListener('click', (e) => {
   if (!recording) return;
   const { snap, refByEl } = snapshotPage();
   const ref = refByEl.get(e.target as Element) ?? null;
-  chrome.runtime.sendMessage({ type: 'click', fromUrl: location.href, fromSnapshot: snap, ref });
+  send({ type: 'click', fromUrl: location.href, fromSnapshot: snap, ref });
   // A same-page click (modal/sort/add-to-cart) won't fire `load`; send a settle
   // shortly after so background pairs it as a navigated:false step. If a real
   // navigation happens first, the new document's `load` settle wins the pairing.
@@ -79,7 +95,7 @@ document.addEventListener('click', (e) => {
 // On page settle: snapshot the "to" state; background pairs it with the last click.
 function sendSettle(): void {
   if (!recording) return;
-  chrome.runtime.sendMessage({ type: 'settled', toUrl: location.href, toSnapshot: snapshotPage().snap });
+  send({ type: 'settled', toUrl: location.href, toSnapshot: snapshotPage().snap });
 }
 // Fire once shortly after injection too, so the first page after Record establishes a
 // baseline even though its `load` already passed.
