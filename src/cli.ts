@@ -635,6 +635,8 @@ async function main() {
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
     const { rmSync, mkdirSync, readdirSync } = await import('node:fs');
+    const { execSync } = await import('node:child_process');
+    const { listSessions: listPwSessions } = await import('./playwright/sessions.js');
     const store = new MapStore(dbPath());
     ensureSeeded(store);
     const creds = new CredStore();
@@ -702,9 +704,18 @@ async function main() {
           activeAdapter = adapter;
           videoSync(session, true);
           emit('sessions');
+          // window liveness = the DAEMON still has a Chromium child (the daemon itself
+          // outlives the window — probing it via evals is what resurrected the window).
+          let daemonPid: number | undefined;
+          try { daemonPid = (await listPwSessions(Date.now())).find((x) => x.name === session)?.pid; } catch { /* fallback below */ }
+          const browserAlive = daemonPid === undefined ? undefined : () => {
+            try { return execSync(`ps -axo ppid=,comm= | awk '$1==${daemonPid}'`, { encoding: 'utf8' })
+              .toLowerCase().includes('chrom'); } catch { return true; }   // ps hiccup ≠ dead
+          };
           void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 200, armed: true,
             tickExtras: { port, session },
             onEvent: emit,
+            browserAlive,
             onToggle: (recording: boolean) => videoSync(session, recording),
             log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
             .finally(() => { videoSync(session, false); busy = null; activeAdapter = null; recordStore.stop(session); emit('sessions'); });
@@ -737,6 +748,7 @@ async function main() {
         /^[\w.-]+$/.test(session) && session !== '.' && session !== '..' && /^take-\d+\.webm$/.test(file)
           ? join(videosRoot, session, file) : null,
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
+      activeWindow: () => (busy && !busy.startsWith('replay:') ? busy : null),
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);
