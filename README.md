@@ -120,6 +120,12 @@ honestly what you get and how it grows, so there are no surprises:
   first person learns a site. `webnav dev import-map <pack.json>` loads a site's skeleton; set your own
   login with `dev creds set` (packs are skeleton-only, never carry credentials). Two packs ship in
   **[`mappacks/`](mappacks/)** (saucedemo, OrangeHRM); `dev export-map <site>` makes your own to share.
+- **Or record a site by browsing it yourself (Chrome extension).** No agent needed: run `webnav dev
+  ingest` (starts a localhost receiver), load the unpacked extension in `webnav-recorder/` (its own
+  README has build+usage steps), click Record, browse the flow normally, then Stop & send. The
+  extension POSTs what it saw to `dev ingest`, which writes it into the same store the agent-record
+  path uses — from there it's the same `dev graph-analyse <session> --draft` → `graph-edit` → `walk`
+  pipeline. Password/credit-card field *values* are never recorded, only element fingerprints.
 - **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
   sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
 
@@ -145,6 +151,7 @@ webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's
 
 # Author a site's map (the record -> analyse -> edit flow)
 webnav dev record-start / record-stop        bracket a mapping session
+webnav dev ingest [--port 7778]              receive sessions from the webnav-recorder Chrome extension
 webnav dev graph-analyse --session S [--draft]  mechanical structure from what you recorded
                                              (--draft = a self-verified, ready-to-edit graph spec)
 webnav dev graph-edit --node <id> --graph J  write the validated graph
