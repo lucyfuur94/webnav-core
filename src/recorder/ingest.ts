@@ -56,7 +56,10 @@ export function serveIngest(port: number, store: RecordStore): http.Server {
     if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
     if (req.method !== 'POST' || req.url !== '/ingest') { res.writeHead(404).end(); return; }
     let raw = '';
-    req.on('data', (c) => { raw += c; });
+    // ponytail: 50MB cap — bounds an unbounded body on this long-running receiver
+    // (precedent: dashboard/server.ts). Generous because a session carries full
+    // per-step page snapshots; raise if real recordings exceed it.
+    req.on('data', (c) => { raw += c; if (raw.length > 50_000_000) req.destroy(); });
     req.on('end', () => {
       try {
         const body = JSON.parse(raw) as IngestBody;
