@@ -3,12 +3,12 @@
 // Deps injected so tests drive it with a scripted fake adapter.
 //
 // TICK ECONOMY (live finding: every playwright-cli call is a child-process spawn,
-// ~150-400ms each — five per tick made the overlay lag seconds behind): a tick is
-// url+installer+drain (cheap); the EXPENSIVE snapshot runs only when something
-// happened (events drained / URL changed / pendings waiting for their lookahead
-// tick / no baseline yet). MODE_JS runs only when the mode or document changed.
+// ~300-500ms each, SERIALIZED through the daemon — several per tick made the overlay
+// lag seconds behind): a tick is currentUrl + ONE combined TICK_JS eval (install +
+// mode-paint + drain in a single JS turn); the EXPENSIVE snapshot runs only when
+// something happened (events drained / URL changed / pendings waiting / no baseline).
 import {
-  INSTALLER_JS, DRAIN_JS, MODE_JS, resolveEvent, fromTickFor, chooseToTick, assembleEffect,
+  TICK_JS, resolveEvent, fromTickFor, chooseToTick, assembleEffect,
   type LiveEvent, type Tick,
 } from './live.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
@@ -42,7 +42,6 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   let appended = 0;
   let errStreak = 0;
   let undrainStreak = 0;
-  let lastMode: boolean | null = null;
   try {
     while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
       // 1. where are we? (cheap; also our browser-liveness probe)
@@ -61,16 +60,17 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         continue;
       }
 
-      // 2. ensure the listener+badge exist in THIS document ('installed' = new doc).
-      const installed = parseEvalResult(await deps.adapter.evalJs(INSTALLER_JS).catch(() => "'already'"));
-
-      // 3. drain. Junk (unparseable) output means the page/window is gone — the
-      // daemon would resurrect the browser on further evals, so treat a short
-      // streak as "window closed" and end the session instead of spamming.
-      const raw = parseEvalResult(await deps.adapter.evalJs(DRAIN_JS).catch(() => '[]'));
+      // 2+3+4 in ONE eval: install-if-needed, paint the badge for the CURRENT mode
+      // (a fresh doc's badge is born correct — no grey blip), drain the queue.
+      // Junk (unparseable) output means the page/window is truly gone — the daemon
+      // would resurrect the browser on further evals, so a sustained streak ends
+      // the session instead of spamming.
+      const modeBefore = deps.store.isActive(deps.sessionId);
+      const raw = parseEvalResult(await deps.adapter.evalJs(TICK_JS(modeBefore)).catch(() => 'JUNK'));
       let events: LiveEvent[] = [];
       try {
-        events = JSON.parse(raw || '[]');
+        const tickRes = JSON.parse(raw) as { installed: boolean; queue: LiveEvent[] };
+        events = tickRes.queue ?? [];
         undrainStreak = 0;
       } catch {
         // Threshold is deliberately generous: DRAIN_JS is in-page try/catch-safe, so an
@@ -90,14 +90,8 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         else deps.store.start(deps.sessionId);
       }
       for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
-
-      // 4. overlay mode: update IMMEDIATELY on toggle / new document / mode change
-      // (a fresh document's badge starts grey even mid-recording).
-      const mode = deps.store.isActive(deps.sessionId);
-      if (toggles.length || installed === 'installed' || mode !== lastMode) {
-        await deps.adapter.evalJs(MODE_JS(mode)).catch(() => {});
-        lastMode = mode;
-      }
+      // (a toggle's visual flip already happened optimistically in-page; the next
+      // tick's TICK_JS paint carries the server truth.)
 
       // 5. snapshot only when it can matter (the expensive call).
       const urlChanged = ticks.length === 0 || didNavigate(ticks[ticks.length - 1].url, url)

@@ -71,7 +71,18 @@ export const INSTALLER_JS = `() => {
     } catch { return 0; }   // storage-denied page (opaque origin): drop, never explode
   };
   const badgeBtn = document.querySelector('#__webnav_rec_badge button');
-  if (badgeBtn) badgeBtn.onclick = () => push({ kind: 'toggle' });
+  if (badgeBtn) badgeBtn.onclick = () => {
+    push({ kind: 'toggle' });
+    // OPTIMISTIC flip: paint the new state NOW (the server's next tick confirms and
+    // is the truth). Without this the pill lagged a full daemon round-trip.
+    // (4-line paint duplicated from TICK_JS's painter — worlds are isolated, DOM isn't.)
+    const on = document.documentElement.dataset.webnavRec === '1';
+    document.documentElement.dataset.webnavRec = on ? '0' : '1';
+    const d0 = document.getElementById('__webnav_rec_badge');
+    if (d0) { d0.style.boxShadow = 'inset 0 0 0 4px ' + (on ? '#8b93a3' : '#e5484d');
+      const b0 = d0.querySelector('button');
+      if (b0) { b0.style.background = on ? '#8b93a3' : '#e5484d'; b0.textContent = on ? '\\u23FA record' : '\\u25CF REC \\u2014 stop'; } }
+  };
   const INTERACTIVE = ['a','button','select','textarea','summary','label'];
   document.addEventListener('click', (ev) => {
     const t = ev.target;
@@ -127,6 +138,25 @@ export const DRAIN_JS = `() => {
     sessionStorage.removeItem('__webnav_evq');
     return q;
   } catch { return '[]'; }
+}`;
+
+// ONE eval per tick (live finding: every playwright-cli call spawns a fresh CLI
+// process ~300-500ms and serializes through the daemon — three calls per tick made
+// the overlay lag seconds behind). Composes INSTALLER_JS + DRAIN_JS (no duplicated
+// listener logic) and paints the badge for the CURRENT mode in the same JS turn —
+// a fresh document's badge is created already-correct (no grey-then-red blip).
+// Returns JSON {installed, queue}; unparseable output ⇒ the page is truly gone.
+export const TICK_JS = (recording: boolean) => `() => {
+  const installed = (${INSTALLER_JS})() === 'installed';
+  const rec = ${recording ? 'true' : 'false'};
+  document.documentElement.dataset.webnavRec = rec ? '1' : '0';
+  const d = document.getElementById('__webnav_rec_badge');
+  if (d) { d.style.boxShadow = 'inset 0 0 0 4px ' + (rec ? '#e5484d' : '#8b93a3');
+    const b = d.querySelector('button');
+    if (b) { b.style.background = rec ? '#e5484d' : '#8b93a3'; b.textContent = rec ? '\\u25CF REC \\u2014 stop' : '\\u23FA record'; } }
+  let queue = [];
+  try { queue = JSON.parse((${DRAIN_JS})()); } catch {}
+  return JSON.stringify({ installed, queue });
 }`;
 
 const TAG_ROLE: Record<string, string> = {

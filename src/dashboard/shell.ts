@@ -76,6 +76,7 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&l
 
 async function render() {
   if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }   // no stray status polls across tab switches (review finding)
+  if (listPoll) { clearInterval(listPoll); listPoll = null; }
   main.innerHTML = '<div class="empty">loading…</div>';
   main.style.gridTemplateColumns = tab === 'sites' ? '280px 1fr' : '1fr';
   if (tab === 'sites') return renderSites();
@@ -226,6 +227,8 @@ function addSiteCard() {
 
 // ---------- RECORDINGS ----------
 let replayPoll = null;
+let listPoll = null;
+let currentOpenId = null;
 async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
   main.style.gridTemplateColumns = '280px 1fr';
@@ -251,6 +254,17 @@ async function renderRecordings(openId) {
   if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
   main.append(list, detail);
   if (reopen) reopen();                                            // keep the detail open across actions
+  // Live list: recording can start/stop from the WINDOW's pill too — poll so the
+  // dashboard reflects it (red dot, step counts, pulsing detail) without clicks.
+  const lastJson = JSON.stringify(recs);
+  if (listPoll) clearInterval(listPoll);
+  listPoll = setInterval(async () => {
+    if (replayPoll) return;                     // never stomp an active replay view
+    try {
+      const now = await getJSON('/api/recordings');
+      if (JSON.stringify(now) !== lastJson) renderRecordings(currentOpenId);
+    } catch {}
+  }, 2000);
 }
 function newRecordingCard() {
   const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional \\u2014 blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window (armed)</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
@@ -266,6 +280,7 @@ function newRecordingCard() {
   return card;
 }
 async function showRecording(r, detail, list, row) {
+  currentOpenId = r.sessionId;
   if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }
   list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');

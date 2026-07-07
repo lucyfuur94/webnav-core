@@ -24,9 +24,9 @@ function fakeAdapter(script: { url: string; snap: string; drain?: string }[]) {
   const cur = () => script[Math.max(0, Math.min(tick, script.length - 1))];
   return {
     evalJs: async (f: string) => {
-      if (f.includes('webnavInstalled')) return 'installed';
-      if (f.includes('__webnav_evq')) return cur().drain ?? '[]';
-      if (f.includes('__webnav_rec_badge')) return 'ok';   // MODE_JS
+      // TICK_JS (the combined per-tick eval) returns JSON {installed, queue}
+      if (f.includes('queue')) return JSON.stringify({ installed: true, queue: JSON.parse(cur().drain ?? '[]') });
+      if (f.includes('__webnav_rec_badge')) return 'ok';
       return 'null'; // probe
     },
     snapshot: async () => cur().snap,

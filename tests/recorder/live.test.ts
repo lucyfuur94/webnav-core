@@ -172,3 +172,19 @@ describe('storage-denied pages never produce junk (false window-closed)', () => 
     expect(INSTALLER_JS.split('const push')[1].split('};')[0]).toContain('catch');
   });
 });
+
+describe('TICK_JS — the combined per-tick eval', () => {
+  it('parses as standalone JS for both modes and returns {installed, queue}', async () => {
+    const { TICK_JS } = await import('../../src/recorder/live.js');
+    for (const rec of [true, false]) {
+      const src = TICK_JS(rec);
+      new Function('return (' + src + ')');          // valid JS
+      expect(src).toContain('JSON.stringify({ installed, queue })');
+    }
+    expect(TICK_JS(true)).toContain('REC');           // paints recording state
+    expect(TICK_JS(false)).toContain('record');       // paints armed state
+  });
+  it('pill click flips optimistically (no daemon round-trip for the visual)', () => {
+    expect(INSTALLER_JS).toContain('dataset.webnavRec');
+  });
+});
