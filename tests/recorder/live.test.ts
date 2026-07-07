@@ -24,10 +24,19 @@ const SNAP = [
 ].join('\n');
 
 describe('injected JS constants', () => {
-  it('installer is idempotent and never reads .value', () => {
-    expect(INSTALLER_JS).toContain('__webnav_installed');   // double-inject guard
-    expect(INSTALLER_JS).not.toMatch(/\.value\b/);           // secret-field rule
+  it('installer is idempotent (DOM flag) and never reads a typed value', () => {
+    // The guard must live on the DOM, not window: playwright-cli evals run in fresh
+    // JS worlds, so a window flag re-installs a listener EVERY tick (live-run bug).
+    expect(INSTALLER_JS).toContain('dataset.webnavInstalled');
+    expect(INSTALLER_JS).not.toContain('window.__webnav_installed');
     expect(INSTALLER_JS).toContain('sessionStorage');        // nav-surviving queue
+    // Secret-field rule, refined: EXACTLY ONE sanctioned .value read — the
+    // submit/button/reset input's static LABEL (its accessible name; never typed
+    // data), guarded by isBtnInput. The change handler (typed fields) has none.
+    expect(INSTALLER_JS.match(/\.value\b/g) ?? []).toHaveLength(1);
+    expect(INSTALLER_JS).toContain('isBtnInput');
+    const changeHandler = INSTALLER_JS.slice(INSTALLER_JS.indexOf("addEventListener('change'"));
+    expect(changeHandler).not.toMatch(/\.value\b/);
   });
   it('drain reads and clears the queue', () => {
     expect(DRAIN_JS).toContain('__webnav_evq');

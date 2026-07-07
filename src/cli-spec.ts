@@ -220,7 +220,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'record-live',
-    summary: 'Record a site by BROWSING it yourself: opens a headed browser you click through; every action is captured (real-a11y snapshots) into the record buffer. Stop with `dev record-stop --session S` (or Ctrl-C), then `dev graph-analyse <S> --draft`. Secret rule: typed values are never recorded.',
+    summary: 'Record a site by BROWSING it yourself: opens a headed browser you click through; every action is captured (real-a11y snapshots) into the record buffer. Stop with `dev record-stop --session S` (or Ctrl-C), then `dev graph-analyse --session <S> --draft`. Secret rule: typed values are never recorded.',
     args: [],
     flags: [
       { name: '--session', takesValue: true, description: 'Record session id (also the browser session).' },
@@ -355,7 +355,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'ingest',
-    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-recorder Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse <sessionId> --draft`. Runs until Ctrl-C.',
+    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-recorder Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse --session <id> --draft`. Runs until Ctrl-C.',
     args: [],
     flags: [{ name: '--port', takesValue: true, default: '7778', description: 'Localhost port to listen on.' }],
     example: 'webnav dev ingest --port 7778',

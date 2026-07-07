@@ -155,7 +155,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500) };
-  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? '', draft: rest.includes('--draft') };
+  // session comes from --session, falling back to the first positional — both humans
+  // and agents naturally type `graph-analyse <id> --draft`, and the flag-only parse
+  // silently queried session '' and reported "empty" (live-acceptance trap).
+  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', draft: rest.includes('--draft') };
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
@@ -385,7 +388,7 @@ async function main() {
       });
       console.log(JSON.stringify({
         status: 'stopped', session: args.session, appended: res.appended,
-        next: `webnav dev graph-analyse ${args.session} --draft`,
+        next: `webnav dev graph-analyse --session ${args.session} --draft`,
       }, null, 2));
       if (res.appended === 0) process.exitCode = 3;
     } finally {

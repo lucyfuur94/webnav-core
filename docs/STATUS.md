@@ -15,7 +15,7 @@
 > - **New verb:** `webnav dev record-live --session S --url U [--interval ms]` — opens a HEADED
 >   browser at `U`; the human clicks through the site naturally; every action is captured as
 >   `ActionEffect`s (REAL playwright a11y snapshots) into the record buffer. Stop with Ctrl-C or
->   `dev record-stop --session S`. From there, the unchanged pipeline: `dev graph-analyse <S>
+>   `dev record-stop --session S`. From there, the unchanged pipeline: `dev graph-analyse --session <S>
 >   --draft` → `graph-edit` → `walk`.
 > - **How it captures:** an injected in-page listener only reports WHICH element was touched (a
 >   one-element descriptor per click/change), via a `sessionStorage` queue that survives navigation
@@ -46,7 +46,7 @@
 > - **New verb:** `webnav dev ingest [--port 7778]` — starts a localhost HTTP receiver (`/ingest`),
 >   long-running like `dashboard`/`mcp`.
 > - **Flow for a human:** `webnav dev ingest` → load `webnav-recorder/` unpacked in Chrome → Record
->   → do the flow → Stop & send → `webnav dev graph-analyse <session> --draft` → `graph-edit` →
+>   → do the flow → Stop & send → `webnav dev graph-analyse --session <id> --draft` → `graph-edit` →
 >   `walk`, same as an agent-recorded session.
 > - **Secret-field rule:** password/credit-card field VALUES are never recorded — only element
 >   fingerprints, never `.value`.
