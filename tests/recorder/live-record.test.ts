@@ -56,6 +56,39 @@ it('records a human login click as a navigated ActionEffect', async () => {
   expect(fx[0].toUrl).toContain('/inventory.html');
 });
 
+it('same-batch input+click: input stays navigated:false with the field identity (regression, final-review #1)', async () => {
+  // The natural login cadence: the password field's `change` fires on blur AS the
+  // user clicks Login, so both events drain in ONE batch. The input must NOT pair
+  // with the click's landing tick (that recorded navigated:true, which skips the
+  // draft's input-affordance branch → credentials linkage never fires + a junk
+  // textbox "navigate" edge that passes self-verify).
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('live-3');
+  const batch = JSON.stringify([
+    { seq: 1, kind: 'input', url: 'https://s.test/', tagName: 'input', inputType: 'password', placeholder: 'Password' },
+    { seq: 2, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' },
+  ]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: batch },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  let n = 0;
+  await runLiveRecord({ adapter, store, sessionId: 'live-3', intervalMs: 0,
+    log: () => {}, isStopped: () => ++n > 6, sleep: async () => {} });
+  const fx = store.actionEffects('live-3');
+  expect(fx.length).toBe(2);
+  const input = fx.find((f) => f.action?.role === 'textbox')!;
+  const click = fx.find((f) => f.action?.role === 'button')!;
+  expect(input.navigated).toBe(false);                    // an input NEVER navigates
+  expect(input.action?.name).toBe('Password');            // field identity kept (no value anywhere)
+  expect(input.toUrl).not.toContain('/inventory.html');   // paired with the pre-nav tick, not the landing
+  expect(click.navigated).toBe(true);
+  expect(click.toUrl).toContain('/inventory.html');
+  expect(click.action?.elementFp?.name).toBe('Login');
+});
+
 it('stops when the record session is stopped externally', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
   store.start('live-2'); store.stop('live-2');

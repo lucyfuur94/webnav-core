@@ -40,9 +40,16 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       if (classifyReadiness(snap) !== 'loading') ticks.push({ url, snapshot: snap });
       else ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
 
+      // Snapshot the later-click facts BEFORE the loop splices pending: computed inside,
+      // an already-processed (spliced) click stops counting as "later" for its same-batch
+      // input, and the input then pairs with the click's landing tick (final-review #1).
+      // seq (monotonic per tab) orders events WITHIN one drained batch.
+      const clicks = pending.filter((q) => q.ev.kind === 'click')
+        .map((q) => ({ drainIdx: q.drainIdx, seq: q.ev.seq }));
       for (let i = pending.length - 1; i >= 0; i--) {
         const p = pending[i];
-        const hasLaterClick = pending.some((q) => q !== p && q.ev.kind === 'click' && q.drainIdx > p.drainIdx);
+        const hasLaterClick = clicks.some((c) =>
+          c.drainIdx > p.drainIdx || (c.drainIdx === p.drainIdx && c.seq > p.ev.seq));
         let to = chooseToTick(p.drainIdx, ticks, hasLaterClick);
         if (to === -1 && ++p.waits < 3) continue;                        // wait for the lookahead tick
         if (to === -1) to = Math.min(p.drainIdx, ticks.length - 1);      // give up waiting → same tick
