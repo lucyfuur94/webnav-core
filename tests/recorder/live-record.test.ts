@@ -97,3 +97,31 @@ it('stops when the record session is stopped externally', async () => {
     log: () => {}, isStopped: () => false, sleep: async () => {} });
   expect(res.appended).toBe(0);   // isActive false → immediate exit
 });
+
+it('armed: loop keeps running while session inactive; a toggle event starts capture', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  // NOT started — armed loop must still run, capturing nothing.
+  const toggleEvt = JSON.stringify([{ seq: 1, kind: 'toggle', url: 'https://s.test/' }]);
+  const clickEvt = JSON.stringify([{ seq: 2, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: toggleEvt },   // human hits ⏺ in the overlay
+    { url: 'https://s.test/', snap: LOGIN, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  let n = 0;
+  await runLiveRecord({ adapter, store, sessionId: 'armed-1', intervalMs: 0, armed: true,
+    log: () => {}, isStopped: () => ++n > 7, sleep: async () => {} });
+  expect(store.isActive('armed-1')).toBe(true);            // toggle started the session
+  expect(store.actionEffects('armed-1').length).toBe(1);   // the click after toggle was captured
+});
+
+it('armed: 5 consecutive tick errors end the loop (browser closed by user)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  const adapter = { evalJs: async () => 'installed', snapshot: async () => { throw new Error('closed'); },
+    currentUrl: async () => 'x', close: async () => '' };
+  const res = await runLiveRecord({ adapter, store, sessionId: 'armed-2', intervalMs: 0, armed: true,
+    log: () => {}, isStopped: () => false, sleep: async () => {} });
+  expect(res.ticks).toBe(0);   // never archived a tick; loop exited on error streak, not hung
+});

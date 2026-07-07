@@ -10,7 +10,7 @@ import { recoverFingerprint } from '../playwright/fingerprint.js';
 import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 
 export interface LiveEvent {
-  seq: number; kind: 'click' | 'input'; url: string; tagName: string;
+  seq: number; kind: 'click' | 'input' | 'toggle'; url: string; tagName: string;
   role?: string | null; ariaLabel?: string | null; leafText?: string | null;
   href?: string | null; placeholder?: string | null; nameAttr?: string | null;
   inputType?: string | null;
@@ -41,9 +41,9 @@ export const INSTALLER_JS = `() => {
     d.id = '__webnav_rec_badge';
     d.setAttribute('aria-hidden', 'true');
     d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;box-shadow:inset 0 0 0 4px #e5484d;';
-    const p = document.createElement('div');
-    p.style.cssText = 'position:absolute;top:10px;right:10px;background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:5px 9px;border-radius:999px;';
-    p.textContent = '\\u25CF REC';
+    const p = document.createElement('button');
+    p.style.cssText = 'position:absolute;top:10px;right:10px;background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:5px 9px;border-radius:999px;pointer-events:auto;cursor:pointer;border:0;';
+    p.textContent = '\\u23FA record';
     d.appendChild(p);
     (document.body || document.documentElement).appendChild(d);
   }
@@ -57,6 +57,8 @@ export const INSTALLER_JS = `() => {
     sessionStorage.setItem('__webnav_evq', JSON.stringify(q));
     return seq;
   };
+  const badgeBtn = document.querySelector('#__webnav_rec_badge button');
+  if (badgeBtn) badgeBtn.onclick = () => push({ kind: 'toggle' });
   const INTERACTIVE = ['a','button','select','textarea','summary','label'];
   document.addEventListener('click', (ev) => {
     const t = ev.target;
@@ -85,6 +87,17 @@ export const INSTALLER_JS = `() => {
       inputType: el instanceof HTMLInputElement ? el.type : null });
   }, true);
   return 'installed';
+}`;
+
+// Recolor the overlay for the current mode. Evaled by the loop whenever the mode
+// changes (and after each re-inject). Red = capturing; grey = armed (open, not recording).
+export const MODE_JS = (recording: boolean) => `() => {
+  const d = document.getElementById('__webnav_rec_badge');
+  if (!d) return 'no-badge';
+  d.style.boxShadow = 'inset 0 0 0 4px ${recording ? '#e5484d' : '#8b93a3'}';
+  const p = d.querySelector('button');
+  if (p) { p.style.background = '${recording ? '#e5484d' : '#8b93a3'}'; p.textContent = '${recording ? '\\u25CF REC' : '\\u23FA record'}'; }
+  return 'ok';
 }`;
 
 // Atomic read+clear: draining and processing are one step, so no event is seen twice.

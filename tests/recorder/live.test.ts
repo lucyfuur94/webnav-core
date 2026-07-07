@@ -144,3 +144,16 @@ describe('field clicks never navigate (live finding: "nav: First Name")', () => 
     expect(fx.action?.role).toBe('textbox');
   });
 });
+
+describe('armed-mode overlay', () => {
+  it('installer adds a clickable toggle that pushes kind:toggle (only pointer-events-enabled element)', () => {
+    expect(INSTALLER_JS).toContain("kind: 'toggle'");
+    expect(INSTALLER_JS).toContain('pointer-events:auto');
+  });
+  it('MODE_JS recolors for both modes', async () => {
+    const { MODE_JS } = await import('../../src/recorder/live.js');
+    expect(MODE_JS(true)).toContain('REC');
+    expect(MODE_JS(false)).toContain('record');
+    new Function('return (' + MODE_JS(true) + ')')();   // parses as JS
+  });
+});
