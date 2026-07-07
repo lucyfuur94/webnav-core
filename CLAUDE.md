@@ -23,6 +23,7 @@ playwright-cli sessions are DAEMONIZED (survive the CLI process so `walk-resume`
 - **Per-host politeness throttle** (`WEBNAV_HOST_INTERVAL_MS`, default 1000ms): min interval between `open`/`goto` to one host (sqlite-backed, cross-process; intra-session clicks exempt). Reduces provoking bot-walls.
 - **Non-hydration detection:** a page that loads-but-never-renders (stable snapshot, NO known state matched after the readiness-retry budget) is reported as a likely rate-limit/bot-throttle ("back off"), not generic drift. Gated on fingerprint ABSENCE, not size (a legit sparse page still matches).
 - **Behavioral rule for ME (the agent):** never fan out many live browsers without closing each; prefer ONE serial session reused across checks; reap after batches. The burst that caused the incident was my doing, not just a missing limit.
+- **NEVER open multiple headed Chrome windows concurrently — tests included (user rule, 2026-07-07).** Headed windows pop up on the user's screen and are ANNOYING. Automated checks/walks/e2e runs use `--headless`; a headed window is reserved for the ONE interactive thing that needs it (e.g. `record-live`), one at a time, reaped after.
 
 ## CLI categories (settled)
 
