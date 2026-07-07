@@ -5,23 +5,22 @@ let recording = false;
 chrome.storage.local.get('recording', (v) => { recording = !!v.recording; });
 chrome.storage.onChanged.addListener((ch) => { if (ch.recording) recording = !!ch.recording.newValue; });
 
-function isSecret(el: Element): boolean {
-  if (!(el instanceof HTMLInputElement)) return false;
-  return el.type === 'password' || /^cc-|cc-number|cc-csc/.test(el.autocomplete || '');
-}
 function fromSnapshot(): { snap: string; refByEl: Map<Element, string> } {
-  // serialize the page and remember which ref maps to which element, so a click
-  // can report the synthetic ref of the exact node clicked.
+  // Build the SNode tree via domToSNode (the twin's REAL role derivation: <a>→link,
+  // <button>→button, <input>→textbox — NOT a weak inline copy that flattens everything
+  // to 'generic'). Then assign synthetic eN refs in the SAME pre-order serialize() uses,
+  // walking DOM and SNode tree in lockstep so refByEl[clickedEl] is the ref serialize()
+  // emits for it. (Secret-field rule: domToSNode never reads an input's .value.)
   const refByEl = new Map<Element, string>();
   let c = 0;
-  const walk = (el: Element): SNode => {
-    const ref = `e${++c}`; refByEl.set(el, ref);
-    const role = el.getAttribute('role') || (el.tagName.toLowerCase() === 'body' ? 'RootWebArea' : 'generic');
-    const name = el.getAttribute('aria-label') || (el.textContent || '').trim() || null;
-    const url = el instanceof HTMLAnchorElement ? el.href : null;
-    return { role, name, url, children: Array.from(el.children).map(walk) };
+  const number = (el: Element, node: SNode): void => {
+    refByEl.set(el, `e${++c}`);
+    const kids = Array.from(el.children);
+    const nodeKids = node.children ?? [];
+    for (let i = 0; i < kids.length; i++) number(kids[i], nodeKids[i]);
   };
-  const tree = walk(document.body);
+  const tree = domToSNode(document.body);
+  number(document.body, tree);
   return { snap: serialize(tree), refByEl };
 }
 
