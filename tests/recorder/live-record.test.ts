@@ -16,17 +16,21 @@ const INV = ['RootWebArea "Products" [ref=e1]', '  button "Open Menu" [ref=e2]',
   '  button "Add to cart" [ref=e7]', '  StaticText "$29.99" [ref=e8]',
   '  link "Cart" [ref=e9]'].join('\n');
 
-// Scripted fake adapter: tick-indexed pages + one queued click event.
+// Scripted fake adapter for the CHEAP-TICK loop: the loop calls currentUrl FIRST
+// each tick (that advances the script), then installer/drain, and snapshot only
+// when something happened — snapshot returns the CURRENT row without advancing.
 function fakeAdapter(script: { url: string; snap: string; drain?: string }[]) {
   let tick = -1;
+  const cur = () => script[Math.max(0, Math.min(tick, script.length - 1))];
   return {
     evalJs: async (f: string) => {
-      if (f.includes('__webnav_installed')) return 'installed';
-      if (f.includes('__webnav_evq')) return script[Math.min(tick + 1, script.length - 1)].drain ?? '[]';
+      if (f.includes('webnavInstalled')) return 'installed';
+      if (f.includes('__webnav_evq')) return cur().drain ?? '[]';
+      if (f.includes('__webnav_rec_badge')) return 'ok';   // MODE_JS
       return 'null'; // probe
     },
-    snapshot: async () => { tick = Math.min(tick + 1, script.length - 1); return script[tick].snap; },
-    currentUrl: async () => script[Math.min(tick, script.length - 1)].url,
+    snapshot: async () => cur().snap,
+    currentUrl: async () => { tick = Math.min(tick + 1, script.length - 1); return cur().url; },
     close: async () => '',
   };
 }
@@ -119,9 +123,22 @@ it('armed: loop keeps running while session inactive; a toggle event starts capt
 
 it('armed: 5 consecutive tick errors end the loop (browser closed by user)', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
-  const adapter = { evalJs: async () => 'installed', snapshot: async () => { throw new Error('closed'); },
+  const adapter = { evalJs: async (f: string) => (f.includes('__webnav_evq') ? '[]' : 'ok'),
+    snapshot: async () => { throw new Error('closed'); },
     currentUrl: async () => 'x', close: async () => '' };
   const res = await runLiveRecord({ adapter, store, sessionId: 'armed-2', intervalMs: 0, armed: true,
     log: () => {}, isStopped: () => false, sleep: async () => {} });
   expect(res.ticks).toBe(0);   // never archived a tick; loop exited on error streak, not hung
+});
+
+it('armed: 3 undrainable batches = window closed → session ends (daemon must not resurrect)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  const adapter = { evalJs: async (f: string) => (f.includes('__webnav_evq') ? 'Error: no open page' : 'ok'),
+    snapshot: async () => 'RootWebArea "X" [ref=e1]',
+    currentUrl: async () => 'https://s.test/', close: async () => '' };
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 'armed-3', intervalMs: 0, armed: true,
+    log: (l) => logs.push(l), isStopped: () => false, sleep: async () => {} });
+  expect(logs.filter((l) => l.includes('undrainable')).length).toBe(1);   // logged once, not spammed
+  expect(logs.some((l) => l.includes('window closed'))).toBe(true);      // loop ended itself
 });

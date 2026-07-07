@@ -628,6 +628,7 @@ async function main() {
     const { startDashboard } = await import('./dashboard/server.js');
     const { RecordStore } = await import('./mapstore/record.js');
     const { runLiveRecord } = await import('./recorder/live-record.js');
+    const { MODE_JS } = await import('./recorder/live.js');
     const { ReplayController, runReplay } = await import('./recorder/replay.js');
     const { draftFromEffects } = await import('./explorer/draft.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
@@ -644,6 +645,7 @@ async function main() {
     // tracks it so a second open/replay while one is up gets a clear 409-style error.
     const recordStore = new RecordStore(dbPath());
     let busy: string | null = null;
+    let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
@@ -651,7 +653,7 @@ async function main() {
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
-        toUrl: e.toUrl })),
+        toUrl: e.toUrl, capturedAt: e.capturedAt })),
       del: (id: string) => {
         recordStore.clearSession(id);
         // remove the session's replay screenshots too (spec: shots die with the recording).
@@ -671,17 +673,19 @@ async function main() {
           // button immediately (final-review #3: an armed window was invisible until
           // the overlay ⏺ was used — "Record from the dashboard" was unreachable).
           recordStore.start(session); recordStore.stop(session);
-          void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 500, armed: true,
+          activeAdapter = adapter;
+          void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 300, armed: true,
             log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
-            .finally(() => { busy = null; recordStore.stop(session); });
+            .finally(() => { busy = null; activeAdapter = null; recordStore.stop(session); });
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
           return { ok: false as const, error: String(e) };
         }
       },
-      record: (id: string) => { recordStore.start(id); return true; },
-      stop: (id: string) => { recordStore.stop(id); return true; },
+      // instant overlay update: don't wait for the loop's next tick (live finding: lag)
+      record: (id: string) => { recordStore.start(id); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
+      stop: (id: string) => { recordStore.stop(id); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);
