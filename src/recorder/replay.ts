@@ -33,7 +33,8 @@ export class ReplayController {
     if (action === 'pause') { this.state.mode = 'step'; return true; }
     if (action === 'resume') { this.state.mode = 'auto'; this.nextResolve?.(); this.nextResolve = null; return true; }
     if (action === 'next') { this.nextResolve?.(); this.nextResolve = null; return true; }
-    if (action === 'abort') { this.aborted = true; this.nextResolve?.(); this.nextResolve = null;
+    if (action === 'abort') { this.aborted = true; this.state.waiting = null; this.state.waitingLabel = undefined;
+      this.nextResolve?.(); this.nextResolve = null;
       this.waitResolve?.('abort'); this.waitResolve = null; return true; }
     return false;
   }
@@ -87,6 +88,11 @@ export async function runReplay(
   const sleep = deps.sleep ?? realSleep;
   const paceMs = deps.paceMs ?? 1500;
   const st = ctl.state;
+  const skipRest = (from: number) => {
+    for (let j = from; j < st.steps.length; j++) {
+      if (st.steps[j].status === 'running' || st.steps[j].status === 'pending') st.steps[j].status = 'skipped';
+    }
+  };
   try {
     if (effects.length === 0) { st.done = true; st.running = false; return st; }
     await deps.adapter.open(effects[0].fromUrl);
@@ -98,9 +104,7 @@ export async function runReplay(
 
       const g = await ctl.gate(sleep, paceMs);
       if (g === 'abort') {
-        for (let j = i; j < st.steps.length; j++) {
-          if (st.steps[j].status === 'running' || st.steps[j].status === 'pending') st.steps[j].status = 'skipped';
-        }
+        skipRest(i);
         break;
       }
 
@@ -112,10 +116,25 @@ export async function runReplay(
 
       const action = e.action;
       let ref: string | null = action.ref ?? null;
+      let abortedHere = false;
       if (action.elementFp) {
-        const nodes = parseSnapshot(await deps.adapter.snapshot());
-        ref = resolveByFingerprint(action.elementFp, nodes);
+        // Resolve with ONE human-assisted retry (plan semantics): the first miss pauses
+        // (step mode) so the human can fix the live page — dismiss a popup, let a render
+        // settle — and hit Next, which re-resolves THIS step. A second miss is final.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const nodes = parseSnapshot(await deps.adapter.snapshot());
+          ref = resolveByFingerprint(action.elementFp, nodes);
+          if (ref || attempt === 1) break;
+          step.status = 'fail';
+          step.note = 'element not found — Next retries once';
+          ctl.control('pause');
+          const g2 = await ctl.gate(sleep, paceMs);
+          if (g2 === 'abort') { abortedHere = true; break; }
+          step.status = 'running';
+          step.note = undefined;
+        }
       }
+      if (abortedHere) { skipRest(i); break; }
       if (!ref) {
         step.status = 'fail';
         step.note = 'element not found';
@@ -133,9 +152,7 @@ export async function runReplay(
         if (value === undefined) {
           const answer = await ctl.waitFor('value', action.name ?? step.label);
           if (answer === 'abort') {
-            for (let j = i; j < st.steps.length; j++) {
-              if (st.steps[j].status === 'running' || st.steps[j].status === 'pending') st.steps[j].status = 'skipped';
-            }
+            skipRest(i);
             break;
           }
           value = answer.value ?? '';
@@ -147,9 +164,7 @@ export async function runReplay(
         if (COMMIT_WORDS.test(label)) {
           const answer = await ctl.waitFor('confirm', label);
           if (answer === 'abort') {
-            for (let j = i; j < st.steps.length; j++) {
-              if (st.steps[j].status === 'running' || st.steps[j].status === 'pending') st.steps[j].status = 'skipped';
-            }
+            skipRest(i);
             break;
           }
           if (!answer.fire) { step.status = 'skipped'; continue; }
