@@ -17,15 +17,23 @@ export interface LiveEvent {
 }
 
 // Injected once per document (idempotent — a navigation loses page JS, the loop
-// re-evals this every tick). Events queue in sessionStorage: a window-scoped
-// queue dies with the document, losing the navigating click — the most important
-// event (the Chrome-extension bug, not re-learned twice). Secret-field rule: no
-// .value access anywhere below; leafText is capped and taken from interactive
-// elements / childless nodes only (containers concatenate their whole subtree —
-// the extension's name-blob failure).
+// re-evals this every tick). LIVE lesson #1: the idempotence flag must live on the
+// DOM (documentElement.dataset), NOT on window — playwright-cli runs each eval in a
+// fresh JS world, so a window flag is invisible to the next eval and every tick
+// installed ANOTHER listener (duplicate-event storm; dup clicks then suppressed each
+// other's landing attribution). The DOM is shared across worlds; a new document after
+// navigation has a fresh documentElement, so re-injection still happens exactly once.
+// Events queue in sessionStorage: a window-scoped queue dies with the document,
+// losing the navigating click — the most important event (the Chrome-extension bug,
+// not re-learned twice). Secret-field rule: no typed value is ever read; the ONE
+// sanctioned .value read is a submit/button/reset input's label (static author text —
+// its accessible name — never user-typed; LIVE lesson #2: saucedemo's Login is
+// <input type=submit value="Login">, unresolvable without it). leafText is capped and
+// taken from interactive elements / childless nodes only (containers concatenate
+// their whole subtree — the extension's name-blob failure).
 export const INSTALLER_JS = `() => {
-  if (window.__webnav_installed) return 'already';
-  window.__webnav_installed = true;
+  if (document.documentElement.dataset.webnavInstalled) return 'already';
+  document.documentElement.dataset.webnavInstalled = '1';
   const push = (e) => {
     const q = JSON.parse(sessionStorage.getItem('__webnav_evq') || '[]');
     const seq = (Number(sessionStorage.getItem('__webnav_seq')) || 0) + 1;
@@ -40,11 +48,13 @@ export const INSTALLER_JS = `() => {
     if (!(t instanceof Element)) return;
     const el = t.closest('a,button,[role],input,select,textarea,summary,label') || t;
     const tag = el.tagName.toLowerCase();
+    const isBtnInput = el instanceof HTMLInputElement && ['submit','button','reset'].indexOf(el.type) >= 0;
     const takeText = INTERACTIVE.indexOf(tag) >= 0 || el.getAttribute('role') || el.children.length === 0;
     const seq = push({
       kind: 'click', tagName: tag,
       role: el.getAttribute('role'), ariaLabel: el.getAttribute('aria-label'),
-      leafText: takeText ? ((el.textContent || '').trim().slice(0, 80) || null) : null,
+      leafText: isBtnInput ? (el.value || null)
+        : (takeText ? ((el.textContent || '').trim().slice(0, 80) || null) : null),
       href: el instanceof HTMLAnchorElement ? el.href : null,
       placeholder: el.getAttribute('placeholder'), nameAttr: el.getAttribute('name'),
       inputType: el instanceof HTMLInputElement ? el.type : null,
