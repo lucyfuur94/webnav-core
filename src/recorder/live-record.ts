@@ -35,8 +35,21 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       try { events = JSON.parse(raw || '[]'); } catch { deps.log(`skip: undrainable batch`); }
       for (const ev of events) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
 
-      const snap = await deps.adapter.snapshot();
-      const url = await deps.adapter.currentUrl();
+      // Ctrl-C reaches the playwright daemon (same process group) and tears the
+      // browser down while a tick is in flight — an unguarded snapshot/currentUrl
+      // then throws out of the loop and the raw error replaces the final JSON
+      // (live-run symptom: "Command failed … Session closed" after ^C). On any
+      // tick-body error: stop requested → exit cleanly; otherwise log and retry.
+      let snap: string, url: string;
+      try {
+        snap = await deps.adapter.snapshot();
+        url = await deps.adapter.currentUrl();
+      } catch (e) {
+        if (deps.isStopped() || !deps.store.isActive(deps.sessionId)) break;
+        deps.log(`tick error (retrying): ${String(e).split('\n')[0]}`);
+        await sleep(deps.intervalMs);
+        continue;
+      }
       if (classifyReadiness(snap) !== 'loading') ticks.push({ url, snapshot: snap });
       else ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
 
