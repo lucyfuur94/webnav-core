@@ -129,7 +129,8 @@ honestly what you get and how it grows, so there are no surprises:
   is shelved — it approximated the accessibility tree from the raw DOM and broke on SPAs; see
   `docs/STATUS.md` for the pivot. `dev ingest` still exists for that receiver.)
 - **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
-  sites + credentials), or the text views `dev outline <site>` / `dev mermaid <site>`.
+  sites + credentials, incl. a Recordings tab: record by clicking, replay to verify), or the
+  text views `dev outline <site>` / `dev mermaid <site>`.
 
 **TL;DR:** out of the box you can `walk` saucedemo; everything else you map yourself. Same
 machine + a mapped site → instant, cached, self-healing. A brand-new site → you (or your

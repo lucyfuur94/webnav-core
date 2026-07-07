@@ -1,6 +1,7 @@
 import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
 import type { BrowserOpts } from './playwright/adapter.js';
+import type { RecordingsDeps } from './dashboard/server.js';
 import { dbPath } from './paths.js';
 
 export type ParsedArgs =
@@ -625,11 +626,71 @@ async function main() {
     const { ensureSeeded } = await import('./graph/seed.js');
     const { CredStore } = await import('./creds.js');
     const { startDashboard } = await import('./dashboard/server.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { runLiveRecord } = await import('./recorder/live-record.js');
+    const { ReplayController, runReplay } = await import('./recorder/replay.js');
+    const { draftFromEffects } = await import('./explorer/draft.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
     const store = new MapStore(dbPath());
     ensureSeeded(store);
     const creds = new CredStore();
     const port = args.port;
-    startDashboard(store, creds, { port });
+
+    // Recordings deps for the dashboard's Recordings tab — record by clicking,
+    // replay to verify. ONE driven browser at a time (CLAUDE.md rule); `busy`
+    // tracks it so a second open/replay while one is up gets a clear 409-style error.
+    const recordStore = new RecordStore(dbPath());
+    let busy: string | null = null;
+    let activeCtl: InstanceType<typeof ReplayController> | null = null;
+    const shotsRoot = join(homedir(), '.webnav', 'replays');
+    const rec: RecordingsDeps = {
+      list: () => recordStore.listSessions(),
+      steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
+        label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
+        kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
+        toUrl: e.toUrl })),
+      del: (id: string) => recordStore.clearSession(id),
+      draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
+      open: async (url: string, session: string, persistent: boolean) => {
+        if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        busy = session;
+        const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent });
+        await adapter.open(url);
+        void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 500, armed: true,
+          log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
+          .finally(() => { busy = null; recordStore.stop(session); });
+        return { ok: true as const };
+      },
+      record: (id: string) => { recordStore.start(id); return true; },
+      stop: (id: string) => { recordStore.stop(id); return true; },
+      replay: async (id: string) => {
+        if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        const effects = recordStore.actionEffects(id);
+        if (!effects.length) return { ok: false as const, error: 'empty recording' };
+        busy = 'replay:' + id;
+        const site = (() => { try { return new URL(effects[0].fromUrl).host; } catch { return ''; } })();
+        const ctl = new ReplayController(id, effects.map((e) => ({ seq: e.seq, label: e.action?.name ?? (e.navigated ? 'jump' : 'observe') })));
+        activeCtl = ctl;
+        const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
+        void runReplay(effects, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
+          .finally(() => { busy = null; });
+        return { ok: true as const };
+      },
+      replayState: () => activeCtl?.state ?? null,
+      replayControl: (action: string, p: { value?: string; save?: boolean; fire?: boolean }) => {
+        if (!activeCtl) return false;
+        if (action === 'supply') return activeCtl.supply(p.value ?? '', !!p.save);
+        if (action === 'confirm') return activeCtl.confirm(!!p.fire);
+        return activeCtl.control(action as 'pause' | 'next' | 'resume' | 'abort');
+      },
+      shotPath: (session: string, file: string) =>
+        // review finding: '.'/'..' pass [\w.-]+ (dots are in the class) → one-level traversal
+        /^[\w.-]+$/.test(session) && session !== '.' && session !== '..' && /^step-\d+\.png$/.test(file)
+          ? join(shotsRoot, session, file) : null,
+    };
+    startDashboard(store, creds, { port }, rec);
     const url = `http://127.0.0.1:${port}`;
     process.stderr.write(`webnav dashboard running at ${url}\n(reads ./webnav.db + ${process.env.WEBNAV_CREDS ?? '~/.webnav/credentials.json'}; Ctrl-C to stop)\n`);
     // Best-effort auto-open the default browser (macOS `open`; swallow errors).

@@ -73,6 +73,7 @@ function el(html) { const t = document.createElement('template'); t.innerHTML = 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 async function render() {
+  if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }   // no stray status polls across tab switches (review finding)
   main.innerHTML = '<div class="empty">loading…</div>';
   main.style.gridTemplateColumns = tab === 'sites' ? '280px 1fr' : '1fr';
   if (tab === 'sites') return renderSites();

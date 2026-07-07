@@ -1,6 +1,25 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 472 unit pass + 7 skip · **Build:** green
+**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 494 unit pass + 7 skip · **Build:** green
+
+> **2026-07-07 (control center) — dashboard Recordings tab wired end-to-end.**
+> - Real deps (`RecordStore`, `runLiveRecord`, `ReplayController`/`runReplay`, `draftFromEffects`,
+>   `PlaywrightAdapter`) are now wired into `webnav dev dashboard`'s `RecordingsDeps`, replacing the
+>   503-unwired stub. From the dashboard: **New recording** opens a browser armed (grey, not yet
+>   recording) — the human clicks Record to arm capture, and a red overlay ⏺ shows on the driven
+>   page throughout; **recordings list** shows past sessions; **Replay** verifies a recording headed,
+>   with a per-step filmstrip of screenshots turning green as steps complete; stored credentials
+>   auto-fill login fields during replay, and an unrecognized field **pauses and asks** the human
+>   (cred-inject), offering to save the answer; commit-labeled steps (Place Order/Pay/Delete/…)
+>   pause for an explicit confirm and never auto-fire. Only **one driven browser at a time** — a
+>   second Open/Replay while one is up returns a clear "already open" error instead of stacking
+>   Chrome processes.
+> - Unit-tested throughout the underlying pieces (record store, live-record loop, replay controller,
+>   draft-from-effects); this increment is the CLI wiring + docs only — see `tsc`/`vitest` below.
+> - **Tests:** full suite **494 pass / 7 skip**; `tsc --noEmit` clean.
+> - **⚠️ Live acceptance pending** — human, driving the actual dashboard end-to-end (New recording →
+>   Record → click through saucedemo → Stop → Replay with creds autofill + filmstrip + a
+>   commit-confirm pause). Not yet run.
 
 > **2026-07-07 (later) — capture pivot: `dev record-live` (playwright-cli) replaces the extension.**
 > - **The pivot (evidence, not argument):** the Chrome-extension capture below reconstructed the
