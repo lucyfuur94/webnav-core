@@ -200,3 +200,34 @@ describe('recordings API', () => {
     s2.close();
   });
 });
+
+describe('realtime (SSE + toggle)', () => {
+  it('toggle flips and /api/events streams pushed types', async () => {
+    const events: string[] = [];
+    let push: ((t: string) => void) | null = null;
+    const rec2 = {
+      list: () => [], steps: () => [], del: () => {}, draft: () => ({}),
+      open: async () => ({ ok: true as const }), record: () => true, stop: () => true,
+      replay: async () => ({ ok: true as const }), replayState: () => null,
+      replayControl: () => true, shotPath: () => null,
+      toggle: (id: string) => { events.push('toggled:' + id); push?.('sessions'); return { recording: true }; },
+      subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
+    };
+    const s3 = startDashboard(new MapStore(':memory:'), new CredStore(join(mkdtempSync(join(tmpdir(), 'webnav-sse-')), 'c3.json')), { port: 0 }, rec2 as any);
+    await new Promise((r) => s3.on('listening', r));
+    const b3 = 'http://127.0.0.1:' + (s3.address() as AddressInfo).port;
+
+    const res = await fetch(b3 + '/api/events');
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const reader = res.body!.getReader();
+    await reader.read();                                        // ': connected'
+
+    const t = await (await fetch(b3 + '/api/recordings/r9/toggle', { method: 'POST' })).json() as any;
+    expect(t.recording).toBe(true);
+    expect(events).toEqual(['toggled:r9']);
+    const chunk = new TextDecoder().decode((await reader.read()).value);
+    expect(chunk).toContain('data: sessions');                  // the toggle was PUSHED to the stream
+    reader.cancel();
+    s3.close();
+  });
+});

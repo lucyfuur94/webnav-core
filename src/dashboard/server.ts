@@ -34,6 +34,8 @@ export interface RecordingsDeps {
   replayState(): ReplayState | null;
   replayControl(action: string, payload: { value?: string; save?: boolean; fire?: boolean }): boolean;
   shotPath(session: string, file: string): string | null;
+  toggle(id: string): { recording: boolean };
+  subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -135,10 +137,23 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/')) {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path === '/api/events') {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
+
+        // realtime push: Server-Sent Events. The shell's EventSource replaces polling.
+        if (path === '/api/events' && method === 'GET') {
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+          res.write(': connected\n\n');
+          const un = rec.subscribe((type) => res.write('data: ' + type + '\n\n'));
+          const beat = setInterval(() => res.write(': ping\n\n'), 15000);
+          req.on('close', () => { clearInterval(beat); un(); });
+          return;
+        }
+
+        const toggleM = path.match(/^\/api\/recordings\/([^/]+)\/toggle$/);
+        if (toggleM && method === 'POST') return sendJson(200, rec.toggle(decodeURIComponent(toggleM[1])));
 
         const stepsM = path.match(/^\/api\/recordings\/([^/]+)\/steps$/);
         if (stepsM && method === 'GET') return sendJson(200, rec.steps(decodeURIComponent(stepsM[1])));

@@ -76,7 +76,6 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&l
 
 async function render() {
   if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }   // no stray status polls across tab switches (review finding)
-  if (listPoll) { clearInterval(listPoll); listPoll = null; }
   main.innerHTML = '<div class="empty">loading…</div>';
   main.style.gridTemplateColumns = tab === 'sites' ? '280px 1fr' : '1fr';
   if (tab === 'sites') return renderSites();
@@ -227,7 +226,6 @@ function addSiteCard() {
 
 // ---------- RECORDINGS ----------
 let replayPoll = null;
-let listPoll = null;
 let currentOpenId = null;
 async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
@@ -254,27 +252,33 @@ async function renderRecordings(openId) {
   if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
   main.append(list, detail);
   if (reopen) reopen();                                            // keep the detail open across actions
-  // Live list: recording can start/stop from the WINDOW's pill too — poll so the
-  // dashboard reflects it (red dot, step counts, pulsing detail) without clicks.
-  const lastJson = JSON.stringify(recs);
-  if (listPoll) clearInterval(listPoll);
-  listPoll = setInterval(async () => {
-    if (replayPoll) return;                     // never stomp an active replay view
-    try {
-      const now = await getJSON('/api/recordings');
-      if (JSON.stringify(now) !== lastJson) renderRecordings(currentOpenId);
-    } catch {}
-  }, 2000);
+  startEvents();                                                   // realtime push (SSE)
+}
+// Realtime: the server pushes 'sessions' / 'step' / 'replay' over SSE — no polling.
+// EventSource auto-reconnects; a burst of events is debounced into one refresh.
+let es = null; let refreshT = null;
+function startEvents() {
+  if (es) return;
+  es = new EventSource('/api/events');
+  es.onmessage = (m) => {
+    if (tab !== 'recordings') return;
+    if (m.data === 'replay') return;                               // replay view has its own poll while active
+    if (replayPoll) return;                                        // never stomp an active replay view
+    // don't yank the DOM out from under someone typing in the new-recording card
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.addrow')) return;
+    clearTimeout(refreshT);
+    refreshT = setTimeout(() => renderRecordings(currentOpenId), 120);
+  };
 }
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional \\u2014 blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window (armed)</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional \\u2014 blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
   const persistIn = card.querySelector('input[type=checkbox]');
   card.querySelector('button').onclick = async () => {
     const msg = card.querySelector('#openmsg');
     if (!sessIn.value) { msg.textContent = 'session name required'; return; }
     const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: persistIn.checked }) });
-    msg.textContent = r.ok ? 'window opened (grey border = armed). Hit Record here or the \\u23FA pill in the window.' : (await r.json()).error;
+    msg.textContent = r.ok ? 'window opened — RECORDING (red border). Stop here or via the pill in the window.' : (await r.json()).error;
     if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 800);
   };
   return card;

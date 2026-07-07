@@ -73,6 +73,12 @@ export class RecordStore {
   clearSession(sessionId: string): void {
     this.db.prepare('DELETE FROM record_observations WHERE session_id=?').run(sessionId);
   }
+  /** Delete a recording ENTIRELY — observations AND the session row (live finding:
+   *  clearSession alone left the row, so a "deleted" recording stayed in the list). */
+  deleteSession(sessionId: string): void {
+    this.clearSession(sessionId);
+    this.db.prepare('DELETE FROM record_sessions WHERE session_id=?').run(sessionId);
+  }
   isActive(sessionId: string): boolean {
     const r: any = this.db.prepare('SELECT active FROM record_sessions WHERE session_id=?').get(sessionId);
     return !!r && r.active === 1;

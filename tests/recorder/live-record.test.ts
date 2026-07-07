@@ -21,11 +21,17 @@ const INV = ['RootWebArea "Products" [ref=e1]', '  button "Open Menu" [ref=e2]',
 // when something happened — snapshot returns the CURRENT row without advancing.
 function fakeAdapter(script: { url: string; snap: string; drain?: string }[]) {
   let tick = -1;
+  let lastInstallUrl: string | null = null;
   const cur = () => script[Math.max(0, Math.min(tick, script.length - 1))];
   return {
     evalJs: async (f: string) => {
-      // TICK_JS (the combined per-tick eval) returns JSON {installed, queue}
-      if (f.includes('queue')) return JSON.stringify({ installed: true, queue: JSON.parse(cur().drain ?? '[]') });
+      // TICK_JS (the combined per-tick eval) returns JSON {installed, queue};
+      // installed=true only when the document (url) changed — like the real page.
+      if (f.includes('queue')) {
+        const installed = lastInstallUrl !== cur().url;
+        lastInstallUrl = cur().url;
+        return JSON.stringify({ installed, queue: JSON.parse(cur().drain ?? '[]') });
+      }
       if (f.includes('__webnav_rec_badge')) return 'ok';
       return 'null'; // probe
     },
@@ -141,4 +147,20 @@ it('armed: a sustained undrainable streak = window closed → session ends (daem
     log: (l) => logs.push(l), isStopped: () => false, sleep: async () => {} });
   expect(logs.filter((l) => l.includes('undrainable')).length).toBe(1);   // logged once, not spammed
   expect(logs.some((l) => l.includes('window closed'))).toBe(true);      // loop ended itself
+});
+
+it('armed: window closed → daemon resurrects about:blank → session ENDS (no reopen loop)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  // real page, then the daemon-resurrected fresh about:blank (installed=true, evals fine)
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'about:blank', snap: LOGIN },
+    { url: 'about:blank', snap: LOGIN },
+    { url: 'about:blank', snap: LOGIN },
+  ]);
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 'armed-4', intervalMs: 0, armed: true,
+    log: (l) => logs.push(l), isStopped: () => false, sleep: async () => {} });
+  expect(logs.some((l) => l.includes('window closed'))).toBe(true);   // ended, not resurrect-looping
 });

@@ -646,6 +646,9 @@ async function main() {
     const recordStore = new RecordStore(dbPath());
     let busy: string | null = null;
     let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
+    // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' pings
+    const sseListeners = new Set<(t: string) => void>();
+    const emit = (t: string) => { for (const f of sseListeners) f(t); };
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
@@ -655,7 +658,8 @@ async function main() {
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
         toUrl: e.toUrl, capturedAt: e.capturedAt })),
       del: (id: string) => {
-        recordStore.clearSession(id);
+        recordStore.deleteSession(id);
+        emit('sessions');
         // remove the session's replay screenshots too (spec: shots die with the recording).
         // The same guard as shotPath: '.'/'..' here would rmSync ~/.webnav recursively.
         if (/^[\w.-]+$/.test(id) && id !== '.' && id !== '..') {
@@ -669,14 +673,17 @@ async function main() {
         try {
           const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent });
           await adapter.open(url);
-          // create the session row INACTIVE so the dashboard lists it with a Record
-          // button immediately (final-review #3: an armed window was invisible until
-          // the overlay ⏺ was used — "Record from the dashboard" was unreachable).
-          recordStore.start(session); recordStore.stop(session);
+          // ONE CLICK = OPEN + RECORD (live feedback: asking to press Record again
+          // after "Open window" was a redundant second intent). Stop still returns
+          // the window to the armed/grey state for another take.
+          recordStore.start(session);
           activeAdapter = adapter;
+          emit('sessions');
           void runLiveRecord({ adapter, store: recordStore, sessionId: session, intervalMs: 200, armed: true,
+            tickExtras: { port, session },
+            onEvent: emit,
             log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
-            .finally(() => { busy = null; activeAdapter = null; recordStore.stop(session); });
+            .finally(() => { busy = null; activeAdapter = null; recordStore.stop(session); emit('sessions'); });
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
@@ -684,8 +691,17 @@ async function main() {
         }
       },
       // instant overlay update: don't wait for the loop's next tick (live finding: lag)
-      record: (id: string) => { recordStore.start(id); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
-      stop: (id: string) => { recordStore.stop(id); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
+      record: (id: string) => { recordStore.start(id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
+      stop: (id: string) => { recordStore.stop(id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
+      // the window pill's realtime channel (POSTed directly from the page)
+      toggle: (id: string) => {
+        const was = recordStore.isActive(id);
+        if (was) recordStore.stop(id); else recordStore.start(id);
+        emit('sessions');
+        void activeAdapter?.evalJs(MODE_JS(!was)).catch(() => {});
+        return { recording: !was };
+      },
+      subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);
@@ -695,6 +711,14 @@ async function main() {
         const ctl = new ReplayController(id, effects.map((e) => ({ seq: e.seq, label: e.action?.name ?? (e.navigated ? 'jump' : 'observe') })));
         activeCtl = ctl;
         const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
+        // in-process replay-state watcher → SSE (no CLI spawns; cleared when done)
+        let lastState = '';
+        const watch = setInterval(() => {
+          const j = JSON.stringify(ctl.state);
+          if (j !== lastState) { lastState = j; emit('replay'); }
+          if (ctl.state.done) clearInterval(watch);
+        }, 250);
+        emit('replay');
         void runReplay(effects, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
           .finally(() => { busy = null; });
         return { ok: true as const };
