@@ -1,6 +1,12 @@
 // The live-record poll loop: drain the injected listener's queue, keep a rolling
 // buffer of REAL a11y snapshots, pair events to ticks, append ActionEffects.
 // Deps injected so tests drive it with a scripted fake adapter.
+//
+// TICK ECONOMY (live finding: every playwright-cli call is a child-process spawn,
+// ~150-400ms each — five per tick made the overlay lag seconds behind): a tick is
+// url+installer+drain (cheap); the EXPENSIVE snapshot runs only when something
+// happened (events drained / URL changed / pendings waiting for their lookahead
+// tick / no baseline yet). MODE_JS runs only when the mode or document changed.
 import {
   INSTALLER_JS, DRAIN_JS, MODE_JS, resolveEvent, fromTickFor, chooseToTick, assembleEffect,
   type LiveEvent, type Tick,
@@ -21,7 +27,9 @@ export interface LiveRecordDeps {
   sleep?: (ms: number) => Promise<void>;
   // Armed = the overlay is open before recording starts; the loop keeps polling
   // (installer/toggle) regardless of store.isActive, and only capture (append) stays
-  // gated on isActive. Ends on isStopped() OR 5 consecutive tick errors (browser closed).
+  // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or 3
+  // consecutive undrainable batches (the human closed the window — playwright-cli's
+  // daemon would otherwise RESURRECT the browser on our next eval; live finding).
   armed?: boolean;
 }
 
@@ -33,13 +41,43 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   const pending: Pending[] = [];
   let appended = 0;
   let errStreak = 0;
+  let undrainStreak = 0;
+  let lastMode: boolean | null = null;
   try {
     while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
-      await deps.adapter.evalJs(INSTALLER_JS).catch(() => {});          // idempotent re-inject
+      // 1. where are we? (cheap; also our browser-liveness probe)
+      let url: string;
+      try {
+        url = await deps.adapter.currentUrl();
+        // NOTE: do NOT reset errStreak here — currentUrl succeeding every tick while
+        // snapshot keeps throwing would pin the streak at 1 forever (found as a
+        // microtask-starved infinite loop that hung vitest unkillably). The streak
+        // resets only on a successful SNAPSHOT below.
+      } catch (e) {
+        if (deps.isStopped() || (!deps.armed && !deps.store.isActive(deps.sessionId))) break;
+        if (++errStreak >= 5) { deps.log('browser gone — ending'); break; }
+        deps.log(`tick error (retrying): ${String(e).split('\n')[0]}`);
+        await sleep(deps.intervalMs);
+        continue;
+      }
+
+      // 2. ensure the listener+badge exist in THIS document ('installed' = new doc).
+      const installed = parseEvalResult(await deps.adapter.evalJs(INSTALLER_JS).catch(() => "'already'"));
+
+      // 3. drain. Junk (unparseable) output means the page/window is gone — the
+      // daemon would resurrect the browser on further evals, so treat a short
+      // streak as "window closed" and end the session instead of spamming.
       const raw = parseEvalResult(await deps.adapter.evalJs(DRAIN_JS).catch(() => '[]'));
       let events: LiveEvent[] = [];
-      try { events = JSON.parse(raw || '[]'); } catch { deps.log(`skip: undrainable batch`); }
-      // toggle events flip capture; they are control, not data — never pended.
+      try {
+        events = JSON.parse(raw || '[]');
+        undrainStreak = 0;
+      } catch {
+        if (++undrainStreak === 1) deps.log('skip: undrainable batch');
+        if (undrainStreak >= 3) { deps.log('browser window closed — ending session'); break; }
+        await sleep(deps.intervalMs);
+        continue;
+      }
       const toggles = events.filter((e) => e.kind === 'toggle');
       const data = events.filter((e) => e.kind !== 'toggle');
       for (const _t of toggles) {
@@ -48,30 +86,37 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       }
       for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
 
-      // Ctrl-C reaches the playwright daemon (same process group) and tears the
-      // browser down while a tick is in flight — an unguarded snapshot/currentUrl
-      // then throws out of the loop and the raw error replaces the final JSON
-      // (live-run symptom: "Command failed … Session closed" after ^C). On any
-      // tick-body error: stop requested → exit cleanly; otherwise log and retry.
-      let snap: string, url: string;
-      try {
-        snap = await deps.adapter.snapshot();
-        url = await deps.adapter.currentUrl();
-        errStreak = 0;
-      } catch (e) {
-        if (deps.isStopped() || (!deps.armed && !deps.store.isActive(deps.sessionId))) break;
-        if (++errStreak >= 5) { deps.log('browser gone — ending'); break; }
-        deps.log(`tick error (retrying): ${String(e).split('\n')[0]}`);
-        await sleep(deps.intervalMs);
-        continue;
+      // 4. overlay mode: update IMMEDIATELY on toggle / new document / mode change
+      // (a fresh document's badge starts grey even mid-recording).
+      const mode = deps.store.isActive(deps.sessionId);
+      if (toggles.length || installed === 'installed' || mode !== lastMode) {
+        await deps.adapter.evalJs(MODE_JS(mode)).catch(() => {});
+        lastMode = mode;
       }
-      if (classifyReadiness(snap) !== 'loading') ticks.push({ url, snapshot: snap });
-      else ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
 
+      // 5. snapshot only when it can matter (the expensive call).
+      const urlChanged = ticks.length === 0 || didNavigate(ticks[ticks.length - 1].url, url)
+        || ticks[ticks.length - 1].url !== url;
+      if (data.length || pending.length || urlChanged) {
+        let snap: string;
+        try {
+          snap = await deps.adapter.snapshot();
+          errStreak = 0;
+        } catch (e) {
+          if (deps.isStopped() || (!deps.armed && !deps.store.isActive(deps.sessionId))) break;
+          if (++errStreak >= 5) { deps.log('browser gone — ending'); break; }
+          deps.log(`tick error (retrying): ${String(e).split('\n')[0]}`);
+          await sleep(deps.intervalMs);
+          continue;
+        }
+        if (classifyReadiness(snap) !== 'loading') ticks.push({ url, snapshot: snap });
+        else ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
+      }
+
+      // 6. pair pended events to ticks (unchanged semantics).
       // Snapshot the later-click facts BEFORE the loop splices pending: computed inside,
       // an already-processed (spliced) click stops counting as "later" for its same-batch
       // input, and the input then pairs with the click's landing tick (final-review #1).
-      // seq (monotonic per tab) orders events WITHIN one drained batch.
       const clicks = pending.filter((q) => q.ev.kind === 'click')
         .map((q) => ({ drainIdx: q.drainIdx, seq: q.ev.seq }));
       for (let i = pending.length - 1; i >= 0; i--) {
@@ -101,7 +146,6 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}`); }
         else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
       }
-      await deps.adapter.evalJs(MODE_JS(deps.store.isActive(deps.sessionId))).catch(() => {});
       await sleep(deps.intervalMs);
     }
   } finally {

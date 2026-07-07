@@ -52,15 +52,15 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <span class="sub" id="env"></span>
 </header>
 <nav>
-  <button data-tab="sites" class="active">Sites</button>
+  <button data-tab="recordings" class="active">Recordings</button>
+  <button data-tab="sites">Sites</button>
   <button data-tab="creds">Credentials</button>
-  <button data-tab="recordings">Recordings</button>
 </nav>
 <main id="main"></main>
 
 <script>
 const main = document.getElementById('main');
-let tab = 'sites';
+let tab = 'recordings';
 
 document.querySelectorAll('nav button[data-tab]').forEach(b => {
   b.onclick = () => {
@@ -266,6 +266,7 @@ function newRecordingCard() {
   return card;
 }
 async function showRecording(r, detail, list, row) {
+  if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }
   list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
@@ -286,6 +287,18 @@ async function showRecording(r, detail, list, row) {
   const stepsBox = el('<div></div>');
   stepsBox.append(stepTable(steps.map(s => ({ ...s, status: '' }))));
   detail.append(head, stepsBox);
+  if (r.active) {
+    // live feed while recording: refresh the captured steps every 1.5s; when the
+    // session stops (from anywhere), re-render so the header flips out of recording.
+    replayPoll = setInterval(async () => {
+      const all = await getJSON('/api/recordings');
+      const cur = all.find(x => x.sessionId === r.sessionId);
+      const fresh = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
+      stepsBox.innerHTML = '';
+      stepsBox.append(stepTable(fresh.map(s => ({ ...s, status: '' }))));
+      if (!cur || !cur.active) { clearInterval(replayPoll); replayPoll = null; renderRecordings(r.sessionId); }
+    }, 1500);
+  }
 }
 function stepTable(steps, session) {
   const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
@@ -293,7 +306,8 @@ function stepTable(steps, session) {
   steps.forEach(s => {
     const color = s.status==='ok'?'#3fb950':s.status==='fail'?'#ff6b6b':'var(--muted)';
     const shot = s.shot && session ? '<img src="/replays/'+encodeURIComponent(session)+'/'+encodeURIComponent(s.shot)+'" style="height:44px;border-radius:4px;border:1px solid var(--border)" />' : '';
-    tb.append(el('<tr><td style="width:28px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td>'+esc(s.label||s.kind||'step '+s.seq)+(s.note?' <span class="muted">('+esc(s.note)+')</span>':'')+'</td><td style="text-align:right">'+shot+'</td></tr>'));
+    const when = s.capturedAt ? new Date(s.capturedAt).toLocaleTimeString() : '';
+    tb.append(el('<tr><td style="width:28px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td>'+esc(s.label||s.kind||'step '+s.seq)+(s.note?' <span class="muted">('+esc(s.note)+')</span>':'')+'</td><td class="muted" style="width:90px;font-size:11px">'+esc(when)+'</td><td style="text-align:right">'+shot+'</td></tr>'));
   });
   return t;
 }
