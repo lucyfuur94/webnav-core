@@ -38,6 +38,14 @@ describe('injected JS constants', () => {
     const changeHandler = INSTALLER_JS.slice(INSTALLER_JS.indexOf("addEventListener('change'"));
     expect(changeHandler).not.toMatch(/\.value\b/);
   });
+  it('recording badge: click-transparent, snapshot-invisible, self-healing', () => {
+    expect(INSTALLER_JS).toContain('__webnav_rec_badge');
+    expect(INSTALLER_JS).toContain('pointer-events:none');   // never intercepts user clicks
+    expect(INSTALLER_JS).toContain("aria-hidden");           // never appears in a11y snapshots
+    // badge ensure must run BEFORE the idempotence early-return, so the every-tick
+    // eval re-creates it if an SPA re-render wiped it.
+    expect(INSTALLER_JS.indexOf('__webnav_rec_badge')).toBeLessThan(INSTALLER_JS.indexOf("return 'already'"));
+  });
   it('drain reads and clears the queue', () => {
     expect(DRAIN_JS).toContain('__webnav_evq');
     expect(DRAIN_JS).toContain('removeItem');

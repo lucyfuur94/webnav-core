@@ -32,6 +32,21 @@ export interface LiveEvent {
 // taken from interactive elements / childless nodes only (containers concatenate
 // their whole subtree — the extension's name-blob failure).
 export const INSTALLER_JS = `() => {
+  // Recording indicator: red inset border + "REC" pill. Placed BEFORE the
+  // idempotence guard so the every-tick eval self-heals it if an SPA re-render
+  // wipes it. pointer-events:none = never intercepts the user's clicks;
+  // aria-hidden = never appears in the a11y snapshots we record.
+  if (!document.getElementById('__webnav_rec_badge')) {
+    const d = document.createElement('div');
+    d.id = '__webnav_rec_badge';
+    d.setAttribute('aria-hidden', 'true');
+    d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;box-shadow:inset 0 0 0 4px #e5484d;';
+    const p = document.createElement('div');
+    p.style.cssText = 'position:absolute;top:10px;right:10px;background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:5px 9px;border-radius:999px;';
+    p.textContent = '\\u25CF REC';
+    d.appendChild(p);
+    (document.body || document.documentElement).appendChild(d);
+  }
   if (document.documentElement.dataset.webnavInstalled) return 'already';
   document.documentElement.dataset.webnavInstalled = '1';
   const push = (e) => {
