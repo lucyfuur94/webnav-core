@@ -63,6 +63,7 @@ export const INSTALLER_JS = `() => {
   document.addEventListener('click', (ev) => {
     const t = ev.target;
     if (!(t instanceof Element)) return;
+    if (t.closest('#__webnav_rec_badge')) return;   // our own overlay is never a recorded click
     const el = t.closest('a,button,[role],input,select,textarea,summary,label') || t;
     const tag = el.tagName.toLowerCase();
     const isBtnInput = el instanceof HTMLInputElement && ['submit','button','reset'].indexOf(el.type) >= 0;
