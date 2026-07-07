@@ -342,6 +342,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [{ name: '--port', takesValue: true, default: '7777', description: 'Port to bind on 127.0.0.1 (or set WEBNAV_PORT). The dashboard runs until Ctrl-C.' }],
     example: 'webnav dev dashboard --port 7777',
   },
+  {
+    name: 'ingest',
+    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-recorder Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse <sessionId> --draft`. Runs until Ctrl-C.',
+    args: [],
+    flags: [{ name: '--port', takesValue: true, default: '7778', description: 'Localhost port to listen on.' }],
+    example: 'webnav dev ingest --port 7778',
+  },
 ];
 
 export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];
