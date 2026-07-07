@@ -11,10 +11,11 @@ describe('SHELL_HTML', () => {
     expect(SHELL_HTML).toContain('<title>webnav dashboard</title>');
   });
 
-  it('has exactly the two operator tabs: Sites + Credentials', () => {
+  it('has exactly the three operator tabs: Sites + Credentials + Recordings', () => {
     expect(SHELL_HTML).toContain('data-tab="sites"');
     expect(SHELL_HTML).toContain('data-tab="creds"');
-    expect(SHELL_HTML.match(/data-tab="/g)).toHaveLength(2);
+    expect(SHELL_HTML).toContain('data-tab="recordings"');
+    expect(SHELL_HTML.match(/data-tab="/g)).toHaveLength(3);
   });
 
   it('drives the dashboard HTTP API endpoints served by server.ts', () => {
@@ -45,5 +46,12 @@ describe('SHELL_HTML', () => {
   it('masks credential values by default and only reveals on demand', () => {
     expect(SHELL_HTML).toContain('••••••');
     expect(SHELL_HTML).toContain('Reveal');
+  });
+
+  it('has a Recordings tab wired to the recordings API', () => {
+    expect(SHELL_HTML).toContain('data-tab="recordings"');
+    expect(SHELL_HTML).toContain('/api/recordings');
+    expect(SHELL_HTML).toContain('/api/replay/status');
+    expect(SHELL_HTML).toContain('renderRecordings');
   });
 });
