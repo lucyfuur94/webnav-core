@@ -57,3 +57,13 @@ describe('listSessions', () => {
     expect(out[0]).toMatchObject({ steps: 0, site: null, active: true, stoppedAt: null });
   });
 });
+
+describe('deleteSession', () => {
+  it('removes the session row too — the recording disappears from listSessions', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('gone', 1000); s.stop('gone', 2000);
+    expect(s.listSessions().length).toBe(1);
+    s.deleteSession('gone');
+    expect(s.listSessions().length).toBe(0);   // clearSession alone left the row (live bug)
+  });
+});

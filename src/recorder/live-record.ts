@@ -25,6 +25,8 @@ export interface LiveRecordDeps {
   sessionId: string; intervalMs: number;
   log: (line: string) => void; isStopped: () => boolean;
   sleep?: (ms: number) => Promise<void>;
+  tickExtras?: { port?: number; session?: string };     // lets the pill POST toggles to the dashboard
+  onEvent?: (type: 'step' | 'sessions') => void;        // realtime push hooks (SSE)
   // Armed = the overlay is open before recording starts; the loop keeps polling
   // (installer/toggle) regardless of store.isActive, and only capture (append) stays
   // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or a SUSTAINED
@@ -42,6 +44,8 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   let appended = 0;
   let errStreak = 0;
   let undrainStreak = 0;
+  let sawRealPage = false;
+  let blankStreak = 0;
   try {
     while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
       // 1. where are we? (cheap; also our browser-liveness probe)
@@ -66,10 +70,11 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       // would resurrect the browser on further evals, so a sustained streak ends
       // the session instead of spamming.
       const modeBefore = deps.store.isActive(deps.sessionId);
-      const raw = parseEvalResult(await deps.adapter.evalJs(TICK_JS(modeBefore)).catch(() => 'JUNK'));
+      const raw = parseEvalResult(await deps.adapter.evalJs(TICK_JS(modeBefore, deps.tickExtras)).catch(() => 'JUNK'));
       let events: LiveEvent[] = [];
+      let tickRes: { installed?: boolean; queue?: LiveEvent[] } = {};
       try {
-        const tickRes = JSON.parse(raw) as { installed: boolean; queue: LiveEvent[] };
+        tickRes = JSON.parse(raw) as { installed: boolean; queue: LiveEvent[] };
         events = tickRes.queue ?? [];
         undrainStreak = 0;
       } catch {
@@ -80,14 +85,32 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         // armed window out from under the user).
         if (++undrainStreak === 1) deps.log('skip: undrainable batch');
         if (undrainStreak >= 8) { deps.log('browser window closed — ending session'); break; }
-        await sleep(deps.intervalMs);
+        await sleep(100);   // transient (mid-navigation): retry fast so the badge returns sooner
         continue;
       }
+      // RESURRECTION DETECTOR (live finding: closing the window makes the daemon
+      // RELAUNCH it as a fresh about:blank on our next eval — where evals succeed,
+      // so the junk-based close detection never fires and the window "keeps opening
+      // again and again"). Signature: we had a real page, now it's about:blank in a
+      // freshly-installed doc. Two consecutive ticks (~400ms) to ride out rare
+      // auth-flow blank bounces; then end the session (finally closes the daemon
+      // session, which stops the resurrection for good).
+      // (installed is NOT part of the streak condition: the second tick on the same
+      // resurrected blank doc reports installed=false and would reset the streak.)
+      const isBlank = !url || url === 'about:blank';
+      if (sawRealPage && isBlank) {
+        if (++blankStreak >= 2) { deps.log('browser window closed — ending session'); break; }
+      } else {
+        blankStreak = 0;
+        if (!isBlank) sawRealPage = true;
+      }
+
       const toggles = events.filter((e) => e.kind === 'toggle');
       const data = events.filter((e) => e.kind !== 'toggle');
       for (const _t of toggles) {
         if (deps.store.isActive(deps.sessionId)) deps.store.stop(deps.sessionId);
         else deps.store.start(deps.sessionId);
+        deps.onEvent?.('sessions');
       }
       for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
       // (a toggle's visual flip already happened optimistically in-page; the next
@@ -142,10 +165,13 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         }
         const fx = assembleEffect(p.ev, ref, ticks[fromIdx], ticks[to]);
         if (fx) { deps.store.appendActionEffect(deps.sessionId, fx); appended++;
+          deps.onEvent?.('step');
           deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}`); }
         else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
       }
-      await sleep(deps.intervalMs);
+      // A fresh document just got its badge+listener via this tick's install; tick
+      // again immediately so the paint/queue gap after a navigation stays minimal.
+      if (!tickRes.installed) await sleep(deps.intervalMs);
     }
   } finally {
     await deps.adapter.close().catch(() => {});
