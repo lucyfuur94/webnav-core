@@ -28,6 +28,10 @@ export interface LiveRecordDeps {
   tickExtras?: { port?: number; session?: string };     // lets the pill POST toggles to the dashboard
   onEvent?: (type: 'step' | 'sessions') => void;        // realtime push hooks (SSE)
   onToggle?: (recording: boolean) => void;              // pill/queue toggle side-effects (video)
+  // OS-level window liveness (ps: does the daemon still have a Chromium child?).
+  // Checked BEFORE any eval — an eval on a dead window makes the daemon RESURRECT
+  // it (the reopen-flash). false → end the session without touching the daemon.
+  browserAlive?: () => boolean;
   // Armed = the overlay is open before recording starts; the loop keeps polling
   // (installer/toggle) regardless of store.isActive, and only capture (append) stays
   // gated on isActive. Ends on isStopped(), 5 consecutive tick errors, or a SUSTAINED
@@ -49,6 +53,10 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   let blankStreak = 0;
   try {
     while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
+      if (deps.browserAlive && !deps.browserAlive()) {
+        deps.log('browser window closed — ending session');
+        break;
+      }
       // 1. where are we? (cheap; also our browser-liveness probe)
       let url: string;
       try {

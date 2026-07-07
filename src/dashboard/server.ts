@@ -38,6 +38,7 @@ export interface RecordingsDeps {
   videos(id: string): string[];
   videoPath(session: string, file: string): string | null;
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
+  activeWindow(): string | null;                        // which recording session has the driven window (null = none)
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -143,6 +144,7 @@ export function startDashboard(
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
+        if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
 
         // realtime push: Server-Sent Events. The shell's EventSource replaces polling.
         if (path === '/api/events' && method === 'GET') {

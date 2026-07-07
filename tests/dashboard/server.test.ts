@@ -212,6 +212,7 @@ describe('realtime (SSE + toggle)', () => {
       replayControl: () => true, shotPath: () => null,
       toggle: (id: string, desired?: boolean) => { events.push('toggled:' + id + ':' + desired); push?.('sessions'); return { recording: desired ?? true }; },
       videos: () => ['take-1.webm'], videoPath: () => null,
+      activeWindow: () => 'r9',
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
     const s3 = startDashboard(new MapStore(':memory:'), new CredStore(join(mkdtempSync(join(tmpdir(), 'webnav-sse-')), 'c3.json')), { port: 0 }, rec2 as any);
@@ -228,6 +229,7 @@ describe('realtime (SSE + toggle)', () => {
     expect(t.recording).toBe(true);
     expect(events).toEqual(['toggled:r9:true']);          // DESIRED state forwarded (idempotent)
     expect(await (await fetch(b3 + '/api/recordings/r9/videos')).json()).toEqual(['take-1.webm']);
+    expect(await (await fetch(b3 + '/api/recordings/window')).json()).toEqual({ session: 'r9' });
     expect((await fetch(b3 + '/recordings-media/r9/take-1.webm')).status).toBe(404);   // videoPath null → 404
     const chunk = new TextDecoder().decode((await reader.read()).value);
     expect(chunk).toContain('data: sessions');                  // the toggle was PUSHED to the stream

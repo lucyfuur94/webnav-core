@@ -227,10 +227,12 @@ function addSiteCard() {
 // ---------- RECORDINGS ----------
 let replayPoll = null;
 let currentOpenId = null;
+let winSession = null;   // which recording owns the driven window right now
 async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
   main.style.gridTemplateColumns = '280px 1fr';
   const recs = await getJSON('/api/recordings');
+  try { winSession = (await getJSON('/api/recordings/window')).session; } catch { winSession = null; }
   main.innerHTML = '';
   const list = el('<div class="list"></div>');
   const detail = el('<div class="detail"><div class="empty">open a window above, or select a recording</div></div>');
@@ -289,12 +291,31 @@ async function showRecording(r, detail, list, row) {
   list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
-  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">\\u25CF recording\\u2026</span>' : '';
+  const hasWindow = winSession === r.sessionId;
+  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">\\u25CF recording\\u2026</span>'
+    : hasWindow ? '<span class="muted">\\uD83E\\uDE9F window open (armed)</span>'
+    : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   const head = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+recState+'<span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
-  const recB = btn(r.active ? '\\u25A0 Stop' : '\\u23FA Record'), repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
-  if (r.active) recB.style.borderColor = '#e5484d';
-  recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(r.sessionId); };   // reopen: Stop stays visible
+  const repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
+  let recB;
+  if (hasWindow || r.active) {
+    recB = btn(r.active ? '\\u25A0 Stop' : '\\u23FA Record');
+    if (r.active) recB.style.borderColor = '#e5484d';
+    recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(r.sessionId); };
+  } else if (!winSession) {
+    // no driven window anywhere → (re)open one for THIS recording; new takes/steps
+    // append to the same session.
+    recB = btn('Open window');
+    recB.onclick = async () => {
+      const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: false }) });
+      if (!res.ok) alert((await res.json()).error);
+      renderRecordings(r.sessionId);
+    };
+  } else {
+    recB = btn('\\u23FA Record'); recB.disabled = true; recB.title = 'window is busy with '+winSession;
+  }
   delB.onclick = async () => { if (confirm('Delete recording '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
   anB.onclick = async () => { const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft'); stepsBox.innerHTML = ''; stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>')); };
   repB.onclick = async () => {
