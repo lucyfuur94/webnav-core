@@ -41,3 +41,19 @@ describe('RecordStore', () => {
     expect(freshStore().isActive('nope')).toBe(false);
   });
 });
+
+describe('listSessions', () => {
+  it('lists sessions newest-first with step count and site host', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('old', 1000);
+    s.appendActionEffect('old', { fromUrl: 'https://a.test/x', fromSnapshot: 'RootWebArea "A" [ref=e1]',
+      action: null, toUrl: 'https://a.test/y', toSnapshot: 'RootWebArea "B" [ref=e1]',
+      navigated: true, diff: { added: [], removed: [] } });
+    s.stop('old', 2000);
+    s.start('new', 5000);
+    const out = s.listSessions();
+    expect(out.map((x) => x.sessionId)).toEqual(['new', 'old']);
+    expect(out[1]).toMatchObject({ steps: 1, site: 'a.test', active: false, stoppedAt: 2000 });
+    expect(out[0]).toMatchObject({ steps: 0, site: null, active: true, stoppedAt: null });
+  });
+});
