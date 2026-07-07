@@ -7,7 +7,7 @@ export type MatchResult =
   | { status: 'ambiguous'; states: State[] };
 
 /** A fingerprint token is "role" or "role:name". All tokens must be present. */
-function hasToken(nodes: SnapNode[], token: string): boolean {
+export function hasToken(nodes: SnapNode[], token: string): boolean {
   const [role, name] = token.split(':');
   return nodes.some((n) => n.role === role && (name === undefined || n.name === name));
 }
