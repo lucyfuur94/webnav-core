@@ -40,6 +40,7 @@ export type ParsedArgs =
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number }
+  | { cmd: 'ingest'; port: number }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -175,6 +176,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const port = Number(portFlag ?? process.env.WEBNAV_PORT ?? 7777);
     return { cmd, port };
   }
+  if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted') };
@@ -371,6 +373,18 @@ async function main() {
     const result = analyseActionEffects(effects);
     console.log(JSON.stringify(result, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'ingest') {
+    // Long-lived localhost receiver (like `dashboard`/`mcp`): does NOT print-and-exit.
+    // The webnav-recorder Chrome extension POSTs recorded sessions here; they land
+    // in webnav.db as ActionEffects via `serveIngest` -> `ingest` (Task 2).
+    const { serveIngest } = await import('./recorder/ingest.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const server = serveIngest(args.port, new RecordStore(dbPath()));
+    process.stderr.write(`webnav ingest listening on http://127.0.0.1:${args.port}/ingest\n`);
+    console.log(JSON.stringify({ status: 'listening', port: args.port }));
+    await new Promise(() => {}); // run until killed
     return;
   }
   if (args.cmd === 'effects') {

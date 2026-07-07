@@ -2,6 +2,7 @@
 // The extension stays dumb — fingerprint + diff are reconstructed here from the
 // snapshots, reusing tested code (recoverFingerprint, diffSnapshots).
 
+import http from 'node:http';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { recoverFingerprint } from '../playwright/fingerprint.js';
 import { diffSnapshots } from '../explorer/diff.js';
@@ -42,4 +43,33 @@ export function ingest(body: IngestBody, store: RecordStore): number {
   for (const step of body.steps) { store.appendActionEffect(body.sessionId, reconstructEffect(step)); n++; }
   store.stop(body.sessionId);
   return n;
+}
+
+// Localhost-only receiver: the webnav-recorder Chrome extension POSTs recorded
+// steps here; they land in webnav.db as ActionEffects via `ingest`, identical
+// to agent-recorded ones. No auth — localhost-only, no secrets in transit
+// beyond the map itself.
+export function serveIngest(port: number, store: RecordStore): http.Server {
+  const server = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+    if (req.method !== 'POST' || req.url !== '/ingest') { res.writeHead(404).end(); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      try {
+        const body = JSON.parse(raw) as IngestBody;
+        if (!body.sessionId || !Array.isArray(body.steps)) throw new Error('sessionId and steps[] required');
+        const appended = ingest(body, store);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, appended }));
+      } catch (e) {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: String(e) }));
+      }
+    });
+  });
+  server.listen(port, '127.0.0.1');
+  return server;
 }

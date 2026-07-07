@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
-import { ingest, type IngestBody } from '../../src/recorder/ingest.js';
+import { ingest, serveIngest, type IngestBody } from '../../src/recorder/ingest.js';
 import { serializeSnapshot, type SerializableNode } from '../../src/recorder/snapshot-dom.js';
 import { draftFromEffects } from '../../src/explorer/draft.js';
 
@@ -52,5 +52,29 @@ describe('ingest', () => {
     };
     expect(ingest(body, store)).toBe(1);
     expect(store.actionEffects('human-2')[0].action).toBeNull();
+  });
+
+  it('serveIngest accepts a POST and appends', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const server = serveIngest(0, store); // port 0 = OS-assigned
+    await new Promise((r) => server.on('listening', r));
+    const port = (server.address() as any).port;
+    const body: IngestBody = {
+      sessionId: 'http-1',
+      steps: [{
+        fromUrl: 'https://s.test/a', fromSnapshot: serializeSnapshot(page('A')),
+        toUrl: 'https://s.test/b', toSnapshot: serializeSnapshot(page('B')),
+        navigated: true, ref: 'e2',
+      }],
+    };
+    const res = await fetch(`http://127.0.0.1:${port}/ingest`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json() as any;
+    server.close();
+    expect(json.ok).toBe(true);
+    expect(json.appended).toBe(1);
+    expect(store.actionEffects('http-1').length).toBe(1);
   });
 });
