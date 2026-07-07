@@ -23,9 +23,18 @@
 >   event records that a field changed and which field, never its content.
 > - **Tests:** +16 unit (14 `live.test.ts` pure core, 2 `live-record.test.ts` loop); full suite
 >   **472 pass / 7 skip**; `tsc` clean.
-> - **⚠️ Live acceptance pending (human):** `record-live` on saucedemo, free-click
->   login→add-to-cart→cart, `graph-analyse --draft` must show the login navigate edge + the `needs`
->   linkage, then `walk` it.
+> - **✅ Live acceptance PASSED (2026-07-07):** a human free-clicked saucedemo (login→add-to-cart→
+>   cart→checkout form) in `record-live`; the draft produced 6 states incl. the `home→inventory`
+>   navigate edge with `needs:[inp_username,inp_password]` + `acceptsInput:credentials`; the drafted
+>   map was authored via `graph-edit` (isolated DB) and **`walk home→inventory` completed
+>   (status: done) with stored creds auto-filled — zero-LLM, end-to-end from human clicks.**
+>   The run surfaced + fixed 6 defects: eval-per-tick reinstall (playwright evals run in fresh JS
+>   worlds → guard moved to the DOM), submit-button labels (the one sanctioned .value read),
+>   `graph-analyse` positional-session parsing (silently queried '' → "empty"), the Ctrl-C
+>   teardown race, **draft fingerprint EXCLUSIVITY** (self-match-only greedy left ambiguous fps),
+>   and **`ensureSeeded` resurrecting the saucedemo seed over user-touched nodes** (node-clear was
+>   silently undone on every open; guard is now the node row). A red border + REC pill shows on
+>   every page while recording (aria-hidden — never in snapshots).
 > - **Next increment (not built):** prompted credential-inject during recording — when a login
 >   field is reached and creds exist for the site, offer to inject; if none stored, offer to save
 >   (first login = enrollment). Rides the existing creds store + `walk` auto-fill.
