@@ -1,6 +1,39 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-06-13 · **Branch:** `main` · **Tests:** 445 unit pass + 7 gated live e2e (`WEBNAV_LIVE=1`) · **Build:** green · **CI:** GitHub Actions (typecheck + units, Node 18/20)
+**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 454 unit pass + 7 skip · **Build:** green
+
+> **2026-07-07 — human-session recorder: a second, real-usage producer into the same map (DONE except manual browser smoke).**
+> - **What it is:** a Chrome MV3 extension (`webnav-recorder/`, isolated package) records real
+>   human browsing and POSTs it to a new `webnav dev ingest --port 7778` localhost receiver, which
+>   writes `ActionEffect`s to `webnav.db` via the SAME `RecordStore` the agent-record path
+>   (`record-start`/`use`/`record-stop`) already uses. **Two producers, one sink** — from the
+>   ingested effects onward, the existing `graph-analyse [--draft]` → `graph-edit` → `walk`
+>   pipeline is completely UNCHANGED; the agent-record path is untouched.
+> - **Strategic context:** this is the map-building **data-source** pivot. Record-replay as a
+>   *mechanic* is already table stakes (Stagehand ~23k★, workflow-use ~4k★ ship it). webnav's wedge
+>   isn't the mechanic — it's the **data source**: real human usage feeding the same navigation
+>   memory an agent would otherwise have to build by driving the browser itself.
+> - **New verb:** `webnav dev ingest [--port 7778]` — starts a localhost HTTP receiver (`/ingest`),
+>   long-running like `dashboard`/`mcp`.
+> - **Flow for a human:** `webnav dev ingest` → load `webnav-recorder/` unpacked in Chrome → Record
+>   → do the flow → Stop & send → `webnav dev graph-analyse <session> --draft` → `graph-edit` →
+>   `walk`, same as an agent-recorded session.
+> - **Secret-field rule:** password/credit-card field VALUES are never recorded — only element
+>   fingerprints, never `.value`.
+> - **Tests:** +5 unit tests (2 serializer parity between the extension's DOM-walk and the repo's
+>   a11y serializer, 3 for `dev ingest` incl. an HTTP round-trip); full suite 454 pass / 7 skip;
+>   the extension compiles via `tsc -p`. Manual browser smoke (load-unpacked, record a real page,
+>   confirm the ingested session walks) is the one remaining human step — not yet run.
+> - Design: `docs/superpowers/specs/2026-07-07-human-session-recorder-design.md`; plan:
+>   `docs/superpowers/plans/2026-07-07-human-session-recorder.md`.
+
+> **Handoff note (2026-07-07):** this file's last dated entry before today was 2026-06-13, but
+> ~24 commits landed on `main` in between that this file never captured: the import-map flow +
+> shipped map packs (`mappacks/`, `dev import-map`, referenced in README's Quickstart), a
+> navigation-benchmark v2 (`bench/results/2026-06-13-nav-v2.md`, referenced from the README), and
+> `ADOPTION.md`/discoverability work (positioning + `awesome-mcp-servers` listing). None of that
+> is re-narrated here in detail — flagging it so the record is current; see git log / README for
+> specifics of that stretch.
 
 > **2026-06-13 — learning-the-core (Layers 1–2), browser/fingerprint hardening, and a big dead-code cleanup.**
 > - **Element fingerprints + browser guardrails + readiness retry (DONE):** affordances carry a durable
