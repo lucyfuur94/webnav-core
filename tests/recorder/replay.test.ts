@@ -79,3 +79,37 @@ it('unresolvable element fails + drops to step mode; abort finishes', async () =
   expect(st.done).toBe(true);
   expect(st.steps[1].status).toBe('skipped');
 });
+
+it('fail then Next RETRIES the same step (human fixed the live page)', async () => {
+  const P1 = 'RootWebArea "A" [ref=e1]';
+  const P2 = ['RootWebArea "A" [ref=e1]', '  button "Later" [ref=e2]'].join('\n');
+  let snaps = 0;
+  const ad = { open: async () => {}, goto: async () => {}, click: async () => {}, fill: async () => {},
+    snapshot: async () => (snaps++ === 0 ? P1 : P2), currentUrl: async () => 'https://s.test/',
+    screenshot: async () => null, close: async () => '' };
+  const effects = [fx({ seq: 1, action: { role: 'button', name: 'Later', ref: null,
+    elementFp: { role: 'button', name: 'Later', near: null } } })];
+  const ctl = new ReplayController('r5', [{ seq: 1, label: 'Later' }]);
+  const p = runReplay(effects, ctl, { adapter: ad as any, creds: { get: () => ({}), set: () => {} },
+    site: 's.test', shotsDir: null, paceMs: 0, sleep: async () => {} });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(ctl.state.steps[0].status).toBe('fail');
+  expect(ctl.state.mode).toBe('step');       // paused for the human
+  ctl.control('next');                        // human fixed the page → retry THIS step
+  const st = await p;
+  expect(st.steps[0].status).toBe('ok');      // resolved on the retry
+});
+
+it('abort during waiting:value clears the waiting flag (consistent terminal state)', async () => {
+  const effects = [fx({ seq: 1, action: { role: 'textbox', name: 'Password', ref: null,
+    elementFp: { role: 'textbox', name: 'Password', near: null } } })];
+  const ctl = new ReplayController('r6', [{ seq: 1, label: 'Password' }]);
+  const p = runReplay(effects, ctl, { adapter: fakeAdapter(PAGES) as any,
+    creds: { get: () => ({}), set: () => {} }, site: 's.test', shotsDir: null, paceMs: 0, sleep: async () => {} });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(ctl.state.waiting).toBe('value');
+  ctl.control('abort');
+  const st = await p;
+  expect(st.waiting).toBe(null);
+  expect(st.done).toBe(true);
+});
