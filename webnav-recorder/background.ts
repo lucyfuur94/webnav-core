@@ -44,7 +44,12 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
       } catch (e) { reply?.({ ok: false, error: String(e) }); }
       return;
     }
-    if (msg.type === 'reset') { await set({ buffer: [], pending: null }); reply?.({ ok: true }); }
+    if (msg.type === 'reset') { await set({ buffer: [], pending: null }); reply?.({ ok: true }); return; }
+    if (msg.type === 'status') {
+      const buffer = await get<RawStep[]>('buffer', []);
+      reply?.({ ok: true, steps: buffer.length });
+      return;
+    }
   })();
   return true; // async reply
 });
