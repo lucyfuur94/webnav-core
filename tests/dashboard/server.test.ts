@@ -221,6 +221,7 @@ describe('realtime (SSE + toggle)', () => {
   const vidFile = join(mkdtempSync(join(tmpdir(), 'webnav-vid-')), 'take-1.webm');
   it('toggle flips and /api/events streams pushed types', async () => {
     const events: string[] = [];
+    const notifyCalls: string[] = [];
     let push: ((t: string) => void) | null = null;
     const rec2 = {
       list: () => [], steps: () => [], del: () => {}, draft: () => ({}),
@@ -232,6 +233,7 @@ describe('realtime (SSE + toggle)', () => {
       videoPath: (sess: string, f: string) => (f === 'take-1.webm' ? vidFile : null),
       activeWindow: () => 'r9',
       logs: () => ({ now: 1, lines: [{ t: 1, line: 'hello' }] }),
+    notify: (k: string, line?: string) => { notifyCalls.push(k + ':' + (line ?? '')); },
       review: () => ({ ok: true }),
       reviewReport: (id: string) => (id === 'r9' ? { report: '# audit', at: 5 } : null),
       reviewRunning: () => null,
@@ -267,6 +269,9 @@ describe('realtime (SSE + toggle)', () => {
     expect(await (await fetch(b3 + '/api/recordings/r9/videos')).json()).toEqual(['take-1.webm']);
     expect(await (await fetch(b3 + '/api/recordings/window')).json()).toEqual({ session: 'r9' });
     expect((await (await fetch(b3 + '/api/logs')).json()).lines[0].line).toBe('hello');
+    // cross-process realtime bridge: POST /api/notify reaches rec.notify (used by `use session`)
+    expect((await fetch(b3 + '/api/notify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'step', line: 'agent nav' }) })).status).toBe(200);
+    expect(notifyCalls).toContain('step:agent nav');
     expect((await fetch(b3 + '/api/recordings/r9/review', { method: 'POST' })).status).toBe(200);
     const rev = await (await fetch(b3 + '/api/recordings/r9/review')).json() as any;
     expect(rev.report).toBe('# audit');
