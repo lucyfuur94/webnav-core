@@ -37,7 +37,20 @@ describe('injected JS constants', () => {
     const changeHandler = INSTALLER_JS.slice(INSTALLER_JS.indexOf("addEventListener('change'"));
     expect(changeHandler).toContain("el.type === 'password'");
     expect(changeHandler.indexOf("el.type === 'password'")).toBeLessThan(changeHandler.indexOf('.value'));
-    expect(changeHandler).toContain('/^cc-/');
+    // widened guard (pre-merge review): multi-token cc-, password-manager tokens,
+    // one-time codes — a show-password toggle (type=text) must still be caught.
+    expect(changeHandler).toContain('current-password');
+    expect(changeHandler).toContain('new-password');
+    expect(changeHandler).toContain('one-time-code');
+    // BEHAVIORAL check: run the guard expression against the tricky shapes.
+    const guard = (type, ac) => {
+      const el = { type, autocomplete: ac };
+      return el.type === 'password' || /(^|\s)(cc-|current-password|new-password|one-time-code)/.test(el.autocomplete || '');
+    };
+    expect(guard('text', 'billing cc-number')).toBe(true);   // multi-token cc
+    expect(guard('text', 'current-password')).toBe(true);    // show-password toggle
+    expect(guard('text', 'one-time-code')).toBe(true);       // OTP
+    expect(guard('text', 'username')).toBe(false);           // non-secret still records
   });
   it('recording badge: click-transparent, snapshot-invisible, self-healing', () => {
     expect(INSTALLER_JS).toContain('__webnav_rec_badge');

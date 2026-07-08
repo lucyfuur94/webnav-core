@@ -125,7 +125,13 @@ export const INSTALLER_JS = `() => {
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
     // SECRET RULE (refined): record the supplied VALUE as a flow variable for
     // non-secret fields; password / cc-* autocomplete fields are NEVER captured.
-    const secret = el instanceof HTMLInputElement && (el.type === 'password' || /^cc-/.test(el.autocomplete || ''));
+    // The guard must cover: multi-token autocomplete ('billing cc-number'), the
+    // password-manager tokens (current-password/new-password/one-time-code), and
+    // show-password toggles (type flips to text but autocomplete stays) — final
+    // pre-merge review finding.
+    const ac = (el.autocomplete || '');
+    const secret = el instanceof HTMLInputElement &&
+      (el.type === 'password' || /(^|\s)(cc-|current-password|new-password|one-time-code)/.test(ac));
     let value = null;
     if (!secret) {
       if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) value = el.checked ? 'true' : 'false';
