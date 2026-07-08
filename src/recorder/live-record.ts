@@ -29,6 +29,7 @@ export interface LiveRecordDeps {
   onEvent?: (type: 'step' | 'sessions') => void;        // realtime push hooks (SSE)
   onToggle?: (recording: boolean) => void;              // pill/queue toggle side-effects (video)
   onEnd?: (reason: 'closed' | 'stopped') => void;       // fires ONCE when the loop ends (window closed / external stop) — lets the caller stop+emit immediately, not on a lazy finally
+  onBeforeClose?: () => Promise<void> | void;           // runs while the session is STILL open (video-stop must flush before adapter.close)
   // OS-level window liveness (ps: does the daemon still have a Chromium child?).
   // Checked BEFORE any eval — an eval on a dead window makes the daemon RESURRECT
   // it (the reopen-flash). false → end the session without touching the daemon.
@@ -199,6 +200,9 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       if (!tickRes.installed) await sleep(deps.intervalMs);
     }
   } finally {
+    // pre-close hook: stop video / flush WHILE the session is still open — after
+    // adapter.close() the session is gone and playwright-cli video-stop saves nothing.
+    if (deps.onBeforeClose) { try { await deps.onBeforeClose(); } catch { /* */ } }
     await deps.adapter.close().catch(() => {});   // graceful close request
     deps.onEnd?.(endReason);
   }

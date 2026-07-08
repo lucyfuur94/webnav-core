@@ -54,10 +54,22 @@ dashboard-visible, profile-backed session with video.
 2. **Session metadata:** `recordStore.setProfile` + `setStartUrl` on first
    navigate, so the session shows its site + 🔐 profile badge in the dashboard,
    identical to a human session.
-3. **Auto-record + video:** if the session isn't active, `record-start` it; and
-   start/stop VIDEO per the record span via a lifted `videoSync` helper (extracted
-   from the dashboard closure into a reusable module) — so agent sessions produce
-   the same `take-<ts>.webm` artifact (video is a required downstream artifact).
+3. **Auto-record:** if the session isn't active, `record-start` it, so an agent's
+   `use navigate/click/type` becomes a dashboard-visible session (steps + profile).
+
+**VIDEO — finding + resolution (updated during build):** agent video via SPLIT
+CLI processes is impossible — playwright-cli video capture does not survive across
+separate processes (`video-stop` in a later process → "No videos were recorded",
+proven), and `use` (separate process) drives a DIFFERENT window than a filming
+`record-live`. Video therefore requires ONE long-lived process that owns the
+session for the whole span. That process is **`record-live`**, which now takes
+`--profile`/`--headless` and captures video (start on open → `onBeforeClose` stop
+before `adapter.close()`). The human dashboard recorder already produces video.
+The `videoSync` helper is still lifted to `src/playwright/video.ts` and shared.
+Remaining gap: an agent that wants video must drive the SAME window `record-live`
+owns (a same-session control channel) rather than spawning separate `use`
+processes — tracked as a follow-up; agent sessions today get steps + profile
+(video when driven through a long-lived `record-live`).
 
 **Model (settled rule).** The subagent that DRIVES webnav in the agent-recording
 test/flow runs on the cheap model (Sonnet/Haiku) — the cost thesis dogfood.
