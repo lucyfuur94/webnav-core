@@ -11,6 +11,8 @@ import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 
 export interface LiveEvent {
   seq: number; kind: 'click' | 'input' | 'toggle'; url: string; tagName: string;
+  desired?: boolean;   // toggle events: the DESIRED recording state (idempotent —
+                       // blind flips double-toggled when the user clicked twice; live bug)
   t?: number;   // capture-time (page clock) — steps/logs stamp THIS, not processing time
                 // (heavy pages make snapshots slow; the loop can lag minutes behind)
   role?: string | null; ariaLabel?: string | null; leafText?: string | null;
@@ -99,8 +101,8 @@ export const INSTALLER_JS = `() => {
     if (port && sess) {
       fetch('http://127.0.0.1:' + port + '/api/recordings/' + encodeURIComponent(sess) + '/toggle',
         { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ recording: desired }) }).catch(() => push({ kind: 'toggle' }));
-    } else { push({ kind: 'toggle' }); }
+          body: JSON.stringify({ recording: desired }) }).catch(() => push({ kind: 'toggle', desired }));
+    } else { push({ kind: 'toggle', desired }); }
   };
   // Click RIPPLE: a brief expanding ring at the click point, painted only while
   // recording — so the session VIDEO shows WHERE each click landed (the review

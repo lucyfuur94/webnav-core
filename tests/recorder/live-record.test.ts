@@ -190,3 +190,24 @@ it('steps are stamped with CAPTURE time, not slow-loop processing time', async (
   expect(store.actionEffects('t-1')[0].capturedAt).toBe(captured);        // true action time
   expect(logs.find((l) => l.startsWith('recorded'))).toContain('(at ');   // lag surfaced in the log line
 });
+
+
+it('queued toggles are idempotent: double-click stop does NOT restart (live CORS-fallback bug)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('idem-1');   // recording
+  const twoStops = JSON.stringify([
+    { seq: 1, kind: 'toggle', url: 'https://s.test/', desired: false },
+    { seq: 2, kind: 'toggle', url: 'https://s.test/', desired: false },
+  ]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: twoStops },
+    { url: 'https://s.test/', snap: LOGIN },
+  ]);
+  let n = 0;
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 'idem-1', intervalMs: 0, armed: true,
+    log: (l) => logs.push(l), isStopped: () => ++n > 4, sleep: async () => {} });
+  expect(store.isActive('idem-1')).toBe(false);   // stopped — and STAYED stopped
+  expect(logs.filter((l) => l.includes('STOPPED')).length).toBe(1);   // second stop was a no-op
+});
