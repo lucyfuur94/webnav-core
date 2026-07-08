@@ -66,6 +66,25 @@ export function startDashboard(
       res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 
     try {
+      // The pill in the RECORDED page POSTs its toggle here — the one deliberately
+      // cross-origin route (final-review posture: single-user localhost; response
+      // carries only {recording:bool}). Its JSON body triggers a browser PREFLIGHT,
+      // and Chrome's Private Network Access additionally requires the
+      // allow-private-network header for public→localhost calls (live failure:
+      // preflight CORS error → the stop POST was never sent).
+      const toggleRoute = /^\/api\/recordings\/[^/]+\/toggle$/.test(path);
+      if (toggleRoute) {
+        res.setHeader('access-control-allow-origin', '*');
+        if (method === 'OPTIONS') {
+          return res.writeHead(204, {
+            'access-control-allow-methods': 'POST',
+            'access-control-allow-headers': 'content-type',
+            'access-control-allow-private-network': 'true',
+            'access-control-max-age': '600',
+          }).end();
+        }
+      }
+
       // ---- the dashboard shell (sites + credentials tabs) ----
       if (path === '/' && method === 'GET') return res.writeHead(200, { 'content-type': HTML }).end(SHELL_HTML);
 

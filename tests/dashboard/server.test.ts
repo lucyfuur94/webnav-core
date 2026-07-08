@@ -238,6 +238,12 @@ describe('realtime (SSE + toggle)', () => {
     const reader = res.body!.getReader();
     await reader.read();                                        // ': connected'
 
+    // preflight: the pill's JSON POST from a RECORDED https page triggers OPTIONS,
+    // and Chrome PNA requires allow-private-network (live failure: stop never sent)
+    const pre = await fetch(b3 + '/api/recordings/r9/toggle', { method: 'OPTIONS' });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('*');
+    expect(pre.headers.get('access-control-allow-private-network')).toBe('true');
     const t = await (await fetch(b3 + '/api/recordings/r9/toggle', { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: true }) })).json() as any;
     expect(t.recording).toBe(true);

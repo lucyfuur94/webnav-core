@@ -116,8 +116,10 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
 
       const toggles = events.filter((e) => e.kind === 'toggle');
       let data = events.filter((e) => e.kind !== 'toggle');
-      for (const _t of toggles) {
-        const next = !deps.store.isActive(deps.sessionId);
+      for (const tg of toggles) {
+        const cur = deps.store.isActive(deps.sessionId);
+        const next = typeof tg.desired === 'boolean' ? tg.desired : !cur;
+        if (next === cur) continue;   // idempotent: a repeated 'stop' is a no-op, never a restart
         if (next) deps.store.start(deps.sessionId); else deps.store.stop(deps.sessionId);
         deps.log('recording ' + (next ? 'STARTED' : 'STOPPED') + ' (pill via queue): ' + deps.sessionId);
         deps.onToggle?.(next);
