@@ -377,7 +377,7 @@ function startEvents() {
 }
 
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile — required for sites behind login/2FA: log in by hand once, walks reuse it)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" checked style="width:auto;margin-right:6px" />keep me logged in (persistent profile — required for sites behind login/2FA: log in by hand once, walks reuse it)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
   // default name (editable): s-MMDDHHMMSS — SHORT on purpose: the playwright-cli
   // daemon socket path embeds the session name and macOS caps socket paths at
