@@ -34,8 +34,9 @@ export const SHELL_HTML = `<!DOCTYPE html>
   th { color:var(--muted); font-weight:500; font-size:12px; }
   code.val { font-family:ui-monospace,monospace; }
   button.btn { background:var(--panel); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; }
-  button.btn:hover { border-color:var(--accent); }
-  button.btn.danger:hover { border-color:var(--danger); color:var(--danger); }
+  button.btn:hover:not(:disabled) { border-color:var(--accent); }
+  button.btn.danger:hover:not(:disabled) { border-color:var(--danger); color:var(--danger); }
+  button.btn:disabled { opacity:.4; cursor:not-allowed; }   /* disabled must LOOK disabled (was clickable-looking, live #3) */
   .addrow input, .addrow select { background:#0b0d11; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:6px 8px; font:inherit; margin-right:6px; }
   select { background:#0b0d11; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:4px 6px; font:inherit; }
   input.inline { background:#0b0d11; border:1px solid var(--accent); color:var(--fg); border-radius:6px; padding:5px 8px; font:ui-monospace,monospace; width:90%; }
