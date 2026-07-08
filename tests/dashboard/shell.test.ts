@@ -71,3 +71,9 @@ it('detail offers session videos as capture ground-truth', () => {
   expect(SHELL_HTML).toContain('recordings-media');
   expect(SHELL_HTML).toContain('<video controls');
 });
+
+it('Sessions tab: renamed label, bulk delete, default session name', () => {
+  expect(SHELL_HTML).toContain('>Sessions</button>');
+  expect(SHELL_HTML).toContain('Delete selected');
+  expect(SHELL_HTML).toContain("sessIn.value = 'session-'");
+});

@@ -52,7 +52,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <span class="sub" id="env"></span>
 </header>
 <nav>
-  <button data-tab="recordings" class="active">Recordings</button>
+  <button data-tab="recordings" class="active">Sessions</button>
   <button data-tab="sites">Sites</button>
   <button data-tab="creds">Credentials</button>
 </nav>
@@ -243,21 +243,39 @@ async function renderRecordings(openId) {
   const detail = el('<div class="detail"><div class="empty">open a window above, or select a recording</div></div>');
   list.append(newRecordingCard());
   let reopen = null;
+  const selected = new Set();
+  const bulkBar = el('<div style="display:none;padding:8px 12px;border-bottom:1px solid var(--border)"><button class="btn danger">Delete selected</button></div>');
+  const syncBulk = () => {
+    bulkBar.style.display = selected.size ? '' : 'none';
+    bulkBar.querySelector('button').textContent = 'Delete selected ('+selected.size+')';
+  };
+  bulkBar.querySelector('button').onclick = async () => {
+    if (!confirm('Delete '+selected.size+' session(s)?')) return;
+    for (const id of selected) await fetch('/api/recordings/'+encodeURIComponent(id), { method:'DELETE' });
+    renderRecordings();
+  };
+  list.append(bulkBar);
   recs.forEach(r => {
-    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div class="name"></div><div class="meta"></div></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
+    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><input type="checkbox" style="width:auto" /><div style="flex:1"><div class="name"></div><div class="meta"></div></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
     rowEls[r.sessionId] = row;
     fillRow(row, r);
     row.onclick = () => showRecording(r, detail, list, row);
-    row.querySelector('button').onclick = async (e) => {
+    const cb = row.querySelector('input[type=checkbox]');
+    cb.onclick = (e) => {
       e.stopPropagation();
-      if (!confirm('Delete recording '+r.sessionId+'?')) return;
+      if (cb.checked) selected.add(r.sessionId); else selected.delete(r.sessionId);
+      syncBulk();
+    };
+    row.querySelector('button.danger').onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm('Delete session '+r.sessionId+'?')) return;
       await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' });
       renderRecordings();
     };
     list.append(row);
     if (openId && r.sessionId === openId) reopen = () => showRecording(r, detail, list, row);
   });
-  if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
+  if (!recs.length) list.append(el('<div class="empty">no sessions yet</div>'));
   main.append(list, detail);
   if (reopen) reopen();
   startEvents();
@@ -277,7 +295,8 @@ async function softRefresh(kind) {
     winSession = (await getJSON('/api/recordings/window')).session;
   } catch { return; }
   const ids = recs.map(r => r.sessionId).sort().join('|');
-  if (ids !== Object.keys(rowEls).sort().join('|')) return renderRecordings(currentOpenId);
+  const anyChecked = [...document.querySelectorAll('.list input[type=checkbox]')].some(c => c.checked);
+  if (ids !== Object.keys(rowEls).sort().join('|')) { if (!anyChecked) renderRecordings(currentOpenId); return; }
   recs.forEach(r => { const row = rowEls[r.sessionId]; if (row) fillRow(row, r); });
   if (detailCtx) {
     const fresh = recs.find(r => r.sessionId === detailCtx.r.sessionId);
@@ -304,8 +323,11 @@ function startEvents() {
 }
 
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
+  // default name (editable): session-MMDD-HHMMSS — no naming friction for a quick take
+  const d = new Date(), p2 = (x) => String(x).padStart(2, '0');
+  sessIn.value = 'session-' + p2(d.getMonth()+1) + p2(d.getDate()) + '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
   const persistIn = card.querySelector('input[type=checkbox]');
   card.querySelector('button').onclick = async () => {
     const msg = card.querySelector('#openmsg');
@@ -355,7 +377,7 @@ function buildHead(ctx) {
     await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' });
     softRefresh('sessions');
   };
-  delB.onclick = async () => { if (confirm('Delete recording '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
+  delB.onclick = async () => { if (confirm('Delete session '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
   anB.onclick = async () => {
     const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft');
     ctx.stepsBox.innerHTML = ''; setSubTab(ctx, 'steps');
