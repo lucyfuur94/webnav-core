@@ -20,7 +20,7 @@ import type { ActionEffect } from '../mapstore/record.js';
 export interface LiveRecordDeps {
   adapter: { evalJs(f: string, ref?: string): Promise<string>; snapshot(): Promise<string>;
     currentUrl(): Promise<string>; close(): Promise<unknown> };
-  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect): void;
+  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect, nowMs?: number): void;
     start(s: string): unknown; stop(s: string): void };
   sessionId: string; intervalMs: number;
   log: (line: string) => void; isStopped: () => boolean;
@@ -179,9 +179,15 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           }
         }
         const fx = assembleEffect(p.ev, ref, ticks[fromIdx], ticks[to]);
-        if (fx) { deps.store.appendActionEffect(deps.sessionId, fx); appended++;
+        if (fx) {
+          // stamp the step with when the human ACTED, not when this slow loop got to it
+          deps.store.appendActionEffect(deps.sessionId, fx, p.ev.t);
+          appended++;
           deps.onEvent?.('step');
-          deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}`); }
+          const lag = p.ev.t && Date.now() - p.ev.t > 2000
+            ? ` (at ${new Date(p.ev.t).toLocaleTimeString()})` : '';
+          deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}${lag}`);
+        }
         else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
       }
       // A fresh document just got its badge+listener via this tick's install; tick

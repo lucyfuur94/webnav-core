@@ -169,3 +169,24 @@ it('armed: window closed → daemon resurrects about:blank → session ENDS (no 
     log: (l) => logs.push(l), isStopped: () => false, sleep: async () => {} });
   expect(logs.some((l) => l.includes('window closed'))).toBe(true);   // ended, not resurrect-looping
 });
+
+
+it('steps are stamped with CAPTURE time, not slow-loop processing time', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('t-1');
+  const captured = Date.now() - 60_000;   // the human clicked a minute ago (heavy-page lag)
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/',
+    tagName: 'button', leafText: 'Login', t: captured }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  let n = 0;
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 't-1', intervalMs: 0,
+    log: (l) => logs.push(l), isStopped: () => ++n > 5, sleep: async () => {} });
+  expect(store.actionEffects('t-1')[0].capturedAt).toBe(captured);        // true action time
+  expect(logs.find((l) => l.startsWith('recorded'))).toContain('(at ');   // lag surfaced in the log line
+});
