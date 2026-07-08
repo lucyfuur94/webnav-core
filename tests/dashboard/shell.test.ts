@@ -89,3 +89,8 @@ it('review UX: md renderer, sub-tab order Steps>Videos>Review>Logs, model+instru
   expect(SHELL_HTML).toContain('<option value="opus">');
   expect(SHELL_HTML).toContain('Agent instructions');
 });
+
+it('Sessions list offers Clear all with a typed confirm', () => {
+  expect(SHELL_HTML).toContain('Clear all');
+  expect(SHELL_HTML).toContain('delete all');   // typed confirmation guard
+});

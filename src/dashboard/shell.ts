@@ -255,6 +255,17 @@ async function renderRecordings(openId) {
     renderRecordings();
   };
   list.append(bulkBar);
+  if (recs.length) {
+    // Clear-all: a header row above the sessions. Typed confirm — it wipes every
+    // session's steps/videos/reviews (destructive, no undo).
+    const clearBar = el('<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)"><span class="muted" style="font-size:12px">'+recs.length+' session'+(recs.length===1?'':'s')+'</span><button class="btn danger" style="padding:2px 8px">Clear all</button></div>');
+    clearBar.querySelector('button').onclick = async () => {
+      if (prompt('Delete ALL '+recs.length+' sessions (steps, videos, reviews)? This cannot be undone. Type "delete all" to confirm:') !== 'delete all') return;
+      for (const rr of recs) await fetch('/api/recordings/'+encodeURIComponent(rr.sessionId), { method:'DELETE' });
+      renderRecordings();
+    };
+    list.append(clearBar);
+  }
   recs.forEach(r => {
     const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><input type="checkbox" style="width:auto" /><div style="flex:1"><div class="name"></div><div class="meta"></div></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
     rowEls[r.sessionId] = row;
