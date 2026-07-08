@@ -118,3 +118,13 @@ it('reopening a session is persistent (reuses saved login) — not a throwaway p
 });
 
 
+
+it('loadSteps is DEFINED (live #1: it was called but never defined → SSE refresh threw)', () => {
+  expect(SHELL_HTML).toMatch(/async function loadSteps\(/);
+  // and it is what the live-refresh + tab-switch call
+  expect(SHELL_HTML).toContain("if (detailCtx.subTab === 'steps') loadSteps(detailCtx)");
+});
+it('Open button disabled when a window is live; Record needs a window (#2/#3)', () => {
+  expect(SHELL_HTML).toContain('openB.disabled = !!winSession');
+  expect(SHELL_HTML).toContain('recB.disabled = !hasWindow && !r.active');
+});
