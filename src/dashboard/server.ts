@@ -27,7 +27,7 @@ export interface RecordingsDeps {
   steps(id: string): { seq: number; label: string; kind: string; fromUrl: string; toUrl: string; value?: string; capturedAt: number }[];
   del(id: string): void;
   draft(id: string): unknown;
-  open(url: string, session: string, persistent: boolean, armedOnly?: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+  open(url: string, session: string, persistent: boolean, armedOnly?: boolean, profile?: string): Promise<{ ok: true } | { ok: false; error: string }>;
   record(id: string): boolean;
   stop(id: string): boolean;
   replay(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
@@ -44,9 +44,11 @@ export interface RecordingsDeps {
   reviewReport(id: string): { report: string; at: number } | null; // review.md + mtime (null = none yet)
   reviewRunning(): string | null;                                   // session id of an in-flight review
   reviewConfig(): { model: string; instructions: string };          // last-used (or default) audit config
-  profiles(): { session: string; site: string | null; sizeMb: number; lastUsed: number; open: boolean }[];
-  profileOpen(session: string): Promise<{ ok: true } | { ok: false; error: string }>;   // headed re-login window
-  profileDelete(session: string): { ok: boolean };                  // remove the saved login (logs out, frees disk)
+  profiles(): { name: string; site: string | null; sessions: number; sizeMb: number; lastUsed: number; open: boolean }[];
+  profileNew(name: string): { ok: boolean; error?: string };        // create an empty named profile
+  profileOpen(name: string): Promise<{ ok: true } | { ok: false; error: string }>;      // headed re-login window
+  profileRename(from: string, to: string): { ok: boolean; error?: string };
+  profileDelete(name: string): { ok: boolean };                     // remove the saved login (logs out, frees disk)
   reviewFramePath(session: string, file: string): string | null;   // sanitized frame path for /review-media
 }
 
@@ -177,9 +179,24 @@ export function startDashboard(
 
         if (path === '/api/review-config' && method === 'GET') return sendJson(200, rec.reviewConfig());
         if (path === '/api/profiles' && method === 'GET') return sendJson(200, rec.profiles());
+        if (path === '/api/profiles' && method === 'POST') {   // create a named profile
+          let body: { name?: string } = {};
+          try { body = JSON.parse((await readBody(req)) || '{}'); } catch { /* */ }
+          if (!body.name) return sendJson(400, { ok: false, error: 'name required' });
+          const r = rec.profileNew(body.name);
+          return sendJson(r.ok ? 200 : 409, r);
+        }
         const profOpenM = path.match(/^\/api\/profiles\/([^/]+)\/open$/);
         if (profOpenM && method === 'POST') {
           const r = await rec.profileOpen(decodeURIComponent(profOpenM[1]));
+          return sendJson(r.ok ? 200 : 409, r);
+        }
+        const profRenameM = path.match(/^\/api\/profiles\/([^/]+)\/rename$/);
+        if (profRenameM && method === 'POST') {
+          let body: { to?: string } = {};
+          try { body = JSON.parse((await readBody(req)) || '{}'); } catch { /* */ }
+          if (!body.to) return sendJson(400, { ok: false, error: 'new name required' });
+          const r = rec.profileRename(decodeURIComponent(profRenameM[1]), body.to);
           return sendJson(r.ok ? 200 : 409, r);
         }
         const profM = path.match(/^\/api\/profiles\/([^/]+)$/);
@@ -242,10 +259,10 @@ export function startDashboard(
 
         if (path === '/api/recordings/open' && method === 'POST') {
           const body = await readBody(req);
-          let parsed: { url?: string; session?: string; persistent?: boolean };
+          let parsed: { url?: string; session?: string; persistent?: boolean; armedOnly?: boolean; profile?: string };
           try { parsed = JSON.parse(body || '{}'); } catch { return sendJson(400, { error: 'invalid JSON body' }); }
           if (!parsed.url || !parsed.session) return sendJson(400, { error: 'body must be { url, session, persistent? }' });
-          const result = await rec.open(parsed.url, parsed.session, !!parsed.persistent, !!(parsed as { armedOnly?: boolean }).armedOnly);
+          const result = await rec.open(parsed.url, parsed.session, !!parsed.persistent, !!parsed.armedOnly, parsed.profile);
           return sendJson(result.ok ? 200 : 409, result);
         }
 

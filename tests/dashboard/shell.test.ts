@@ -96,11 +96,16 @@ it('Sessions list offers Clear all with a typed confirm', () => {
   expect(SHELL_HTML).toContain('delete all');   // typed confirmation guard
 });
 
-it('Profiles tab: lists saved profiles with re-login + delete', () => {
+it('Profiles tab: named profiles with new/rename/open/delete', () => {
   expect(SHELL_HTML).toContain('data-tab="profiles"');
   expect(SHELL_HTML).toContain('function renderProfiles');
-  expect(SHELL_HTML).toContain('/api/profiles');
-  expect(SHELL_HTML).toContain('Open to re-login');
+  expect(SHELL_HTML).toContain('+ New profile');
+  expect(SHELL_HTML).toContain('Open to log in');
+  expect(SHELL_HTML).toContain('/rename');
+});
+it('new session defaults to the "default" profile; reopen forwards it', () => {
+  expect(SHELL_HTML).toContain("profIn.value = 'default'");
+  expect(SHELL_HTML).toContain("profile: r.profile || 'default'");   // reopen reuses the session's profile
 });
 
 it('reopening a session is persistent (reuses saved login) — not a throwaway profile', () => {
@@ -112,6 +117,4 @@ it('reopening a session is persistent (reuses saved login) — not a throwaway p
   expect(call).not.toContain('persistent: false');
 });
 
-it('new session defaults to persistent (keep-me-logged-in checked)', () => {
-  expect(SHELL_HTML).toContain('type="checkbox" checked');
-});
+
