@@ -108,39 +108,58 @@ async function renderSites() {
   main.append(list, detail);
 }
 
-// ---------- PROFILES (saved logged-in browser profiles) ----------
+// ---------- PROFILES (named, shared logged-in browser states) ----------
 async function renderProfiles() {
   main.style.gridTemplateColumns = '1fr';
   const profs = await getJSON('/api/profiles');
   main.innerHTML = '';
   const wrap = el('<div></div>');
-  wrap.append(el('<div class="cat-head">Saved browser profiles — a logged-in session kept on disk (Cloudflare / SSO / 2FA done once by hand). A walk reuses one via <code class="val">--profile &lt;name&gt;</code>.</div>'));
-  if (!profs.length) { wrap.append(el('<div class="empty">no saved profiles — tick "keep me logged in" when opening a session, then log in once</div>')); main.append(wrap); return; }
-  const tbl = el('<table><thead><tr><th>Session</th><th>Site</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
+  wrap.append(el('<div class="cat-head">Named browser profiles — a logged-in state kept on disk (Cloudflare / SSO / 2FA done once by hand). Every session under a profile reuses its login; a walk reuses it via <code class="val">--profile &lt;name&gt;</code>. New sessions use <code class="val">default</code>.</div>'));
+  const newBar = el('<div style="display:flex;gap:8px;margin:8px 0"><button class="btn">+ New profile</button></div>');
+  newBar.querySelector('button').onclick = async () => {
+    const name = prompt('New profile name (e.g. default, work-google):', 'default');
+    if (!name) return;
+    const res = await fetch('/api/profiles', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name }) });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    const o = await fetch('/api/profiles/'+encodeURIComponent(name)+'/open', { method:'POST' });   // straight into log-in
+    if (!o.ok) alert((await o.json()).error);
+    renderProfiles();
+  };
+  wrap.append(newBar);
+  if (!profs.length) { wrap.append(el('<div class="empty">no profiles yet — create one and log in once, or just start a session (it uses "default")</div>')); main.append(wrap); startEvents(); return; }
+  const tbl = el('<table><thead><tr><th>Profile</th><th>Site</th><th>Sessions</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
   const tb = tbl.querySelector('tbody');
   profs.forEach(pf => {
-    const tr = el('<tr><td><code>'+esc(pf.session)+'</code>'+(pf.open?' <span class="pulse" style="color:#e5484d">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
-    const act = tr.children[4];
-    const openB = el('<button class="btn">Open to re-login</button>');
+    const tr = el('<tr><td><code>'+esc(pf.name)+'</code>'+(pf.open?' <span class="pulse" style="color:#e5484d">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sessions+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
+    const act = tr.children[5];
+    const openB = el('<button class="btn">Open to log in</button>');
     openB.disabled = pf.open;
     openB.onclick = async () => {
       openB.disabled = true; openB.textContent = 'opening…';
-      const res = await fetch('/api/profiles/'+encodeURIComponent(pf.session)+'/open', { method:'POST' });
+      const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/open', { method:'POST' });
+      if (!res.ok) alert((await res.json()).error);
+      renderProfiles();
+    };
+    const renB = el('<button class="btn" style="margin-left:6px">Rename</button>');
+    renB.onclick = async () => {
+      const to = prompt('Rename profile "'+pf.name+'" to:', pf.name);
+      if (!to || to === pf.name) return;
+      const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/rename', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ to }) });
       if (!res.ok) alert((await res.json()).error);
       renderProfiles();
     };
     const delB = el('<button class="btn danger" style="margin-left:6px">Delete</button>');
     delB.onclick = async () => {
-      if (!confirm('Delete profile '+pf.session+'? This logs it out — next walk will hit the login wall.')) return;
-      await fetch('/api/profiles/'+encodeURIComponent(pf.session), { method:'DELETE' });
+      if (!confirm('Delete profile '+pf.name+'? This logs it out — sessions using it hit the login wall next time.')) return;
+      await fetch('/api/profiles/'+encodeURIComponent(pf.name), { method:'DELETE' });
       renderProfiles();
     };
-    act.append(openB, delB);
+    act.append(openB, renB, delB);
     tb.append(tr);
   });
   wrap.append(tbl);
   main.append(wrap);
-  startEvents();   // 'sessions' events (profile open/close/delete) refresh this tab
+  startEvents();   // 'sessions' events (profile open/close/rename/delete) refresh this tab
 }
 
 // ---------- CREDENTIALS ----------
@@ -377,18 +396,20 @@ function startEvents() {
 }
 
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" checked style="width:auto;margin-right:6px" />keep me logged in (persistent profile — required for sites behind login/2FA: log in by hand once, walks reuse it)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
-  const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px">profile <input placeholder="default" style="width:140px;margin:0 0 0 4px" /> <span title="which saved login to run under; leave as default. Empty = throwaway (no saved login).">(logged-in state reused; blank = throwaway)</span></label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const [sessIn, urlIn, profIn] = card.querySelectorAll('input');
   // default name (editable): s-MMDDHHMMSS — SHORT on purpose: the playwright-cli
   // daemon socket path embeds the session name and macOS caps socket paths at
   // ~104 chars (live failure: 'session-0708-134206' overflowed → listen EINVAL).
   const d = new Date(), p2 = (x) => String(x).padStart(2, '0');
   sessIn.value = 's-' + p2(d.getMonth()+1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
-  const persistIn = card.querySelector('input[type=checkbox]');
+  profIn.value = 'default';   // common case: every session shares the 'default' login
   card.querySelector('button').onclick = async () => {
     const msg = card.querySelector('#openmsg');
     if (!sessIn.value) { msg.textContent = 'session name required'; return; }
-    const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: persistIn.checked }) });
+    const profile = profIn.value.trim();   // blank → throwaway (persistent:false)
+    const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: !!profile, profile: profile || undefined }) });
     msg.textContent = r.ok ? 'window opened — RECORDING (red border). Stop here or via the pill in the window.' : (await r.json()).error;
     if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 400);
   };
@@ -404,13 +425,13 @@ function buildHead(ctx) {
     : hasWindow ? '<span class="muted">🪟 window open (armed)</span>'
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   ctx.headBox.innerHTML = '';
-  const profBadge = r.hasProfile ? ' <span title="a logged-in browser profile is saved for this session — walks reuse it" style="border:1px solid #3fb950;color:#3fb950;border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 profile saved</span>' : '';
+  const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid #3fb950;color:#3fb950;border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
   const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   // Open window and Record are SEPARATE intents here (live feedback): the window
   // opens ARMED; Record activates once the window exists.
-  const openB = btn(r.hasProfile ? '\\uD83D\\uDD10 Open (saved login)' : 'Open window');
+  const openB = btn(r.hasProfile ? '\\uD83D\\uDD10 Open (' + r.profile + ')' : 'Open window');
   openB.disabled = !!winSession;
   if (winSession && !hasWindow) openB.title = 'window is busy with '+winSession;
   openB.onclick = async () => {
@@ -420,7 +441,7 @@ function buildHead(ctx) {
     // fresh throwaway profile → forced re-login). A first-ever open with no profile
     // yet still creates one under the same session, so the next reopen has a login.
     const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ url: r.startUrl || (r.site ? 'https://'+r.site : 'about:blank'), session: r.sessionId, persistent: true, armedOnly: true }) });
+      body: JSON.stringify({ url: r.startUrl || (r.site ? 'https://'+r.site : 'about:blank'), session: r.sessionId, persistent: true, armedOnly: true, profile: r.profile || 'default' }) });
     if (!res.ok) { alert((await res.json()).error); }
     softRefresh('sessions');
   };

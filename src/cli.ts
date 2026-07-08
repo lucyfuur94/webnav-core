@@ -634,7 +634,7 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
-    const { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, existsSync: existsSync2 } = await import('node:fs');
+    const { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, renameSync, existsSync: existsSync2 } = await import('node:fs');
     const { execSync } = await import('node:child_process');
     const { listSessions: listPwSessions } = await import('./playwright/sessions.js');
     const store = new MapStore(dbPath());
@@ -702,9 +702,11 @@ async function main() {
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
-      list: () => recordStore.listSessions().map((x) => ({ ...x,
-        hasProfile: existsSync2(profileDir(x.sessionId)),
-        startUrl: recordStore.startUrl(x.sessionId) })),
+      list: () => recordStore.listSessions().map((x) => {
+        const profile = recordStore.profileOf(x.sessionId);
+        return { ...x, profile, hasProfile: !!profile && existsSync2(profileDir(profile)),
+          startUrl: recordStore.startUrl(x.sessionId) };
+      }),
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
@@ -721,17 +723,18 @@ async function main() {
         }
       },
       draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
-      open: async (url: string, session: string, persistent: boolean, armedOnly?: boolean) => {
+      open: async (url: string, session: string, persistent: boolean, armedOnly?: boolean, profile?: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         busy = session;
         try {
-          // persistent → a STABLE profile dir keyed by session name, so a hand-done
-          // login (Cloudflare/Google/2FA) PERSISTS across window opens and into a
-          // later walk. Without an explicit --profile, playwright-cli uses a random
-          // temp dir per launch and the login evaporates (live finding).
-          if (persistent) { try { mkdirSync(profileDir(session), { recursive: true }); } catch { /* */ } }
+          // persistent → a NAMED, SHARED profile dir (default 'default'), so a login
+          // done once in a profile is reused by EVERY session under it (and by walks
+          // via --profile). Without an explicit dir, playwright-cli uses a random temp
+          // dir per launch and the login evaporates (live finding).
+          const profName = persistent ? (profile && /^[\w.-]+$/.test(profile) ? profile : 'default') : null;
+          if (profName) { try { mkdirSync(profileDir(profName), { recursive: true }); } catch { /* */ } }
           const adapter = new PlaywrightAdapter(session, undefined, undefined,
-            persistent ? { headed: true, persistent: true, profile: profileDir(session) } : { headed: true });
+            profName ? { headed: true, persistent: true, profile: profileDir(profName) } : { headed: true });
           await adapter.open(url);
           // A persistent profile RESTORES its previous tab on launch (e.g. the Google
           // account page after an auth bounce). Force-navigate to the requested URL so
@@ -741,7 +744,6 @@ async function main() {
           // after "Open window" was a redundant second intent). Stop still returns
           // the window to the armed/grey state for another take.
           activeAdapter = adapter;
-          if (url && url !== 'about:blank') recordStore.setStartUrl(session, url);
           if (armedOnly) {
             // armed reopen from a recording's detail: window only; Record is a
             // separate intent there (live feedback #1). Row stays visible.
@@ -752,6 +754,9 @@ async function main() {
             videoSync(session, true);
             dlog('recording STARTED: ' + session);
           }
+          // record the session's profile + intended start url (row now exists)
+          if (profName) recordStore.setProfile(session, profName);
+          if (url && url !== 'about:blank') recordStore.setStartUrl(session, url);
           emit('sessions');
           // window liveness = the DAEMON still has a Chromium child (the daemon itself
           // outlives the window — probing it via evals is what resurrected the window).
@@ -856,51 +861,76 @@ async function main() {
           ? (readdirSync(join(reviewsRoot, session)).filter((d) => d.startsWith('frames-'))
               .map((d) => join(reviewsRoot, session, d, file)).find((f) => existsSync2(f)) ?? null)
           : null,
+      // Profiles are NAMED, shared logged-in browser states (dir name = profile
+      // name). Metadata (site, last recording url) is derived from the sessions
+      // that use the profile — profiles themselves store only cookies on disk.
       profiles: () => {
         let dirs: string[] = [];
         try { dirs = readdirSync(profilesRoot); } catch { return []; }
         return dirs.filter((d) => { try { return statSync(join(profilesRoot, d)).isDirectory(); } catch { return false; } })
-          .map((d) => {
-            const dir = join(profilesRoot, d);
+          .map((name) => {
+            const dir = join(profilesRoot, name);
             let lastUsed = 0; try { lastUsed = statSync(dir).mtimeMs; } catch { /* */ }
-            // the site = the first recorded step's host for this session (best-effort)
+            const sessions = recordStore.sessionsUsingProfile(name);
+            // site = host of the most-recent using-session's start url (best-effort)
             let site: string | null = null;
-            try { const fx = recordStore.actionEffects(d); site = fx.length ? new URL(fx[0].fromUrl).host : null; } catch { /* */ }
-            return { session: d, site, sizeMb: dirSizeMb(dir), lastUsed, open: busy === d };
+            for (const sid of sessions) {
+              const u = recordStore.startUrl(sid); if (u) { try { site = new URL(u).host; break; } catch { /* */ } }
+            }
+            return { name, site, sessions: sessions.length, sizeMb: dirSizeMb(dir), lastUsed, open: busy === 'relogin-' + name };
           }).sort((a, b) => b.lastUsed - a.lastUsed);
       },
-      profileOpen: async (session: string) => {
+      profileNew: (name: string) => {
+        if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false as const, error: 'name must be letters/numbers/-._' };
+        const dir = profileDir(name);
+        if (existsSync2(dir)) return { ok: false as const, error: 'profile "' + name + '" already exists' };
+        try { mkdirSync(dir, { recursive: true }); dlog('profile created: ' + name); emit('sessions'); return { ok: true as const }; }
+        catch (e) { return { ok: false as const, error: String(e) }; }
+      },
+      profileOpen: async (name: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
-        if (!/^[\w.-]+$/.test(session) || session === '.' || session === '..') return { ok: false as const, error: 'bad session id' };
-        const dir = profileDir(session);
-        if (!existsSync2(dir)) return { ok: false as const, error: 'no saved profile for ' + session };
-        busy = session;
-        // re-login window: open the profile headed at its site (or blank) so the human
-        // can refresh an expired Cloudflare/2FA login. NOT recording — closes on the
-        // window being closed (browserAlive), state persists back to the profile dir.
-        let startUrl = recordStore.startUrl(session) ?? 'about:blank';
-        if (startUrl === 'about:blank') { try { const fx = recordStore.actionEffects(session); if (fx.length) startUrl = new URL(fx[0].fromUrl).origin; } catch { /* */ } }
+        if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false as const, error: 'bad profile name' };
+        const dir = profileDir(name);
+        try { mkdirSync(dir, { recursive: true }); } catch { /* */ }   // new profile: create on first login
+        const winId = 'relogin-' + name;
+        busy = winId;
+        // re-login window: open the profile headed at the site of a session that uses
+        // it (or blank) so the human can refresh an expired Cloudflare/2FA login. NOT
+        // recording — closes on window close; state persists back to the profile dir.
+        let startUrl = 'about:blank';
+        for (const sid of recordStore.sessionsUsingProfile(name)) { const u = recordStore.startUrl(sid); if (u) { startUrl = u; break; } }
         try {
-          const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent: true, profile: dir });
+          const adapter = new PlaywrightAdapter(winId, undefined, undefined, { headed: true, persistent: true, profile: dir });
           activeAdapter = adapter;
           await adapter.open(startUrl);
           if (startUrl !== 'about:blank') { try { await adapter.goto(startUrl); } catch { /* */ } }   // past the restored tab
-          dlog('re-login window opened for profile ' + session + ' — log in by hand, then close the window');
+          dlog('re-login window opened for profile ' + name + ' — log in by hand, then close the window');
           emit('sessions');
-          // keep the window alive until the human closes it (ps liveness), then release
           void (async () => {
             const { listSessions: listPw } = await import('./playwright/sessions.js');
             let pid: number | undefined;
-            try { pid = (await listPw(Date.now())).find((x) => x.name === session)?.pid; } catch { /* */ }
+            try { pid = (await listPw(Date.now())).find((x) => x.name === winId)?.pid; } catch { /* */ }
             const alive = () => { if (pid === undefined) return true; try { return execSync('ps -axo ppid=,comm= | awk \'$1==' + pid + '\'', { encoding: 'utf8' }).toLowerCase().includes('chrom'); } catch { return true; } };
-            while (alive()) { await new Promise((r) => setTimeout(r, 1000)); if (busy !== session) break; }
-          })().finally(() => { busy = null; activeAdapter = null; dlog('re-login window closed: ' + session); emit('sessions'); });
+            while (alive()) { await new Promise((r) => setTimeout(r, 1000)); if (busy !== winId) break; }
+          })().finally(() => { busy = null; activeAdapter = null; dlog('re-login window closed: ' + name); emit('sessions'); });
           return { ok: true as const };
         } catch (e) { busy = null; return { ok: false as const, error: String(e) }; }
       },
-      profileDelete: (session: string) => {
-        if (!/^[\w.-]+$/.test(session) || session === '.' || session === '..') return { ok: false };
-        try { rmSync(profileDir(session), { recursive: true, force: true }); dlog('profile deleted (logged out): ' + session); emit('sessions'); return { ok: true }; }
+      profileRename: (from: string, to: string) => {
+        const bad = (n: string) => !/^[\w.-]+$/.test(n) || n === '.' || n === '..';
+        if (bad(from) || bad(to)) return { ok: false as const, error: 'names must be letters/numbers/-._' };
+        if (!existsSync2(profileDir(from))) return { ok: false as const, error: 'no profile "' + from + '"' };
+        if (existsSync2(profileDir(to))) return { ok: false as const, error: '"' + to + '" already exists' };
+        try {
+          renameSync(profileDir(from), profileDir(to));
+          recordStore.renameProfileRefs(from, to);
+          dlog('profile renamed: ' + from + ' → ' + to); emit('sessions');
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, error: String(e) }; }
+      },
+      profileDelete: (name: string) => {
+        if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false };
+        try { rmSync(profileDir(name), { recursive: true, force: true }); dlog('profile deleted (logged out): ' + name); emit('sessions'); return { ok: true }; }
         catch { return { ok: false }; }
       },
       replay: async (id: string) => {

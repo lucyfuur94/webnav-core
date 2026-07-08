@@ -172,8 +172,10 @@ describe('recordings API', () => {
     reviewRunning: () => null,
     reviewConfig: () => ({ model: 'sonnet', instructions: '' }),
     reviewFramePath: () => null,
-    profiles: () => [{ session: 'r1', site: 's.test', sizeMb: 1.2, lastUsed: 9, open: false }],
+    profiles: () => [{ name: 'default', site: 's.test', sessions: 2, sizeMb: 1.2, lastUsed: 9, open: false }],
+    profileNew: () => ({ ok: true }),
     profileOpen: async () => ({ ok: true as const }),
+    profileRename: () => ({ ok: true }),
     profileDelete: () => ({ ok: true }),
   };
   beforeAll(async () => {
@@ -196,7 +198,9 @@ describe('recordings API', () => {
   });
   it('profiles: list, delete', async () => {
     expect(await (await fetch(base + '/api/profiles')).json()).toHaveLength(1);
-    expect((await fetch(base + '/api/profiles/r1', { method: 'DELETE' })).status).toBe(200);
+    expect((await fetch(base + '/api/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'work' }) })).status).toBe(200);
+    expect((await fetch(base + '/api/profiles/default/rename', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: 'work' }) })).status).toBe(200);
+    expect((await fetch(base + '/api/profiles/default', { method: 'DELETE' })).status).toBe(200);
   });
   it('busy replay → 409; missing shot → 404; open validates body', async () => {
     expect((await fetch(base + '/api/recordings/r1/replay', { method: 'POST' })).status).toBe(409);
@@ -233,8 +237,10 @@ describe('realtime (SSE + toggle)', () => {
       reviewRunning: () => null,
       reviewConfig: () => ({ model: 'sonnet', instructions: 'audit it' }),
       reviewFramePath: () => null,
-      profiles: () => [{ session: 'r9', site: 's.test', sizeMb: 2.5, lastUsed: 7, open: false }],
+      profiles: () => [{ name: 'default', site: 's.test', sessions: 1, sizeMb: 2.5, lastUsed: 7, open: false }],
+      profileNew: () => ({ ok: true }),
       profileOpen: async () => ({ ok: true as const }),
+      profileRename: () => ({ ok: true }),
       profileDelete: () => ({ ok: true }),
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };

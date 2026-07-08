@@ -59,10 +59,11 @@ export class RecordStore {
     }
     // start_url = the URL the operator ASKED to record at (not wherever an auth
     // redirect bounced them) — so reopen returns to the product, not the login page.
-    const scols: any[] = this.db.prepare('PRAGMA table_info(record_sessions)').all();
-    if (!new Set(scols.map((c) => c.name)).has('start_url')) {
-      this.db.exec('ALTER TABLE record_sessions ADD COLUMN start_url TEXT');
-    }
+    const scols = new Set((this.db.prepare('PRAGMA table_info(record_sessions)').all() as any[]).map((c) => c.name));
+    if (!scols.has('start_url')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN start_url TEXT');
+    // profile = the NAMED browser profile a session runs under (shared logged-in
+    // state; null ⇒ 'default'). Lets "log in once" apply across every session.
+    if (!scols.has('profile')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN profile TEXT');
   }
   /** Record the intended start URL for a session (idempotent; only sets if given). */
   setStartUrl(sessionId: string, url: string): void {
@@ -71,6 +72,22 @@ export class RecordStore {
   startUrl(sessionId: string): string | null {
     const r: any = this.db.prepare('SELECT start_url FROM record_sessions WHERE session_id=?').get(sessionId);
     return r?.start_url ?? null;
+  }
+  /** The named profile a session runs under (null ⇒ caller applies 'default'). */
+  setProfile(sessionId: string, profile: string): void {
+    this.db.prepare('UPDATE record_sessions SET profile=? WHERE session_id=?').run(profile, sessionId);
+  }
+  profileOf(sessionId: string): string | null {
+    const r: any = this.db.prepare('SELECT profile FROM record_sessions WHERE session_id=?').get(sessionId);
+    return r?.profile ?? null;
+  }
+  /** Session ids using a given profile (for the Profiles tab count + rename). */
+  sessionsUsingProfile(profile: string): string[] {
+    return (this.db.prepare('SELECT session_id FROM record_sessions WHERE profile=?').all(profile) as any[]).map((r) => r.session_id);
+  }
+  /** Repoint every session on `from` to `to` (rename). */
+  renameProfileRefs(from: string, to: string): void {
+    this.db.prepare('UPDATE record_sessions SET profile=? WHERE profile=?').run(to, from);
   }
 
   start(sessionId: string, nowMs = Date.now()): string {

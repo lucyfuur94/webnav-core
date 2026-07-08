@@ -78,3 +78,18 @@ describe('start_url (reopen targets the product, not the auth redirect)', () => 
     // survives a re-open of the same DB (persisted, not in-memory field)
   });
 });
+
+
+describe('named profiles (shared logins)', () => {
+  it('stores a session profile, lists sessions by profile, renames refs', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('a'); s.start('b'); s.start('c');
+    expect(s.profileOf('a')).toBe(null);           // null ⇒ caller uses 'default'
+    s.setProfile('a', 'default'); s.setProfile('b', 'default'); s.setProfile('c', 'work');
+    expect(s.profileOf('a')).toBe('default');
+    expect(s.sessionsUsingProfile('default').sort()).toEqual(['a', 'b']);
+    s.renameProfileRefs('default', 'main');
+    expect(s.sessionsUsingProfile('default')).toEqual([]);
+    expect(s.sessionsUsingProfile('main').sort()).toEqual(['a', 'b']);
+  });
+});
