@@ -113,3 +113,19 @@ it('abort during waiting:value clears the waiting flag (consistent terminal stat
   expect(st.waiting).toBe(null);
   expect(st.done).toBe(true);
 });
+
+
+it('recorded value = the flow variable: fills without pausing when no cred overrides', async () => {
+  const fills: string[] = [];
+  const ad = { open: async () => {}, goto: async () => {}, click: async () => {},
+    fill: async (_r: string, v: string) => { fills.push(v); },
+    snapshot: async () => LOGIN, currentUrl: async () => 'https://s.test/',
+    screenshot: async () => null, close: async () => '' };
+  const effects = [fx({ seq: 1, action: { role: 'textbox', name: 'Username', ref: null,
+    elementFp: { role: 'textbox', name: 'Username', near: null }, value: 'standard_user' } as any })];
+  const ctl = new ReplayController('rv', [{ seq: 1, label: 'Username' }]);
+  const st = await runReplay(effects, ctl, { adapter: ad as any,
+    creds: { get: () => ({}), set: () => {} }, site: 's.test', shotsDir: null, paceMs: 0, sleep: async () => {} });
+  expect(st.steps[0].status).toBe('ok');
+  expect(fills).toEqual(['standard_user']);   // recorded variable replayed, no waitFor pause
+});

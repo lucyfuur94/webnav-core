@@ -687,7 +687,7 @@ async function main() {
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
-        toUrl: e.toUrl, capturedAt: e.capturedAt })),
+        fromUrl: e.fromUrl, toUrl: e.toUrl, value: e.action?.value, capturedAt: e.capturedAt })),
       del: (id: string) => {
         recordStore.deleteSession(id);
         emit('sessions');

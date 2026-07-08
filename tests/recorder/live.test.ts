@@ -30,13 +30,14 @@ describe('injected JS constants', () => {
     expect(INSTALLER_JS).toContain('dataset.webnavInstalled');
     expect(INSTALLER_JS).not.toContain('window.__webnav_installed');
     expect(INSTALLER_JS).toContain('sessionStorage');        // nav-surviving queue
-    // Secret-field rule, refined: EXACTLY ONE sanctioned .value read — the
-    // submit/button/reset input's static LABEL (its accessible name; never typed
-    // data), guarded by isBtnInput. The change handler (typed fields) has none.
-    expect(INSTALLER_JS.match(/\.value\b/g) ?? []).toHaveLength(1);
+    // Secret-field rule, refined: values ARE recorded as flow variables, but the
+    // change handler must check the SECRET guard (password / cc-*) BEFORE any
+    // .value read, and secret fields always yield value:null.
     expect(INSTALLER_JS).toContain('isBtnInput');
     const changeHandler = INSTALLER_JS.slice(INSTALLER_JS.indexOf("addEventListener('change'"));
-    expect(changeHandler).not.toMatch(/\.value\b/);
+    expect(changeHandler).toContain("el.type === 'password'");
+    expect(changeHandler.indexOf("el.type === 'password'")).toBeLessThan(changeHandler.indexOf('.value'));
+    expect(changeHandler).toContain('/^cc-/');
   });
   it('recording badge: click-transparent, snapshot-invisible, self-healing', () => {
     expect(INSTALLER_JS).toContain('__webnav_rec_badge');
@@ -186,5 +187,18 @@ describe('TICK_JS — the combined per-tick eval', () => {
   });
   it('pill click flips optimistically (no daemon round-trip for the visual)', () => {
     expect(INSTALLER_JS).toContain('dataset.webnavRec');
+  });
+});
+
+
+describe('flow variables (recorded values)', () => {
+  it('input effects carry the supplied value; secret fields never do', () => {
+    const from: Tick = { url: 'https://s.test/f', snapshot: 'RootWebArea "F" [ref=e1]\n  textbox "City" [ref=e2]' };
+    const withVal = assembleEffect(ev({ kind: 'input', tagName: 'input', inputType: 'text',
+      placeholder: 'City', value: 'Pune' }), 'e2', from, from)!;
+    expect(withVal.action?.value).toBe('Pune');            // the re-runnable variable
+    const secret = assembleEffect(ev({ kind: 'input', tagName: 'input', inputType: 'password',
+      placeholder: 'Password', value: null }), null, from, from)!;
+    expect(secret.action?.value).toBeUndefined();          // secrets: never captured
   });
 });

@@ -17,6 +17,8 @@ export interface ActionRef {
   role: string; name: string | null; ref: string | null;
   elementFp?: ElementFingerprint | null;  // durable key recovered from the clicked node (role+name+near);
                                           // carried into graph-analyse → graph-edit so authored maps get fingerprints
+  value?: string;   // the supplied VARIABLE (typed text / chosen option) for NON-SECRET inputs —
+                    // makes a recorded flow re-runnable with different values; secrets never captured
 }
 export interface ActionEffect {
   fromUrl: string; fromSnapshot: string;

@@ -149,6 +149,10 @@ export async function runReplay(
         for (const [k, v] of Object.entries(creds)) {
           if (normName(k) === wantKey) { value = v; break; }
         }
+        // the RECORDED value is the flow's variable — use it when no stored cred
+        // overrides (creds are the operator's variable store; secrets were never
+        // recorded, so a password still asks unless creds cover it).
+        if (value === undefined && typeof action.value === 'string') value = action.value;
         if (value === undefined) {
           const answer = await ctl.waitFor('value', action.name ?? step.label);
           if (answer === 'abort') {
