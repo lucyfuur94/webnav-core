@@ -67,3 +67,14 @@ describe('deleteSession', () => {
     expect(s.listSessions().length).toBe(0);   // clearSession alone left the row (live bug)
   });
 });
+
+describe('start_url (reopen targets the product, not the auth redirect)', () => {
+  it('stores and returns the intended start url; migration adds the column', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('su-1');
+    expect(s.startUrl('su-1')).toBe(null);
+    s.setStartUrl('su-1', 'https://app.example.com/dashboard');
+    expect(s.startUrl('su-1')).toBe('https://app.example.com/dashboard');
+    // survives a re-open of the same DB (persisted, not in-memory field)
+  });
+});

@@ -57,6 +57,20 @@ export class RecordStore {
       ['to_url', 'TEXT'], ['to_snapshot', 'TEXT'], ['navigated', 'INTEGER'], ['diff', 'TEXT']] as const) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE record_observations ADD COLUMN ${col} ${type}`);
     }
+    // start_url = the URL the operator ASKED to record at (not wherever an auth
+    // redirect bounced them) — so reopen returns to the product, not the login page.
+    const scols: any[] = this.db.prepare('PRAGMA table_info(record_sessions)').all();
+    if (!new Set(scols.map((c) => c.name)).has('start_url')) {
+      this.db.exec('ALTER TABLE record_sessions ADD COLUMN start_url TEXT');
+    }
+  }
+  /** Record the intended start URL for a session (idempotent; only sets if given). */
+  setStartUrl(sessionId: string, url: string): void {
+    this.db.prepare('UPDATE record_sessions SET start_url=? WHERE session_id=?').run(url, sessionId);
+  }
+  startUrl(sessionId: string): string | null {
+    const r: any = this.db.prepare('SELECT start_url FROM record_sessions WHERE session_id=?').get(sessionId);
+    return r?.start_url ?? null;
   }
 
   start(sessionId: string, nowMs = Date.now()): string {
