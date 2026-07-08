@@ -40,6 +40,7 @@ export interface RecordingsDeps {
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
   activeWindow(): string | null;                        // which recording session has the driven window (null = none)
   logs(): { now: number; lines: { t: number; line: string }[] };   // operator log stream (pushed via SSE 'log')
+  notify(kind: string, line?: string): void;                       // cross-process realtime bridge: append log + emit SSE (used by `use session`)
   review(id: string, opts?: { model?: string; instructions?: string }): { ok: boolean; error?: string };  // start a headless-Claude capture-gap audit
   reviewReport(id: string): { report: string; at: number } | null; // review.md + mtime (null = none yet)
   reviewRunning(): string | null;                                   // session id of an in-flight review
@@ -170,12 +171,21 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs' || path === '/api/review-config' || path === '/api/profiles' || path.startsWith('/api/profiles/')) {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs' || path === '/api/notify' || path === '/api/review-config' || path === '/api/profiles' || path.startsWith('/api/profiles/')) {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
         if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
         if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
+        if (path === '/api/notify' && method === 'POST') {
+          // cross-process realtime: a separate `use session` process POSTs here after
+          // each step/log so the dashboard pushes it over SSE (localhost-only, same
+          // posture as the toggle route). Body: { kind?, line? }.
+          let body: { kind?: string; line?: string } = {};
+          try { body = JSON.parse((await readBody(req)) || '{}'); } catch { /* */ }
+          rec.notify(body.kind ?? 'sessions', body.line);
+          return sendJson(200, { ok: true });
+        }
 
         if (path === '/api/review-config' && method === 'GET') return sendJson(200, rec.reviewConfig());
         if (path === '/api/profiles' && method === 'GET') return sendJson(200, rec.profiles());

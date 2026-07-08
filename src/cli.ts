@@ -18,6 +18,7 @@ export type ParsedArgs =
   | { cmd: 'go-back'; session: string | undefined }
   | { cmd: 'reload'; session: string | undefined }
   | { cmd: 'close'; session: string }
+  | { cmd: 'session'; session: string; url: string; browser: BrowserOpts; profile?: string }
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
   | { cmd: 'record-live'; session: string; url: string; interval: number; browser: BrowserOpts }
@@ -155,6 +156,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'go-back') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'close') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '' };
+  if (cmd === 'session') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? rest.find((a) => !a.startsWith('--')) ?? 'about:blank', browser: browserOpts(rest), profile: flagValue(rest, '--profile') };
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500), browser: browserOpts(rest) };
@@ -333,6 +335,100 @@ async function main() {
     const r = await runNetwork(args.url);
     console.log(JSON.stringify(r, null, 2));
     if (r.status !== 'done') process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'session') {
+    // Interactive long-lived agent session: ONE process owns the browser + video +
+    // record loop, reads JSON-line commands on stdin, writes JSON results on stdout,
+    // closes cleanly on quit/EOF. This is the shape that lets video span the whole
+    // session and leaks nothing (spec: 2026-07-09-interactive-agent-session-design.md).
+    if (!args.session) { console.log(JSON.stringify({ ok: false, error: 'usage: webnav use session --session <S> [--url <U>] [--profile <name>]' })); process.exitCode = 2; return; }
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { runAgentSession } = await import('./recorder/agent-session.js');
+    const { parseSnapshot } = await import('./playwright/snapshot.js');
+    const { recoverFingerprint } = await import('./playwright/fingerprint.js');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { mkdirSync } = await import('node:fs');
+    const readline = await import('node:readline');
+
+    const store = new RecordStore(dbPath());
+    const videosRoot = join(homedir(), '.webnav', 'recordings');
+    const profilesRoot = join(homedir(), '.webnav', 'profiles');
+    // profile resolve + prep (same discipline as every other launch path)
+    const sbrowser = { ...args.browser };
+    let profName: string | null = null;
+    if (args.profile) {
+      const { resolveProfile } = await import('./playwright/adapter.js');
+      const { prepProfile } = await import('./playwright/profile-lock.js');
+      sbrowser.profile = resolveProfile(args.profile, profilesRoot);
+      profName = sbrowser.profile.split('/').pop() ?? null;
+      try { mkdirSync(sbrowser.profile, { recursive: true }); } catch { /* */ }
+      prepProfile(sbrowser.profile);
+    }
+    const adapter = new PlaywrightAdapter(args.session, undefined, undefined, sbrowser);
+    // realtime → dashboard: best-effort POST to /api/notify so it pushes SSE. The
+    // dashboard is a SEPARATE process; this is the cross-process bridge.
+    const dashPort = Number(process.env.WEBNAV_DASHBOARD_PORT ?? 7777);
+    const notify = (kind: string, line?: string) => {
+      const body = JSON.stringify({ kind, line });
+      // fire-and-forget; a missing dashboard is fine (store still has the truth)
+      import('node:http').then(({ request }) => {
+        const req = request({ host: '127.0.0.1', port: dashPort, path: '/api/notify', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, (res) => res.resume());
+        req.on('error', () => {}); req.write(body); req.end();
+      }).catch(() => {});
+    };
+    try {
+      await adapter.open(args.url);
+      if (sbrowser.profile && args.url && args.url !== 'about:blank') { try { await adapter.goto(args.url); } catch { /* past restored tab */ } }
+      store.start(args.session);
+      if (profName) store.setProfile(args.session, profName);
+      if (args.url && args.url !== 'about:blank') store.setStartUrl(args.session, args.url);
+
+      const rl = readline.createInterface({ input: process.stdin });
+      const lines: string[] = []; const waiters: ((l: string | null) => void)[] = [];
+      let ended = false;
+      rl.on('line', (l) => { const w = waiters.shift(); if (w) w(l); else lines.push(l); });
+      rl.on('close', () => { ended = true; while (waiters.length) waiters.shift()!(null); });
+      const readLine = () => new Promise<string | null>((resolve) => {
+        if (lines.length) return resolve(lines.shift()!);
+        if (ended) return resolve(null);
+        waiters.push(resolve);
+      });
+
+      await runAgentSession({
+        sessionId: args.session, adapter: adapter as never, store: store as never,
+        recover: (snap, ref) => {
+          const nodes = parseSnapshot(snap);
+          const chosen = nodes.find((n) => n.ref === ref);
+          const elementFp = recoverFingerprint(nodes, ref);
+          return { action: chosen ? { role: chosen.role, name: chosen.name, ref, elementFp } : { role: '', name: null, ref } };
+        },
+        readLine, write: (l) => process.stdout.write(l + '\n'), notify,
+        startVideo: async () => {
+          try { await adapter.videoStart(); notify('log', 'video: recording started'); }
+          catch { notify('log', 'video: START FAILED'); }
+        },
+        stopVideo: async () => {
+          const dir = join(videosRoot, args.session);
+          try { mkdirSync(dir, { recursive: true }); } catch { /* */ }
+          const file = join(dir, 'take-' + Date.now() + '.webm');
+          const ok = await adapter.videoStop(file).catch(() => false);
+          const { existsSync } = await import('node:fs');
+          // video-stop can return before the .webm is fully flushed; poll briefly so
+          // the file is present before this process exits (else the write is lost).
+          for (let i = 0; ok && i < 25 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 200));
+          if (ok && existsSync(file)) { notify('log', 'video: saved ' + file); return file; }
+          notify('log', 'video: no frames captured'); return null;
+        },
+        startUrl: args.url,
+      });
+      rl.close();
+    } finally {
+      store.stop(args.session);
+      notify('sessions');
+    }
     return;
   }
   if (args.cmd === 'close') {
@@ -873,6 +969,13 @@ async function main() {
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       activeWindow: () => (busy && !busy.startsWith('replay:') ? busy : null),
       logs: () => ({ now: Date.now(), lines: logBuf.slice(-200) }),
+      // cross-process realtime bridge: a `use session` process POSTs /api/notify →
+      // this appends its log line to our buffer and pushes the SSE event, so the
+      // dashboard streams an agent session's steps/logs live just like the human one.
+      notify: (kind: string, line?: string) => {
+        if (line) dlog(line);                       // dlog already emits('log')
+        if (kind === 'step' || kind === 'sessions') emit(kind);
+      },
       review: (id: string, opts?: { model?: string; instructions?: string }) => {
         if (reviewBusy) return { ok: false, error: 'a review is already running (' + reviewBusy + ')' };
         if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return { ok: false, error: 'bad session id' };

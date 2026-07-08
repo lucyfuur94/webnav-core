@@ -110,6 +110,19 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     example: 'webnav use close --session mysession',
   },
   {
+    name: 'session',
+    group: 'navigate',
+    summary: 'Interactive long-lived agent session: opens ONE browser (+ video + recording), then reads JSON-line commands on stdin and writes JSON results on stdout until quit/EOF. The shape that gives agent recordings video with no leaked windows.',
+    args: [],
+    flags: [
+      { name: '--session', takesValue: true, description: 'Session name (required).' },
+      { name: '--url', takesValue: true, description: 'Start URL (default about:blank).' },
+      { name: '--profile', takesValue: true, description: 'Named profile to run under (shared login); e.g. default.' },
+      { name: '--headless', takesValue: false, description: 'Run headless (recommended for agents/tests).' },
+    ],
+    example: 'echo \'{"cmd":"snapshot"}\' | webnav use session --session s1 --url https://example.com --headless',
+  },
+  {
     name: 'walk', group: 'navigate',
     summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent).',
     args: [],
