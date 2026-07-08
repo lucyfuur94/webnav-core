@@ -150,3 +150,11 @@ describe('ttlSweepOpts (env → reap opts)', () => {
     expect(ttlSweepOpts('abc', 'sess-x')).toBeNull();
   });
 });
+
+import { closeByName } from '../../src/playwright/sessions.js';
+describe('closeByName', () => {
+  it('is exported and callable (returns a boolean for a non-existent session)', async () => {
+    const r = await closeByName('definitely-not-a-real-session-xyz');
+    expect(typeof r).toBe('boolean');   // no throw; graceful path for orphan/missing
+  });
+});

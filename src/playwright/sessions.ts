@@ -164,7 +164,7 @@ function pidAlive(pid: number): boolean {
  * the daemon pid from the inventory; omit for orphans (graceful-only). Returns true if the
  * session is gone after.
  */
-async function closeSession(name: string, pid?: number): Promise<boolean> {
+export async function closeSession(name: string, pid?: number): Promise<boolean> {
   try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); }
   catch { /* graceful close failed; fall through to force-kill if we have a pid */ }
   if (pid === undefined) { removeSessionFiles(name); return true; }   // orphan: unlink the stale file
@@ -177,6 +177,13 @@ async function closeSession(name: string, pid?: number): Promise<boolean> {
 }
 
 /** Reap per `opts`; returns the names actually closed. */
+/** Close a session BY NAME: look up its daemon pid from the live inventory (so the
+ *  force-kill path works if graceful close wedges), then closeSession. */
+export async function closeByName(name: string): Promise<boolean> {
+  const pid = (await listSessions(Date.now())).find((s) => s.name === name)?.pid;
+  return closeSession(name, pid);
+}
+
 export async function reapSessions(nowMs: number, opts: ReapOpts): Promise<string[]> {
   const targets = planReap(await listSessions(nowMs), opts);
   const closed: string[] = [];

@@ -17,6 +17,7 @@ export type ParsedArgs =
   | { cmd: 'network'; url: string }
   | { cmd: 'go-back'; session: string | undefined }
   | { cmd: 'reload'; session: string | undefined }
+  | { cmd: 'close'; session: string }
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
   | { cmd: 'record-live'; session: string; url: string; interval: number; browser: BrowserOpts }
@@ -153,6 +154,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'go-back') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
+  if (cmd === 'close') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '' };
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500), browser: browserOpts(rest) };
@@ -333,6 +335,17 @@ async function main() {
     if (r.status !== 'done') process.exitCode = 3;
     return;
   }
+  if (args.cmd === 'close') {
+    // Explicit teardown for a `use` session (agent's "I'm done" — the `use` verbs
+    // keep the browser alive between calls, so SOMETHING must close it; this is it).
+    if (!args.session) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav use close --session <S>' }, null, 2)); process.exitCode = 2; return; }
+    const { closeByName } = await import('./playwright/sessions.js');
+    let closed = false;
+    try { closed = await closeByName(args.session); } catch { /* already gone */ }
+    console.log(JSON.stringify({ status: closed ? 'closed' : 'not-found', session: args.session }, null, 2));
+    if (!closed) process.exitCode = 3;
+    return;
+  }
   if (args.cmd === 'go-back' || args.cmd === 'reload') {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     // These only make sense against an EXISTING session the agent has been
@@ -359,7 +372,14 @@ async function main() {
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
     new RecordStore(dbPath()).stop(args.session);
-    console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
+    // Close the browser too — record-stop is the end of an agent session, so its
+    // window must not leak (the `use` verbs keep the session alive between calls;
+    // record-stop is the sanctioned teardown). A long-lived `record-live` owns its
+    // own adapter and closes on its own loop end — this closeByName is a no-op there.
+    const { closeByName } = await import('./playwright/sessions.js');
+    let closed = false;
+    try { closed = await closeByName(args.session); } catch { /* already gone */ }
+    console.log(JSON.stringify({ status: 'stopped', session: args.session, closed }, null, 2));
     return;
   }
   if (args.cmd === 'record-live') {

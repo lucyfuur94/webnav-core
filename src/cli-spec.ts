@@ -102,6 +102,14 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     example: 'webnav reload --session mysession',
   },
   {
+    name: 'close',
+    group: 'navigate',
+    summary: 'Close a browser session and free its window (the `use` verbs keep a session alive between calls; call this when done).',
+    args: [{ name: 'session', required: false, description: 'Session to close (or use --session).' }],
+    flags: [{ name: '--session', takesValue: true, description: 'Browser session name to close.' }],
+    example: 'webnav use close --session mysession',
+  },
+  {
     name: 'walk', group: 'navigate',
     summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent).',
     args: [],

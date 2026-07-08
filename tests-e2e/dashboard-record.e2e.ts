@@ -52,9 +52,8 @@ beforeAll(async () => {
   await sleep(500);   // small settle before the first driven navigate
 }, 60000);
 
-// Reap browser sessions after EVERY test — each `use navigate` leaves a live daemon
-// that record-stop doesn't close; without this they pile up to the 16-session ceiling
-// and later navigates error before recording (real finding from this suite).
+// Backstop reap after each test. record-stop now closes the browser (no leak), but a
+// test that fails before its record-stop would still leave one — reap sweeps those.
 afterEach(() => { try { execFileSync(CLI, ['dev', 'sessions', 'reap'], { env, timeout: 20000 }); } catch { /* */ } });
 
 afterAll(() => {
@@ -96,6 +95,7 @@ describe('dashboard e2e (saucedemo, real browser)', () => {
 
     const stop = cli(['dev', 'record-stop', '--session', S]);
     expect(stop.status).toBe('stopped');
+    expect(stop.closed).toBe(true);   // record-stop closes the browser — no leak
 
     // session appears in the list with its profile — a first-class dashboard session.
     // (VIDEO for agent sessions is a KNOWN GAP: playwright-cli video can't span
