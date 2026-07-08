@@ -19,7 +19,7 @@ export type ParsedArgs =
   | { cmd: 'reload'; session: string | undefined }
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
-  | { cmd: 'record-live'; session: string; url: string; interval: number }
+  | { cmd: 'record-live'; session: string; url: string; interval: number; browser: BrowserOpts }
   | { cmd: 'graph-analyse'; session: string; draft: boolean }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
@@ -155,7 +155,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'reload') return { cmd, session: flagValue(rest, '--session') };
   if (cmd === 'record-start') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-stop') return { cmd, session: flagValue(rest, '--session') ?? '' };
-  if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500) };
+  if (cmd === 'record-live') return { cmd, session: flagValue(rest, '--session') ?? '', url: flagValue(rest, '--url') ?? '', interval: Number(flagValue(rest, '--interval') ?? 500), browser: browserOpts(rest) };
   // session comes from --session, falling back to the first positional — both humans
   // and agents naturally type `graph-analyse <id> --draft`, and the flag-only parse
   // silently queried session '' and reported "empty" (live-acceptance trap).
@@ -359,22 +359,7 @@ async function main() {
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
     new RecordStore(dbPath()).stop(args.session);
-    // Save the agent session's video take (best-effort): the agent path started a
-    // video on first `use navigate`; reattach and stop it to the same take-*.webm
-    // the human recorder writes, so agent sessions have the required video artifact.
-    let video: string | null = null;
-    try {
-      const { PlaywrightAdapter } = await import('./playwright/adapter.js');
-      const { homedir } = await import('node:os');
-      const { join } = await import('node:path');
-      const { mkdirSync } = await import('node:fs');
-      const dir = join(homedir(), '.webnav', 'recordings', args.session);
-      mkdirSync(dir, { recursive: true });
-      const file = join(dir, 'take-' + Date.now() + '.webm');
-      const ad = new PlaywrightAdapter(args.session);
-      if (await ad.videoStop(file)) video = file;
-    } catch { /* no active video / session gone — fine */ }
-    console.log(JSON.stringify({ status: 'stopped', session: args.session, video }, null, 2));
+    console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
     return;
   }
   if (args.cmd === 'record-live') {
@@ -388,19 +373,52 @@ async function main() {
     const { runLiveRecord } = await import('./recorder/live-record.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { RecordStore } = await import('./mapstore/record.js');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
     const store = new RecordStore(dbPath());
     store.start(args.session);
+    const videosRoot = join(homedir(), '.webnav', 'recordings');
+    // --profile resolve + prep (parity with the dashboard/agent paths): one
+    // long-lived process OWNS the session, so video capture survives the whole span.
+    const rlBrowser = { ...args.browser };
+    if (rlBrowser.profile) {
+      const { resolveProfile } = await import('./playwright/adapter.js');
+      const { prepProfile } = await import('./playwright/profile-lock.js');
+      rlBrowser.profile = resolveProfile(rlBrowser.profile, join(homedir(), '.webnav', 'profiles'));
+      try { (await import('node:fs')).mkdirSync(rlBrowser.profile, { recursive: true }); } catch { /* */ }
+      prepProfile(rlBrowser.profile);
+      store.setProfile(args.session, rlBrowser.profile.split('/').pop()!);
+    }
+    store.setStartUrl(args.session, args.url);
     // finally-guard: a throw anywhere below (adapter.open on a dead URL, the loop
     // itself) must not leave the record session dangling active=1 in the DB.
     try {
-      const adapter = new PlaywrightAdapter(args.session); // headed by default
+      const adapter = new PlaywrightAdapter(args.session, undefined, undefined, rlBrowser);
       await adapter.open(args.url);
+      // Video: started here, stopped in finally — SAME process owns the session the
+      // whole time, so playwright-cli actually records it (the split-process agent
+      // flow could not — this long-lived process is how agent sessions get video).
+      // Video: started here, stopped in onBeforeClose (while the session is still
+      // open — after adapter.close() playwright-cli saves nothing). One long-lived
+      // process owns the session, so unlike the split agent CLI calls this CAN record.
+      const { mkdirSync } = await import('node:fs');
+      let videoStarted = false;
+      await adapter.videoStart().then(() => { videoStarted = true; process.stderr.write('video: recording started\n'); }, () => process.stderr.write('video: START FAILED\n'));
       let stopped = false;
       process.on('SIGINT', () => { stopped = true; });
-      process.stderr.write(`recording — click around in the browser window; stop with Ctrl-C or \`webnav dev record-stop --session ${args.session}\`\n`);
+      process.stderr.write(`recording — drive the browser (human clicks or agent \`use\` on session ${args.session}); stop with Ctrl-C or \`webnav dev record-stop --session ${args.session}\`\n`);
       const res = await runLiveRecord({
         adapter, store, sessionId: args.session, intervalMs: args.interval,
         log: (l) => process.stderr.write(l + '\n'), isStopped: () => stopped,
+        onBeforeClose: async () => {
+          if (!videoStarted) return;
+          const dir = join(videosRoot, args.session);
+          try { mkdirSync(dir, { recursive: true }); } catch { /* */ }
+          const file = join(dir, 'take-' + Date.now() + '.webm');
+          const ok = await adapter.videoStop(file).catch(() => false);
+          const { existsSync } = await import('node:fs');
+          process.stderr.write(ok && existsSync(file) ? 'video: saved ' + file + '\n' : 'video: no frames captured\n');
+        },
       });
       console.log(JSON.stringify({
         status: 'stopped', session: args.session, appended: res.appended,
@@ -1165,8 +1183,10 @@ async function main() {
         const profName = nbrowser.profile ? nbrowser.profile.split('/').pop() : null;
         if (profName) rec.setProfile(args.session, profName);
         rec.setStartUrl(args.session, args.url);
-        // start the video take for this agent session (best-effort; same take-*.webm)
-        try { await adapter.videoStart(); } catch { /* video optional */ }
+        // NOTE: no video here. playwright-cli video capture does NOT survive across
+        // separate CLI processes (proven: video-stop in a later process → "No videos
+        // were recorded"). Agent video needs a long-lived process owning the session
+        // (like the human live-loop) — tracked as a follow-up, NOT faked here.
       }
       const { diffSnapshots } = await import('./explorer/diff.js');
       const { parseSnapshot } = await import('./playwright/snapshot.js');
