@@ -22,12 +22,29 @@ export function parseShowinfoTimes(stderr: string): number[] {
   return out;
 }
 
+/** The audit task — shown to the operator in the dashboard and editable per run.
+ *  This is the GOAL: compare the video (frames) against the captured steps and
+ *  surface CAPTURE GAPS — visible changes with no recorded step. */
+export const DEFAULT_INSTRUCTIONS = `Your job — compare what the video SHOWS against what was CAPTURED:
+1. For each frame, say what user action most likely produced that screen state.
+2. CAPTURE GAPS: visible changes in the frames with NO captured step near that
+   timestamp (±5s). These are recorder misses — the deliverable. Be specific:
+   what happened on screen, when, and what kind of event the recorder should
+   have caught (click / input / navigation / scroll / hover-menu ...).
+3. Steps with no visual correlate in any frame (possible over-capture or noise).
+4. A short verdict: is this recording complete enough to replay the user's
+   journey? What single capture improvement would help most?
+
+Format as markdown with sections: Frames, Capture gaps, Uncorrelated steps, Verdict.
+Be concrete and terse. If the evidence is thin (few frames/steps), say so honestly.`;
+
 /** The audit prompt. Pure — unit-tested; the spawn stays thin. */
 export function buildReviewPrompt(
   session: string,
   steps: ReviewStepInfo[],
   logLines: { t: number; line: string }[],
   frames: ReviewFrame[],
+  instructions?: string,
 ): string {
   const t = (ms: number) => new Date(ms).toLocaleTimeString();
   const stepTxt = steps.length
@@ -51,18 +68,7 @@ ${logTxt}
 VIDEO FRAMES (visible changes; READ each image file with the Read tool):
 ${frameTxt}
 
-Your job — compare what the video SHOWS against what was CAPTURED:
-1. For each frame, say what user action most likely produced that screen state.
-2. CAPTURE GAPS: visible changes in the frames with NO captured step near that
-   timestamp (±5s). These are recorder misses — the deliverable. Be specific:
-   what happened on screen, when, and what kind of event the recorder should
-   have caught (click / input / navigation / scroll / hover-menu ...).
-3. Steps with no visual correlate in any frame (possible over-capture or noise).
-4. A short verdict: is this recording complete enough to replay the user's
-   journey? What single capture improvement would help most?
-
-Format as markdown with sections: Frames, Capture gaps, Uncorrelated steps, Verdict.
-Be concrete and terse. If the evidence is thin (few frames/steps), say so honestly.`;
+${instructions ?? DEFAULT_INSTRUCTIONS}`;
 }
 
 export interface ReviewDeps {
@@ -72,6 +78,7 @@ export interface ReviewDeps {
   logs: { t: number; line: string }[];
   log: (line: string) => void;
   claudeModel?: string;              // default sonnet (user decision for reviews)
+  instructions?: string;             // editable audit task (default DEFAULT_INSTRUCTIONS)
   maxFrames?: number;
   exec?: typeof run;                 // injected for tests
 }
@@ -131,7 +138,7 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
     frames.push(...got);
     deps.log(`review: ${got.length} change-frames from ${take}`);
   }
-  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames);
+  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames, deps.instructions);
   deps.log(`review: asking Claude (${deps.claudeModel ?? 'sonnet'}) — ${frames.length} frames, ${deps.steps.length} steps…`);
   let report: string;
   try {

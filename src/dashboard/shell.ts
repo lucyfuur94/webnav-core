@@ -305,6 +305,7 @@ async function softRefresh(kind) {
       detailCtx.r = fresh;
       if (stateChanged) buildHead(detailCtx);
       if (kind === 'step') loadSteps(detailCtx);   // realtime: steps stream like logs, whichever sub-tab is visible
+      if (detailCtx.subTab === 'review') loadReview(detailCtx);   // review start/finish emits 'sessions'
     }
   }
 }
@@ -408,30 +409,74 @@ function setSubTab(ctx, name) {
   if (name === 'review') loadReview(ctx);
 }
 
+// Minimal markdown → HTML for the review report (esc() runs FIRST, so this only
+// ever wraps already-escaped text — no XSS surface). Headings, bold, italics,
+// inline/fenced code, bullet & numbered lists, paragraphs. BT = backtick (kept
+// out of the source literal — this whole file lives inside a template string).
+const BT = String.fromCharCode(96);
+function mdToHtml(md) {
+  let src = esc(md).replace(/\\r/g, '');
+  const codeBlocks = [];
+  src = src.replace(new RegExp(BT+BT+BT+'([^]*?)'+BT+BT+BT, 'g'), (_, c) => {
+    codeBlocks.push('<pre>' + c.replace(/^\\w*\\n/, '') + '</pre>');
+    return '@@CB' + (codeBlocks.length - 1) + '@@';
+  });
+  src = src.replace(new RegExp(BT+'([^'+BT+']+)'+BT, 'g'), '<code class="val">$1</code>');
+  src = src.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+  src = src.replace(/(^|\\s)\\*([^*\\n]+)\\*(?=\\s|$)/g, '$1<em>$2</em>');
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+  for (const line of src.split('\\n')) {
+    const h = /^(#{1,4})\\s+(.*)$/.exec(line);
+    const li = /^\\s*[-*]\\s+(.*)$/.exec(line);
+    const ol = /^\\s*\\d+[.)]\\s+(.*)$/.exec(line);
+    if (h) { closeList(); out.push('<h' + (h[1].length + 2) + ' style="margin:14px 0 4px">' + h[2] + '</h' + (h[1].length + 2) + '>'); }
+    else if (li) { if (list !== 'ul') { closeList(); out.push('<ul style="margin:4px 0 8px 18px">'); list = 'ul'; } out.push('<li>' + li[1] + '</li>'); }
+    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol style="margin:4px 0 8px 18px">'); list = 'ol'; } out.push('<li>' + ol[1] + '</li>'); }
+    else if (!line.trim()) { closeList(); out.push('<div style="height:8px"></div>'); }
+    else { closeList(); out.push('<div>' + line + '</div>'); }
+  }
+  closeList();
+  return out.join('').replace(/@@CB(\\d+)@@/g, (_, i) => codeBlocks[Number(i)]);
+}
+
 // --- Review sub-tab: headless-Claude audit of captured steps vs the video frames ---
 async function loadReview(ctx) {
   const r = ctx.r;
   ctx.reviewBox.innerHTML = '';
-  const bar = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn">Run review</button><span class="muted" style="font-size:12px">extracts change-frames from the session video and asks Claude (Sonnet) to find capture gaps — runs on your claude CLI login (subscription usage), takes 1–3 min; watch Logs for progress</span></div>');
-  bar.querySelector('button').onclick = async () => {
-    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review', { method:'POST' });
+  const cfg = await getJSON('/api/review-config').catch(() => ({ model: 'sonnet', instructions: '' }));
+  let state = null;
+  try { state = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review'); } catch { state = null; }
+
+  // controls: model picker + editable agent instructions + run
+  const bar = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button class="btn">Run review</button><select><option value="sonnet">sonnet</option><option value="opus">opus</option><option value="haiku">haiku</option></select><button class="btn" data-k="instr">Instructions</button><span class="muted" style="font-size:12px">compares the VIDEO frames against the captured steps to find capture gaps · runs on your claude login · 1–3 min</span></div>');
+  const runB = bar.querySelector('button');
+  const modelSel = bar.querySelector('select');
+  modelSel.value = ['sonnet','opus','haiku'].includes(cfg.model) ? cfg.model : 'sonnet';
+  const instrWrap = el('<div style="display:none;margin-bottom:10px"><div class="cat-head">Agent instructions (editable — saved as default for future runs)</div><textarea style="width:100%;min-height:180px;background:#0b0d11;border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:8px;font:12px ui-monospace,monospace"></textarea></div>');
+  instrWrap.querySelector('textarea').value = cfg.instructions || '';
+  bar.querySelector('[data-k=instr]').onclick = () => { instrWrap.style.display = instrWrap.style.display === 'none' ? '' : 'none'; };
+  runB.onclick = async () => {
+    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ model: modelSel.value, instructions: instrWrap.querySelector('textarea').value }) });
     if (!res.ok) { alert((await res.json()).error); return; }
-    bar.querySelector('button').disabled = true;
-    bar.querySelector('button').textContent = 'reviewing…';
-    setSubTab(ctx, 'logs');   // progress streams there; report appears here when done
+    loadReview(ctx);   // re-render into the running state — progress visible HERE (and in Logs)
   };
-  ctx.reviewBox.append(bar);
-  try {
-    const { report } = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review');
-    ctx.reviewBox.append(el('<pre style="white-space:pre-wrap">'+esc(report)+'</pre>'));
-  } catch {
+  ctx.reviewBox.append(bar, instrWrap);
+
+  if (state && state.running) {
+    runB.disabled = true;
+    ctx.reviewBox.append(el('<div class="pulse" style="color:var(--accent);margin:8px 0">\u23F3 review running\u2026 (progress also streams in Logs; the report will appear here)</div>'));
+  }
+  if (state && state.report) {
+    const when = state.at ? new Date(state.at).toLocaleString() : '';
+    ctx.reviewBox.append(el('<div class="muted" style="font-size:12px;margin:6px 0">last run: '+esc(when)+'</div>'));
+    ctx.reviewBox.append(el('<div style="border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px">'+mdToHtml(state.report)+'</div>'));
+  } else if (!state || !state.running) {
     ctx.reviewBox.append(el('<div class="empty">no review yet — run one above</div>'));
   }
-}
-async function loadSteps(ctx) {
-  const steps = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/steps');
-  ctx.stepsBox.innerHTML = '';
-  ctx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
 }
 
 async function showRecording(r, detail, list, row) {
@@ -441,7 +486,7 @@ async function showRecording(r, detail, list, row) {
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
   const headBox = el('<div style="margin-bottom:10px"></div>');
-  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="logs">Logs</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button></nav>');
+  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button><button data-sub="logs">Logs</button></nav>');
   const stepsBox = el('<div></div>');
   const logsBox = el('<div style="display:none"></div>');
   const videosBox = el('<div style="display:none"></div>');

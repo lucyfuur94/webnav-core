@@ -169,6 +169,8 @@ describe('recordings API', () => {
     shotPath: () => null,
     review: () => ({ ok: true }),
     reviewReport: () => null,
+    reviewRunning: () => null,
+    reviewConfig: () => ({ model: 'sonnet', instructions: '' }),
     reviewFramePath: () => null,
   };
   beforeAll(async () => {
@@ -220,7 +222,9 @@ describe('realtime (SSE + toggle)', () => {
       activeWindow: () => 'r9',
       logs: () => ({ now: 1, lines: [{ t: 1, line: 'hello' }] }),
       review: () => ({ ok: true }),
-      reviewReport: (id: string) => (id === 'r9' ? '# audit' : null),
+      reviewReport: (id: string) => (id === 'r9' ? { report: '# audit', at: 5 } : null),
+      reviewRunning: () => null,
+      reviewConfig: () => ({ model: 'sonnet', instructions: 'audit it' }),
       reviewFramePath: () => null,
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
@@ -242,7 +246,11 @@ describe('realtime (SSE + toggle)', () => {
     expect(await (await fetch(b3 + '/api/recordings/window')).json()).toEqual({ session: 'r9' });
     expect((await (await fetch(b3 + '/api/logs')).json()).lines[0].line).toBe('hello');
     expect((await fetch(b3 + '/api/recordings/r9/review', { method: 'POST' })).status).toBe(200);
-    expect((await (await fetch(b3 + '/api/recordings/r9/review')).json()).report).toBe('# audit');
+    const rev = await (await fetch(b3 + '/api/recordings/r9/review')).json() as any;
+    expect(rev.report).toBe('# audit');
+    expect(rev.at).toBe(5);                              // last-run time surfaced
+    expect(rev.running).toBe(false);
+    expect((await (await fetch(b3 + '/api/review-config')).json()).instructions).toBe('audit it');
     expect((await fetch(b3 + '/api/recordings/other/review')).status).toBe(404);
     const full = await fetch(b3 + '/recordings-media/r9/take-1.webm');
     expect(full.status).toBe(200);
