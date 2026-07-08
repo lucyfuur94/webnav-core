@@ -11,6 +11,8 @@ import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 
 export interface LiveEvent {
   seq: number; kind: 'click' | 'input' | 'toggle'; url: string; tagName: string;
+  t?: number;   // capture-time (page clock) — steps/logs stamp THIS, not processing time
+                // (heavy pages make snapshots slow; the loop can lag minutes behind)
   role?: string | null; ariaLabel?: string | null; leafText?: string | null;
   href?: string | null; placeholder?: string | null; nameAttr?: string | null;
   inputType?: string | null;
@@ -71,7 +73,7 @@ export const INSTALLER_JS = `() => {
       const q = JSON.parse(sessionStorage.getItem('__webnav_evq') || '[]');
       const seq = (Number(sessionStorage.getItem('__webnav_seq')) || 0) + 1;
       sessionStorage.setItem('__webnav_seq', String(seq));
-      q.push(Object.assign({ seq, url: location.href }, e));
+      q.push(Object.assign({ seq, t: Date.now(), url: location.href }, e));
       sessionStorage.setItem('__webnav_evq', JSON.stringify(q));
       return seq;
     } catch { return 0; }   // storage-denied page (opaque origin): drop, never explode
