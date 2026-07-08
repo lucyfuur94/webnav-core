@@ -412,7 +412,7 @@ function setSubTab(ctx, name) {
 async function loadReview(ctx) {
   const r = ctx.r;
   ctx.reviewBox.innerHTML = '';
-  const bar = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn">Run review</button><span class="muted" style="font-size:12px">extracts change-frames from the session video and asks Claude (Sonnet) to find capture gaps — uses API credits, takes 1–3 min; watch Logs for progress</span></div>');
+  const bar = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn">Run review</button><span class="muted" style="font-size:12px">extracts change-frames from the session video and asks Claude (Sonnet) to find capture gaps — runs on your claude CLI login (subscription usage), takes 1–3 min; watch Logs for progress</span></div>');
   bar.querySelector('button').onclick = async () => {
     const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review', { method:'POST' });
     if (!res.ok) { alert((await res.json()).error); return; }
