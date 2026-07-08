@@ -78,12 +78,31 @@ export interface ReviewDeps {
 
 /** Extract scene-change frames from one take. Returns frames with ABSOLUTE wall-clock
  *  times (take start = the ts in take-<ts>.webm + pts offset). */
+/** The frame-selection expression. Web-UI tuned (live finding: a 10-min browsing
+ *  take yielded 4 frames at scene>0.08 — movie-cut thresholds miss typing/menus/
+ *  scroll): >2% change counts, a min-gap rate-limits bursts (a playing video would
+ *  otherwise eat the whole frame budget in seconds), and a HEARTBEAT guarantees
+ *  one frame per interval across the entire timeline even when nothing trips the
+ *  threshold — full coverage for the gap audit. Pure: unit-tested. */
+export function frameSelectExpr(durationS: number, maxFrames: number): { expr: string; minGapS: number; heartbeatS: number } {
+  // budget ~25% of frames for scene-changes so bursts can't cut off tail coverage
+  const heartbeatS = Math.max(5, Math.ceil(durationS / Math.max(1, Math.floor(maxFrames * 0.75))));
+  const minGapS = Math.max(2, Math.floor(heartbeatS / 3));
+  const expr = `isnan(prev_selected_t)+(gt(scene\,0.02)+gte(t-prev_selected_t\,${heartbeatS}))*gte(t-prev_selected_t\,${minGapS})`;
+  return { expr, minGapS, heartbeatS };
+}
+
 export async function extractFrames(
   takePath: string, takeStartMs: number, framesDir: string, maxFrames: number, exec: typeof run,
 ): Promise<ReviewFrame[]> {
   mkdirSync(framesDir, { recursive: true });
-  // select: first frame + any >8% scene change; scale keeps Claude's image tokens sane.
-  const vf = "select='eq(n\\,0)+gt(scene\\,0.08)',showinfo,scale=800:-2";
+  let durationS = 0;
+  try {
+    const pr = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', takePath]);
+    durationS = Number(String(pr.stdout).trim()) || 0;
+  } catch { /* unknown duration → heartbeat floor applies */ }
+  const { expr } = frameSelectExpr(durationS, maxFrames);
+  const vf = `select='${expr}',showinfo,scale=800:-2`;
   let stderr = '';
   try {
     const r = await exec('ffmpeg', ['-y', '-i', takePath, '-vf', vf, '-fps_mode', 'vfr',

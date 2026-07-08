@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseShowinfoTimes, buildReviewPrompt } from '../../src/recorder/review.js';
+import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr } from '../../src/recorder/review.js';
 
 describe('parseShowinfoTimes', () => {
   it('pulls pts seconds in order from ffmpeg stderr', () => {
@@ -28,5 +28,22 @@ describe('buildReviewPrompt', () => {
     const p = buildReviewPrompt('s-2', [], [], []);
     expect(p).toContain('(no steps captured)');
     expect(p).toContain('(no frames extracted)');
+  });
+});
+
+
+describe('frameSelectExpr (web-UI tuned selection)', () => {
+  it('heartbeat guarantees full-timeline coverage; min-gap rate-limits bursts', () => {
+    const { expr, heartbeatS, minGapS } = frameSelectExpr(584, 20);   // the real 10-min take
+    expect(heartbeatS).toBe(39);            // ceil(584 / (20*0.75)) — tail not cut off by scene bursts
+    expect(minGapS).toBe(13);
+    expect(expr).toContain('isnan(prev_selected_t)');   // first frame always
+    expect(expr).toContain('scene');                     // change-driven
+    expect(expr).toContain('gte(t-prev_selected_t');     // heartbeat + rate limit
+  });
+  it('short/unknown-duration videos get sane floors', () => {
+    const { heartbeatS, minGapS } = frameSelectExpr(0, 20);
+    expect(heartbeatS).toBe(5);
+    expect(minGapS).toBe(2);
   });
 });
