@@ -55,6 +55,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <button data-tab="recordings" class="active">Sessions</button>
   <button data-tab="sites">Sites</button>
   <button data-tab="creds">Credentials</button>
+  <button data-tab="profiles">Profiles</button>
 </nav>
 <main id="main"></main>
 
@@ -81,6 +82,7 @@ async function render() {
   if (tab === 'sites') return renderSites();
   if (tab === 'creds') return renderCreds();
   if (tab === 'recordings') return renderRecordings();
+  if (tab === 'profiles') return renderProfiles();
 }
 
 // ---------- SITES ----------
@@ -104,6 +106,41 @@ async function renderSites() {
     list.append(row);
   });
   main.append(list, detail);
+}
+
+// ---------- PROFILES (saved logged-in browser profiles) ----------
+async function renderProfiles() {
+  main.style.gridTemplateColumns = '1fr';
+  const profs = await getJSON('/api/profiles');
+  main.innerHTML = '';
+  const wrap = el('<div></div>');
+  wrap.append(el('<div class="cat-head">Saved browser profiles — a logged-in session kept on disk (Cloudflare / SSO / 2FA done once by hand). A walk reuses one via <code class="val">--profile &lt;name&gt;</code>.</div>'));
+  if (!profs.length) { wrap.append(el('<div class="empty">no saved profiles — tick "keep me logged in" when opening a session, then log in once</div>')); main.append(wrap); return; }
+  const tbl = el('<table><thead><tr><th>Session</th><th>Site</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
+  const tb = tbl.querySelector('tbody');
+  profs.forEach(pf => {
+    const tr = el('<tr><td><code>'+esc(pf.session)+'</code>'+(pf.open?' <span class="pulse" style="color:#e5484d">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
+    const act = tr.children[4];
+    const openB = el('<button class="btn">Open to re-login</button>');
+    openB.disabled = pf.open;
+    openB.onclick = async () => {
+      openB.disabled = true; openB.textContent = 'opening…';
+      const res = await fetch('/api/profiles/'+encodeURIComponent(pf.session)+'/open', { method:'POST' });
+      if (!res.ok) alert((await res.json()).error);
+      renderProfiles();
+    };
+    const delB = el('<button class="btn danger" style="margin-left:6px">Delete</button>');
+    delB.onclick = async () => {
+      if (!confirm('Delete profile '+pf.session+'? This logs it out — next walk will hit the login wall.')) return;
+      await fetch('/api/profiles/'+encodeURIComponent(pf.session), { method:'DELETE' });
+      renderProfiles();
+    };
+    act.append(openB, delB);
+    tb.append(tr);
+  });
+  wrap.append(tbl);
+  main.append(wrap);
+  startEvents();   // 'sessions' events (profile open/close/delete) refresh this tab
 }
 
 // ---------- CREDENTIALS ----------
@@ -327,6 +364,7 @@ function startEvents() {
   if (es) return;
   es = new EventSource('/api/events');
   es.onmessage = (m) => {
+    if (tab === 'profiles') { if (m.data !== 'log') renderProfiles(); return; }
     if (tab !== 'recordings') return;
     if (m.data === 'log') { appendLogLive(); return; }
     if (m.data === 'replay') return;                       // replay view drives itself

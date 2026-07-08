@@ -11,11 +11,12 @@ describe('SHELL_HTML', () => {
     expect(SHELL_HTML).toContain('<title>webnav dashboard</title>');
   });
 
-  it('has exactly the three operator tabs: Sites + Credentials + Recordings', () => {
+  it('has the operator tabs: Sessions + Sites + Credentials + Profiles', () => {
+    expect(SHELL_HTML).toContain('data-tab="recordings"');   // labelled "Sessions"
     expect(SHELL_HTML).toContain('data-tab="sites"');
     expect(SHELL_HTML).toContain('data-tab="creds"');
-    expect(SHELL_HTML).toContain('data-tab="recordings"');
-    expect(SHELL_HTML.match(/data-tab="/g)).toHaveLength(3);
+    expect(SHELL_HTML).toContain('data-tab="profiles"');
+    expect(SHELL_HTML.match(/data-tab="/g)).toHaveLength(4);
   });
 
   it('drives the dashboard HTTP API endpoints served by server.ts', () => {
@@ -93,4 +94,11 @@ it('review UX: md renderer, sub-tab order Steps>Videos>Review>Logs, model+instru
 it('Sessions list offers Clear all with a typed confirm', () => {
   expect(SHELL_HTML).toContain('Clear all');
   expect(SHELL_HTML).toContain('delete all');   // typed confirmation guard
+});
+
+it('Profiles tab: lists saved profiles with re-login + delete', () => {
+  expect(SHELL_HTML).toContain('data-tab="profiles"');
+  expect(SHELL_HTML).toContain('function renderProfiles');
+  expect(SHELL_HTML).toContain('/api/profiles');
+  expect(SHELL_HTML).toContain('Open to re-login');
 });

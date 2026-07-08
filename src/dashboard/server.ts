@@ -44,6 +44,9 @@ export interface RecordingsDeps {
   reviewReport(id: string): { report: string; at: number } | null; // review.md + mtime (null = none yet)
   reviewRunning(): string | null;                                   // session id of an in-flight review
   reviewConfig(): { model: string; instructions: string };          // last-used (or default) audit config
+  profiles(): { session: string; site: string | null; sizeMb: number; lastUsed: number; open: boolean }[];
+  profileOpen(session: string): Promise<{ ok: true } | { ok: false; error: string }>;   // headed re-login window
+  profileDelete(session: string): { ok: boolean };                  // remove the saved login (logs out, frees disk)
   reviewFramePath(session: string, file: string): string | null;   // sanitized frame path for /review-media
 }
 
@@ -165,7 +168,7 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs' || path === '/api/review-config') {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs' || path === '/api/review-config' || path === '/api/profiles' || path.startsWith('/api/profiles/')) {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
@@ -173,6 +176,17 @@ export function startDashboard(
         if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
 
         if (path === '/api/review-config' && method === 'GET') return sendJson(200, rec.reviewConfig());
+        if (path === '/api/profiles' && method === 'GET') return sendJson(200, rec.profiles());
+        const profOpenM = path.match(/^\/api\/profiles\/([^/]+)\/open$/);
+        if (profOpenM && method === 'POST') {
+          const r = await rec.profileOpen(decodeURIComponent(profOpenM[1]));
+          return sendJson(r.ok ? 200 : 409, r);
+        }
+        const profM = path.match(/^\/api\/profiles\/([^/]+)$/);
+        if (profM && method === 'DELETE') {
+          const r = rec.profileDelete(decodeURIComponent(profM[1]));
+          return sendJson(r.ok ? 200 : 404, r);
+        }
         const revM = path.match(/^\/api\/recordings\/([^/]+)\/review$/);
         if (revM && method === 'POST') {
           let opts: { model?: string; instructions?: string } = {};

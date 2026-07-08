@@ -665,6 +665,20 @@ async function main() {
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
     const profilesRoot = join(homedir(), '.webnav', 'profiles');   // STABLE per-session browser profile
     const profileDir = (id: string) => join(profilesRoot, id.replace(/[^\w.-]/g, '_'));
+    const dirSizeMb = (dir: string) => {
+      // cheap recursive size; profiles are small (cookies+cache), so a sync walk is fine
+      let total = 0;
+      const walk = (d: string) => {
+        let ents: string[] = [];
+        try { ents = readdirSync(d); } catch { return; }
+        for (const e of ents) {
+          const fp = join(d, e);
+          try { const st = statSync(fp); if (st.isDirectory()) walk(fp); else total += st.size; } catch { /* skip */ }
+        }
+      };
+      walk(dir);
+      return Math.round(total / 1e5) / 10;   // MB, 1 decimal
+    };
     let reviewBusy: string | null = null;
     const { DEFAULT_INSTRUCTIONS: reviewDefaultInstructions } = await import('./recorder/review.js');
     let videoOn = false;
@@ -827,6 +841,52 @@ async function main() {
           ? (readdirSync(join(reviewsRoot, session)).filter((d) => d.startsWith('frames-'))
               .map((d) => join(reviewsRoot, session, d, file)).find((f) => existsSync2(f)) ?? null)
           : null,
+      profiles: () => {
+        let dirs: string[] = [];
+        try { dirs = readdirSync(profilesRoot); } catch { return []; }
+        return dirs.filter((d) => { try { return statSync(join(profilesRoot, d)).isDirectory(); } catch { return false; } })
+          .map((d) => {
+            const dir = join(profilesRoot, d);
+            let lastUsed = 0; try { lastUsed = statSync(dir).mtimeMs; } catch { /* */ }
+            // the site = the first recorded step's host for this session (best-effort)
+            let site: string | null = null;
+            try { const fx = recordStore.actionEffects(d); site = fx.length ? new URL(fx[0].fromUrl).host : null; } catch { /* */ }
+            return { session: d, site, sizeMb: dirSizeMb(dir), lastUsed, open: busy === d };
+          }).sort((a, b) => b.lastUsed - a.lastUsed);
+      },
+      profileOpen: async (session: string) => {
+        if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        if (!/^[\w.-]+$/.test(session) || session === '.' || session === '..') return { ok: false as const, error: 'bad session id' };
+        const dir = profileDir(session);
+        if (!existsSync2(dir)) return { ok: false as const, error: 'no saved profile for ' + session };
+        busy = session;
+        // re-login window: open the profile headed at its site (or blank) so the human
+        // can refresh an expired Cloudflare/2FA login. NOT recording — closes on the
+        // window being closed (browserAlive), state persists back to the profile dir.
+        let startUrl = 'about:blank';
+        try { const fx = recordStore.actionEffects(session); if (fx.length) startUrl = new URL(fx[0].fromUrl).origin; } catch { /* */ }
+        try {
+          const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent: true, profile: dir });
+          activeAdapter = adapter;
+          await adapter.open(startUrl);
+          dlog('re-login window opened for profile ' + session + ' — log in by hand, then close the window');
+          emit('sessions');
+          // keep the window alive until the human closes it (ps liveness), then release
+          void (async () => {
+            const { listSessions: listPw } = await import('./playwright/sessions.js');
+            let pid: number | undefined;
+            try { pid = (await listPw(Date.now())).find((x) => x.name === session)?.pid; } catch { /* */ }
+            const alive = () => { if (pid === undefined) return true; try { return execSync('ps -axo ppid=,comm= | awk \'$1==' + pid + '\'', { encoding: 'utf8' }).toLowerCase().includes('chrom'); } catch { return true; } };
+            while (alive()) { await new Promise((r) => setTimeout(r, 1000)); if (busy !== session) break; }
+          })().finally(() => { busy = null; activeAdapter = null; dlog('re-login window closed: ' + session); emit('sessions'); });
+          return { ok: true as const };
+        } catch (e) { busy = null; return { ok: false as const, error: String(e) }; }
+      },
+      profileDelete: (session: string) => {
+        if (!/^[\w.-]+$/.test(session) || session === '.' || session === '..') return { ok: false };
+        try { rmSync(profileDir(session), { recursive: true, force: true }); dlog('profile deleted (logged out): ' + session); emit('sessions'); return { ok: true }; }
+        catch { return { ok: false }; }
+      },
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);

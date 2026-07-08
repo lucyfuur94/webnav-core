@@ -172,6 +172,9 @@ describe('recordings API', () => {
     reviewRunning: () => null,
     reviewConfig: () => ({ model: 'sonnet', instructions: '' }),
     reviewFramePath: () => null,
+    profiles: () => [{ session: 'r1', site: 's.test', sizeMb: 1.2, lastUsed: 9, open: false }],
+    profileOpen: async () => ({ ok: true as const }),
+    profileDelete: () => ({ ok: true }),
   };
   beforeAll(async () => {
     tmp2 = mkdtempSync(join(tmpdir(), 'webnav-dash-rec-'));
@@ -190,6 +193,10 @@ describe('recordings API', () => {
     await fetch(base + '/api/recordings/r1/stop', { method: 'POST' });
     await fetch(base + '/api/recordings/r1', { method: 'DELETE' });
     expect(calls).toEqual(['rec:r1', 'stop:r1', 'del:r1']);
+  });
+  it('profiles: list, delete', async () => {
+    expect(await (await fetch(base + '/api/profiles')).json()).toHaveLength(1);
+    expect((await fetch(base + '/api/profiles/r1', { method: 'DELETE' })).status).toBe(200);
   });
   it('busy replay → 409; missing shot → 404; open validates body', async () => {
     expect((await fetch(base + '/api/recordings/r1/replay', { method: 'POST' })).status).toBe(409);
@@ -226,6 +233,9 @@ describe('realtime (SSE + toggle)', () => {
       reviewRunning: () => null,
       reviewConfig: () => ({ model: 'sonnet', instructions: 'audit it' }),
       reviewFramePath: () => null,
+      profiles: () => [{ session: 'r9', site: 's.test', sizeMb: 2.5, lastUsed: 7, open: false }],
+      profileOpen: async () => ({ ok: true as const }),
+      profileDelete: () => ({ ok: true }),
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
     writeFileSync(vidFile, Buffer.from('0123456789'));   // 10-byte fake video for range tests
