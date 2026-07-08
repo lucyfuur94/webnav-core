@@ -359,7 +359,22 @@ async function main() {
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
     new RecordStore(dbPath()).stop(args.session);
-    console.log(JSON.stringify({ status: 'stopped', session: args.session }, null, 2));
+    // Save the agent session's video take (best-effort): the agent path started a
+    // video on first `use navigate`; reattach and stop it to the same take-*.webm
+    // the human recorder writes, so agent sessions have the required video artifact.
+    let video: string | null = null;
+    try {
+      const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+      const { homedir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { mkdirSync } = await import('node:fs');
+      const dir = join(homedir(), '.webnav', 'recordings', args.session);
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, 'take-' + Date.now() + '.webm');
+      const ad = new PlaywrightAdapter(args.session);
+      if (await ad.videoStop(file)) video = file;
+    } catch { /* no active video / session gone — fine */ }
+    console.log(JSON.stringify({ status: 'stopped', session: args.session, video }, null, 2));
     return;
   }
   if (args.cmd === 'record-live') {
@@ -686,24 +701,8 @@ async function main() {
     };
     let reviewBusy: string | null = null;
     const { DEFAULT_INSTRUCTIONS: reviewDefaultInstructions } = await import('./recorder/review.js');
-    let videoOn = false;
-    const videoSync = (session: string, recording: boolean) => {
-      if (recording && !videoOn && activeAdapter) {
-        videoOn = true;
-        void activeAdapter.videoStart().then(
-          () => dlog('video: recording started'),
-          () => dlog('video: START FAILED'));
-      } else if (!recording && videoOn && activeAdapter) {
-        videoOn = false;
-        const dir = join(videosRoot, session);
-        try { mkdirSync(dir, { recursive: true }); } catch { /* decoration */ }
-        const file = join(dir, 'take-' + Date.now() + '.webm');
-        void activeAdapter.videoStop(file).then((ok) => {
-          dlog(ok ? 'video: saved ' + file : 'video: SAVE FAILED (' + file + ')');
-          emit('sessions');
-        });
-      }
-    };
+    const { makeVideoSync } = await import('./playwright/video.js');
+    const videoSync = makeVideoSync(() => activeAdapter, { videosRoot, log: dlog, onSaved: () => emit('sessions') });
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
@@ -1134,7 +1133,21 @@ async function main() {
     const { WalkSessionStore } = await import('./router/walk-session.js');
     const gate = await ensureCanOpen(args.session, new WalkSessionStore().staleBrowserSessions(60 * 60 * 1000));
     if (!gate.ok) { console.log(JSON.stringify({ status: 'error', reason: gate.reason }, null, 2)); process.exitCode = 2; return; }
-    const adapter = new PlaywrightAdapter(args.session, undefined, undefined, args.browser);
+    const { homedir: homedir2 } = await import('node:os');
+    const { join: join2 } = await import('node:path');
+    const profilesRoot2 = join2(homedir2(), '.webnav', 'profiles');
+    // Agent path parity with the dashboard: a bare --profile NAME → the shared
+    // profiles dir (+ prepProfile to clear an orphan lock) so an agent runs under
+    // the same login a human would. resolveProfile leaves absolute paths untouched.
+    const nbrowser = { ...args.browser };
+    if (nbrowser.profile) {
+      const { resolveProfile } = await import('./playwright/adapter.js');
+      const { prepProfile } = await import('./playwright/profile-lock.js');
+      nbrowser.profile = resolveProfile(nbrowser.profile, profilesRoot2);
+      try { (await import('node:fs')).mkdirSync(nbrowser.profile, { recursive: true }); } catch { /* */ }
+      prepProfile(nbrowser.profile);
+    }
+    const adapter = new PlaywrightAdapter(args.session, undefined, undefined, nbrowser);
     try {
       // `open` creates the session if new AND navigates; it also works to
       // re-navigate an existing session (whereas `goto` requires the session to
@@ -1143,18 +1156,26 @@ async function main() {
       const toSnapshot = await adapter.snapshot();
       const toUrl = await adapter.currentUrl();
       const rec = new RecordStore(dbPath());
-      let recorded = false;
-      if (rec.isActive(args.session)) {
-        const { diffSnapshots } = await import('./explorer/diff.js');
-        const { parseSnapshot } = await import('./playwright/snapshot.js');
-        rec.appendActionEffect(args.session, {
-          fromUrl: args.url, fromSnapshot: '', action: null,
-          toUrl, toSnapshot, navigated: true,
-          diff: diffSnapshots([], parseSnapshot(toSnapshot)),
-        });
-        recorded = true;
+      // Auto-start recording so an agent session is a first-class, dashboard-visible
+      // recording (steps + video) without a separate record-start. Video capture
+      // starts on the first navigate and is stopped by `dev record-stop`.
+      const fresh = !rec.isActive(args.session);
+      if (fresh) {
+        rec.start(args.session);
+        const profName = nbrowser.profile ? nbrowser.profile.split('/').pop() : null;
+        if (profName) rec.setProfile(args.session, profName);
+        rec.setStartUrl(args.session, args.url);
+        // start the video take for this agent session (best-effort; same take-*.webm)
+        try { await adapter.videoStart(); } catch { /* video optional */ }
       }
-      console.log(JSON.stringify({ status: 'done', url: toUrl, recorded }, null, 2));
+      const { diffSnapshots } = await import('./explorer/diff.js');
+      const { parseSnapshot } = await import('./playwright/snapshot.js');
+      rec.appendActionEffect(args.session, {
+        fromUrl: args.url, fromSnapshot: '', action: null,
+        toUrl, toSnapshot, navigated: true,
+        diff: diffSnapshots([], parseSnapshot(toSnapshot)),
+      });
+      console.log(JSON.stringify({ status: 'done', url: toUrl, recorded: true }, null, 2));
     } catch (e) {
       console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));
       process.exitCode = 2;
