@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import type { IMapStore } from '../mapstore/store.js';
 import type { CredStore, CredCategory } from '../creds.js';
 import type { RecordSessionInfo } from '../mapstore/record.js';
@@ -217,9 +217,24 @@ export function startDashboard(
         if (vidM && method === 'GET') {
           const vp = rec.videoPath(decodeURIComponent(vidM[1]), decodeURIComponent(vidM[2]));
           if (!vp || !existsSync(vp)) return sendJson(404, { error: 'not found' });
-          const vs = createReadStream(vp);
+          // Seeking needs byte-range support: without Accept-Ranges/206 the browser
+          // can only play the stream forward (live finding: dead scrubber). Single
+          // range only — that's all <video> asks for.
+          const size = statSync(vp).size;
+          const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+          let start = 0, end = size - 1, code = 200;
+          const head: Record<string, string | number> = { 'content-type': 'video/webm', 'accept-ranges': 'bytes' };
+          if (range && (range[1] || range[2])) {
+            start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+            end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : end;
+            if (start > end || start >= size) { res.writeHead(416, { 'content-range': 'bytes */' + size }); return res.end(); }
+            code = 206;
+            head['content-range'] = 'bytes ' + start + '-' + end + '/' + size;
+          }
+          head['content-length'] = end - start + 1;
+          const vs = createReadStream(vp, { start, end });
           vs.on('error', () => { if (!res.headersSent) sendJson(404, { error: 'not found' }); else res.destroy(); });
-          res.writeHead(200, { 'content-type': 'video/webm' });
+          res.writeHead(code, head);
           return vs.pipe(res);
         }
 

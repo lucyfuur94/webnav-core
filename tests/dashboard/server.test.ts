@@ -202,6 +202,7 @@ describe('recordings API', () => {
 });
 
 describe('realtime (SSE + toggle)', () => {
+  const vidFile = join(mkdtempSync(join(tmpdir(), 'webnav-vid-')), 'take-1.webm');
   it('toggle flips and /api/events streams pushed types', async () => {
     const events: string[] = [];
     let push: ((t: string) => void) | null = null;
@@ -211,11 +212,13 @@ describe('realtime (SSE + toggle)', () => {
       replay: async () => ({ ok: true as const }), replayState: () => null,
       replayControl: () => true, shotPath: () => null,
       toggle: (id: string, desired?: boolean) => { events.push('toggled:' + id + ':' + desired); push?.('sessions'); return { recording: desired ?? true }; },
-      videos: () => ['take-1.webm'], videoPath: () => null,
+      videos: () => ['take-1.webm'],
+      videoPath: (sess: string, f: string) => (f === 'take-1.webm' ? vidFile : null),
       activeWindow: () => 'r9',
       logs: () => ({ now: 1, lines: [{ t: 1, line: 'hello' }] }),
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
+    writeFileSync(vidFile, Buffer.from('0123456789'));   // 10-byte fake video for range tests
     const s3 = startDashboard(new MapStore(':memory:'), new CredStore(join(mkdtempSync(join(tmpdir(), 'webnav-sse-')), 'c3.json')), { port: 0 }, rec2 as any);
     await new Promise((r) => s3.on('listening', r));
     const b3 = 'http://127.0.0.1:' + (s3.address() as AddressInfo).port;
@@ -232,7 +235,15 @@ describe('realtime (SSE + toggle)', () => {
     expect(await (await fetch(b3 + '/api/recordings/r9/videos')).json()).toEqual(['take-1.webm']);
     expect(await (await fetch(b3 + '/api/recordings/window')).json()).toEqual({ session: 'r9' });
     expect((await (await fetch(b3 + '/api/logs')).json()).lines[0].line).toBe('hello');
-    expect((await fetch(b3 + '/recordings-media/r9/take-1.webm')).status).toBe(404);   // videoPath null → 404
+    const full = await fetch(b3 + '/recordings-media/r9/take-1.webm');
+    expect(full.status).toBe(200);
+    expect(full.headers.get('accept-ranges')).toBe('bytes');
+    expect(full.headers.get('content-length')).toBe('10');
+    const part = await fetch(b3 + '/recordings-media/r9/take-1.webm', { headers: { range: 'bytes=2-5' } });
+    expect(part.status).toBe(206);                                        // seeking needs 206s
+    expect(part.headers.get('content-range')).toBe('bytes 2-5/10');
+    expect(await part.text()).toBe('2345');
+    expect((await fetch(b3 + '/recordings-media/r9/nope.webm')).status).toBe(404);
     const chunk = new TextDecoder().decode((await reader.read()).value);
     expect(chunk).toContain('data: sessions');                  // the toggle was PUSHED to the stream
     reader.cancel();
