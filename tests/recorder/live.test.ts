@@ -215,3 +215,14 @@ describe('flow variables (recorded values)', () => {
     expect(secret.action?.value).toBeUndefined();          // secrets: never captured
   });
 });
+
+
+describe('click ripple (video click-location marker)', () => {
+  it('paints only while recording; never intercepts; never in a11y snapshots', () => {
+    const rippleBlock = INSTALLER_JS.slice(INSTALLER_JS.indexOf('const ripple'));
+    expect(INSTALLER_JS).toContain("dataset.webnavRec === '1') ripple(");  // recording-gated
+    expect(rippleBlock).toContain('pointer-events:none');                  // click-transparent
+    expect(rippleBlock).toContain("setAttribute('aria-hidden'");           // snapshot-invisible
+    expect(rippleBlock).toContain('r.remove()');                           // self-cleaning
+  });
+});
