@@ -228,21 +228,27 @@ function addSiteCard() {
 let replayPoll = null;
 let currentOpenId = null;
 let winSession = null;   // which recording owns the driven window right now
+let rowEls = {};         // sessionId → its list row (for in-place refresh, no flicker)
+let detailCtx = null;    // { r, headBox, stepsBox, logsBox, subTab } for the open detail
+let lastLogT = 0;
+
 async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
   main.style.gridTemplateColumns = '280px 1fr';
   const recs = await getJSON('/api/recordings');
   try { winSession = (await getJSON('/api/recordings/window')).session; } catch { winSession = null; }
   main.innerHTML = '';
+  rowEls = {}; detailCtx = null;
   const list = el('<div class="list"></div>');
   const detail = el('<div class="detail"><div class="empty">open a window above, or select a recording</div></div>');
-  list.append(newRecordingCard());                                 // new recording FIRST (top)
+  list.append(newRecordingCard());
   let reopen = null;
   recs.forEach(r => {
-    const when = new Date(r.startedAt).toLocaleString();
-    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div class="name">'+esc(r.sessionId)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'')+'</div><div class="meta">'+esc(r.site||'?')+' · '+r.steps+' steps · '+esc(when)+'</div></div><button class="btn danger" title="delete" style="padding:2px 8px">\\u2715</button></div>');
+    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div class="name"></div><div class="meta"></div></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
+    rowEls[r.sessionId] = row;
+    fillRow(row, r);
     row.onclick = () => showRecording(r, detail, list, row);
-    row.querySelector('button').onclick = async (e) => {           // per-row delete
+    row.querySelector('button').onclick = async (e) => {
       e.stopPropagation();
       if (!confirm('Delete recording '+r.sessionId+'?')) return;
       await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' });
@@ -253,27 +259,56 @@ async function renderRecordings(openId) {
   });
   if (!recs.length) list.append(el('<div class="empty">no recordings yet</div>'));
   main.append(list, detail);
-  if (reopen) reopen();                                            // keep the detail open across actions
-  startEvents();                                                   // realtime push (SSE)
+  if (reopen) reopen();
+  startEvents();
 }
-// Realtime: the server pushes 'sessions' / 'step' / 'replay' over SSE — no polling.
-// EventSource auto-reconnects; a burst of events is debounced into one refresh.
-let es = null; let refreshT = null;
+function fillRow(row, r) {
+  row.querySelector('.name').innerHTML = esc(r.sessionId)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'');
+  row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps · '+new Date(r.startedAt).toLocaleString();
+}
+
+// SOFT refresh (no flicker): update rows + the open detail's header IN PLACE.
+// Only a changed recordings SET (add/remove) does a full re-render.
+async function softRefresh(kind) {
+  if (tab !== 'recordings' || replayPoll) return;
+  let recs;
+  try {
+    recs = await getJSON('/api/recordings');
+    winSession = (await getJSON('/api/recordings/window')).session;
+  } catch { return; }
+  const ids = recs.map(r => r.sessionId).sort().join('|');
+  if (ids !== Object.keys(rowEls).sort().join('|')) return renderRecordings(currentOpenId);
+  recs.forEach(r => { const row = rowEls[r.sessionId]; if (row) fillRow(row, r); });
+  if (detailCtx) {
+    const fresh = recs.find(r => r.sessionId === detailCtx.r.sessionId);
+    if (fresh) {
+      const stateChanged = fresh.active !== detailCtx.r.active || (winSession === fresh.sessionId) !== detailCtx.hasWindow;
+      detailCtx.r = fresh;
+      if (stateChanged) buildHead(detailCtx);
+      if (kind === 'step' && detailCtx.subTab === 'steps') {
+        const steps = await getJSON('/api/recordings/'+encodeURIComponent(fresh.sessionId)+'/steps');
+        detailCtx.stepsBox.innerHTML = '';
+        detailCtx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
+      }
+    }
+  }
+}
+
+// Realtime: the server pushes 'sessions' / 'step' / 'replay' / 'log' over SSE.
+let es = null;
 function startEvents() {
   if (es) return;
   es = new EventSource('/api/events');
   es.onmessage = (m) => {
     if (tab !== 'recordings') return;
-    if (m.data === 'replay') return;                               // replay view has its own poll while active
-    if (replayPoll) return;                                        // never stomp an active replay view
-    // don't yank the DOM out from under someone typing in the new-recording card
-    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.addrow')) return;
-    clearTimeout(refreshT);
-    refreshT = setTimeout(() => renderRecordings(currentOpenId), 120);
+    if (m.data === 'log') { appendLogLive(); return; }
+    if (m.data === 'replay') return;                       // replay view drives itself
+    softRefresh(m.data);
   };
 }
+
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional \\u2014 blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New recording</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
   const persistIn = card.querySelector('input[type=checkbox]');
   card.querySelector('button').onclick = async () => {
@@ -281,75 +316,135 @@ function newRecordingCard() {
     if (!sessIn.value) { msg.textContent = 'session name required'; return; }
     const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: persistIn.checked }) });
     msg.textContent = r.ok ? 'window opened — RECORDING (red border). Stop here or via the pill in the window.' : (await r.json()).error;
-    if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 800);
+    if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 400);
   };
   return card;
 }
-async function showRecording(r, detail, list, row) {
-  currentOpenId = r.sessionId;
-  if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }
-  list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
-  const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
-  detail.innerHTML = '';
+
+// The detail header: state + action buttons. Rebuilt IN PLACE on state changes.
+function buildHead(ctx) {
+  const r = ctx.r;
   const hasWindow = winSession === r.sessionId;
-  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">\\u25CF recording\\u2026</span>'
-    : hasWindow ? '<span class="muted">\\uD83E\\uDE9F window open (armed)</span>'
+  ctx.hasWindow = hasWindow;
+  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">● recording…</span>'
+    : hasWindow ? '<span class="muted">🪟 window open (armed)</span>'
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
-  const head = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+recState+'<span style="flex:1"></span></div>');
+  ctx.headBox.innerHTML = '';
+  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span><span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
-  const repB = btn('Replay'), anB = btn('Analyse \\u2192 draft'), delB = btn('Delete', true);
-  let recB;
-  if (hasWindow || r.active) {
-    recB = btn(r.active ? '\\u25A0 Stop' : '\\u23FA Record');
-    if (r.active) recB.style.borderColor = '#e5484d';
-    recB.onclick = async () => { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' }); renderRecordings(r.sessionId); };
-  } else if (!winSession) {
-    // no driven window anywhere → (re)open one for THIS recording; new takes/steps
-    // append to the same session.
-    recB = btn('Open window');
-    recB.onclick = async () => {
-      const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: false }) });
-      if (!res.ok) alert((await res.json()).error);
-      renderRecordings(r.sessionId);
-    };
-  } else {
-    recB = btn('\\u23FA Record'); recB.disabled = true; recB.title = 'window is busy with '+winSession;
-  }
+  const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
+  // Open window and Record are SEPARATE intents here (live feedback): the window
+  // opens ARMED; Record activates once the window exists.
+  const openB = btn('Open window');
+  openB.disabled = !!winSession;
+  if (winSession && !hasWindow) openB.title = 'window is busy with '+winSession;
+  openB.onclick = async () => {
+    openB.disabled = true; openB.textContent = 'opening…';
+    const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: false, armedOnly: true }) });
+    if (!res.ok) { alert((await res.json()).error); }
+    softRefresh('sessions');
+  };
+  const recB = btn(r.active ? '■ Stop' : '⏺ Record');
+  recB.disabled = !hasWindow && !r.active;
+  if (!hasWindow && !r.active) recB.title = 'open a window first';
+  if (r.active) recB.style.borderColor = '#e5484d';
+  recB.onclick = async () => {
+    // OPTIMISTIC: flip the header immediately; the server confirms via SSE.
+    const starting = !r.active;
+    head.querySelector('.hstate').innerHTML = starting
+      ? '<span class="pulse" style="color:#e5484d;font-weight:600">● recording…</span>'
+      : '<span class="muted">🪟 window open (armed)</span>';
+    recB.disabled = true;
+    await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' });
+    softRefresh('sessions');
+  };
   delB.onclick = async () => { if (confirm('Delete recording '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
-  anB.onclick = async () => { const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft'); stepsBox.innerHTML = ''; stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>')); };
+  anB.onclick = async () => {
+    const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft');
+    ctx.stepsBox.innerHTML = ''; setSubTab(ctx, 'steps');
+    ctx.stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>'));
+  };
   repB.onclick = async () => {
     const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay', { method:'POST' });
     if (!res.ok) { alert((await res.json()).error); return; }
-    pollReplay(stepsBox, r.sessionId);
+    setSubTab(ctx, 'steps');
+    pollReplay(ctx.stepsBox, r.sessionId);
   };
-  head.append(recB, repB, anB, delB);
-  const stepsBox = el('<div></div>');
-  stepsBox.append(stepTable(steps.map(s => ({ ...s, status: '' }))));
-  detail.append(head, stepsBox);
-  // Session video takes (ground truth): eyeball the video against the captured
-  // steps to verify nothing was missed; doubles as a session recording.
-  try {
-    const vids = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/videos');
-    if (vids.length) {
-      const vwrap = el('<div style="margin-top:14px"><div class="cat-head">Session video \u2014 verify steps against it</div></div>');
-      vids.forEach(v => vwrap.append(el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px;margin-top:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>')));
-      detail.append(vwrap);
-    }
-  } catch {}
-  if (r.active) {
-    // live feed while recording: refresh the captured steps every 1.5s; when the
-    // session stops (from anywhere), re-render so the header flips out of recording.
-    replayPoll = setInterval(async () => {
-      const all = await getJSON('/api/recordings');
-      const cur = all.find(x => x.sessionId === r.sessionId);
-      const fresh = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
-      stepsBox.innerHTML = '';
-      stepsBox.append(stepTable(fresh.map(s => ({ ...s, status: '' }))));
-      if (!cur || !cur.active) { clearInterval(replayPoll); replayPoll = null; renderRecordings(r.sessionId); }
-    }, 1500);
-  }
+  head.append(openB, recB, repB, anB, delB);
+  ctx.headBox.append(head);
 }
+
+function setSubTab(ctx, name) {
+  ctx.subTab = name;
+  ctx.tabsBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.sub === name));
+  ctx.stepsBox.style.display = name === 'steps' ? '' : 'none';
+  ctx.logsBox.style.display = name === 'logs' ? '' : 'none';
+  ctx.videosBox.style.display = name === 'videos' ? '' : 'none';
+  if (name === 'logs') loadLogs(ctx);
+  if (name === 'videos') loadVideos(ctx);
+}
+
+async function showRecording(r, detail, list, row) {
+  currentOpenId = r.sessionId;
+  clearInterval(replayPoll); replayPoll = null;
+  list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
+  const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
+  detail.innerHTML = '';
+  const headBox = el('<div style="margin-bottom:10px"></div>');
+  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="logs">Logs</button><button data-sub="videos">Session videos</button></nav>');
+  const stepsBox = el('<div></div>');
+  const logsBox = el('<div style="display:none"></div>');
+  const videosBox = el('<div style="display:none"></div>');
+  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
+  detailCtx = ctx;
+  tabsBar.querySelectorAll('button').forEach(b => { b.onclick = () => setSubTab(ctx, b.dataset.sub); });
+  buildHead(ctx);
+  stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
+  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox);
+}
+
+// --- Logs sub-tab: continuous stream + freshness ping ---
+async function loadLogs(ctx) {
+  const data = await getJSON('/api/logs');
+  ctx.logsBox.innerHTML = '<div class="muted" id="logping" style="font-size:11px;margin-bottom:6px"></div><pre id="logstream" style="max-height:55vh"></pre>';
+  const pre = ctx.logsBox.querySelector('#logstream');
+  pre.textContent = data.lines.map(l => new Date(l.t).toLocaleTimeString()+'  '+l.line).join('\\n');
+  pre.scrollTop = pre.scrollHeight;
+  lastLogT = data.lines.length ? data.lines[data.lines.length-1].t : data.now;
+  tickLogPing(ctx);
+  clearInterval(ctx.logTicker); ctx.logTicker = setInterval(() => tickLogPing(ctx), 1000);
+}
+function tickLogPing(ctx) {
+  const elp = ctx.logsBox.querySelector('#logping');
+  if (!elp) { clearInterval(ctx.logTicker); return; }
+  elp.textContent = lastLogT ? ('last update ' + Math.max(0, Math.round((Date.now()-lastLogT)/1000)) + 's ago · live') : 'no logs yet · live';
+}
+async function appendLogLive() {
+  if (!detailCtx || detailCtx.subTab !== 'logs') { lastLogT = Date.now(); return; }
+  const data = await getJSON('/api/logs');
+  const pre = detailCtx.logsBox.querySelector('#logstream');
+  if (pre) { pre.textContent = data.lines.map(l => new Date(l.t).toLocaleTimeString()+'  '+l.line).join('\\n'); pre.scrollTop = pre.scrollHeight; }
+  lastLogT = data.lines.length ? data.lines[data.lines.length-1].t : Date.now();
+}
+
+// --- Session videos sub-tab: takes over time ---
+async function loadVideos(ctx) {
+  const r = ctx.r;
+  ctx.videosBox.innerHTML = '';
+  let vids = [];
+  try { vids = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/videos'); } catch {}
+  if (!vids.length) { ctx.videosBox.append(el('<div class="empty">no video takes yet — each Record→Stop span saves one</div>')); return; }
+  vids.forEach(v => {
+    const m = v.match(/take-(\\d+)\\.webm/);
+    const when = m ? new Date(Number(m[1])).toLocaleString() : v;
+    const wrap = el('<div style="margin-bottom:12px"><div class="cat-head">'+esc(when)+'</div></div>');
+    wrap.append(el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>'));
+    ctx.videosBox.append(wrap);
+  });
+}
+
+
 function stepTable(steps, session) {
   const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
   const ICON = { ok: '\\u2713', fail: '\\u2717', running: '\\u25B6', jumped: '\\u21AA', skipped: '\\u2298', pending: '\\u00B7', '': '' };

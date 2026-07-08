@@ -648,9 +648,17 @@ async function main() {
     const recordStore = new RecordStore(dbPath());
     let busy: string | null = null;
     let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
-    // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' pings
+    // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' | 'log' pings
     const sseListeners = new Set<(t: string) => void>();
     const emit = (t: string) => { for (const f of sseListeners) f(t); };
+    // dashboard log stream: everything the operator should see, timestamped + pushed
+    const logBuf: { t: number; line: string }[] = [];
+    const dlog = (line: string) => {
+      logBuf.push({ t: Date.now(), line });
+      if (logBuf.length > 500) logBuf.shift();
+      process.stderr.write(line + '\n');
+      emit('log');
+    };
     // Session VIDEO: recording-active spans are captured as .webm takes (ground
     // truth to verify the step capture against, and a session recording artifact).
     const videosRoot = join(homedir(), '.webnav', 'recordings');
@@ -659,15 +667,15 @@ async function main() {
       if (recording && !videoOn && activeAdapter) {
         videoOn = true;
         void activeAdapter.videoStart().then(
-          () => process.stderr.write('video: recording started\n'),
-          () => process.stderr.write('video: START FAILED\n'));
+          () => dlog('video: recording started'),
+          () => dlog('video: START FAILED'));
       } else if (!recording && videoOn && activeAdapter) {
         videoOn = false;
         const dir = join(videosRoot, session);
         try { mkdirSync(dir, { recursive: true }); } catch { /* decoration */ }
         const file = join(dir, 'take-' + Date.now() + '.webm');
         void activeAdapter.videoStop(file).then((ok) => {
-          process.stderr.write(ok ? 'video: saved ' + file + '\n' : 'video: SAVE FAILED (' + file + ')\n');
+          dlog(ok ? 'video: saved ' + file : 'video: SAVE FAILED (' + file + ')');
           emit('sessions');
         });
       }
@@ -691,7 +699,7 @@ async function main() {
         }
       },
       draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
-      open: async (url: string, session: string, persistent: boolean) => {
+      open: async (url: string, session: string, persistent: boolean, armedOnly?: boolean) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         busy = session;
         try {
@@ -700,9 +708,17 @@ async function main() {
           // ONE CLICK = OPEN + RECORD (live feedback: asking to press Record again
           // after "Open window" was a redundant second intent). Stop still returns
           // the window to the armed/grey state for another take.
-          recordStore.start(session);
           activeAdapter = adapter;
-          videoSync(session, true);
+          if (armedOnly) {
+            // armed reopen from a recording's detail: window only; Record is a
+            // separate intent there (live feedback #1). Row stays visible.
+            recordStore.start(session); recordStore.stop(session);
+            dlog('window opened (armed) for ' + session);
+          } else {
+            recordStore.start(session);
+            videoSync(session, true);
+            dlog('recording STARTED: ' + session);
+          }
           emit('sessions');
           // window liveness = the DAEMON still has a Chromium child (the daemon itself
           // outlives the window — probing it via evals is what resurrected the window).
@@ -717,8 +733,9 @@ async function main() {
             onEvent: emit,
             browserAlive,
             onToggle: (recording: boolean) => videoSync(session, recording),
-            log: (l) => process.stderr.write(l + '\n'), isStopped: () => false })
-            .finally(() => { videoSync(session, false); busy = null; activeAdapter = null; recordStore.stop(session); emit('sessions'); });
+            log: dlog, isStopped: () => false })
+            .finally(() => { videoSync(session, false); busy = null; activeAdapter = null; recordStore.stop(session);
+              dlog('window session ended: ' + session); emit('sessions'); });
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
@@ -726,8 +743,8 @@ async function main() {
         }
       },
       // instant overlay update: don't wait for the loop's next tick (live finding: lag)
-      record: (id: string) => { recordStore.start(id); videoSync(id, true); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
-      stop: (id: string) => { recordStore.stop(id); videoSync(id, false); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
+      record: (id: string) => { recordStore.start(id); videoSync(id, true); dlog('recording STARTED: ' + id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(true)).catch(() => {}); return true; },
+      stop: (id: string) => { recordStore.stop(id); videoSync(id, false); dlog('recording STOPPED: ' + id); emit('sessions'); void activeAdapter?.evalJs(MODE_JS(false)).catch(() => {}); return true; },
       // the window pill's realtime channel (POSTed directly from the page).
       // `desired` (from the pill) is IDEMPOTENT — a stale visual can't double-toggle.
       toggle: (id: string, desired?: boolean) => {
@@ -736,6 +753,7 @@ async function main() {
         if (next === was) return { recording: was };
         if (next) recordStore.start(id); else recordStore.stop(id);
         videoSync(id, next);
+        dlog('recording ' + (next ? 'STARTED' : 'STOPPED') + ' (pill): ' + id);
         emit('sessions');
         void activeAdapter?.evalJs(MODE_JS(next)).catch(() => {});
         return { recording: next };
@@ -749,6 +767,7 @@ async function main() {
           ? join(videosRoot, session, file) : null,
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       activeWindow: () => (busy && !busy.startsWith('replay:') ? busy : null),
+      logs: () => ({ now: Date.now(), lines: logBuf.slice(-200) }),
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);

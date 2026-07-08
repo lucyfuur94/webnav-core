@@ -27,7 +27,7 @@ export interface RecordingsDeps {
   steps(id: string): { seq: number; label: string; kind: string; toUrl: string; capturedAt: number }[];
   del(id: string): void;
   draft(id: string): unknown;
-  open(url: string, session: string, persistent: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+  open(url: string, session: string, persistent: boolean, armedOnly?: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
   record(id: string): boolean;
   stop(id: string): boolean;
   replay(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
@@ -39,6 +39,7 @@ export interface RecordingsDeps {
   videoPath(session: string, file: string): string | null;
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
   activeWindow(): string | null;                        // which recording session has the driven window (null = none)
+  logs(): { now: number; lines: { t: number; line: string }[] };   // operator log stream (pushed via SSE 'log')
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -140,11 +141,12 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path === '/api/events') {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path === '/api/events' || path === '/api/logs') {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
         if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
+        if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
 
         // realtime push: Server-Sent Events. The shell's EventSource replaces polling.
         if (path === '/api/events' && method === 'GET') {
@@ -179,7 +181,7 @@ export function startDashboard(
           let parsed: { url?: string; session?: string; persistent?: boolean };
           try { parsed = JSON.parse(body || '{}'); } catch { return sendJson(400, { error: 'invalid JSON body' }); }
           if (!parsed.url || !parsed.session) return sendJson(400, { error: 'body must be { url, session, persistent? }' });
-          const result = await rec.open(parsed.url, parsed.session, !!parsed.persistent);
+          const result = await rec.open(parsed.url, parsed.session, !!parsed.persistent, !!(parsed as { armedOnly?: boolean }).armedOnly);
           return sendJson(result.ok ? 200 : 409, result);
         }
 
