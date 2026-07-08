@@ -2,6 +2,22 @@
 
 **Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 494 unit pass + 7 skip · **Build:** green
 
+> **2026-07-08 — control center hardened through 8 live test-drive batches + FLOW VARIABLES.**
+> The dashboard Recordings control center (built 2026-07-07) was exercised hands-on and hardened:
+> one combined TICK_JS eval per tick (playwright-cli calls are ~300-500ms process spawns,
+> serialized — tick economy was the root of every lag complaint) · SSE realtime everywhere
+> (no polling; pill POSTs its toggle straight to the dashboard — Chrome exempts 127.0.0.1
+> from mixed-content; desired-state + a 1.5s pin beat stale-tick races) · OS-level window-
+> close detection (ps: daemon's Chromium child) killed the daemon-resurrection reopen loop ·
+> session VIDEO takes per Record→Stop span (ground truth for capture completeness) · armed
+> mode drops events (no phantom logs) · per-recording window presence + armed-only reopen ·
+> Logs/Videos sub-tabs with live streams · **flow VARIABLES: non-secret input values are
+> recorded on the step (ActionRef.value) and replay uses them as defaults — a recorded flow
+> re-runs with different inputs (automated testing). Secret guard widened + unit-enforced:
+> password / cc-* / current-password / new-password / one-time-code never captured.**
+> Suite 506 pass / 7 skip. Open discussion: one recording accumulates multiple video takes
+> across Record→Stop cycles (kept deliberately; revisit with user).
+
 > **2026-07-07 (control center) — dashboard Recordings tab wired end-to-end.**
 > - Real deps (`RecordStore`, `runLiveRecord`, `ReplayController`/`runReplay`, `draftFromEffects`,
 >   `PlaywrightAdapter`) are now wired into `webnav dev dashboard`'s `RecordingsDeps`, replacing the
