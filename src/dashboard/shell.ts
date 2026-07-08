@@ -465,7 +465,18 @@ async function loadVideos(ctx) {
     const m = v.match(/take-(\\d+)\\.webm/);
     const when = m ? new Date(Number(m[1])).toLocaleString() : v;
     const wrap = el('<div style="margin-bottom:12px"><div class="cat-head">'+esc(when)+'</div></div>');
-    wrap.append(el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>'));
+    const vid = el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>');
+    // Screencast webm is written live → no duration in the header → the browser
+    // reports Infinity and the scrubber is dead. Standard fix: seek to a huge
+    // time once; the browser scans the file, learns the real duration, and the
+    // slider works. Rewind to 0 when it settles.
+    vid.addEventListener('loadedmetadata', () => {
+      if (vid.duration !== Infinity) return;
+      vid.currentTime = 1e7;
+      const fix = () => { vid.removeEventListener('timeupdate', fix); vid.currentTime = 0; };
+      vid.addEventListener('timeupdate', fix);
+    });
+    wrap.append(vid);
     ctx.videosBox.append(wrap);
   });
 }
