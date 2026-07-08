@@ -285,11 +285,7 @@ async function softRefresh(kind) {
       const stateChanged = fresh.active !== detailCtx.r.active || (winSession === fresh.sessionId) !== detailCtx.hasWindow;
       detailCtx.r = fresh;
       if (stateChanged) buildHead(detailCtx);
-      if (kind === 'step' && detailCtx.subTab === 'steps') {
-        const steps = await getJSON('/api/recordings/'+encodeURIComponent(fresh.sessionId)+'/steps');
-        detailCtx.stepsBox.innerHTML = '';
-        detailCtx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
-      }
+      if (kind === 'step') loadSteps(detailCtx);   // realtime: steps stream like logs, whichever sub-tab is visible
     }
   }
 }
@@ -453,12 +449,22 @@ async function loadVideos(ctx) {
 
 function stepTable(steps, session) {
   const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
-  const ICON = { ok: '\\u2713', fail: '\\u2717', running: '\\u25B6', jumped: '\\u21AA', skipped: '\\u2298', pending: '\\u00B7', '': '' };
+  const ICON = { ok: '✓', fail: '✗', running: '▶', jumped: '↪', skipped: '⊘', pending: '·', '': '' };
+  const KIND = { input: ['input', '#5b9dff'], click: ['click', '#8b93a3'], navigate: ['nav', '#3fb950'], jump: ['jump', '#3fb950'], observe: ['page', '#8b93a3'] };
+  const pathOf = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return u || ''; } };
   steps.forEach(s => {
     const color = s.status==='ok'?'#3fb950':s.status==='fail'?'#ff6b6b':'var(--muted)';
-    const shot = s.shot && session ? '<img src="/replays/'+encodeURIComponent(session)+'/'+encodeURIComponent(s.shot)+'" style="height:44px;border-radius:4px;border:1px solid var(--border)" />' : '';
+    const [kLabel, kColor] = KIND[s.kind] || [s.kind || '', '#8b93a3'];
+    const kindChip = kLabel ? '<span style="border:1px solid '+kColor+';color:'+kColor+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+esc(kLabel)+'</span>' : '';
+    const val = (s.kind === 'input' && s.value !== undefined && s.value !== null)
+      ? ' <code class="val" style="color:#e2b93d">= "'+esc(String(s.value))+'"</code>' : '';
+    const dest = s.kind === 'navigate' || s.kind === 'jump'
+      ? '<div class="muted" style="font-size:11px">'+esc(pathOf(s.fromUrl))+' → '+esc(pathOf(s.toUrl))+'</div>'
+      : '<div class="muted" style="font-size:11px">'+esc(pathOf(s.fromUrl || s.toUrl))+'</div>';
     const when = s.capturedAt ? new Date(s.capturedAt).toLocaleTimeString() : '';
-    tb.append(el('<tr><td style="width:28px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td>'+esc(s.label||s.kind||'step '+s.seq)+(s.note?' <span class="muted">('+esc(s.note)+')</span>':'')+'</td><td class="muted" style="width:90px;font-size:11px">'+esc(when)+'</td><td style="text-align:right">'+shot+'</td></tr>'));
+    const shot = s.shot && session ? '<img src="/replays/'+encodeURIComponent(session)+'/'+encodeURIComponent(s.shot)+'" style="height:44px;border-radius:4px;border:1px solid var(--border)" />' : '';
+    const note = s.note ? ' <span class="muted">('+esc(s.note)+')</span>' : '';
+    tb.append(el('<tr><td style="width:22px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td style="width:52px">'+kindChip+'</td><td><div>'+esc(s.label||('step '+s.seq))+val+note+'</div>'+dest+'</td><td class="muted" style="width:90px;font-size:11px">'+esc(when)+'</td><td style="text-align:right">'+shot+'</td></tr>'));
   });
   return t;
 }

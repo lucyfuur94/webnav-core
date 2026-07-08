@@ -24,7 +24,7 @@ export interface DashboardOpts {
  */
 export interface RecordingsDeps {
   list(): RecordSessionInfo[];
-  steps(id: string): { seq: number; label: string; kind: string; toUrl: string; capturedAt: number }[];
+  steps(id: string): { seq: number; label: string; kind: string; fromUrl: string; toUrl: string; value?: string; capturedAt: number }[];
   del(id: string): void;
   draft(id: string): unknown;
   open(url: string, session: string, persistent: boolean, armedOnly?: boolean): Promise<{ ok: true } | { ok: false; error: string }>;

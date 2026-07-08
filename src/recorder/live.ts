@@ -14,6 +14,10 @@ export interface LiveEvent {
   role?: string | null; ariaLabel?: string | null; leafText?: string | null;
   href?: string | null; placeholder?: string | null; nameAttr?: string | null;
   inputType?: string | null;
+  // the VARIABLE a human/agent supplied (typed text, chosen option, checkbox state)
+  // — recorded for NON-SECRET fields only, so a flow can be re-run with different
+  // values (automated testing). Password / cc-* fields: always null.
+  value?: string | null;
 }
 
 // Injected once per document (idempotent — a navigation loses page JS, the loop
@@ -25,10 +29,12 @@ export interface LiveEvent {
 // navigation has a fresh documentElement, so re-injection still happens exactly once.
 // Events queue in sessionStorage: a window-scoped queue dies with the document,
 // losing the navigating click — the most important event (the Chrome-extension bug,
-// not re-learned twice). Secret-field rule: no typed value is ever read; the ONE
-// sanctioned .value read is a submit/button/reset input's label (static author text —
-// its accessible name — never user-typed; LIVE lesson #2: saucedemo's Login is
-// <input type=submit value="Login">, unresolvable without it). leafText is capped and
+// not re-learned twice). Secret-field rule (refined): NON-SECRET field values ARE
+// recorded as flow VARIABLES (typed text / chosen option / checkbox state — what makes
+// a recorded flow re-runnable with different inputs); password and cc-* autocomplete
+// fields are NEVER captured. A submit/button/reset input's .value is its static label
+// (its accessible name — LIVE lesson #2: saucedemo's Login is <input type=submit
+// value="Login">, unresolvable without it). leafText is capped and
 // taken from interactive elements / childless nodes only (containers concatenate
 // their whole subtree — the extension's name-blob failure).
 export const INSTALLER_JS = `() => {
@@ -117,10 +123,18 @@ export const INSTALLER_JS = `() => {
   document.addEventListener('change', (ev) => {
     const el = ev.target;
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
+    // SECRET RULE (refined): record the supplied VALUE as a flow variable for
+    // non-secret fields; password / cc-* autocomplete fields are NEVER captured.
+    const secret = el instanceof HTMLInputElement && (el.type === 'password' || /^cc-/.test(el.autocomplete || ''));
+    let value = null;
+    if (!secret) {
+      if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) value = el.checked ? 'true' : 'false';
+      else value = String(el.value ?? '').slice(0, 200);
+    }
     push({ kind: 'input', tagName: el.tagName.toLowerCase(), role: el.getAttribute('role'),
       ariaLabel: el.getAttribute('aria-label'), leafText: null, href: null,
       placeholder: el.getAttribute('placeholder'), nameAttr: el.getAttribute('name'),
-      inputType: el instanceof HTMLInputElement ? el.type : null });
+      inputType: el instanceof HTMLInputElement ? el.type : null, value });
   }, true);
   return 'installed';
 }`;
@@ -266,7 +280,9 @@ export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to
     action = { role: role ?? '', name, ref, elementFp: recoverFingerprint(fromNodes, ref) };
   } else if (ev.kind === 'input' && role && name) {
     action = { role, name, ref: null, elementFp: { role, name, near: null } };
-  } else if (!navigated) {
+  }
+  if (action && ev.kind === 'input' && typeof ev.value === 'string') action.value = ev.value;
+  if (!action && !navigated) {
     return null;   // unresolved same-page click → honest drop
   }
   return {
