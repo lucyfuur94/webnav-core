@@ -703,7 +703,8 @@ async function main() {
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
       list: () => recordStore.listSessions().map((x) => ({ ...x,
-        hasProfile: existsSync2(profileDir(x.sessionId)) })),
+        hasProfile: existsSync2(profileDir(x.sessionId)),
+        startUrl: recordStore.startUrl(x.sessionId) })),
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
@@ -732,10 +733,15 @@ async function main() {
           const adapter = new PlaywrightAdapter(session, undefined, undefined,
             persistent ? { headed: true, persistent: true, profile: profileDir(session) } : { headed: true });
           await adapter.open(url);
+          // A persistent profile RESTORES its previous tab on launch (e.g. the Google
+          // account page after an auth bounce). Force-navigate to the requested URL so
+          // the window lands on the product, not the restored tab (live bug).
+          if (persistent && url && url !== 'about:blank') { try { await adapter.goto(url); } catch { /* */ } }
           // ONE CLICK = OPEN + RECORD (live feedback: asking to press Record again
           // after "Open window" was a redundant second intent). Stop still returns
           // the window to the armed/grey state for another take.
           activeAdapter = adapter;
+          if (url && url !== 'about:blank') recordStore.setStartUrl(session, url);
           if (armedOnly) {
             // armed reopen from a recording's detail: window only; Record is a
             // separate intent there (live feedback #1). Row stays visible.
@@ -872,12 +878,13 @@ async function main() {
         // re-login window: open the profile headed at its site (or blank) so the human
         // can refresh an expired Cloudflare/2FA login. NOT recording — closes on the
         // window being closed (browserAlive), state persists back to the profile dir.
-        let startUrl = 'about:blank';
-        try { const fx = recordStore.actionEffects(session); if (fx.length) startUrl = new URL(fx[0].fromUrl).origin; } catch { /* */ }
+        let startUrl = recordStore.startUrl(session) ?? 'about:blank';
+        if (startUrl === 'about:blank') { try { const fx = recordStore.actionEffects(session); if (fx.length) startUrl = new URL(fx[0].fromUrl).origin; } catch { /* */ } }
         try {
           const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent: true, profile: dir });
           activeAdapter = adapter;
           await adapter.open(startUrl);
+          if (startUrl !== 'about:blank') { try { await adapter.goto(startUrl); } catch { /* */ } }   // past the restored tab
           dlog('re-login window opened for profile ' + session + ' — log in by hand, then close the window');
           emit('sessions');
           // keep the window alive until the human closes it (ps liveness), then release

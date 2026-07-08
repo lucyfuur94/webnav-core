@@ -420,7 +420,7 @@ function buildHead(ctx) {
     // fresh throwaway profile → forced re-login). A first-ever open with no profile
     // yet still creates one under the same session, so the next reopen has a login.
     const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: true, armedOnly: true }) });
+      body: JSON.stringify({ url: r.startUrl || (r.site ? 'https://'+r.site : 'about:blank'), session: r.sessionId, persistent: true, armedOnly: true }) });
     if (!res.ok) { alert((await res.json()).error); }
     softRefresh('sessions');
   };
