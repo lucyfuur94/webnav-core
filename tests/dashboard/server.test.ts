@@ -167,6 +167,9 @@ describe('recordings API', () => {
     replayState: () => null,
     replayControl: () => true,
     shotPath: () => null,
+    review: () => ({ ok: true }),
+    reviewReport: () => null,
+    reviewFramePath: () => null,
   };
   beforeAll(async () => {
     tmp2 = mkdtempSync(join(tmpdir(), 'webnav-dash-rec-'));
@@ -216,6 +219,9 @@ describe('realtime (SSE + toggle)', () => {
       videoPath: (sess: string, f: string) => (f === 'take-1.webm' ? vidFile : null),
       activeWindow: () => 'r9',
       logs: () => ({ now: 1, lines: [{ t: 1, line: 'hello' }] }),
+      review: () => ({ ok: true }),
+      reviewReport: (id: string) => (id === 'r9' ? '# audit' : null),
+      reviewFramePath: () => null,
       subscribe: (cb: (t: string) => void) => { push = cb; return () => { push = null; }; },
     };
     writeFileSync(vidFile, Buffer.from('0123456789'));   // 10-byte fake video for range tests
@@ -235,6 +241,9 @@ describe('realtime (SSE + toggle)', () => {
     expect(await (await fetch(b3 + '/api/recordings/r9/videos')).json()).toEqual(['take-1.webm']);
     expect(await (await fetch(b3 + '/api/recordings/window')).json()).toEqual({ session: 'r9' });
     expect((await (await fetch(b3 + '/api/logs')).json()).lines[0].line).toBe('hello');
+    expect((await fetch(b3 + '/api/recordings/r9/review', { method: 'POST' })).status).toBe(200);
+    expect((await (await fetch(b3 + '/api/recordings/r9/review')).json()).report).toBe('# audit');
+    expect((await fetch(b3 + '/api/recordings/other/review')).status).toBe(404);
     const full = await fetch(b3 + '/recordings-media/r9/take-1.webm');
     expect(full.status).toBe(200);
     expect(full.headers.get('accept-ranges')).toBe('bytes');

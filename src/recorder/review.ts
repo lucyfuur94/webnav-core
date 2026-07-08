@@ -1,0 +1,130 @@
+// Session review: audit what the recorder CAPTURED against what the video SHOWS.
+// Pipeline: ffmpeg scene-detection extracts a compact FRAME STRIP from each video
+// take (Claude cannot ingest video — stills at change-moments are the consumable
+// form, and better for gap-finding since each frame carries a timestamp to match
+// against step times) → a headless `claude -p` (Sonnet, per user decision; this is
+// a judgment task OUTSIDE webnav's zero-LLM runtime — it audits the tool, it is
+// not part of navigation) reads steps+logs+frames and reports capture gaps.
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const run = promisify(execFile);
+
+export interface ReviewStepInfo { seq: number; kind: string; label: string; value?: string; capturedAt: number }
+export interface ReviewFrame { path: string; atMs: number }
+
+/** Parse ffmpeg showinfo stderr → the pts seconds of each selected frame (in order). */
+export function parseShowinfoTimes(stderr: string): number[] {
+  const out: number[] = [];
+  for (const m of stderr.matchAll(/pts_time:([\d.]+)/g)) out.push(Number(m[1]));
+  return out;
+}
+
+/** The audit prompt. Pure — unit-tested; the spawn stays thin. */
+export function buildReviewPrompt(
+  session: string,
+  steps: ReviewStepInfo[],
+  logLines: { t: number; line: string }[],
+  frames: ReviewFrame[],
+): string {
+  const t = (ms: number) => new Date(ms).toLocaleTimeString();
+  const stepTxt = steps.length
+    ? steps.map((s) => `- [${t(s.capturedAt)}] seq ${s.seq} ${s.kind}: ${s.label}${s.value !== undefined ? ` = "${s.value}"` : ''}`).join('\n')
+    : '(no steps captured)';
+  const logTxt = logLines.map((l) => `- [${t(l.t)}] ${l.line}`).join('\n') || '(no logs)';
+  const frameTxt = frames.map((f, i) => `- frame ${i + 1} at ${t(f.atMs)}: ${f.path}`).join('\n') || '(no frames extracted)';
+  return `You are auditing a browser-session RECORDER for capture gaps. A human browsed a website
+while our tool recorded their actions as "steps". We also have a screen video of the same
+session, from which scene-change frames were extracted (one image per visible change,
+each with its wall-clock timestamp).
+
+Session: ${session}
+
+CAPTURED STEPS (what our recorder saved):
+${stepTxt}
+
+RECORDER LOGS (including honest skips):
+${logTxt}
+
+VIDEO FRAMES (visible changes; READ each image file with the Read tool):
+${frameTxt}
+
+Your job — compare what the video SHOWS against what was CAPTURED:
+1. For each frame, say what user action most likely produced that screen state.
+2. CAPTURE GAPS: visible changes in the frames with NO captured step near that
+   timestamp (±5s). These are recorder misses — the deliverable. Be specific:
+   what happened on screen, when, and what kind of event the recorder should
+   have caught (click / input / navigation / scroll / hover-menu ...).
+3. Steps with no visual correlate in any frame (possible over-capture or noise).
+4. A short verdict: is this recording complete enough to replay the user's
+   journey? What single capture improvement would help most?
+
+Format as markdown with sections: Frames, Capture gaps, Uncorrelated steps, Verdict.
+Be concrete and terse. If the evidence is thin (few frames/steps), say so honestly.`;
+}
+
+export interface ReviewDeps {
+  videosDir: string;                 // ~/.webnav/recordings/<session> (the takes)
+  outDir: string;                    // where frames + review.md land
+  steps: ReviewStepInfo[];
+  logs: { t: number; line: string }[];
+  log: (line: string) => void;
+  claudeModel?: string;              // default sonnet (user decision for reviews)
+  maxFrames?: number;
+  exec?: typeof run;                 // injected for tests
+}
+
+/** Extract scene-change frames from one take. Returns frames with ABSOLUTE wall-clock
+ *  times (take start = the ts in take-<ts>.webm + pts offset). */
+export async function extractFrames(
+  takePath: string, takeStartMs: number, framesDir: string, maxFrames: number, exec: typeof run,
+): Promise<ReviewFrame[]> {
+  mkdirSync(framesDir, { recursive: true });
+  // select: first frame + any >8% scene change; scale keeps Claude's image tokens sane.
+  const vf = "select='eq(n\\,0)+gt(scene\\,0.08)',showinfo,scale=800:-2";
+  let stderr = '';
+  try {
+    const r = await exec('ffmpeg', ['-y', '-i', takePath, '-vf', vf, '-fps_mode', 'vfr',
+      '-frames:v', String(maxFrames), join(framesDir, 'f-%03d.png')], { maxBuffer: 32 * 1024 * 1024 });
+    stderr = r.stderr ?? '';
+  } catch (e) {
+    // ffmpeg exits non-zero on some streams even after writing frames — keep what landed
+    stderr = (e as { stderr?: string }).stderr ?? '';
+  }
+  const times = parseShowinfoTimes(stderr);
+  const files = readdirSync(framesDir).filter((f) => f.endsWith('.png')).sort();
+  return files.map((f, i) => ({ path: join(framesDir, f), atMs: takeStartMs + Math.round((times[i] ?? 0) * 1000) }));
+}
+
+export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string> {
+  const exec = deps.exec ?? run;
+  const maxFrames = deps.maxFrames ?? 20;
+  deps.log(`review: extracting frames for ${session}…`);
+  let takes: string[] = [];
+  try { takes = readdirSync(deps.videosDir).filter((f) => f.endsWith('.webm')).sort(); } catch { /* no videos */ }
+  const frames: ReviewFrame[] = [];
+  for (const take of takes) {
+    const startMs = Number((/take-(\d+)\.webm/.exec(take) ?? [])[1] ?? 0);
+    const dir = join(deps.outDir, 'frames-' + take.replace(/\.webm$/, ''));
+    const got = await extractFrames(join(deps.videosDir, take), startMs, dir, maxFrames, exec);
+    frames.push(...got);
+    deps.log(`review: ${got.length} change-frames from ${take}`);
+  }
+  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames);
+  deps.log(`review: asking Claude (${deps.claudeModel ?? 'sonnet'}) — ${frames.length} frames, ${deps.steps.length} steps…`);
+  let report: string;
+  try {
+    const { stdout } = await exec('claude',
+      ['-p', prompt, '--model', deps.claudeModel ?? 'sonnet', '--allowedTools', 'Read'],
+      { maxBuffer: 32 * 1024 * 1024, timeout: 5 * 60_000 });
+    report = stdout.trim() || '(claude returned no output)';
+  } catch (e) {
+    report = 'REVIEW FAILED: ' + String((e as Error).message ?? e);
+  }
+  mkdirSync(deps.outDir, { recursive: true });
+  writeFileSync(join(deps.outDir, 'review.md'), report);
+  deps.log('review: done — report saved');
+  return report;
+}
