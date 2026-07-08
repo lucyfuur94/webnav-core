@@ -115,13 +115,18 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       }
 
       const toggles = events.filter((e) => e.kind === 'toggle');
-      const data = events.filter((e) => e.kind !== 'toggle');
+      let data = events.filter((e) => e.kind !== 'toggle');
       for (const _t of toggles) {
         const next = !deps.store.isActive(deps.sessionId);
         if (next) deps.store.start(deps.sessionId); else deps.store.stop(deps.sessionId);
+        deps.log('recording ' + (next ? 'STARTED' : 'STOPPED') + ' (pill via queue): ' + deps.sessionId);
         deps.onToggle?.(next);
         deps.onEvent?.('sessions');
       }
+      // ARMED = capturing nothing: drop data events entirely. Without this the loop
+      // processed them and logged 'recorded …' while the store silently no-opped —
+      // the log claimed captures that never persisted (live confusion).
+      if (!deps.store.isActive(deps.sessionId)) data = [];
       for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
       // (a toggle's visual flip already happened optimistically in-page; the next
       // tick's TICK_JS paint carries the server truth.)

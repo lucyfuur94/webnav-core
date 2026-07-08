@@ -111,20 +111,25 @@ it('stops when the record session is stopped externally', async () => {
 it('armed: loop keeps running while session inactive; a toggle event starts capture', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
   // NOT started — armed loop must still run, capturing nothing.
-  const toggleEvt = JSON.stringify([{ seq: 1, kind: 'toggle', url: 'https://s.test/' }]);
-  const clickEvt = JSON.stringify([{ seq: 2, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' }]);
+  const armedClick = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' }]);
+  const toggleEvt = JSON.stringify([{ seq: 2, kind: 'toggle', url: 'https://s.test/' }]);
+  const clickEvt = JSON.stringify([{ seq: 3, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' }]);
+  const logs: string[] = [];
   const adapter = fakeAdapter([
     { url: 'https://s.test/', snap: LOGIN },
-    { url: 'https://s.test/', snap: LOGIN, drain: toggleEvt },   // human hits ⏺ in the overlay
+    { url: 'https://s.test/', snap: LOGIN, drain: armedClick }, // clicked while ARMED → dropped, unlogged
+    { url: 'https://s.test/', snap: LOGIN, drain: toggleEvt },  // human hits ⏺ in the overlay
     { url: 'https://s.test/', snap: LOGIN, drain: clickEvt },
     { url: 'https://s.test/inventory.html', snap: INV },
     { url: 'https://s.test/inventory.html', snap: INV },
   ]);
   let n = 0;
   await runLiveRecord({ adapter, store, sessionId: 'armed-1', intervalMs: 0, armed: true,
-    log: () => {}, isStopped: () => ++n > 7, sleep: async () => {} });
+    log: (l) => logs.push(l), isStopped: () => ++n > 8, sleep: async () => {} });
   expect(store.isActive('armed-1')).toBe(true);            // toggle started the session
-  expect(store.actionEffects('armed-1').length).toBe(1);   // the click after toggle was captured
+  expect(store.actionEffects('armed-1').length).toBe(1);   // ONLY the click after toggle
+  expect(logs.filter((l) => l.startsWith('recorded')).length).toBe(1);   // armed click never logged 'recorded'
+  expect(logs.some((l) => l.includes('STARTED (pill via queue)'))).toBe(true);
 });
 
 it('armed: 5 consecutive tick errors end the loop (browser closed by user)', async () => {
