@@ -430,9 +430,12 @@ function buildHead(ctx) {
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   // Open window and Record are SEPARATE intents here (live feedback): the window
   // opens ARMED; Record activates once the window exists.
-  const openB = btn(r.hasProfile ? '\\uD83D\\uDD10 Open (' + r.profile + ')' : 'Open window');
+  const openB = btn(hasWindow ? '🪟 window open' : (r.hasProfile ? '\\uD83D\\uDD10 Open (' + r.profile + ')' : 'Open window'));
+  // Open is disabled whenever ANY driven window exists — this session's (already
+  // open, #2) or another's (busy). Only openable when no window is live.
   openB.disabled = !!winSession;
   if (winSession && !hasWindow) openB.title = 'window is busy with '+winSession;
+  if (hasWindow) openB.title = 'this session already has a window open';
   openB.onclick = async () => {
     openB.disabled = true; openB.textContent = 'opening…';
     // REOPEN is always persistent: reuse this session's saved profile so a prior
@@ -448,6 +451,8 @@ function buildHead(ctx) {
     softRefresh('sessions');
   };
   const recB = btn(r.active ? '■ Stop' : '⏺ Record');
+  // Record is active ONLY when this session's window is open (#3). Stop stays
+  // enabled while recording (always allow stopping). Greyed when no window.
   recB.disabled = !hasWindow && !r.active;
   if (!hasWindow && !r.active) recB.title = 'open a window first';
   if (r.active) recB.style.borderColor = '#e5484d';
@@ -475,6 +480,17 @@ function buildHead(ctx) {
   };
   head.append(openB, recB, repB, anB, delB);
   ctx.headBox.append(head);
+}
+
+// Refetch the session's steps and re-render the table. This is the single source
+// of step rendering for live updates (SSE 'step'/'sessions') AND tab switches —
+// it was CALLED in both places but never DEFINED, so every live refresh threw
+// 'loadSteps is not defined' and steps only appeared on a hard reload (live #1).
+async function loadSteps(ctx) {
+  let steps = [];
+  try { steps = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/steps'); } catch { return; }
+  ctx.stepsBox.innerHTML = '';
+  ctx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' })), ctx.r.sessionId));
 }
 
 function setSubTab(ctx, name) {
