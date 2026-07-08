@@ -410,13 +410,17 @@ function buildHead(ctx) {
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   // Open window and Record are SEPARATE intents here (live feedback): the window
   // opens ARMED; Record activates once the window exists.
-  const openB = btn('Open window');
+  const openB = btn(r.hasProfile ? '\\uD83D\\uDD10 Open (saved login)' : 'Open window');
   openB.disabled = !!winSession;
   if (winSession && !hasWindow) openB.title = 'window is busy with '+winSession;
   openB.onclick = async () => {
     openB.disabled = true; openB.textContent = 'opening…';
+    // REOPEN is always persistent: reuse this session's saved profile so a prior
+    // Cloudflare/2FA login carries over (live bug: reopen sent persistent:false →
+    // fresh throwaway profile → forced re-login). A first-ever open with no profile
+    // yet still creates one under the same session, so the next reopen has a login.
     const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: false, armedOnly: true }) });
+      body: JSON.stringify({ url: r.site ? 'https://'+r.site : 'about:blank', session: r.sessionId, persistent: true, armedOnly: true }) });
     if (!res.ok) { alert((await res.json()).error); }
     softRefresh('sessions');
   };

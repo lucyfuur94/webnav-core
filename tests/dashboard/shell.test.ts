@@ -102,3 +102,12 @@ it('Profiles tab: lists saved profiles with re-login + delete', () => {
   expect(SHELL_HTML).toContain('/api/profiles');
   expect(SHELL_HTML).toContain('Open to re-login');
 });
+
+it('reopening a session is persistent (reuses saved login) — not a throwaway profile', () => {
+  // the Sessions-tab reopen must send persistent:true (live bug: sent false → forced re-login)
+  const reopen = SHELL_HTML.slice(SHELL_HTML.indexOf('const openB = btn('));
+  const call = reopen.slice(0, reopen.indexOf('if (!res.ok)'));
+  expect(call).toContain('armedOnly: true');
+  expect(call).toContain('persistent: true');
+  expect(call).not.toContain('persistent: false');
+});
