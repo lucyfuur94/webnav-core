@@ -335,7 +335,7 @@ function startEvents() {
 }
 
 function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
+  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile — required for sites behind login/2FA: log in by hand once, walks reuse it)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
   // default name (editable): s-MMDDHHMMSS — SHORT on purpose: the playwright-cli
   // daemon socket path embeds the session name and macOS caps socket paths at
@@ -362,7 +362,8 @@ function buildHead(ctx) {
     : hasWindow ? '<span class="muted">🪟 window open (armed)</span>'
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   ctx.headBox.innerHTML = '';
-  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span><span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
+  const profBadge = r.hasProfile ? ' <span title="a logged-in browser profile is saved for this session — walks reuse it" style="border:1px solid #3fb950;color:#3fb950;border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 profile saved</span>' : '';
+  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   // Open window and Record are SEPARATE intents here (live feedback): the window

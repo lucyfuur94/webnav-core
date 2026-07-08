@@ -124,3 +124,11 @@ export class PlaywrightAdapter {
     return snap;
   }
 }
+
+/** A --profile value is either an absolute/relative PATH (has a slash) or a bare
+ *  session NAME → ~/.webnav/profiles/<name> (the dir the dashboard's persistent
+ *  recording writes; a hand-done login/2FA there carries into every walk). Pure. */
+export function resolveProfile(value: string, profilesRoot: string): string {
+  if (value.includes('/')) return value;
+  return profilesRoot.replace(/\/$/, '') + '/' + value.replace(/[^\w.-]/g, '_');
+}
