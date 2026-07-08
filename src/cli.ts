@@ -634,7 +634,7 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
-    const { rmSync, mkdirSync, readdirSync, readFileSync, existsSync: existsSync2 } = await import('node:fs');
+    const { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync, existsSync: existsSync2 } = await import('node:fs');
     const { execSync } = await import('node:child_process');
     const { listSessions: listPwSessions } = await import('./playwright/sessions.js');
     const store = new MapStore(dbPath());
@@ -664,6 +664,7 @@ async function main() {
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
     let reviewBusy: string | null = null;
+    const { DEFAULT_INSTRUCTIONS: reviewDefaultInstructions } = await import('./recorder/review.js');
     let videoOn = false;
     const videoSync = (session: string, recording: boolean) => {
       if (recording && !videoOn && activeAdapter) {
@@ -775,10 +776,16 @@ async function main() {
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       activeWindow: () => (busy && !busy.startsWith('replay:') ? busy : null),
       logs: () => ({ now: Date.now(), lines: logBuf.slice(-200) }),
-      review: (id: string) => {
+      review: (id: string, opts?: { model?: string; instructions?: string }) => {
         if (reviewBusy) return { ok: false, error: 'a review is already running (' + reviewBusy + ')' };
         if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return { ok: false, error: 'bad session id' };
+        const model = /^[\w.-]{1,40}$/.test(opts?.model ?? '') ? opts!.model : undefined;
+        const instructions = typeof opts?.instructions === 'string' && opts.instructions.trim() ? opts.instructions.slice(0, 8000) : undefined;
+        // persist last-used config so the next run (and the config GET) starts from it
+        try { mkdirSync(reviewsRoot, { recursive: true });
+          writeFileSync(join(reviewsRoot, 'config.json'), JSON.stringify({ model: model ?? 'sonnet', instructions }, null, 2)); } catch { /* decoration */ }
         reviewBusy = id;
+        emit('sessions');
         const outDir = join(reviewsRoot, id);
         void (async () => {
           const { runSessionReview } = await import('./recorder/review.js');
@@ -788,13 +795,23 @@ async function main() {
             label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
           }));
           await runSessionReview(id, { videosDir: join(videosRoot, id), outDir,
-            steps, logs: logBuf.slice(-200), log: dlog });
+            steps, logs: logBuf.slice(-200), log: dlog, claudeModel: model, instructions });
         })().finally(() => { reviewBusy = null; emit('sessions'); });
         return { ok: true };
       },
       reviewReport: (id: string) => {
         if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return null;
-        try { return readFileSync(join(reviewsRoot, id, 'review.md'), 'utf8'); } catch { return null; }
+        try {
+          const f = join(reviewsRoot, id, 'review.md');
+          return { report: readFileSync(f, 'utf8'), at: statSync(f).mtimeMs };
+        } catch { return null; }
+      },
+      reviewRunning: () => reviewBusy,
+      reviewConfig: () => {
+        let saved: { model?: string; instructions?: string } = {};
+        try { saved = JSON.parse(readFileSync(join(reviewsRoot, 'config.json'), 'utf8')); } catch { /* defaults */ }
+        // DEFAULT_INSTRUCTIONS import is dynamic-only elsewhere; inline require here is fine at runtime
+        return { model: saved.model ?? 'sonnet', instructions: saved.instructions ?? reviewDefaultInstructions };
       },
       reviewFramePath: (session: string, file: string) =>
         /^[\w.-]+$/.test(session) && session !== '.' && session !== '..' && /^[\w-]+\.png$/.test(file)

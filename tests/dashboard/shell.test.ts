@@ -77,3 +77,15 @@ it('Sessions tab: renamed label, bulk delete, default session name', () => {
   expect(SHELL_HTML).toContain('Delete selected');
   expect(SHELL_HTML).toContain("sessIn.value = 's-'");   // SHORT: macOS ~104-char socket-path cap
 });
+
+
+it('review UX: md renderer, sub-tab order Steps>Videos>Review>Logs, model+instructions controls', () => {
+  expect(SHELL_HTML).toContain('function mdToHtml');
+  const order = ['data-sub="steps"', 'data-sub="videos"', 'data-sub="review"', 'data-sub="logs"']
+    .map((k) => SHELL_HTML.indexOf(k));
+  expect([...order].sort((a, b) => a - b)).toEqual(order);   // declared in that order
+  expect(SHELL_HTML).toContain('last run:');
+  expect(SHELL_HTML).toContain('review running');
+  expect(SHELL_HTML).toContain('<option value="opus">');
+  expect(SHELL_HTML).toContain('Agent instructions');
+});

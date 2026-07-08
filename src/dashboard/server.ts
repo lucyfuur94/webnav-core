@@ -40,8 +40,10 @@ export interface RecordingsDeps {
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
   activeWindow(): string | null;                        // which recording session has the driven window (null = none)
   logs(): { now: number; lines: { t: number; line: string }[] };   // operator log stream (pushed via SSE 'log')
-  review(id: string): { ok: boolean; error?: string };             // start a headless-Claude capture-gap audit
-  reviewReport(id: string): string | null;                         // review.md content (null = none yet)
+  review(id: string, opts?: { model?: string; instructions?: string }): { ok: boolean; error?: string };  // start a headless-Claude capture-gap audit
+  reviewReport(id: string): { report: string; at: number } | null; // review.md + mtime (null = none yet)
+  reviewRunning(): string | null;                                   // session id of an in-flight review
+  reviewConfig(): { model: string; instructions: string };          // last-used (or default) audit config
   reviewFramePath(session: string, file: string): string | null;   // sanitized frame path for /review-media
 }
 
@@ -151,14 +153,21 @@ export function startDashboard(
         if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
         if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
 
+        if (path === '/api/review-config' && method === 'GET') return sendJson(200, rec.reviewConfig());
         const revM = path.match(/^\/api\/recordings\/([^/]+)\/review$/);
         if (revM && method === 'POST') {
-          const r = rec.review(decodeURIComponent(revM[1]));
+          let opts: { model?: string; instructions?: string } = {};
+          try { opts = JSON.parse((await readBody(req)) || '{}'); } catch { /* defaults */ }
+          const r = rec.review(decodeURIComponent(revM[1]), opts);
           return sendJson(r.ok ? 200 : 409, r);
         }
         if (revM && method === 'GET') {
-          const report = rec.reviewReport(decodeURIComponent(revM[1]));
-          return report === null ? sendJson(404, { error: 'no review yet' }) : sendJson(200, { report });
+          const id = decodeURIComponent(revM[1]);
+          const rep = rec.reviewReport(id);
+          const running = rec.reviewRunning() === id;
+          return rep === null
+            ? sendJson(running ? 200 : 404, running ? { running: true } : { error: 'no review yet' })
+            : sendJson(200, { ...rep, running });
         }
         const rfM = path.match(/^\/review-media\/([^/]+)\/([^/]+\.png)$/);
         if (rfM && method === 'GET') {
