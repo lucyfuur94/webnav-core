@@ -111,3 +111,7 @@ it('reopening a session is persistent (reuses saved login) — not a throwaway p
   expect(call).toContain('persistent: true');
   expect(call).not.toContain('persistent: false');
 });
+
+it('new session defaults to persistent (keep-me-logged-in checked)', () => {
+  expect(SHELL_HTML).toContain('type="checkbox" checked');
+});
