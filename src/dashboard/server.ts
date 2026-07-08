@@ -40,6 +40,9 @@ export interface RecordingsDeps {
   subscribe(cb: (type: string) => void): () => void;    // realtime push (SSE) — emits 'sessions' | 'step' | 'replay'
   activeWindow(): string | null;                        // which recording session has the driven window (null = none)
   logs(): { now: number; lines: { t: number; line: string }[] };   // operator log stream (pushed via SSE 'log')
+  review(id: string): { ok: boolean; error?: string };             // start a headless-Claude capture-gap audit
+  reviewReport(id: string): string | null;                         // review.md content (null = none yet)
+  reviewFramePath(session: string, file: string): string | null;   // sanitized frame path for /review-media
 }
 
 const HTML = 'text/html; charset=utf-8';
@@ -141,12 +144,31 @@ export function startDashboard(
       }
 
       // ---- RECORDINGS + REPLAY (human-session recorder; injected — 503 when not wired) ----
-      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path === '/api/events' || path === '/api/logs') {
+      if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs') {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
         if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
         if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
         if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
+
+        const revM = path.match(/^\/api\/recordings\/([^/]+)\/review$/);
+        if (revM && method === 'POST') {
+          const r = rec.review(decodeURIComponent(revM[1]));
+          return sendJson(r.ok ? 200 : 409, r);
+        }
+        if (revM && method === 'GET') {
+          const report = rec.reviewReport(decodeURIComponent(revM[1]));
+          return report === null ? sendJson(404, { error: 'no review yet' }) : sendJson(200, { report });
+        }
+        const rfM = path.match(/^\/review-media\/([^/]+)\/([^/]+\.png)$/);
+        if (rfM && method === 'GET') {
+          const fp = rec.reviewFramePath(decodeURIComponent(rfM[1]), decodeURIComponent(rfM[2]));
+          if (!fp || !existsSync(fp)) return sendJson(404, { error: 'not found' });
+          const fs2 = createReadStream(fp);
+          fs2.on('error', () => { if (!res.headersSent) sendJson(404, { error: 'not found' }); else res.destroy(); });
+          res.writeHead(200, { 'content-type': 'image/png' });
+          return fs2.pipe(res);
+        }
 
         // realtime push: Server-Sent Events. The shell's EventSource replaces polling.
         if (path === '/api/events' && method === 'GET') {

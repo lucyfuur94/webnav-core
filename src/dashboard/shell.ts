@@ -401,9 +401,32 @@ function setSubTab(ctx, name) {
   ctx.stepsBox.style.display = name === 'steps' ? '' : 'none';
   ctx.logsBox.style.display = name === 'logs' ? '' : 'none';
   ctx.videosBox.style.display = name === 'videos' ? '' : 'none';
+  ctx.reviewBox.style.display = name === 'review' ? '' : 'none';
   if (name === 'steps') loadSteps(ctx);   // refetch — steps landed while you were on Logs (live bug: stale view)
   if (name === 'logs') loadLogs(ctx);
   if (name === 'videos') loadVideos(ctx);
+  if (name === 'review') loadReview(ctx);
+}
+
+// --- Review sub-tab: headless-Claude audit of captured steps vs the video frames ---
+async function loadReview(ctx) {
+  const r = ctx.r;
+  ctx.reviewBox.innerHTML = '';
+  const bar = el('<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn">Run review</button><span class="muted" style="font-size:12px">extracts change-frames from the session video and asks Claude (Sonnet) to find capture gaps — uses API credits, takes 1–3 min; watch Logs for progress</span></div>');
+  bar.querySelector('button').onclick = async () => {
+    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review', { method:'POST' });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    bar.querySelector('button').disabled = true;
+    bar.querySelector('button').textContent = 'reviewing…';
+    setSubTab(ctx, 'logs');   // progress streams there; report appears here when done
+  };
+  ctx.reviewBox.append(bar);
+  try {
+    const { report } = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review');
+    ctx.reviewBox.append(el('<pre style="white-space:pre-wrap">'+esc(report)+'</pre>'));
+  } catch {
+    ctx.reviewBox.append(el('<div class="empty">no review yet — run one above</div>'));
+  }
 }
 async function loadSteps(ctx) {
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/steps');
@@ -418,16 +441,17 @@ async function showRecording(r, detail, list, row) {
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
   const headBox = el('<div style="margin-bottom:10px"></div>');
-  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="logs">Logs</button><button data-sub="videos">Session videos</button></nav>');
+  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="logs">Logs</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button></nav>');
   const stepsBox = el('<div></div>');
   const logsBox = el('<div style="display:none"></div>');
   const videosBox = el('<div style="display:none"></div>');
-  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
+  const reviewBox = el('<div style="display:none"></div>');
+  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
   detailCtx = ctx;
   tabsBar.querySelectorAll('button').forEach(b => { b.onclick = () => setSubTab(ctx, b.dataset.sub); });
   buildHead(ctx);
   stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
-  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox);
+  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox);
 }
 
 // --- Logs sub-tab: continuous stream + freshness ping ---

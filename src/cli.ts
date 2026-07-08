@@ -634,7 +634,7 @@ async function main() {
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
-    const { rmSync, mkdirSync, readdirSync } = await import('node:fs');
+    const { rmSync, mkdirSync, readdirSync, readFileSync, existsSync: existsSync2 } = await import('node:fs');
     const { execSync } = await import('node:child_process');
     const { listSessions: listPwSessions } = await import('./playwright/sessions.js');
     const store = new MapStore(dbPath());
@@ -662,6 +662,8 @@ async function main() {
     // Session VIDEO: recording-active spans are captured as .webm takes (ground
     // truth to verify the step capture against, and a session recording artifact).
     const videosRoot = join(homedir(), '.webnav', 'recordings');
+    const reviewsRoot = join(homedir(), '.webnav', 'reviews');
+    let reviewBusy: string | null = null;
     let videoOn = false;
     const videoSync = (session: string, recording: boolean) => {
       if (recording && !videoOn && activeAdapter) {
@@ -696,6 +698,7 @@ async function main() {
         if (/^[\w.-]+$/.test(id) && id !== '.' && id !== '..') {
           try { rmSync(join(shotsRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
           try { rmSync(join(videosRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
+          try { rmSync(join(reviewsRoot, id), { recursive: true, force: true }); } catch { /* decoration */ }
         }
       },
       draft: (id: string) => draftFromEffects(recordStore.actionEffects(id)),
@@ -772,6 +775,32 @@ async function main() {
       subscribe: (cb: (t: string) => void) => { sseListeners.add(cb); return () => sseListeners.delete(cb); },
       activeWindow: () => (busy && !busy.startsWith('replay:') ? busy : null),
       logs: () => ({ now: Date.now(), lines: logBuf.slice(-200) }),
+      review: (id: string) => {
+        if (reviewBusy) return { ok: false, error: 'a review is already running (' + reviewBusy + ')' };
+        if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return { ok: false, error: 'bad session id' };
+        reviewBusy = id;
+        const outDir = join(reviewsRoot, id);
+        void (async () => {
+          const { runSessionReview } = await import('./recorder/review.js');
+          const steps = recordStore.actionEffects(id).map((e) => ({
+            seq: e.seq,
+            kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
+            label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
+          }));
+          await runSessionReview(id, { videosDir: join(videosRoot, id), outDir,
+            steps, logs: logBuf.slice(-200), log: dlog });
+        })().finally(() => { reviewBusy = null; emit('sessions'); });
+        return { ok: true };
+      },
+      reviewReport: (id: string) => {
+        if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return null;
+        try { return readFileSync(join(reviewsRoot, id, 'review.md'), 'utf8'); } catch { return null; }
+      },
+      reviewFramePath: (session: string, file: string) =>
+        /^[\w.-]+$/.test(session) && session !== '.' && session !== '..' && /^[\w-]+\.png$/.test(file)
+          ? (readdirSync(join(reviewsRoot, session)).filter((d) => d.startsWith('frames-'))
+              .map((d) => join(reviewsRoot, session, d, file)).find((f) => existsSync2(f)) ?? null)
+          : null,
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         const effects = recordStore.actionEffects(id);
