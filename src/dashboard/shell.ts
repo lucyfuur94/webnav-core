@@ -350,9 +350,13 @@ async function softRefresh(kind) {
     const fresh = recs.find(r => r.sessionId === detailCtx.r.sessionId);
     if (fresh) {
       const stateChanged = fresh.active !== detailCtx.r.active || (winSession === fresh.sessionId) !== detailCtx.hasWindow;
+      const stepsChanged = fresh.steps !== detailCtx.r.steps;   // count moved (incl. the final steps on stop)
       detailCtx.r = fresh;
-      if (stateChanged) buildHead(detailCtx);
-      if (kind === 'step') loadSteps(detailCtx);   // realtime: steps stream like logs, whichever sub-tab is visible
+      if (stateChanged) buildHead(detailCtx);   // recording→stopped, window gained/lost → repaint header NOW
+      // refresh steps on a step push OR when recording state/count changed (a stop
+      // flushes the last steps; without this the Steps tab stayed blank until a
+      // manual re-click — live bug #2). Only when the Steps sub-tab is visible.
+      if ((kind === 'step' || stateChanged || stepsChanged) && detailCtx.subTab === 'steps') loadSteps(detailCtx);
       if (detailCtx.subTab === 'review') loadReview(detailCtx);   // review start/finish emits 'sessions'
     }
   }

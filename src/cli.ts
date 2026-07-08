@@ -760,9 +760,18 @@ async function main() {
             onEvent: emit,
             browserAlive,
             onToggle: (recording: boolean) => videoSync(session, recording),
+            // fire the instant the loop ends (window closed OR external stop): stop capture,
+            // save the video, and force-reap the daemon so it can't RESURRECT the window
+            // (live: split-second reopen). Runs before the graceful close in finally.
+            onEnd: (reason) => {
+              videoSync(session, false);
+              recordStore.stop(session);
+              if (reason === 'closed') { try { execSync('pkill -f ' + JSON.stringify('-s=' + session)); } catch { /* already gone */ } }
+              busy = null; activeAdapter = null;
+              dlog('window session ended (' + reason + '): ' + session); emit('sessions');
+            },
             log: dlog, isStopped: () => false })
-            .finally(() => { videoSync(session, false); busy = null; activeAdapter = null; recordStore.stop(session);
-              dlog('window session ended: ' + session); emit('sessions'); });
+            .catch(() => {});
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
