@@ -381,8 +381,14 @@ function setSubTab(ctx, name) {
   ctx.stepsBox.style.display = name === 'steps' ? '' : 'none';
   ctx.logsBox.style.display = name === 'logs' ? '' : 'none';
   ctx.videosBox.style.display = name === 'videos' ? '' : 'none';
+  if (name === 'steps') loadSteps(ctx);   // refetch — steps landed while you were on Logs (live bug: stale view)
   if (name === 'logs') loadLogs(ctx);
   if (name === 'videos') loadVideos(ctx);
+}
+async function loadSteps(ctx) {
+  const steps = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/steps');
+  ctx.stepsBox.innerHTML = '';
+  ctx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
 }
 
 async function showRecording(r, detail, list, row) {
