@@ -28,6 +28,7 @@ export interface LiveRecordDeps {
   tickExtras?: { port?: number; session?: string };     // lets the pill POST toggles to the dashboard
   onEvent?: (type: 'step' | 'sessions') => void;        // realtime push hooks (SSE)
   onToggle?: (recording: boolean) => void;              // pill/queue toggle side-effects (video)
+  onEnd?: (reason: 'closed' | 'stopped') => void;       // fires ONCE when the loop ends (window closed / external stop) — lets the caller stop+emit immediately, not on a lazy finally
   // OS-level window liveness (ps: does the daemon still have a Chromium child?).
   // Checked BEFORE any eval — an eval on a dead window makes the daemon RESURRECT
   // it (the reopen-flash). false → end the session without touching the daemon.
@@ -49,13 +50,14 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
   let appended = 0;
   let errStreak = 0;
   let undrainStreak = 0;
+  let endReason: 'closed' | 'stopped' = 'stopped';
   let sawRealPage = false;
   let blankStreak = 0;
   try {
     while (!deps.isStopped() && (deps.armed ? true : deps.store.isActive(deps.sessionId))) {
       if (deps.browserAlive && !deps.browserAlive()) {
         deps.log('browser window closed — ending session');
-        break;
+        endReason = 'closed'; break;
       }
       // 1. where are we? (cheap; also our browser-liveness probe)
       let url: string;
@@ -93,7 +95,7 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         // really gone (live finding: 3 fired during a plain page load and closed the
         // armed window out from under the user).
         if (++undrainStreak === 1) deps.log('skip: undrainable batch');
-        if (undrainStreak >= 8) { deps.log('browser window closed — ending session'); break; }
+        if (undrainStreak >= 8) { deps.log('browser window closed — ending session'); endReason = 'closed'; break; }
         await sleep(100);   // transient (mid-navigation): retry fast so the badge returns sooner
         continue;
       }
@@ -108,7 +110,7 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       // resurrected blank doc reports installed=false and would reset the streak.)
       const isBlank = !url || url === 'about:blank';
       if (sawRealPage && isBlank) {
-        if (++blankStreak >= 2) { deps.log('browser window closed — ending session'); break; }
+        if (++blankStreak >= 2) { deps.log('browser window closed — ending session'); endReason = 'closed'; break; }
       } else {
         blankStreak = 0;
         if (!isBlank) sawRealPage = true;
@@ -197,7 +199,8 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       if (!tickRes.installed) await sleep(deps.intervalMs);
     }
   } finally {
-    await deps.adapter.close().catch(() => {});
+    await deps.adapter.close().catch(() => {});   // graceful close request
+    deps.onEnd?.(endReason);
   }
   return { appended, ticks: ticks.length };
 }

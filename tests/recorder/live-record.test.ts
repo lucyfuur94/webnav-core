@@ -211,3 +211,19 @@ it('queued toggles are idempotent: double-click stop does NOT restart (live CORS
   expect(store.isActive('idem-1')).toBe(false);   // stopped — and STAYED stopped
   expect(logs.filter((l) => l.includes('STOPPED')).length).toBe(1);   // second stop was a no-op
 });
+
+
+it('window close → onEnd(closed) fires and the session is stopped (live #1/#2/#3)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('end-1');   // recording
+  let alive = true;
+  const adapter = { evalJs: async (f: string) => (f.includes('queue') ? JSON.stringify({ installed: false, queue: [] }) : 'ok'),
+    snapshot: async () => 'RootWebArea "X" [ref=e1]', currentUrl: async () => 'https://s.test/', close: async () => '' };
+  const ends: string[] = [];
+  const p = runLiveRecord({ adapter, store, sessionId: 'end-1', intervalMs: 0, armed: true,
+    browserAlive: () => alive, onEnd: (r) => { ends.push(r); store.stop('end-1'); },
+    log: () => {}, isStopped: () => false, sleep: async () => { alive = false; } });   // window closes after tick 1
+  await p;
+  expect(ends).toEqual(['closed']);            // ended for the right reason
+  expect(store.isActive('end-1')).toBe(false); // and the session actually stopped
+});
