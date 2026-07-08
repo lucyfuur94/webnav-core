@@ -75,5 +75,5 @@ it('detail offers session videos as capture ground-truth', () => {
 it('Sessions tab: renamed label, bulk delete, default session name', () => {
   expect(SHELL_HTML).toContain('>Sessions</button>');
   expect(SHELL_HTML).toContain('Delete selected');
-  expect(SHELL_HTML).toContain("sessIn.value = 'session-'");
+  expect(SHELL_HTML).toContain("sessIn.value = 's-'");   // SHORT: macOS ~104-char socket-path cap
 });

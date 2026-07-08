@@ -325,9 +325,11 @@ function startEvents() {
 function newRecordingCard() {
   const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px"><input type="checkbox" style="width:auto;margin-right:6px" />keep me logged in (persistent profile)</label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
   const [sessIn, urlIn] = card.querySelectorAll('input:not([type=checkbox])');
-  // default name (editable): session-MMDD-HHMMSS — no naming friction for a quick take
+  // default name (editable): s-MMDDHHMMSS — SHORT on purpose: the playwright-cli
+  // daemon socket path embeds the session name and macOS caps socket paths at
+  // ~104 chars (live failure: 'session-0708-134206' overflowed → listen EINVAL).
   const d = new Date(), p2 = (x) => String(x).padStart(2, '0');
-  sessIn.value = 'session-' + p2(d.getMonth()+1) + p2(d.getDate()) + '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+  sessIn.value = 's-' + p2(d.getMonth()+1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
   const persistIn = card.querySelector('input[type=checkbox]');
   card.querySelector('button').onclick = async () => {
     const msg = card.querySelector('#openmsg');
