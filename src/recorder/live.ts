@@ -102,11 +102,26 @@ export const INSTALLER_JS = `() => {
           body: JSON.stringify({ recording: desired }) }).catch(() => push({ kind: 'toggle' }));
     } else { push({ kind: 'toggle' }); }
   };
+  // Click RIPPLE: a brief expanding ring at the click point, painted only while
+  // recording — so the session VIDEO shows WHERE each click landed (the review
+  // agent reads frames; a ripple pins the action location). pointer-events:none
+  // (never intercepts), aria-hidden (never in the a11y snapshots we record), and
+  // it deliberately CREATES a visible change at click time, which biases the
+  // scene-change frame extractor toward selecting a frame at each click.
+  const ripple = (x, y) => {
+    const r = document.createElement('div');
+    r.setAttribute('aria-hidden', 'true');
+    r.style.cssText = 'position:fixed;left:' + (x - 22) + 'px;top:' + (y - 22) + 'px;width:44px;height:44px;border-radius:50%;border:3px solid #e5484d;background:rgba(229,72,77,.3);z-index:2147483646;pointer-events:none;transform:scale(.4);opacity:1;transition:transform .5s ease-out,opacity .7s ease-out;';
+    (document.body || document.documentElement).appendChild(r);
+    requestAnimationFrame(() => { r.style.transform = 'scale(1.7)'; r.style.opacity = '0'; });
+    setTimeout(() => r.remove(), 800);
+  };
   const INTERACTIVE = ['a','button','select','textarea','summary','label'];
   document.addEventListener('click', (ev) => {
     const t = ev.target;
     if (!(t instanceof Element)) return;
     if (t.closest('#__webnav_rec_badge')) return;   // our own overlay is never a recorded click
+    if (document.documentElement.dataset.webnavRec === '1') ripple(ev.clientX, ev.clientY);
     const el = t.closest('a,button,[role],input,select,textarea,summary,label') || t;
     const tag = el.tagName.toLowerCase();
     const isBtnInput = el instanceof HTMLInputElement && ['submit','button','reset'].indexOf(el.type) >= 0;
