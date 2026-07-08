@@ -93,3 +93,13 @@ describe('PlaywrightAdapter', () => {
     expect(calls[1]).toEqual(['-s=s', 'click', 'e1']);   // no --headed on click
   });
 });
+
+import { resolveProfile } from '../../src/playwright/adapter.js';
+describe('resolveProfile', () => {
+  it('bare session name → profiles root; explicit path passes through; name sanitized', () => {
+    expect(resolveProfile('my-app', '/home/u/.webnav/profiles')).toBe('/home/u/.webnav/profiles/my-app');
+    expect(resolveProfile('/abs/dir', '/home/u/.webnav/profiles')).toBe('/abs/dir');
+    expect(resolveProfile('a b/../x', '/home/u/.webnav/profiles')).toBe('a b/../x');       // has slash → path, as-is
+    expect(resolveProfile('a b*x', '/root/p')).toBe('/root/p/a_b_x');                       // sanitized
+  });
+});

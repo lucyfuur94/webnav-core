@@ -663,6 +663,8 @@ async function main() {
     // truth to verify the step capture against, and a session recording artifact).
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
+    const profilesRoot = join(homedir(), '.webnav', 'profiles');   // STABLE per-session browser profile
+    const profileDir = (id: string) => join(profilesRoot, id.replace(/[^\w.-]/g, '_'));
     let reviewBusy: string | null = null;
     const { DEFAULT_INSTRUCTIONS: reviewDefaultInstructions } = await import('./recorder/review.js');
     let videoOn = false;
@@ -686,7 +688,8 @@ async function main() {
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
-      list: () => recordStore.listSessions(),
+      list: () => recordStore.listSessions().map((x) => ({ ...x,
+        hasProfile: existsSync2(profileDir(x.sessionId)) })),
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
@@ -707,7 +710,13 @@ async function main() {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
         busy = session;
         try {
-          const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: true, persistent });
+          // persistent → a STABLE profile dir keyed by session name, so a hand-done
+          // login (Cloudflare/Google/2FA) PERSISTS across window opens and into a
+          // later walk. Without an explicit --profile, playwright-cli uses a random
+          // temp dir per launch and the login evaporates (live finding).
+          if (persistent) { try { mkdirSync(profileDir(session), { recursive: true }); } catch { /* */ } }
+          const adapter = new PlaywrightAdapter(session, undefined, undefined,
+            persistent ? { headed: true, persistent: true, profile: profileDir(session) } : { headed: true });
           await adapter.open(url);
           // ONE CLICK = OPEN + RECORD (live feedback: asking to press Record again
           // after "Open window" was a redundant second intent). Stop still returns
@@ -903,7 +912,17 @@ async function main() {
     const staleWalks = new WalkSessionStore().staleBrowserSessions(60 * 60 * 1000);
     const gate = await ensureCanOpen(browserSession, staleWalks);
     if (!gate.ok) { console.log(JSON.stringify({ status: 'error', reason: gate.reason }, null, 2)); process.exitCode = 2; return; }
-    const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, args.browser);
+    // --profile may be a session NAME (reuse a dashboard hand-login) or an absolute
+    // path. A bare name resolves to ~/.webnav/profiles/<name> — the same dir the
+    // dashboard's persistent recording wrote, so a Cloudflare/2FA login done by
+    // hand once carries into every walk.
+    const bopts = { ...args.browser };
+    if (bopts.profile) {
+      const { homedir } = await import('node:os'); const { join } = await import('node:path');
+      const { resolveProfile } = await import('./playwright/adapter.js');
+      bopts.profile = resolveProfile(bopts.profile, join(homedir(), '.webnav', 'profiles'));
+    }
+    const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, bopts);
     const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
