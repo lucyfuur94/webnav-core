@@ -665,6 +665,11 @@ async function main() {
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
     const profilesRoot = join(homedir(), '.webnav', 'profiles');   // STABLE per-session browser profile
     const profileDir = (id: string) => join(profilesRoot, id.replace(/[^\w.-]/g, '_'));
+    // A Chrome profile dir opens in ONE process only; an orphan webnav Chrome leaves
+    // a SingletonLock and holds the dir → next launch fails / hands off to the orphan
+    // (the dashboard-vs-reality desync cluster). prepProfile reaps a live webnav-owned
+    // holder + clears stale locks before each persistent launch. (src/playwright/profile-lock.ts)
+    const { prepProfile } = await import('./playwright/profile-lock.js');
     const dirSizeMb = (dir: string) => {
       // cheap recursive size; profiles are small (cookies+cache), so a sync walk is fine
       let total = 0;
@@ -732,7 +737,7 @@ async function main() {
           // via --profile). Without an explicit dir, playwright-cli uses a random temp
           // dir per launch and the login evaporates (live finding).
           const profName = persistent ? (profile && /^[\w.-]+$/.test(profile) ? profile : 'default') : null;
-          if (profName) { try { mkdirSync(profileDir(profName), { recursive: true }); } catch { /* */ } }
+          if (profName) { try { mkdirSync(profileDir(profName), { recursive: true }); } catch { /* */ } prepProfile(profileDir(profName)); }
           const adapter = new PlaywrightAdapter(session, undefined, undefined,
             profName ? { headed: true, persistent: true, profile: profileDir(profName) } : { headed: true });
           await adapter.open(url);
@@ -777,7 +782,19 @@ async function main() {
             onEnd: (reason) => {
               videoSync(session, false);
               recordStore.stop(session);
-              if (reason === 'closed') { try { execSync('pkill -f ' + JSON.stringify('-s=' + session)); } catch { /* already gone */ } }
+              // GRACEFUL close only (the loop's finally calls adapter.close() → Chrome
+              // exits cleanly, releasing the profile lock and leaving NO "restore pages"
+              // bubble). A lingering orphan is handled by prepProfile on the NEXT launch,
+              // not an ungraceful pkill here (that was the cause of the restore bubble +
+              // reopen loop — advisor finding). Force-kill the daemon GROUP only if it's
+              // truly wedged AND the window is gone (resurrection guard).
+              if (reason === 'closed') {
+                setTimeout(() => { try {
+                  if (daemonPid !== undefined && execSync('ps -axo ppid=,comm= | awk \'$1==' + daemonPid + '\'', { encoding: 'utf8' }).toLowerCase().includes('chrom')) {
+                    execSync('pkill -f ' + JSON.stringify('-s=' + session));
+                  }
+                } catch { /* gone */ } }, 1500);
+              }
               busy = null; activeAdapter = null;
               dlog('window session ended (' + reason + '): ' + session); emit('sessions');
             },
@@ -892,6 +909,7 @@ async function main() {
         if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false as const, error: 'bad profile name' };
         const dir = profileDir(name);
         try { mkdirSync(dir, { recursive: true }); } catch { /* */ }   // new profile: create on first login
+        prepProfile(dir);   // reap any orphan holding the lock + clear stale Singleton*
         const winId = 'relogin-' + name;
         busy = winId;
         // re-login window: open the profile headed at the site of a session that uses

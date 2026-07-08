@@ -369,13 +369,12 @@ async function softRefresh(kind) {
     const fresh = recs.find(r => r.sessionId === detailCtx.r.sessionId);
     if (fresh) {
       const stateChanged = fresh.active !== detailCtx.r.active || (winSession === fresh.sessionId) !== detailCtx.hasWindow;
-      const stepsChanged = fresh.steps !== detailCtx.r.steps;   // count moved (incl. the final steps on stop)
       detailCtx.r = fresh;
       if (stateChanged) buildHead(detailCtx);   // recording→stopped, window gained/lost → repaint header NOW
-      // refresh steps on a step push OR when recording state/count changed (a stop
-      // flushes the last steps; without this the Steps tab stayed blank until a
-      // manual re-click — live bug #2). Only when the Steps sub-tab is visible.
-      if ((kind === 'step' || stateChanged || stepsChanged) && detailCtx.subTab === 'steps') loadSteps(detailCtx);
+      // GROUND TRUTH over inference (advisor): any sessions/step event while the Steps
+      // tab is open → just refetch steps. One cheap call; retires the whole "steps
+      // blank until re-click" class instead of guessing when the count moved.
+      if (detailCtx.subTab === 'steps') loadSteps(detailCtx);
       if (detailCtx.subTab === 'review') loadReview(detailCtx);   // review start/finish emits 'sessions'
     }
   }
@@ -442,6 +441,9 @@ function buildHead(ctx) {
     // yet still creates one under the same session, so the next reopen has a login.
     const res = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ url: r.startUrl || (r.site ? 'https://'+r.site : 'about:blank'), session: r.sessionId, persistent: true, armedOnly: true, profile: r.profile || 'default' }) });
+    // ALWAYS restore the button first (a failed open changes nothing server-side, so
+    // softRefresh wouldn't rebuild the header → the button stayed 'opening…' forever).
+    openB.disabled = false; openB.textContent = r.hasProfile ? '🔐 Open (' + r.profile + ')' : 'Open window';
     if (!res.ok) { alert((await res.json()).error); }
     softRefresh('sessions');
   };
