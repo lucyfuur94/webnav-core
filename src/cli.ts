@@ -739,7 +739,11 @@ async function main() {
           return { ok: true as const };
         } catch (e) {
           busy = null;   // final-review #1: an open() throw (session ceiling, bad URL) wedged the guard forever
-          return { ok: false as const, error: String(e) };
+          const msg = String(e);
+          if (/EINVAL/.test(msg) && /\.sock/.test(msg)) {
+            return { ok: false as const, error: 'session name too long — macOS caps the daemon socket path (~104 chars); use a shorter name (≤ ~14 chars is safe)' };
+          }
+          return { ok: false as const, error: msg };
         }
       },
       // instant overlay update: don't wait for the loop's next tick (live finding: lag)
