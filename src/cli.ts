@@ -777,14 +777,6 @@ async function main() {
         const ctl = new ReplayController(id, effects.map((e) => ({ seq: e.seq, label: e.action?.name ?? (e.navigated ? 'jump' : 'observe') })));
         activeCtl = ctl;
         const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
-        // in-process replay-state watcher → SSE (no CLI spawns; cleared when done)
-        let lastState = '';
-        const watch = setInterval(() => {
-          const j = JSON.stringify(ctl.state);
-          if (j !== lastState) { lastState = j; emit('replay'); }
-          if (ctl.state.done) clearInterval(watch);
-        }, 250);
-        emit('replay');
         void runReplay(effects, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
           .finally(() => { busy = null; });
         return { ok: true as const };
