@@ -347,7 +347,7 @@ async function main() {
     if (!args.session) { console.log(JSON.stringify({ ok: false, error: 'usage: webnav use session --session <S> [--url <U>] [--profile <name>]' })); process.exitCode = 2; return; }
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { RecordStore } = await import('./mapstore/record.js');
-    const { runAgentSession } = await import('./recorder/agent-session.js');
+    const { runAgentSession, OVERLAY_ON_JS } = await import('./recorder/agent-session.js');
     const { parseSnapshot } = await import('./playwright/snapshot.js');
     const { recoverFingerprint } = await import('./playwright/fingerprint.js');
     const { homedir } = await import('node:os');
@@ -384,6 +384,7 @@ async function main() {
     try {
       await adapter.open(args.url);
       if (sbrowser.profile && args.url && args.url !== 'about:blank') { try { await adapter.goto(args.url); } catch { /* past restored tab */ } }
+      await adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay on the starting page
       store.start(args.session);
       store.setOrigin(args.session, 'agent');
       if (profName) store.setProfile(args.session, profName);
@@ -853,16 +854,23 @@ async function main() {
     // replay to verify. ONE driven browser at a time (CLAUDE.md rule); `busy`
     // tracks it so a second open/replay while one is up gets a clear 409-style error.
     const recordStore = new RecordStore(dbPath());
-    // ONE-TIME startup reconcile: a session left active=1 by a crashed/killed recorder
-    // shows "recording" forever. At boot (no legit session running yet), any active
-    // session with NO live browser process is stale → stop it. Uses REAL process
-    // liveness (not busy) so it never touches a session active in another live process.
-    try {
-      const live = new Set((await listPwSessions(Date.now())).map((s) => s.name));
-      for (const x of recordStore.listSessions()) {
-        if (x.active && !live.has(x.sessionId)) recordStore.stop(x.sessionId);
-      }
-    } catch { /* liveness probe failed → leave flags as-is */ }
+    // Reconcile stale-active rows: a session left active=1 by a crashed/killed
+    // recorder OR by an agent `use session` process that ended (its /api/notify
+    // can race the SSE tab, or get missed) shows "recording" forever in an
+    // already-open tab. Any active session with NO live browser process is stale
+    // → stop it. Uses REAL process liveness (listPwSessions), never the dashboard's
+    // own `busy`, so it never touches a session legitimately active in another
+    // live process. Run at boot AND on every `list()` read, so even a missed SSE
+    // event self-heals on the next poll/refresh (ground truth, not just a push).
+    const reconcileStale = async () => {
+      try {
+        const live = new Set((await listPwSessions(Date.now())).map((s) => s.name));
+        for (const x of recordStore.listSessions()) {
+          if (x.active && !live.has(x.sessionId)) recordStore.stop(x.sessionId);
+        }
+      } catch { /* liveness probe failed → leave flags as-is */ }
+    };
+    await reconcileStale();
     let busy: string | null = null;
     let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
     // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' | 'log' pings
@@ -908,7 +916,8 @@ async function main() {
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
-      list: () => {
+      list: async () => {
+        await reconcileStale();   // ground truth on every read: self-heals a missed/raced SSE 'sessions' event
         return recordStore.listSessions().map((x) => {
           const profile = recordStore.profileOf(x.sessionId);
           let videoCount = 0;

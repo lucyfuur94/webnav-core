@@ -9,7 +9,17 @@
 // Pure core: deps injected (adapter, store, io, notify, video) so it's unit-tested
 // with scripted stdin + a fake adapter — no real browser.
 import { runActionRecorded } from '../router/browse.js';
+import { INSTALLER_JS, MODE_JS } from './live.js';
 import type { ActionEffect } from '../mapstore/record.js';
+
+// Paint the same REC overlay the human live-recorder uses, so an agent session's
+// video also shows a recording indicator + click ripples (agent clicks go through
+// playwright's real .click(), which dispatches a trusted DOM click event — that
+// bubbles to INSTALLER_JS's document click listener exactly like a human click, so
+// the existing ripple painter fires with NO extra eval needed here). Composed as one
+// eval (install-if-missing, then paint recording=on) — mirrors TICK_JS in live.ts.
+// Best-effort: a CSP page that blocks eval must not break navigation/recording.
+export const OVERLAY_ON_JS = `() => { (${INSTALLER_JS})(); return (${MODE_JS(true)})(); }`;
 
 export interface AgentSessionCmd {
   cmd: 'navigate' | 'snapshot' | 'click' | 'type' | 'eval' | 'quit';
@@ -75,6 +85,7 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           const fromUrl = await deps.adapter.currentUrl().catch(() => '');
           const fromSnapshot = fromUrl ? await deps.adapter.snapshot().catch(() => '') : '';
           await deps.adapter.goto(c.url);
+          await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           const toSnapshot = await deps.adapter.snapshot();
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
@@ -100,6 +111,7 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           });
           if (r.status === 'failed') { out({ ok: false, error: r.reason }); continue; }
           if (r.recorded) { steps++; deps.notify('step', 'agent ' + c.cmd + ': ' + (action.name ?? c.ref)); }
+          if (r.navigated) await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay (fresh page from in-page nav)
           out({ ok: true, navigated: r.navigated });
         } else if (c.cmd === 'eval') {
           if (!c.js) { out({ ok: false, error: 'eval needs js' }); continue; }

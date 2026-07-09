@@ -23,7 +23,7 @@ export interface DashboardOpts {
  * on the recorder/playwright stack. Absent (undefined) → recordings routes 503.
  */
 export interface RecordingsDeps {
-  list(): RecordSessionInfo[];
+  list(): RecordSessionInfo[] | Promise<RecordSessionInfo[]>;
   steps(id: string): { seq: number; label: string; kind: string; fromUrl: string; toUrl: string; value?: string; capturedAt: number }[];
   del(id: string): void;
   draft(id: string): unknown;
@@ -174,7 +174,7 @@ export function startDashboard(
       if (path.startsWith('/api/recordings') || path.startsWith('/api/replay') || path.startsWith('/replays/') || path.startsWith('/recordings-media/') || path.startsWith('/review-media/') || path === '/api/events' || path === '/api/logs' || path === '/api/notify' || path === '/api/review-config' || path === '/api/profiles' || path.startsWith('/api/profiles/')) {
         if (!rec) return sendJson(503, { error: 'recordings not wired' });
 
-        if (path === '/api/recordings' && method === 'GET') return sendJson(200, rec.list());
+        if (path === '/api/recordings' && method === 'GET') return sendJson(200, await rec.list());
         if (path === '/api/recordings/window' && method === 'GET') return sendJson(200, { session: rec.activeWindow() });
         if (path === '/api/logs' && method === 'GET') return sendJson(200, rec.logs());
         if (path === '/api/notify' && method === 'POST') {

@@ -8,6 +8,7 @@ import { seedGraph } from '../../src/graph/seed.js';
 import { makeState } from '../../src/mapstore/types.js';
 import { CredStore } from '../../src/creds.js';
 import { startDashboard } from '../../src/dashboard/server.js';
+import { RecordStore } from '../../src/mapstore/record.js';
 
 // A localhost dashboard server over a seeded in-memory map + a temp creds file.
 // No browser needed — we drive the HTTP API with fetch.
@@ -214,6 +215,59 @@ describe('recordings API', () => {
     const b2 = 'http://127.0.0.1:' + (s2.address() as AddressInfo).port;
     expect((await fetch(b2 + '/api/recordings')).status).toBe(503);
     s2.close();
+  });
+});
+
+// Reconcile-on-read: a session left active=1 by an ended `use session` process
+// (SSE 'sessions' emit missed/raced) must still read back active:false on the
+// NEXT GET /api/recordings — ground truth from real process liveness, not the
+// dashboard's own `busy`. Mirrors the reconcile the `dashboard` command's `list`
+// dep runs in src/cli.ts (reconcileStale + await inside list()).
+describe('recordings API: stale-active reconcile on list()', () => {
+  let base: string; let server: Server; let tmp3: string;
+  let liveNames: Set<string>;
+  let recordStore: RecordStore;
+
+  beforeAll(async () => {
+    tmp3 = mkdtempSync(join(tmpdir(), 'webnav-dash-reconcile-'));
+    recordStore = new RecordStore(join(tmp3, 'store.db'));
+    recordStore.start('stale-1');   // active in DB, will NOT be in liveNames → must reconcile to false
+    recordStore.start('live-1');    // active in DB, IS in liveNames → must stay true
+    liveNames = new Set(['live-1']);
+
+    const rec = {
+      list: async () => {
+        // same shape as cli.ts's reconcileStale: any active row absent from the
+        // live-session set is stale → stop it, THEN read the truthful rows back.
+        for (const x of recordStore.listSessions()) {
+          if (x.active && !liveNames.has(x.sessionId)) recordStore.stop(x.sessionId);
+        }
+        return recordStore.listSessions();
+      },
+      steps: () => [], del: () => {}, draft: () => ({}),
+      open: async () => ({ ok: true as const }), record: () => true, stop: () => true,
+      replay: async () => ({ ok: false as const, error: 'busy' }), replayState: () => null,
+      replayControl: () => true, shotPath: () => null,
+      review: () => ({ ok: true }), reviewReport: () => null, reviewRunning: () => null,
+      reviewConfig: () => ({ model: 'sonnet', instructions: '' }), reviewFramePath: () => null,
+      profiles: () => [], profileNew: () => ({ ok: true }), profileOpen: async () => ({ ok: true as const }),
+      profileRename: () => ({ ok: true }), profileDelete: () => ({ ok: true }),
+    };
+    server = startDashboard(new MapStore(':memory:'), new CredStore(join(tmp3, 'c.json')), { port: 0 }, rec as any);
+    await new Promise((r) => server.on('listening', r));
+    base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
+  });
+  afterAll(() => { server.close(); rmSync(tmp3, { recursive: true, force: true }); });
+
+  it('a session active in DB but absent from the live-session set reads back active:false', async () => {
+    const rows = await (await fetch(base + '/api/recordings')).json();
+    const stale = rows.find((r: any) => r.sessionId === 'stale-1');
+    expect(stale.active).toBe(false);
+  });
+  it('a session active in DB AND present in the live-session set stays active:true', async () => {
+    const rows = await (await fetch(base + '/api/recordings')).json();
+    const live = rows.find((r: any) => r.sessionId === 'live-1');
+    expect(live.active).toBe(true);
   });
 });
 
