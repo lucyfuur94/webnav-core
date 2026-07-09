@@ -334,6 +334,18 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev mermaid www.saucedemo.com',
   },
   {
+    name: 'capture-loop',
+    summary: 'Self-improving capture loop: run --explore-cmd (drives one agent exploration of --objective, recording $WEBNAV_LOOP_SESSION), then a structured review audits video-vs-steps for capture gaps; repeats until a clean audit or exits 3 with the gaps to fix.',
+    args: [],
+    flags: [
+      { name: '--objective', takesValue: true, description: 'What the agent should explore (required).' },
+      { name: '--explore-cmd', takesValue: true, description: 'Command that drives ONE round via `use session` on $WEBNAV_LOOP_SESSION (required).' },
+      { name: '--max-rounds', takesValue: true, description: 'Max rounds before giving up (default 5).' },
+      { name: '--model', takesValue: true, description: 'Review model (default sonnet).' },
+    ],
+    example: 'webnav dev capture-loop --objective "explore reports" --explore-cmd "./explore.sh" --max-rounds 3',
+  },
+  {
     name: 'effects',
     summary: 'Dump a record session\'s RAW action-effects (full before/after snapshots + diff + navigated) as JSON — the unabridged data `graph-analyse` only summarizes.',
     args: [],

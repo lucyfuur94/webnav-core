@@ -40,6 +40,7 @@ export type ParsedArgs =
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
+  | { cmd: 'capture-loop'; objective: string; exploreCmd: string; sessionPrefix: string; maxRounds: number; model: string }
   | { cmd: 'verify'; node: string; session: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
@@ -174,6 +175,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'capture-loop') return { cmd, objective: flagValue(rest, '--objective') ?? '', exploreCmd: flagValue(rest, '--explore-cmd') ?? '', sessionPrefix: flagValue(rest, '--session-prefix') ?? 'cl', maxRounds: Number(flagValue(rest, '--max-rounds') ?? 5), model: flagValue(rest, '--model') ?? 'sonnet' };
   if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'sessions') {
     const maxAge = flagValue(rest, '--max-age-hours');
@@ -585,6 +587,59 @@ async function main() {
     const effects = new RecordStore(dbPath()).actionEffects(args.session);
     console.log(JSON.stringify({ status: effects.length ? 'done' : 'empty', session: args.session, effects }, null, 2));
     if (effects.length === 0) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'capture-loop') {
+    // Self-improving capture loop: each round runs --explore-cmd (which drives ONE
+    // agent exploration of the objective via `use session`, recording session
+    // $WEBNAV_LOOP_SESSION), then a STRUCTURED review audits video-vs-steps for gaps.
+    // Converges on a clean audit; else exits 3 with the gaps for a recorder-code fix.
+    // webnav stays zero-LLM: the exploring AGENT lives in --explore-cmd (caller wires
+    // a Haiku driver), not here. spec: 2026-07-09-capture-improvement-loop-design.md
+    if (!args.objective || !args.exploreCmd) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev capture-loop --objective "<text>" --explore-cmd "<cmd that drives $WEBNAV_LOOP_SESSION>" [--max-rounds N] [--model sonnet]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { runCaptureLoop } = await import('./recorder/capture-loop.js');
+    const { runSessionReview } = await import('./recorder/review.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { execSync } = await import('node:child_process');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
+    const store = new RecordStore(dbPath());
+    const videosRoot = join(homedir(), '.webnav', 'recordings');
+    const reviewsRoot = join(homedir(), '.webnav', 'reviews');
+    const result = await runCaptureLoop({
+      objective: args.objective, maxRounds: args.maxRounds,
+      log: (l) => process.stderr.write(l + '\n'),
+      explore: async (round) => {
+        // SHORT session name: the playwright-cli daemon socket path embeds it and
+        // macOS caps socket paths at ~104 chars (learned before). base36 seconds + round.
+        const stamp = Math.floor(Date.now() / 1000).toString(36);   // ~6 chars
+        const session = (args.sessionPrefix + 'r' + round + stamp).slice(0, 14);
+        try {
+          execSync(args.exploreCmd, { stdio: 'inherit', timeout: 5 * 60_000,
+            env: { ...process.env, WEBNAV_LOOP_SESSION: session, WEBNAV_LOOP_OBJECTIVE: args.objective } });
+        } catch { /* explore-cmd non-zero → treat as recorded-what-it-could */ }
+        // re-open the store to see the subprocess's committed writes (a long-lived
+        // connection can hold a stale snapshot across another process's commit).
+        const fresh = new RecordStore(dbPath());
+        return fresh.actionEffects(session).length ? session : null;
+      },
+      review: async (session) => {
+        const steps = new RecordStore(dbPath()).actionEffects(session).map((e) => ({
+          seq: e.seq, kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
+          label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
+        }));
+        const res = await runSessionReview(session, { videosDir: join(videosRoot, session), outDir: join(reviewsRoot, session),
+          steps, logs: [], log: (l) => process.stderr.write(l + '\n'), claudeModel: args.model, structured: true });
+        return typeof res === 'string' ? [] : res.gaps;
+      },
+    });
+    console.log(JSON.stringify({ status: result.status,
+      rounds: result.rounds.map((r) => ({ round: r.round, session: r.session, gaps: r.gaps.length })),
+      gaps: result.gaps }, null, 2));
+    if (result.status !== 'clean') process.exitCode = 3;   // needs-fix / max-rounds
     return;
   }
   if (args.cmd === 'verify') {
