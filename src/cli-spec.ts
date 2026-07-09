@@ -383,7 +383,10 @@ export const DEV_COMMANDS: CommandSpec[] = [
     name: 'dashboard',
     summary: 'Open a LOCAL operator UI (localhost only) to inspect which sites webnav has data for, view a site\'s JSON map, and manage stored credentials (grouped by category, masked with reveal + inline edit). Reads ./webnav.db + ~/.webnav/credentials.json; the only writes are credential set/remove/recategorize (chmod 600).',
     args: [],
-    flags: [{ name: '--port', takesValue: true, default: '7777', description: 'Port to bind on 127.0.0.1 (or set WEBNAV_PORT). The dashboard runs until Ctrl-C.' }],
+    flags: [
+      { name: '--port', takesValue: true, default: '7777', description: 'Port to bind on 127.0.0.1 (or set WEBNAV_PORT). The dashboard runs until Ctrl-C.' },
+      { name: '--open', takesValue: false, description: 'Open the dashboard URL in a browser tab on start (macOS). Off by default — the URL is printed to click.' },
+    ],
     example: 'webnav dev dashboard --port 7777',
   },
   {
