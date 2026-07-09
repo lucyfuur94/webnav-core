@@ -103,3 +103,15 @@ describe('stale-active reconciliation support', () => {
     expect(s.listSessions().find((x) => x.sessionId === 'stuck')!.active).toBe(false);
   });
 });
+
+describe('session origin (agent vs manual tag)', () => {
+  it('defaults to manual (legacy/null), sets once, sticks', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('m1');
+    expect(s.originOf('m1')).toBe('manual');          // null → manual
+    s.setOrigin('m1', 'agent');
+    expect(s.originOf('m1')).toBe('agent');
+    s.setOrigin('m1', 'manual');                       // set-once: does NOT overwrite
+    expect(s.originOf('m1')).toBe('agent');
+  });
+});

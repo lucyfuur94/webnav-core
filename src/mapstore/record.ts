@@ -64,6 +64,17 @@ export class RecordStore {
     // profile = the NAMED browser profile a session runs under (shared logged-in
     // state; null ⇒ 'default'). Lets "log in once" apply across every session.
     if (!scols.has('profile')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN profile TEXT');
+    // origin = who recorded this session: 'agent' (use session / use-driven) or
+    // 'manual' (human record-live / dashboard). Null (legacy rows) reads as 'manual'.
+    if (!scols.has('origin')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN origin TEXT');
+  }
+  /** Tag who recorded the session ('agent' | 'manual'); only sets if not already set. */
+  setOrigin(sessionId: string, origin: 'agent' | 'manual'): void {
+    this.db.prepare('UPDATE record_sessions SET origin=? WHERE session_id=? AND origin IS NULL').run(origin, sessionId);
+  }
+  originOf(sessionId: string): 'agent' | 'manual' {
+    const r: any = this.db.prepare('SELECT origin FROM record_sessions WHERE session_id=?').get(sessionId);
+    return r?.origin === 'agent' ? 'agent' : 'manual';   // legacy/null → manual
   }
   /** Record the intended start URL for a session (idempotent; only sets if given). */
   setStartUrl(sessionId: string, url: string): void {

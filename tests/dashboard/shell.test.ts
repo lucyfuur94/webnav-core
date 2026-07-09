@@ -128,3 +128,9 @@ it('Open button disabled when a window is live; Record needs a window (#2/#3)', 
   expect(SHELL_HTML).toContain('openB.disabled = !!winSession');
   expect(SHELL_HTML).toContain('recB.disabled = !hasWindow && !r.active');
 });
+
+it('sessions carry an Agent/Manual origin tag', () => {
+  expect(SHELL_HTML).toContain('function originTag');
+  expect(SHELL_HTML).toContain('Agent');
+  expect(SHELL_HTML).toContain('Manual');
+});

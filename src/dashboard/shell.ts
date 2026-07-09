@@ -348,8 +348,13 @@ async function renderRecordings(openId) {
   if (reopen) reopen();
   startEvents();
 }
+function originTag(origin) {
+  const agent = origin === 'agent';
+  const c = agent ? '#5b9dff' : '#8b93a3';
+  return '<span style="border:1px solid '+c+';color:'+c+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+(agent?'Agent':'Manual')+'</span>';
+}
 function fillRow(row, r) {
-  row.querySelector('.name').innerHTML = esc(r.sessionId)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'');
+  row.querySelector('.name').innerHTML = esc(r.sessionId)+' '+originTag(r.origin)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'');
   const vid = r.videoCount ? ' · \\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N when takes exist
   row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps'+vid+' · '+new Date(r.startedAt).toLocaleString();
 }
@@ -427,7 +432,7 @@ function buildHead(ctx) {
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   ctx.headBox.innerHTML = '';
   const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid #3fb950;color:#3fb950;border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
-  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong><span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
+  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong>'+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   // Open window and Record are SEPARATE intents here (live feedback): the window
