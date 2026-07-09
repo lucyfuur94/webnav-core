@@ -383,6 +383,7 @@ async function main() {
       await adapter.open(args.url);
       if (sbrowser.profile && args.url && args.url !== 'about:blank') { try { await adapter.goto(args.url); } catch { /* past restored tab */ } }
       store.start(args.session);
+      store.setOrigin(args.session, 'agent');
       if (profName) store.setProfile(args.session, profName);
       if (args.url && args.url !== 'about:blank') store.setStartUrl(args.session, args.url);
 
@@ -462,6 +463,7 @@ async function main() {
     const rec = new RecordStore(dbPath());
     const session = args.session || `map-${Date.now()}`;
     rec.start(session);
+    rec.setOrigin(session, 'agent');
     console.log(JSON.stringify({ status: 'recording', session }, null, 2));
     return;
   }
@@ -493,6 +495,7 @@ async function main() {
     const { join } = await import('node:path');
     const store = new RecordStore(dbPath());
     store.start(args.session);
+    store.setOrigin(args.session, 'manual');
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     // --profile resolve + prep (parity with the dashboard/agent paths): one
     // long-lived process OWNS the session, so video capture survives the whole span.
@@ -856,7 +859,7 @@ async function main() {
           let videoCount = 0;
           try { videoCount = readdirSync(join(videosRoot, x.sessionId)).filter((f) => f.endsWith('.webm')).length; } catch { /* none */ }
           return { ...x, profile, hasProfile: !!profile && existsSync2(profileDir(profile)),
-            startUrl: recordStore.startUrl(x.sessionId), videoCount };
+            startUrl: recordStore.startUrl(x.sessionId), videoCount, origin: recordStore.originOf(x.sessionId) };
         });
       },
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
@@ -900,9 +903,11 @@ async function main() {
             // armed reopen from a recording's detail: window only; Record is a
             // separate intent there (live feedback #1). Row stays visible.
             recordStore.start(session); recordStore.stop(session);
+            recordStore.setOrigin(session, 'manual');
             dlog('window opened (armed) for ' + session);
           } else {
             recordStore.start(session);
+            recordStore.setOrigin(session, 'manual');
             videoSync(session, true);
             dlog('recording STARTED: ' + session);
           }
