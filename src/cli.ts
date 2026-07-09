@@ -44,7 +44,7 @@ export type ParsedArgs =
   | { cmd: 'verify'; node: string; session: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
-  | { cmd: 'dashboard'; port: number }
+  | { cmd: 'dashboard'; port: number; open: boolean }
   | { cmd: 'ingest'; port: number }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
@@ -186,7 +186,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'dashboard') {
     const portFlag = flagValue(rest, '--port');
     const port = Number(portFlag ?? process.env.WEBNAV_PORT ?? 7777);
-    return { cmd, port };
+    return { cmd, port, open: rest.includes('--open') };
   }
   if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
   if (cmd === 'walk') {
@@ -1193,8 +1193,9 @@ async function main() {
     startDashboard(store, creds, { port }, rec);
     const url = `http://127.0.0.1:${port}`;
     process.stderr.write(`webnav dashboard running at ${url}\n(reads ./webnav.db + ${process.env.WEBNAV_CREDS ?? '~/.webnav/credentials.json'}; Ctrl-C to stop)\n`);
-    // Best-effort auto-open the default browser (macOS `open`; swallow errors).
-    if (process.platform === 'darwin') {
+    // Open a browser tab ONLY when asked (--open). Default is quiet: auto-opening a
+    // tab on every start floods the user's Chrome — the URL is printed to click.
+    if (args.open && process.platform === 'darwin') {
       const { exec } = await import('node:child_process');
       exec(`open ${url}`, () => { /* ignore — the URL is printed regardless */ });
     }
