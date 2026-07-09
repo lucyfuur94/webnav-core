@@ -226,3 +226,102 @@ describe('click ripple (video click-location marker)', () => {
     expect(rippleBlock).toContain('r.remove()');                           // self-cleaning
   });
 });
+
+// nearestLabel/ownText/leafLabel live inline in INSTALLER_JS (in-page,
+// DOM-driven — not exportable TS). Eval-extract them the same way
+// md-to-html.test.ts pulls mdToHtml out of SHELL_HTML: slice the source
+// between two markers, run it through `new Function`, and drive it against a
+// jsdom-less minimal fake DOM node (only the shape these touch: childNodes,
+// nodeType, textContent, getAttribute, parentElement, tagName).
+function loadNearestLabel() {
+  const src = INSTALLER_JS.slice(
+    INSTALLER_JS.indexOf('function ownText('),
+    INSTALLER_JS.lastIndexOf("document.addEventListener('click'"),
+  );
+  return new Function(src + '; return { ownText, nearestLabel, leafLabel };')();
+}
+
+function fakeTextNode(text: string) { return { nodeType: 3, textContent: text }; }
+function fakeEl(opts: {
+  text?: string; ariaLabel?: string; role?: string; tagName?: string;
+  textContent?: string; children?: any[]; parent?: any;
+}) {
+  const el: any = {
+    tagName: opts.tagName ?? 'div',
+    childNodes: opts.text ? [fakeTextNode(opts.text)] : [],
+    textContent: opts.textContent ?? opts.text ?? '',
+    getAttribute: (n: string) => (n === 'aria-label' ? opts.ariaLabel ?? null
+      : n === 'role' ? opts.role ?? null : null),
+    parentElement: opts.parent ?? null,
+  };
+  return el;
+}
+
+describe('nearestLabel (Fix A — bound leafText to the nearest OWN-TEXT ancestor)', () => {
+  it('a bare span click inside a role=toolbar legend+dropdown wrapper picks the SPAN\'s own text, not the wrapper\'s concatenated subtree', () => {
+    const { nearestLabel } = loadNearestLabel();
+    // Simulates: <div role="toolbar">Legend item 1 of 4 <span>Line</span></div>
+    // el.textContent (whole subtree) would read "Legend item 1 of 4 Line"; the
+    // actual click target is the <span>, whose OWN text is just "Line".
+    const toolbar = fakeEl({ text: 'Legend item 1 of 4' });
+    const span = fakeEl({ text: 'Line', parent: toolbar });
+    expect(nearestLabel(span)).toBe('Line');
+  });
+  it('falls back to an ancestor aria-label when the click target has no own text', () => {
+    const { nearestLabel } = loadNearestLabel();
+    const wrapper = fakeEl({ ariaLabel: 'Chart type' });
+    const icon = fakeEl({ parent: wrapper });   // no text, no aria-label of its own
+    expect(nearestLabel(icon)).toBe('Chart type');
+  });
+  it('gives up after 4 levels with no text or aria-label anywhere', () => {
+    const { nearestLabel } = loadNearestLabel();
+    let n = fakeEl({});
+    for (let i = 0; i < 5; i++) n = fakeEl({ parent: n });
+    expect(nearestLabel(n)).toBeNull();
+  });
+});
+
+describe('leafLabel (regression fix — leaf controls use their OWN full text, containers fall back to nearestLabel)', () => {
+  it('REGRESSION GUARD: <button>Cart <span>3</span></button> clicked on the badge span → "Cart 3", not "3"', () => {
+    const { leafLabel } = loadNearestLabel();
+    const badge = fakeEl({ text: '3' });
+    const button = fakeEl({ tagName: 'button', textContent: 'Cart 3', children: [badge] });
+    badge.parentElement = button;
+    // closest() matched the <button> ancestor of the click target (the badge).
+    expect(leafLabel(button, badge, true)).toBe('Cart 3');
+  });
+  it('<button>Add <b>to</b> cart</button> clicked on the <b> → "Add to cart"', () => {
+    const { leafLabel } = loadNearestLabel();
+    const b = fakeEl({ text: 'to' });
+    const button = fakeEl({ tagName: 'button', textContent: 'Add to cart' });
+    b.parentElement = button;
+    expect(leafLabel(button, b, true)).toBe('Add to cart');
+  });
+  it('<button aria-label="Cart"><svg/></button> clicked on the svg → "Cart" (aria-label wins over textContent)', () => {
+    const { leafLabel } = loadNearestLabel();
+    const svg = fakeEl({});
+    const button = fakeEl({ tagName: 'button', ariaLabel: 'Cart', textContent: '' });
+    svg.parentElement = button;
+    expect(leafLabel(button, svg, true)).toBe('Cart');
+  });
+  it('plain <button>Login</button> clicked directly on the button → "Login"', () => {
+    const { leafLabel } = loadNearestLabel();
+    const button = fakeEl({ tagName: 'button', textContent: 'Login' });
+    // closest() matched the button itself (t === el): still a genuine leaf.
+    expect(leafLabel(button, button, true)).toBe('Login');
+  });
+  it('ORIGINAL chart case still works: a bare div (no leaf role) inside role="toolbar" falls back to nearestLabel, not the toolbar\'s whole-subtree bleed', () => {
+    const { leafLabel } = loadNearestLabel();
+    // <div role="toolbar">Legend item 1 of 4 <div>Line</div></div> — the dropdown
+    // control itself carries no leaf role/tag, so closest('[role]') resolves to
+    // the toolbar (a BROAD container role, not in LEAF_ROLES).
+    const toolbar = fakeEl({ role: 'toolbar', text: 'Legend item 1 of 4' });
+    const dropdownItem = fakeEl({ text: 'Line', parent: toolbar });
+    expect(leafLabel(toolbar, dropdownItem, true)).toBe('Line');
+  });
+  it('closest() matched nothing (el fell back to t) → treated as container, uses nearestLabel', () => {
+    const { leafLabel } = loadNearestLabel();
+    const span = fakeEl({ text: 'Loose text' });
+    expect(leafLabel(span, span, false)).toBe('Loose text');
+  });
+});

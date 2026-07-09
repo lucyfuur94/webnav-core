@@ -38,9 +38,19 @@ export interface LiveEvent {
 // a recorded flow re-runnable with different inputs); password and cc-* autocomplete
 // fields are NEVER captured. A submit/button/reset input's .value is its static label
 // (its accessible name — LIVE lesson #2: saucedemo's Login is <input type=submit
-// value="Login">, unresolvable without it). leafText is capped and
-// taken from interactive elements / childless nodes only (containers concatenate
-// their whole subtree — the extension's name-blob failure).
+// value="Login">, unresolvable without it). leafText is capped and taken via
+// leafLabel: a genuine LEAF control (a/button/input/select/textarea/summary/
+// label, or a leaf-control role like button/link/checkbox) uses its OWN full
+// textContent (correct — "Cart 3" for a badge-bearing button, not just the
+// badge clicked inside it); a BROAD container (role=toolbar/group/menu/list/...
+// or no role at all) falls back to nearestLabel, the nearest OWN-TEXT ancestor
+// of the actual click target — never a broad ancestor's whole subtree (a
+// role-bearing toolbar wrapping both a legend and a chart-type dropdown used to
+// bleed the legend's text onto a dropdown click — the extension's name-blob
+// failure, one level up). Regression guard: an EARLIER version of this fix
+// always walked from the click target, which broke plain multi-run labels
+// (clicking the badge span inside <button>Cart <span>3</span></button> then
+// returned just "3").
 export const INSTALLER_JS = `() => {
   // Recording indicator: red inset border + "REC" pill. Placed BEFORE the
   // idempotence guard so the every-tick eval self-heals it if an SPA re-render
@@ -118,21 +128,61 @@ export const INSTALLER_JS = `() => {
     requestAnimationFrame(() => { r.style.transform = 'scale(1.7)'; r.style.opacity = '0'; });
     setTimeout(() => r.remove(), 800);
   };
-  const INTERACTIVE = ['a','button','select','textarea','summary','label'];
+  // ownText/nearestLabel: a role-bearing wrapper (e.g. a chart's role="toolbar"
+  // holding BOTH a legend and a dropdown) passes the old takeText check and its
+  // whole-subtree textContent bled the legend's text onto a dropdown click. These
+  // walk up from the ACTUAL click target (not the broad interactive ancestor) and
+  // stop at the first element with its own direct text — never a subtree scrape.
+  // Only used as the FALLBACK for broad containers — see leafLabel below.
+  function ownText(node) {
+    let s = '';
+    for (const c of node.childNodes) if (c.nodeType === 3) s += c.textContent;
+    return s.trim();
+  }
+  function nearestLabel(start) {
+    let n = start, depth = 0;
+    while (n && depth < 4) {
+      const al = n.getAttribute && n.getAttribute('aria-label');
+      if (al && al.trim()) return al.trim().slice(0, 80);
+      const ot = ownText(n);
+      if (ot) return ot.slice(0, 80);
+      n = n.parentElement; depth++;
+    }
+    return null;
+  }
+  // A genuine LEAF control's full textContent IS its label (safe — it has no
+  // unrelated siblings to bleed in). A BROAD container (toolbar/menu/list/...
+  // or no role) is not a single control, so its textContent bleeds siblings —
+  // fall back to nearestLabel from the real click target instead.
+  var LEAF_TAGS = ['a','button','input','select','textarea','summary','label'];
+  var LEAF_ROLES = ['button','link','menuitem','option','tab','checkbox','radio',
+    'switch','menuitemcheckbox','menuitemradio','treeitem'];
+  function leafLabel(el, t, matched) {
+    var role = el.getAttribute && el.getAttribute('role');
+    var isLeaf = matched && (LEAF_TAGS.indexOf(el.tagName.toLowerCase()) >= 0 ||
+      (role && LEAF_ROLES.indexOf(role) >= 0));
+    if (isLeaf) {
+      var al = el.getAttribute && el.getAttribute('aria-label');
+      if (al && al.trim()) return al.trim().slice(0, 80);
+      return (el.textContent || '').trim().slice(0, 80) || null;
+    }
+    // el is a broad/unrecognized container, or closest() matched nothing
+    // (matched===false, el fell back to t) — either way not a single control.
+    return nearestLabel(t);
+  }
   document.addEventListener('click', (ev) => {
     const t = ev.target;
     if (!(t instanceof Element)) return;
     if (t.closest('#__webnav_rec_badge')) return;   // our own overlay is never a recorded click
     if (document.documentElement.dataset.webnavRec === '1') ripple(ev.clientX, ev.clientY);
-    const el = t.closest('a,button,[role],input,select,textarea,summary,label') || t;
+    const closestEl = t.closest('a,button,[role],input,select,textarea,summary,label');
+    const el = closestEl || t;
     const tag = el.tagName.toLowerCase();
     const isBtnInput = el instanceof HTMLInputElement && ['submit','button','reset'].indexOf(el.type) >= 0;
-    const takeText = INTERACTIVE.indexOf(tag) >= 0 || el.getAttribute('role') || el.children.length === 0;
     const seq = push({
       kind: 'click', tagName: tag,
       role: el.getAttribute('role'), ariaLabel: el.getAttribute('aria-label'),
-      leafText: isBtnInput ? (el.value || null)
-        : (takeText ? ((el.textContent || '').trim().slice(0, 80) || null) : null),
+      leafText: isBtnInput ? (el.value || null) : leafLabel(el, t, !!closestEl),
       href: el instanceof HTMLAnchorElement ? el.href : null,
       placeholder: el.getAttribute('placeholder'), nameAttr: el.getAttribute('name'),
       inputType: el instanceof HTMLInputElement ? el.type : null,
