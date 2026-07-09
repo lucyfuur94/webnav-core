@@ -113,7 +113,9 @@ export interface ReviewDeps {
 }
 
 /** Extract scene-change frames from one take. Returns frames with ABSOLUTE wall-clock
- *  times (take start = the ts in take-<ts>.webm + pts offset). */
+ *  times. The ts in take-<ts>.webm is the STOP/SAVE time (Date.now() at videoStop),
+ *  NOT the start — so the true start is reconstructed as stop − ffprobe duration,
+ *  and each frame's time is that true start + its pts offset. */
 /** The frame-selection expression. Web-UI tuned (live finding: a 10-min browsing
  *  take yielded 4 frames at scene>0.08 — movie-cut thresholds miss typing/menus/
  *  scroll): >2% change counts, a min-gap rate-limits bursts (a playing video would
@@ -129,14 +131,15 @@ export function frameSelectExpr(durationS: number, maxFrames: number): { expr: s
 }
 
 export async function extractFrames(
-  takePath: string, takeStartMs: number, framesDir: string, maxFrames: number, exec: typeof run,
+  takePath: string, takeStopMs: number, framesDir: string, maxFrames: number, exec: typeof run,
 ): Promise<ReviewFrame[]> {
   mkdirSync(framesDir, { recursive: true });
   let durationS = 0;
   try {
     const pr = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', takePath]);
     durationS = Number(String(pr.stdout).trim()) || 0;
-  } catch { /* unknown duration → heartbeat floor applies */ }
+  } catch { /* unknown duration → trueStartMs falls back to takeStopMs (uncorrected, no worse than before) */ }
+  const trueStartMs = takeStopMs - Math.round(durationS * 1000);
   const { expr } = frameSelectExpr(durationS, maxFrames);
   const vf = `select='${expr}',showinfo,scale=800:-2`;
   let stderr = '';
@@ -150,7 +153,7 @@ export async function extractFrames(
   }
   const times = parseShowinfoTimes(stderr);
   const files = readdirSync(framesDir).filter((f) => f.endsWith('.png')).sort();
-  return files.map((f, i) => ({ path: join(framesDir, f), atMs: takeStartMs + Math.round((times[i] ?? 0) * 1000) }));
+  return files.map((f, i) => ({ path: join(framesDir, f), atMs: trueStartMs + Math.round((times[i] ?? 0) * 1000) }));
 }
 
 export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string | { report: string; gaps: CaptureGap[] }> {
@@ -161,9 +164,9 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
   try { takes = readdirSync(deps.videosDir).filter((f) => f.endsWith('.webm')).sort(); } catch { /* no videos */ }
   const frames: ReviewFrame[] = [];
   for (const take of takes) {
-    const startMs = Number((/take-(\d+)\.webm/.exec(take) ?? [])[1] ?? 0);
+    const stopMs = Number((/take-(\d+)\.webm/.exec(take) ?? [])[1] ?? 0);
     const dir = join(deps.outDir, 'frames-' + take.replace(/\.webm$/, ''));
-    const got = await extractFrames(join(deps.videosDir, take), startMs, dir, maxFrames, exec);
+    const got = await extractFrames(join(deps.videosDir, take), stopMs, dir, maxFrames, exec);
     frames.push(...got);
     deps.log(`review: ${got.length} change-frames from ${take}`);
   }

@@ -542,8 +542,8 @@ function setSubTab(ctx, name) {
 
 // Minimal markdown → HTML for the review report (esc() runs FIRST, so this only
 // ever wraps already-escaped text — no XSS surface). Headings, bold, italics,
-// inline/fenced code, bullet & numbered lists, paragraphs. BT = backtick (kept
-// out of the source literal — this whole file lives inside a template string).
+// inline/fenced code, bullet & numbered lists, pipe tables, paragraphs. BT = backtick
+// (kept out of the source literal — this whole file lives inside a template string).
 const BT = String.fromCharCode(96);
 function mdToHtml(md) {
   let src = esc(md).replace(/\\r/g, '');
@@ -557,17 +557,36 @@ function mdToHtml(md) {
   src = src.replace(/(^|\\s)\\*([^*\\n]+)\\*(?=\\s|$)/g, '$1<em>$2</em>');
   const out = [];
   let list = null;
+  let table = null; // { rows: [{cells, header}] } while inside a pipe-table
   const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+  const closeTable = () => {
+    if (!table) return;
+    out.push('<table>' + table.rows.map(row => {
+      const tag = row.header ? 'th' : 'td';
+      return '<tr>' + row.cells.map(c => '<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+    }).join('') + '</table>');
+    table = null;
+  };
+  const splitCells = row => row.replace(/^\\s*\\||\\|\\s*$/g, '').split('|').map(c => c.trim());
   for (const line of src.split('\\n')) {
     const h = /^(#{1,4})\\s+(.*)$/.exec(line);
     const li = /^\\s*[-*]\\s+(.*)$/.exec(line);
     const ol = /^\\s*\\d+[.)]\\s+(.*)$/.exec(line);
-    if (h) { closeList(); out.push('<h' + (h[1].length + 2) + ' style="margin:14px 0 4px">' + h[2] + '</h' + (h[1].length + 2) + '>'); }
-    else if (li) { if (list !== 'ul') { closeList(); out.push('<ul style="margin:4px 0 8px 18px">'); list = 'ul'; } out.push('<li>' + li[1] + '</li>'); }
-    else if (ol) { if (list !== 'ol') { closeList(); out.push('<ol style="margin:4px 0 8px 18px">'); list = 'ol'; } out.push('<li>' + ol[1] + '</li>'); }
-    else if (!line.trim()) { closeList(); out.push('<div style="height:8px"></div>'); }
-    else { closeList(); out.push('<div>' + line + '</div>'); }
+    const row = /^\\s*\\|(.+)\\|\\s*$/.exec(line);
+    const isSep = row && splitCells(line).every(c => /^:?-+:?$/.test(c));
+    if (row && isSep) { /* separator row — swallow, previous row was the header */ }
+    else if (row) {
+      closeList();
+      if (!table) table = { rows: [] };
+      table.rows.push({ cells: splitCells(line), header: table.rows.length === 0 });
+    }
+    else if (h) { closeTable(); closeList(); out.push('<h' + (h[1].length + 2) + ' style="margin:14px 0 4px">' + h[2] + '</h' + (h[1].length + 2) + '>'); }
+    else if (li) { closeTable(); if (list !== 'ul') { closeList(); out.push('<ul style="margin:4px 0 8px 18px">'); list = 'ul'; } out.push('<li>' + li[1] + '</li>'); }
+    else if (ol) { closeTable(); if (list !== 'ol') { closeList(); out.push('<ol style="margin:4px 0 8px 18px">'); list = 'ol'; } out.push('<li>' + ol[1] + '</li>'); }
+    else if (!line.trim()) { closeTable(); closeList(); out.push('<div style="height:8px"></div>'); }
+    else { closeTable(); closeList(); out.push('<div>' + line + '</div>'); }
   }
+  closeTable();
   closeList();
   return out.join('').replace(/@@CB(\\d+)@@/g, (_, i) => codeBlocks[Number(i)]);
 }
