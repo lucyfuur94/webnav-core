@@ -93,3 +93,13 @@ describe('named profiles (shared logins)', () => {
     expect(s.sessionsUsingProfile('main').sort()).toEqual(['a', 'b']);
   });
 });
+
+describe('stale-active reconciliation support', () => {
+  it('stop() clears active even for a session stuck active (crash recovery)', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('stuck');                       // active=1, simulating a died-mid-record session
+    expect(s.listSessions().find((x) => x.sessionId === 'stuck')!.active).toBe(true);
+    s.stop('stuck');                        // the reconcile path calls this
+    expect(s.listSessions().find((x) => x.sessionId === 'stuck')!.active).toBe(false);
+  });
+});
