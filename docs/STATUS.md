@@ -463,22 +463,58 @@ engine + verbs: `docs/superpowers/specs/2026-06-06-interactive-walk-design.md`.)
 
 ## ⚠️ PENDING — start here next session
 
-In roughly recommended order:
+**Ranked next-work backlog (2026-07-09** — grounded in `bench/BENCHMARK.md`'s finding
+that the dominant lever is walk ergonomics/reliability-under-load, not the core idea;
+saucedemo S2: walk 6 vs 18 calls, 3/3 vs 2/3 reached — but agents ABANDONED the walk
+under load on S3, collapsing into manual driving):
 
-1. ~~**Saucedemo navigation benchmark**~~ ✅ **RUN (2026-06-13):** quality tied with
+1. **walk-reliability (DO FIRST):** make `walk` survive real-site conditions so agents
+   stop abandoning it mid-route. (a) Fix the OrangeHRM-class login-walk failure (walk
+   can't complete though manual `use` works — open engine bug); (b) R5.1 **bare-continue**
+   resume: `walk-resume <id> --continue` for "gate satisfied, just go" (today only
+   `--ref`/`--classify`; agents stumble re-answering satisfied gates on icon-only
+   elements); (c) readiness-retry budget under load. Files: `src/router/walk.ts`,
+   `walk-session.ts`, `src/protocol.ts`/`contract.ts` (published types — additive only),
+   `src/cli.ts`. Don't regress the proven saucedemo login→checkout walk.
+2. **agent-map-pipeline:** prove roadmap Steps 2–3 end-to-end for AGENT sessions:
+   `use session` (clicks carry elementFp) → `graph-analyse --draft` → `graph-edit` →
+   `walk` completes on the drafted map. Verify `draftFromEffects` handles agent-session
+   effects (navigate steps have `action:null` + `fromSnapshot:''`). Add an e2e test.
+3. **one-command-map:** `dev map-site --session <recorded>` = analyse → draft →
+   self-verify → apply → summary (exploration stays external — zero-LLM). Draft
+   `_warning`s must block silent apply; node-id collision refuses without `--replace`.
+4. **map-documentation (user's idea):** generate site documentation from video frames +
+   steps (external `claude -p` Sonnet, reuse `extractFrames` from review.ts) and store
+   it IN the map (additive `nodes.documentation` column) + dashboard Sites render +
+   `export-map`. Turns the map from a route table into a documented understanding.
+5. **session-hygiene:** `use eval --session` must REATTACH (today spawns a new
+   `browse-<ts>` session — too long → macOS socket EINVAL — and ignores `--session`);
+   reap/ceiling counting must reflect reality (ghost sessions hit the 16 ceiling);
+   short auto-generated session names everywhere (≤ ~14 chars).
+
+**QUEUED (deferred at user's request, 2026-07-09):** a full project-review deliverable —
+`PROJECT_UNDERSTANDING.md` (what we're building, competitors, where we stand, core
+functionality + refinements) **plus 5 standalone `PLAN-<slug>.md` files** (one per
+backlog item above; each: goal / exact files / step-by-step order / edge cases a weaker
+model would miss / user-verifiable acceptance criteria — written so a less capable model
+executes without questions). The analysis is done (this backlog is its output); the
+user will come back for the documents.
+
+Older items, resolved or parked:
+
+- ~~**Saucedemo navigation benchmark**~~ ✅ **RUN (2026-06-13):** quality tied with
    raw-browser; reliability separated (A 3 clean/1 recovered vs C 1/3); walk-led run was
    cheapest+cleanest; walk = 4 agent CLI calls login→checkout-overview vs 16–22 manual.
-   Report: `bench/results/2026-06-13-nav.md`.
-1b. **R5.1 — bare-continue resume (from the benchmark):** `walk-resume` needs a
-   "gate satisfied, just continue" answer kind (today only `--ref`/`--classify`); on
-   icon-only elements the agent stumbles re-answering a satisfied gate. Plus walk
-   discoverability (agents default to manual `use` driving — consider `webnav go <goal>`).
-2. **One-command `map <url>` flow + shareable map packs:** the record→analyse→edit
-   authoring flow works but is expert-ish; the README promises this on the roadmap.
-   `dev export-map` already emits the pack — import + a guided flow are the gap.
-3. ~~**R5 — resume loop**~~ ✅ **DONE (2026-06-10):** `classify: safe` fires a commit and the walk continues to completion (verified live, login→…→checkout-complete). Default still hard-halts at commits (#2).
-4. ~~**Phase 5 — MCP wrapper**~~ ✅ **DONE (2026-06-12):** `webnav mcp` serves every verb as MCP tools over stdio; generated from cli-spec; calls run the real CLI.
-5. **PARKED — multi-site graph features** (G4 co-use weight learning, auto-learn nodes
+   Report: `bench/results/2026-06-13-nav.md`. Full analysis: `bench/BENCHMARK.md`.
+- ~~**Interactive agent session + capture loop**~~ ✅ **DONE (2026-07-09):** `use session`
+   (one long-lived process: JSON-lines stdin/stdout, video works, no leaked windows) and
+   `dev capture-loop` (explore → structured Sonnet review → converge on zero capture
+   gaps). Specs: `2026-07-09-interactive-agent-session-design.md`,
+   `2026-07-09-capture-improvement-loop-design.md`.
+- ~~**One-command map (old phrasing)**~~ → superseded by backlog #3 above.
+- ~~**R5 — resume loop**~~ ✅ **DONE (2026-06-10):** `classify: safe` fires a commit and the walk continues to completion (verified live, login→…→checkout-complete). Default still hard-halts at commits (#2).
+- ~~**Phase 5 — MCP wrapper**~~ ✅ **DONE (2026-06-12):** `webnav mcp` serves every verb as MCP tools over stdio; generated from cli-spec; calls run the real CLI.
+- **PARKED — multi-site graph features** (G4 co-use weight learning, auto-learn nodes
    from usage, richer GitHub signals): the internet graph + GitHub recall are not the
    advertised product surface (2026-06-12 repositioning) — revisit only if/when that
    surface comes back.
