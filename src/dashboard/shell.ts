@@ -9,7 +9,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>webnav dashboard</title>
 <style>
-  :root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --border:#262b36; --fg:#e6e9ef; --muted:#8b93a3; --accent:#5b9dff; --danger:#ff6b6b; }
+  :root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --border:#262b36; --fg:#e6e9ef; --muted:#8b93a3; --accent:#5b9dff; --danger:#ff6b6b; --ok:#3fb950; --warn:#e2b93d; --rec:#e5484d; }
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
   header { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid var(--border); }
@@ -45,6 +45,12 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .empty { color:var(--muted); padding:40px 0; text-align:center; }
   .pulse { animation: webnavpulse 1.2s ease-in-out infinite; }
   @keyframes webnavpulse { 50% { opacity:.35; } }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .list .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
+  #toast { position:fixed; z-index:100; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+  #toast .t { background:var(--panel); border:1px solid var(--danger); color:var(--fg); border-radius:8px; padding:10px 14px; font-size:13px; max-width:360px; box-shadow:0 4px 16px rgba(0,0,0,.4); animation: toastin .18s ease-out; }
+  @keyframes toastin { from { opacity:0; transform:translateY(8px); } }
 </style>
 </head>
 <body>
@@ -75,6 +81,25 @@ document.querySelectorAll('nav button[data-tab]').forEach(b => {
 async function getJSON(u, opts) { const r = await fetch(u, opts); if (!r.ok) throw new Error(u + ' -> ' + r.status); return r.json(); }
 function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(msg) {
+  let box = document.getElementById('toast');
+  if (!box) { box = document.createElement('div'); box.id = 'toast'; document.body.appendChild(box); }
+  const t = document.createElement('div'); t.className = 't'; t.textContent = String(msg);
+  box.appendChild(t);
+  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 4000);
+}
+// WCAG 2.1.1: clickable row divs need keyboard access. Delegates to the row's
+// own click handler (row.click()) so mouse and keyboard paths can't diverge.
+function rowKeyboard(row, activate) {
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+  row.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (e.target !== row) return;   // let inner checkbox/button handle their own keys
+      e.preventDefault(); activate();
+    }
+  });
+}
 
 async function render() {
   if (replayPoll) { clearInterval(replayPoll); replayPoll = null; }   // no stray status polls across tab switches (review finding)
@@ -104,6 +129,7 @@ async function renderSites() {
       detail.append(el('<div style="margin-bottom:10px"><strong>'+esc(s.id)+'</strong> <span class="muted">'+esc(s.homeUrl)+'</span></div>'));
       detail.append(el('<pre>'+esc(JSON.stringify(full, null, 2))+'</pre>'));
     };
+    rowKeyboard(row, () => row.click());
     list.append(row);
   });
   main.append(list, detail);
@@ -121,9 +147,9 @@ async function renderProfiles() {
     const name = prompt('New profile name (e.g. default, work-google):', 'default');
     if (!name) return;
     const res = await fetch('/api/profiles', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name }) });
-    if (!res.ok) { alert((await res.json()).error); return; }
+    if (!res.ok) { toast((await res.json()).error); return; }
     const o = await fetch('/api/profiles/'+encodeURIComponent(name)+'/open', { method:'POST' });   // straight into log-in
-    if (!o.ok) alert((await o.json()).error);
+    if (!o.ok) toast((await o.json()).error);
     renderProfiles();
   };
   wrap.append(newBar);
@@ -131,14 +157,14 @@ async function renderProfiles() {
   const tbl = el('<table><thead><tr><th>Profile</th><th>Site</th><th>Sessions</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
   const tb = tbl.querySelector('tbody');
   profs.forEach(pf => {
-    const tr = el('<tr><td><code>'+esc(pf.name)+'</code>'+(pf.open?' <span class="pulse" style="color:#e5484d">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sessions+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
+    const tr = el('<tr><td><code>'+esc(pf.name)+'</code>'+(pf.open?' <span class="pulse" style="color:var(--rec)">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sessions+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
     const act = tr.children[5];
     const openB = el('<button class="btn">Open to log in</button>');
     openB.disabled = pf.open;
     openB.onclick = async () => {
       openB.disabled = true; openB.textContent = 'opening…';
       const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/open', { method:'POST' });
-      if (!res.ok) alert((await res.json()).error);
+      if (!res.ok) toast((await res.json()).error);
       renderProfiles();
     };
     const renB = el('<button class="btn" style="margin-left:6px">Rename</button>');
@@ -146,7 +172,7 @@ async function renderProfiles() {
       const to = prompt('Rename profile "'+pf.name+'" to:', pf.name);
       if (!to || to === pf.name) return;
       const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/rename', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ to }) });
-      if (!res.ok) alert((await res.json()).error);
+      if (!res.ok) toast((await res.json()).error);
       renderProfiles();
     };
     const delB = el('<button class="btn danger" style="margin-left:6px">Delete</button>');
@@ -328,6 +354,7 @@ async function renderRecordings(openId) {
     rowEls[r.sessionId] = row;
     fillRow(row, r);
     row.onclick = () => showRecording(r, detail, list, row);
+    rowKeyboard(row, () => row.click());
     const cb = row.querySelector('input[type=checkbox]');
     cb.onclick = (e) => {
       e.stopPropagation();
@@ -354,7 +381,7 @@ function originTag(origin) {
   return '<span style="border:1px solid '+c+';color:'+c+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+(agent?'Agent':'Manual')+'</span>';
 }
 function fillRow(row, r) {
-  row.querySelector('.name').innerHTML = esc(r.sessionId)+' '+originTag(r.origin)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'');
+  row.querySelector('.name').innerHTML = esc(r.sessionId)+' '+originTag(r.origin)+(r.active?' <span style="color:var(--rec)" class="pulse">●</span>':'');
   const vid = r.videoCount ? ' · \\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N when takes exist
   row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps'+vid+' · '+new Date(r.startedAt).toLocaleString();
 }
@@ -427,11 +454,11 @@ function buildHead(ctx) {
   const r = ctx.r;
   const hasWindow = winSession === r.sessionId;
   ctx.hasWindow = hasWindow;
-  const recState = r.active ? '<span class="pulse" style="color:#e5484d;font-weight:600">● recording…</span>'
+  const recState = r.active ? '<span class="pulse" style="color:var(--rec);font-weight:600">● recording…</span>'
     : hasWindow ? '<span class="muted">🪟 window open (armed)</span>'
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   ctx.headBox.innerHTML = '';
-  const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid #3fb950;color:#3fb950;border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
+  const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid var(--ok);color:var(--ok);border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
   const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong>'+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
   const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
@@ -454,7 +481,7 @@ function buildHead(ctx) {
     // ALWAYS restore the button first (a failed open changes nothing server-side, so
     // softRefresh wouldn't rebuild the header → the button stayed 'opening…' forever).
     openB.disabled = false; openB.textContent = r.hasProfile ? '🔐 Open (' + r.profile + ')' : 'Open window';
-    if (!res.ok) { alert((await res.json()).error); }
+    if (!res.ok) { toast((await res.json()).error); }
     softRefresh('sessions');
   };
   const recB = btn(r.active ? '■ Stop' : '⏺ Record');
@@ -462,12 +489,12 @@ function buildHead(ctx) {
   // enabled while recording (always allow stopping). Greyed when no window.
   recB.disabled = !hasWindow && !r.active;
   if (!hasWindow && !r.active) recB.title = 'open a window first';
-  if (r.active) recB.style.borderColor = '#e5484d';
+  if (r.active) recB.style.borderColor = 'var(--rec)';
   recB.onclick = async () => {
     // OPTIMISTIC: flip the header immediately; the server confirms via SSE.
     const starting = !r.active;
     head.querySelector('.hstate').innerHTML = starting
-      ? '<span class="pulse" style="color:#e5484d;font-weight:600">● recording…</span>'
+      ? '<span class="pulse" style="color:var(--rec);font-weight:600">● recording…</span>'
       : '<span class="muted">🪟 window open (armed)</span>';
     recB.disabled = true;
     await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/'+(r.active?'stop':'record'), { method:'POST' });
@@ -481,7 +508,7 @@ function buildHead(ctx) {
   };
   repB.onclick = async () => {
     const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay', { method:'POST' });
-    if (!res.ok) { alert((await res.json()).error); return; }
+    if (!res.ok) { toast((await res.json()).error); return; }
     setSubTab(ctx, 'steps');
     pollReplay(ctx.stepsBox, r.sessionId);
   };
@@ -565,7 +592,7 @@ async function loadReview(ctx) {
     const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/review', {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ model: modelSel.value, instructions: instrWrap.querySelector('textarea').value }) });
-    if (!res.ok) { alert((await res.json()).error); return; }
+    if (!res.ok) { toast((await res.json()).error); return; }
     loadReview(ctx);   // re-render into the running state — progress visible HERE (and in Logs)
   };
   ctx.reviewBox.append(bar, instrWrap);
@@ -658,14 +685,14 @@ async function loadVideos(ctx) {
 function stepTable(steps, session) {
   const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
   const ICON = { ok: '✓', fail: '✗', running: '▶', jumped: '↪', skipped: '⊘', pending: '·', '': '' };
-  const KIND = { input: ['input', '#5b9dff'], click: ['click', '#8b93a3'], navigate: ['nav', '#3fb950'], jump: ['jump', '#3fb950'], observe: ['page', '#8b93a3'] };
+  const KIND = { input: ['input', '#5b9dff'], click: ['click', '#8b93a3'], navigate: ['nav', 'var(--ok)'], jump: ['jump', 'var(--ok)'], observe: ['page', '#8b93a3'] };
   const pathOf = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return u || ''; } };
   steps.forEach(s => {
-    const color = s.status==='ok'?'#3fb950':s.status==='fail'?'#ff6b6b':'var(--muted)';
+    const color = s.status==='ok'?'var(--ok)':s.status==='fail'?'#ff6b6b':'var(--muted)';
     const [kLabel, kColor] = KIND[s.kind] || [s.kind || '', '#8b93a3'];
     const kindChip = kLabel ? '<span style="border:1px solid '+kColor+';color:'+kColor+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+esc(kLabel)+'</span>' : '';
     const val = (s.kind === 'input' && s.value !== undefined && s.value !== null)
-      ? ' <code class="val" style="color:#e2b93d">= "'+esc(String(s.value))+'"</code>' : '';
+      ? ' <code class="val" style="color:var(--warn)">= "'+esc(String(s.value))+'"</code>' : '';
     const dest = s.kind === 'navigate' || s.kind === 'jump'
       ? '<div class="muted" style="font-size:11px">'+esc(pathOf(s.fromUrl))+' → '+esc(pathOf(s.toUrl))+'</div>'
       : '<div class="muted" style="font-size:11px">'+esc(pathOf(s.fromUrl || s.toUrl))+'</div>';
