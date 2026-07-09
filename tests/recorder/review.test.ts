@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr } from '../../src/recorder/review.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr, extractFrames } from '../../src/recorder/review.js';
 
 describe('parseShowinfoTimes', () => {
   it('pulls pts seconds in order from ffmpeg stderr', () => {
@@ -45,5 +48,38 @@ describe('frameSelectExpr (web-UI tuned selection)', () => {
     const { heartbeatS, minGapS } = frameSelectExpr(0, 20);
     expect(heartbeatS).toBe(5);
     expect(minGapS).toBe(2);
+  });
+});
+
+describe('extractFrames (true-start reconstruction)', () => {
+  // BUG: take-<ts>.webm's <ts> is the STOP time (written by videoStop), not the
+  // start. A frame's wall-clock time must be reconstructed as
+  // (stop - ffprobe duration) + pts, not (stop + pts) — else every frame is
+  // offset forward by the whole clip duration.
+  it('derives frame time from stop-minus-duration-plus-pts, not stop-plus-pts', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'webnav-review-test-'));
+    const framesDir = join(dir, 'frames');
+    try {
+      const fakeExec = (async (cmd: string) => {
+        if (cmd === 'ffprobe') return { stdout: '120', stderr: '' }; // duration = 120s
+        // ffmpeg: report one selected frame at pts_time 5.0, and actually write it
+        // so extractFrames' readdirSync sees a file.
+        mkdirSync(framesDir, { recursive: true });
+        writeFileSync(join(framesDir, 'f-001.png'), '');
+        return { stdout: '', stderr: '[Parsed_showinfo_1 @ 0x1] n:0 pts:150 pts_time:5.0 ...' };
+      }) as unknown as Parameters<typeof extractFrames>[4];
+
+      const stopMs = 1_000_000; // take-1000000.webm
+      const frames = await extractFrames(
+        join(dir, 'take-1000000.webm'), stopMs, framesDir, 20, fakeExec,
+      );
+
+      expect(frames).toHaveLength(1);
+      // start = stop - duration = 1_000_000 - 120_000 = 880_000; + pts 5s = 885_000
+      expect(frames[0].atMs).toBe(885_000);
+      expect(frames[0].atMs).not.toBe(stopMs + 5000); // guards against the old (wrong) stop+pts math
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
