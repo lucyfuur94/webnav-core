@@ -6,7 +6,10 @@ import { runAgentSession } from '../../src/recorder/agent-session.js';
 const SNAP = 'RootWebArea "P" [ref=e1]\n  button "Login" [ref=e5]\n  textbox "User" [ref=e3]';
 
 // Fake adapter: records the calls made, returns canned snapshots/urls.
-function fakeAdapter() {
+// navigateOnActRef: when act() is called with this ref, currentUrl flips to a
+// new pathname afterward — simulates an in-page navigation from a click, so
+// runActionRecorded's didNavigate(fromUrl,toUrl) comes back true.
+function fakeAdapter(navigateOnActRef?: string) {
   const calls: string[] = [];
   let url = 'https://s.test/';
   return {
@@ -16,7 +19,7 @@ function fakeAdapter() {
     snapshot: async () => SNAP,
     currentUrl: async () => url,
     fill: async (r: string, t: string) => { calls.push('fill:' + r + '=' + t); },
-    act: async (r: string) => { calls.push('act:' + r); },
+    act: async (r: string) => { calls.push('act:' + r); if (r === navigateOnActRef) url = 'https://s.test/after-click'; },
     evalJs: async (js: string) => { calls.push('eval'); return JSON.stringify('EVAL:' + js); },
     close: async () => { calls.push('close'); },
   };
@@ -67,6 +70,51 @@ describe('runAgentSession', () => {
     expect(io.out.some((o) => o.snapshot === SNAP)).toBe(true);
     // realtime step events fired
     expect(events.filter((e) => e === 'step').length).toBe(3);
+    // video overlay: injected after navigate, carrying the installer + recording-on paint
+    expect(ad.calls.some((c) => c === 'eval')).toBe(true);
+  });
+
+  it('injects the REC overlay (installer + recording-on paint) after navigate', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('a4');
+    const ad = fakeAdapter();
+    const evalArgs: string[] = [];
+    const evalJs = ad.evalJs;
+    ad.evalJs = async (js: string) => { evalArgs.push(js); return evalJs(js); };
+    const io = driver(['{"cmd":"navigate","url":"https://s.test/next"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'a4', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: '', name: null, ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null,
+      startUrl: 'https://s.test/',
+    });
+    expect(evalArgs.length).toBe(1);
+    expect(evalArgs[0]).toContain('__webnav_rec_badge');   // INSTALLER_JS overlay
+    expect(evalArgs[0]).toContain("webnavRec = '1'");       // MODE_JS(true) recording-on paint
+  });
+
+  it('re-injects the REC overlay after a click that triggers in-page navigation', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('a5');
+    const ad = fakeAdapter('e5');   // clicking e5 flips currentUrl → navigated:true
+    const evalArgs: string[] = [];
+    const evalJs = ad.evalJs;
+    ad.evalJs = async (js: string) => { evalArgs.push(js); return evalJs(js); };
+    const io = driver(['{"cmd":"click","ref":"e5"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'a5', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'button', name: 'Login', ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null,
+      startUrl: 'https://s.test/',
+    });
+    // the click reported navigated:true...
+    expect(io.out.some((o) => o.ok === true && o.navigated === true)).toBe(true);
+    // ...so the overlay was re-injected (installer + recording-on paint) after it
+    expect(evalArgs.length).toBe(1);
+    expect(evalArgs[0]).toContain('__webnav_rec_badge');
+    expect(evalArgs[0]).toContain("webnavRec = '1'");
   });
 
   it('EOF (stdin closed) tears down cleanly, same as quit', async () => {
