@@ -350,7 +350,8 @@ async function renderRecordings(openId) {
 }
 function fillRow(row, r) {
   row.querySelector('.name').innerHTML = esc(r.sessionId)+(r.active?' <span style="color:#e5484d" class="pulse">●</span>':'');
-  row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps · '+new Date(r.startedAt).toLocaleString();
+  const vid = r.videoCount ? ' · \\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N when takes exist
+  row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps'+vid+' · '+new Date(r.startedAt).toLocaleString();
 }
 
 // SOFT refresh (no flicker): update rows + the open detail's header IN PLACE.

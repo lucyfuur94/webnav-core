@@ -795,6 +795,16 @@ async function main() {
     // replay to verify. ONE driven browser at a time (CLAUDE.md rule); `busy`
     // tracks it so a second open/replay while one is up gets a clear 409-style error.
     const recordStore = new RecordStore(dbPath());
+    // ONE-TIME startup reconcile: a session left active=1 by a crashed/killed recorder
+    // shows "recording" forever. At boot (no legit session running yet), any active
+    // session with NO live browser process is stale → stop it. Uses REAL process
+    // liveness (not busy) so it never touches a session active in another live process.
+    try {
+      const live = new Set((await listPwSessions(Date.now())).map((s) => s.name));
+      for (const x of recordStore.listSessions()) {
+        if (x.active && !live.has(x.sessionId)) recordStore.stop(x.sessionId);
+      }
+    } catch { /* liveness probe failed → leave flags as-is */ }
     let busy: string | null = null;
     let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
     // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' | 'log' pings
@@ -840,11 +850,15 @@ async function main() {
     let activeCtl: InstanceType<typeof ReplayController> | null = null;
     const shotsRoot = join(homedir(), '.webnav', 'replays');
     const rec: RecordingsDeps = {
-      list: () => recordStore.listSessions().map((x) => {
-        const profile = recordStore.profileOf(x.sessionId);
-        return { ...x, profile, hasProfile: !!profile && existsSync2(profileDir(profile)),
-          startUrl: recordStore.startUrl(x.sessionId) };
-      }),
+      list: () => {
+        return recordStore.listSessions().map((x) => {
+          const profile = recordStore.profileOf(x.sessionId);
+          let videoCount = 0;
+          try { videoCount = readdirSync(join(videosRoot, x.sessionId)).filter((f) => f.endsWith('.webm')).length; } catch { /* none */ }
+          return { ...x, profile, hasProfile: !!profile && existsSync2(profileDir(profile)),
+            startUrl: recordStore.startUrl(x.sessionId), videoCount };
+        });
+      },
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,
         label: e.action?.name ?? (e.navigated ? new URL(e.toUrl).pathname : 'observe'),
         kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
