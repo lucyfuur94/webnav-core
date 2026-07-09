@@ -38,6 +38,33 @@ export const DEFAULT_INSTRUCTIONS = `Your job — compare what the video SHOWS a
 Format as markdown with sections: Frames, Capture gaps, Uncorrelated steps, Verdict.
 Be concrete and terse. If the evidence is thin (few frames/steps), say so honestly.`;
 
+export interface CaptureGap { atMs?: number; kind?: string; whatHappened?: string; shouldHaveCaptured?: string }
+
+/** Append the structured-output instruction: return a JSON gap list the capture
+ *  loop can parse to judge convergence (zero gaps = complete). */
+const STRUCTURED_TAIL = `
+
+OUTPUT FORMAT (STRICT): after any brief reasoning, end your reply with ONE JSON
+object on its own, exactly:
+{"gaps":[{"atMs":<frame time ms>,"kind":"click|input|navigation|scroll|hover-menu|other","whatHappened":"...","shouldHaveCaptured":"..."}],"verdict":"..."}
+A gap = a visible change in the frames with NO captured step within ±5s. If capture
+is complete, return {"gaps":[],"verdict":"complete"}. Emit NOTHING after the JSON.`;
+
+/** Tolerant extraction of the gap JSON from a review reply (may be wrapped in
+ *  prose/markdown). Returns [] on absence/parse failure (never throws). */
+export function parseGaps(text: string): CaptureGap[] {
+  // last {...} block that parses and has a `gaps` array wins (the model ends with it)
+  const matches = text.match(/\{[\s\S]*\}/g);
+  if (!matches) return [];
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      const o = JSON.parse(matches[i]) as { gaps?: unknown };
+      if (Array.isArray(o.gaps)) return o.gaps as CaptureGap[];
+    } catch { /* try the next candidate */ }
+  }
+  return [];
+}
+
 /** The audit prompt. Pure — unit-tested; the spawn stays thin. */
 export function buildReviewPrompt(
   session: string,
@@ -45,6 +72,7 @@ export function buildReviewPrompt(
   logLines: { t: number; line: string }[],
   frames: ReviewFrame[],
   instructions?: string,
+  structured?: boolean,
 ): string {
   const t = (ms: number) => new Date(ms).toLocaleTimeString();
   const stepTxt = steps.length
@@ -68,7 +96,7 @@ ${logTxt}
 VIDEO FRAMES (visible changes; READ each image file with the Read tool):
 ${frameTxt}
 
-${instructions ?? DEFAULT_INSTRUCTIONS}`;
+${instructions ?? DEFAULT_INSTRUCTIONS}${structured ? STRUCTURED_TAIL : ''}`;
 }
 
 export interface ReviewDeps {
@@ -80,6 +108,7 @@ export interface ReviewDeps {
   claudeModel?: string;              // default sonnet (user decision for reviews)
   instructions?: string;             // editable audit task (default DEFAULT_INSTRUCTIONS)
   maxFrames?: number;
+  structured?: boolean;              // also emit a parseable gap list (for the capture loop)
   exec?: typeof run;                 // injected for tests
 }
 
@@ -124,7 +153,7 @@ export async function extractFrames(
   return files.map((f, i) => ({ path: join(framesDir, f), atMs: takeStartMs + Math.round((times[i] ?? 0) * 1000) }));
 }
 
-export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string> {
+export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string | { report: string; gaps: CaptureGap[] }> {
   const exec = deps.exec ?? run;
   const maxFrames = deps.maxFrames ?? 20;
   deps.log(`review: extracting frames for ${session}…`);
@@ -138,7 +167,7 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
     frames.push(...got);
     deps.log(`review: ${got.length} change-frames from ${take}`);
   }
-  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames, deps.instructions);
+  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames, deps.instructions, deps.structured);
   deps.log(`review: asking Claude (${deps.claudeModel ?? 'sonnet'}) — ${frames.length} frames, ${deps.steps.length} steps…`);
   let report: string;
   try {
@@ -152,5 +181,10 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
   mkdirSync(deps.outDir, { recursive: true });
   writeFileSync(join(deps.outDir, 'review.md'), report);
   deps.log('review: done — report saved');
+  if (deps.structured) {
+    const gaps = parseGaps(report);
+    writeFileSync(join(deps.outDir, 'review.json'), JSON.stringify({ gaps }, null, 2));
+    return { report, gaps };
+  }
   return report;
 }
