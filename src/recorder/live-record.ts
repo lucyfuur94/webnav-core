@@ -14,7 +14,7 @@ import {
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { parseEvalResult } from '../router/browse.js';
 import { classifyReadiness } from '../router/readiness.js';
-import { didNavigate } from '../explorer/diff.js';
+import { didNavigate, diffSnapshots } from '../explorer/diff.js';
 import type { ActionEffect } from '../mapstore/record.js';
 
 export interface LiveRecordDeps {
@@ -183,7 +183,27 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
             if (hit === String(p.ev.seq)) { ref = c; break; }
           }
         }
-        const fx = assembleEffect(p.ev, ref, ticks[fromIdx], ticks[to]);
+        let fx = assembleEffect(p.ev, ref, ticks[fromIdx], ticks[to]);
+        // An unresolved same-page click is normally dropped as noise (honest —
+        // never a guessed ref, per the identical-siblings-escalate rule). But a
+        // dropdown-item click that visibly CHANGED the page (e.g. a chart-type
+        // switch) is real signal, not noise — take ONE fresh snapshot and diff it
+        // against the from-tick; a genuine change gets recorded as evidence
+        // (action:null, same shape as the unresolved-NAVIGATED-click branch)
+        // instead of silently lost.
+        if (!fx && p.ev.kind === 'click' && deps.store.isActive(deps.sessionId)) {
+          const freshSnap = await deps.adapter.snapshot().catch(() => null);
+          if (freshSnap) {
+            const diff = diffSnapshots(parseSnapshot(ticks[fromIdx].snapshot), parseSnapshot(freshSnap));
+            if (diff.added.length || diff.removed.length) {
+              fx = {
+                fromUrl: ticks[fromIdx].url, fromSnapshot: ticks[fromIdx].snapshot,
+                action: null, toUrl: url, toSnapshot: freshSnap,
+                navigated: false, diff,
+              };
+            }
+          }
+        }
         if (fx) {
           // stamp the step with when the human ACTED, not when this slow loop got to it
           deps.store.appendActionEffect(deps.sessionId, fx, p.ev.t);
@@ -191,7 +211,8 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           deps.onEvent?.('step');
           const lag = p.ev.t && Date.now() - p.ev.t > 2000
             ? ` (at ${new Date(p.ev.t).toLocaleTimeString()})` : '';
-          deps.log(`recorded ${fx.navigated ? 'nav' : fx.action?.role ?? 'action'}: ${fx.action?.name ?? fx.toUrl}${lag}`);
+          if (fx.action) deps.log(`recorded ${fx.navigated ? 'nav' : fx.action.role}: ${fx.action.name ?? fx.toUrl}${lag}`);
+          else deps.log(`recorded unresolved same-page change (action:null): ${fx.toUrl}${lag}`);
         }
         else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
       }

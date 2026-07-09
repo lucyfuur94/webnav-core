@@ -213,6 +213,60 @@ it('queued toggles are idempotent: double-click stop does NOT restart (live CORS
 });
 
 
+it('Fix B: an unresolved same-page click that visibly CHANGED the page is recorded as evidence (action:null), not dropped', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('fixb-1');
+  // A dropdown-item click with no leafText/role match → resolveEvent finds nothing
+  // (unresolved). The page stays on the same URL (same-page), so the old code
+  // path drops it via assembleEffect returning null. Here the post-click DOM
+  // actually changed (a node appeared) — that's real signal, not noise.
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/inventory.html',
+    tagName: 'div' }]);   // no role, no leafText → never resolves
+  const CHANGED_INV = INV + '\n  StaticText "Line chart selected" [ref=e10]';
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  // override snapshot() to return the CHANGED dom on the fresh-diff probe (i.e.
+  // every call after the initial baseline tick) — simulates the page having
+  // visibly re-rendered by the time we take the extra Fix-B snapshot.
+  let snapCalls = 0;
+  const origSnapshot = adapter.snapshot;
+  adapter.snapshot = async () => { snapCalls++; return snapCalls === 1 ? await origSnapshot() : CHANGED_INV; };
+  let n = 0;
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 'fixb-1', intervalMs: 0,
+    log: (l) => logs.push(l), isStopped: () => ++n > 6, sleep: async () => {} });
+  const fx = store.actionEffects('fixb-1');
+  expect(fx.length).toBe(1);
+  expect(fx[0].action).toBeNull();
+  expect(fx[0].navigated).toBe(false);
+  expect(fx[0].diff.added.length).toBeGreaterThan(0);
+  expect(logs.some((l) => l.includes('recorded unresolved same-page change'))).toBe(true);
+  expect(logs.some((l) => l.startsWith('skip: unresolved'))).toBe(false);
+});
+
+it('Fix B companion: an unresolved same-page click with NO real DOM change stays dropped', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('fixb-2');
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/inventory.html',
+    tagName: 'div' }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  // snapshot() always returns the SAME dom → diff is empty → genuine noise, still dropped.
+  let n = 0;
+  const logs: string[] = [];
+  await runLiveRecord({ adapter, store, sessionId: 'fixb-2', intervalMs: 0,
+    log: (l) => logs.push(l), isStopped: () => ++n > 6, sleep: async () => {} });
+  const fx = store.actionEffects('fixb-2');
+  expect(fx.length).toBe(0);
+  expect(logs.some((l) => l.startsWith('skip: unresolved'))).toBe(true);
+});
+
 it('window close → onEnd(closed) fires and the session is stopped (live #1/#2/#3)', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
   store.start('end-1');   // recording
