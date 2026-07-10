@@ -35,7 +35,7 @@ export interface AgentSessionCmd {
 // name is empty (no cost on named elements). Best-effort: a CSP page that blocks eval
 // just leaves name null. TOOLTIP-ATTR LIST is broad on purpose — libraries name the
 // attribute differently (title/aria-label, data-tooltip, data-tooltip-content [react-
-// tooltip, which this the analytics SPA app uses], data-title, data-original-title [bootstrap]).
+// tooltip], data-title, data-original-title [bootstrap]).
 export const NAME_PROBE_JS = `(el) => {
   const ATTRS = ['aria-label','title','data-tooltip-content','data-tooltip','data-title','data-original-title','data-tip','aria-description'];
   const g = (n) => { if (!n || !n.getAttribute) return ''; for (const a of ATTRS) { const v = n.getAttribute(a); if (v && v.trim()) return v.trim(); } return ''; };

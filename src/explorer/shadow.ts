@@ -9,8 +9,9 @@ import type { DeclaredShadow } from '../mapstore/types.js';
 // Discipline (the hard line, review-bounded): we extract ONLY structure with a real ARIA role —
 // `columnheader` for table columns, `heading` for a section title, real `textbox`/`combobox`/
 // `checkbox`/`searchbox` for filters. We deliberately do NOT infer filters from a `generic`
-// label paired with a `generic [cursor=pointer]` div (OrangeHRM's pseudo-selects) — that would be
-// LAYOUT inference, which #5a forbids. Skipping honest-but-unobservable structure beats guessing.
+// label paired with a `generic [cursor=pointer]` div (a common custom-dropdown pseudo-select
+// pattern) — that would be LAYOUT inference, which #5a forbids. Skipping honest-but-unobservable
+// structure beats guessing.
 // Design: docs/superpowers/specs/2026-06-13-learning-the-core-design.md (Layer 2).
 
 const FILTER_ROLE: Record<string, 'text' | 'select' | 'date' | 'checkbox'> = {
@@ -19,8 +20,8 @@ const FILTER_ROLE: Record<string, 'text' | 'select' | 'date' | 'checkbox'> = {
 const RECORD_COUNT_RE = /\(\s*(\d[\d,]*)\s*\)\s*records?\s+found/i;
 
 /** Strip decorative icon-font glyphs (Unicode Private Use Areas) and collapse whitespace from a
- *  declared name. These are rendering artifacts (Font Awesome sort/icon codepoints OrangeHRM
- *  appends to headers/buttons), NOT semantic text — removing them is the same class of cleanup as
+ *  declared name. These are rendering artifacts (Font Awesome sort/icon codepoints some apps
+ *  append to headers/buttons), NOT semantic text — removing them is the same class of cleanup as
  *  trimming a trailing space, never interpretation (#5a). Returns '' for a glyph-only name (e.g.
  *  the select-all checkbox column). */
 const cleanText = (s: string | null): string =>

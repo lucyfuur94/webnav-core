@@ -14,8 +14,7 @@ export interface ElementFingerprint {
 }
 
 // ─── layer-3 anchor (the `near` content disambiguator) ───────────────────────
-// All structural, zero-LLM. Verified against tests/fixtures/{saucedemo-inventory,
-// orangehrm-pim-table}.yml.
+// All structural, zero-LLM. Verified against the snapshot fixtures in tests/fixtures/.
 
 /** Ancestors of a node: preceding nodes at strictly-decreasing depth, nearest first. */
 function ancestorsOf(nodes: SnapNode[], idx: number): { node: SnapNode; idx: number }[] {

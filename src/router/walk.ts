@@ -188,7 +188,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     }
 
     // Read the CURRENT page (before acting) so commit/drift checks see this page.
-    // READINESS RETRY: JS-heavy apps (React/Angular/Vue — e.g. OrangeHRM) render the
+    // READINESS RETRY: JS-heavy apps (React/Angular/Vue) render the
     // page asynchronously; an immediate snapshot can catch it empty (0 nodes) or
     // pre-render, so the step won't resolve yet. Re-snapshot a bounded number of times
     // until the step resolves, before treating an unresolved step as real drift. This
