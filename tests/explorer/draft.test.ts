@@ -425,12 +425,15 @@ describe('draftFromEffects — observation-based identity', () => {
       nav(`${XB}/dashboard/8001`, DASH_ONE),
     ] as never);
     const labels = g.states.map((s) => s.label);
-    // the three report variants collapsed into ONE templated page (label = non-{param} tail)
-    expect(labels.filter((l) => l === 'report-7001').length).toBe(1);
+    // the three report variants collapsed into ONE templated page. Label = the MEANINGFUL tail
+    // (opaque id segments `7001`/`{param}` dropped) → `report`, never a raw record id.
+    expect(labels.filter((l) => l === 'report').length).toBe(1);
     expect(g.states.some((s) => s.urlPattern.includes('/report/7001/'))).toBe(true);
-    // dashboard/list and dashboard/8001 did NOT merge (distinct faces) — two states
+    // dashboard/list and dashboard/8001 did NOT merge (distinct faces). list stays a state; the
+    // single-instance /dashboard/8001 (heading-only `Sales KPIs` fingerprint on an opaque-id tail)
+    // is held out to needsFix — its identity may be instance data — so it did NOT fold into list.
     expect(labels).toContain('dashboard-list');
-    expect(labels.some((l) => l === 'dashboard-1210')).toBe(true);
+    expect((g.needsFix ?? []).some((n) => n.urlPattern.includes('/dashboard/8001'))).toBe(true);
   });
 
   // RULE 4 — SPA split: two visits to ONE key with structurally different faces → two states,
@@ -632,10 +635,14 @@ describe('draftFromEffects — degenerate landings go to needsFix, good states s
     expect(labels).toContain('data-reports');
     for (const s of draft.states) expect(s._warning).toBeUndefined();   // no ambiguity poisoning
   });
-  it('good states carry NO navigate affordance pointing at a degenerate (dead) target', () => {
-    const home = draft.states.find((s) => s.label === 'main-home')!;
-    expect(home.affordances.some((a) => a.kind === 'navigate' && (a.to === 'sys-agent' || a.to === 'misc-blank'))).toBe(false);
-    expect(home.affordances.some((a) => a.kind === 'navigate' && a.to === 'data-reports')).toBe(true);   // good edge kept
+  it('NO navigate affordance (on any state OR the shell) points at a degenerate (dead) target', () => {
+    // Reports/Agent/Blank live in the shared sidebar CHROME → they are from-anywhere SHELL edges
+    // (axis 3), so the good `→ data-reports` edge lives on `_shell`, not duplicated onto `main-home`.
+    // What matters for this test: no edge ANYWHERE points at a held-out (degenerate) page, and the
+    // good edge is still reachable (shell synthesis already drops dead shell links).
+    const allNav = draft.states.flatMap((s) => s.affordances.filter((a) => a.kind === 'navigate'));
+    expect(allNav.some((a) => a.to === 'sys-agent' || a.to === 'misc-blank')).toBe(false);   // no dead edge
+    expect(allNav.some((a) => a.to === 'data-reports')).toBe(true);                          // good edge kept
   });
 });
 
@@ -793,7 +800,7 @@ describe('draftFromEffects — shell-based hierarchy (sections vs details)', () 
     expect(reports.role).toBe('section');       // reached by the sidebar (shell) link
     expect(reports.parentState).toBeNull();
     expect(people.role).toBe('section');
-    const detail = g.states.find((s) => s.label === 'rep-9001')!;
+    const detail = g.states.find((s) => s.label === 'rep')!;   // /rep/9001 → opaque id dropped → `rep`
     expect(detail.role).toBe('detail');          // reached only by a content link ON reports
     expect(detail.parentState).toBe('rep-list');
   });
@@ -841,11 +848,13 @@ describe('draftFromEffects — dispose + SPA split run on SHELL-SUBTRACTED faces
   const labels = g.states.map((s) => s.label);
 
   it('dispose: chrome-heavy /{param} pages with distinct content stay SEPARATE states', () => {
-    // raw faces would merge (jaccard 9/17 ≈ 0.529 ≥ 0.5) into one templated 'item' state;
-    // shell-subtracted faces (jaccard 0) must dispose the merge — two states survive.
+    // raw faces would merge (jaccard 9/17 ≈ 0.529 ≥ 0.5) into one templated state; shell-subtracted
+    // faces (jaccard 0) must dispose the merge — TWO distinct states survive. (/item/9001's label is
+    // `item` — opaque id dropped; the point is it stays SEPARATE from item-list, not merged into it.)
     expect(labels).toContain('item-list');
-    expect(labels).toContain('item-9001');
-    expect(labels).not.toContain('item');   // the false template merge must NOT happen
+    expect(labels).toContain('item');
+    const itemStates = g.states.filter((s) => s.label === 'item-list' || s.label === 'item');
+    expect(new Set(itemStates.map((s) => s.urlPattern)).size).toBe(2);   // two distinct pages, not one merge
   });
 
   it('SPA split: chrome-heavy same-URL landings with distinct content still split', () => {
@@ -928,7 +937,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
 
   it('RULE 1: a click on an option inside a dialog does not become a page affordance', () => {
     const g = draftFromEffects([enter, openDialog, clickInside] as never);
-    const s = g.states.find((x) => x.label === 'report-9')!;
+    const s = g.states.find((x) => x.label === 'report')!;
     // rule 1: the checkbox click inside the dialog is NOT a page affordance.
     expect(s.affordances.some((a) => a.label === 'Publisher dimension')).toBe(false);
     // the opener IS a reveal with its overlay controls (Share/Run/Download all still emit too).
@@ -943,7 +952,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
 
   it('RULE 2: reveal children drop the enumerated value list but keep unique overlay controls', () => {
     const g = draftFromEffects([enter, openDialog] as never);
-    const s = g.states.find((x) => x.label === 'report-9')!;
+    const s = g.states.find((x) => x.label === 'report')!;
     const opener = s.affordances.find((a) => a.label === 'Add dimensions')!;
     const childLabels = (opener.children ?? []).map((c) => c.label).sort();
     // the 4 "<X> dimension" checkboxes fold OUT (foldedNames); Search/Apply/Cancel stay.
@@ -955,7 +964,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
 
   it('RULE 5: a use-type in a dialog search box does not become a page input affordance', () => {
     const g = draftFromEffects([enter, openDialog, typeInside] as never);
-    const s = g.states.find((x) => x.label === 'report-9')!;
+    const s = g.states.find((x) => x.label === 'report')!;
     expect(s.affordances.some((a) => a.kind === 'input' && a.label === 'Search')).toBe(false);
   });
 
@@ -981,7 +990,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
       action: { role: 'button', name: 'Add metric', ref: 'e6', elementFp: { role: 'button', name: 'Add metric', near: null } },
       toUrl: `${RB}/metric/7`, toSnapshot: B2, navigated: true, diff: { added: [], removed: [] } as any };
     const g = draftFromEffects([authEnter, revisit] as never);
-    const s = g.states.find((x) => x.label === 'metric-7')!;
+    const s = g.states.find((x) => x.label === 'metric')!;   // /metric/7 → opaque id dropped → `metric`
     // no per-value chip is stored as its own affordance.
     for (const chip of ['OS Remove', 'Revenue Remove', 'Win Rate Remove', 'eCPM Remove']) {
       expect(s.affordances.some((a) => a.label === chip), chip).toBe(false);
@@ -1017,7 +1026,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
       action: { role: 'textbox', name: 'Search', ref: 'e11', elementFp: { role: 'textbox', name: 'Search', near: null } },
       toUrl: `${RB}/qry/1`, toSnapshot: PAGE_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
     const g = draftFromEffects([enter2, typeInDialog] as never);
-    const s = g.states.find((x) => x.label === 'qry-1')!;
+    const s = g.states.find((x) => x.label === 'qry')!;
     expect(s.affordances.some((a) => a.kind === 'input' && a.label === 'Search')).toBe(false);
   });
 
@@ -1042,7 +1051,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
       action: { role: 'button', name: 'Filter', ref: 'e11', elementFp: { role: 'button', name: 'Filter', near: null } },
       toUrl: `${RB}/rec/2`, toSnapshot: PAGE_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
     const g = draftFromEffects([enter2, clickFilter] as never);
-    const s = g.states.find((x) => x.label === 'rec-2')!;
+    const s = g.states.find((x) => x.label === 'rec')!;
     expect(s.affordances.filter((a) => a.label === 'Filter').length).toBe(1);
   });
 
@@ -1069,10 +1078,139 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
       action: { role: 'button', name: 'Refresh', ref: 'e2', elementFp: { role: 'button', name: 'Refresh', near: null } },
       toUrl: `${RB}/inv/3`, toSnapshot: V2, navigated: true, diff: { added: [], removed: [] } as any };
     const g = draftFromEffects([authEnter, revisit] as never);
-    const s = g.states.find((x) => x.label === 'inv-3')!;
+    const s = g.states.find((x) => x.label === 'inv')!;
     // the stable control (core) synthesizes; neither one-landing value does.
     expect(s.affordances.some((a) => a.label === 'Refresh')).toBe(true);
     expect(s.affordances.some((a) => a.label === 'Sold: SKU-001')).toBe(false);
     expect(s.affordances.some((a) => a.label === 'Sold: SKU-999')).toBe(false);
+  });
+});
+
+// ── Task 15: offline-acceptance findings, each reproduced synthetically (the real the analytics SPA data
+// surfaced these; here they are isolated so the producing-stage fix is pinned without the DB).
+describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', () => {
+  it('a pre-redirect 404 sharing a merged key does NOT suffix the healthy sibling (report-list, not report-list-reports)', () => {
+    // old data has NO requestedUrl; base inference merges `/report/list` (settled 404 ghost) and
+    // `/v3/9999/report/list` (real Reports). The 404 cluster must be held out to needsFix WITHOUT
+    // forcing an SPA split that renames the good state `report-list-reports`.
+    const REAL = shell('Reports', ['- button "New report" [ref=e7]', '- textbox "Search" [ref=e8]']);
+    const GHOST404 = ['- heading "Page not found" [ref=e1]', '- paragraph "This page could not be found." [ref=e2]',
+      '- link "Home" [ref=e3]:\n    - /url: https://x.test/v3/9999/home', '- link "Back" [ref=e4]',
+      '- paragraph "404" [ref=e5]', '- paragraph "sorry" [ref=e6]', '- link "Help" [ref=e7]', '- button "Retry" [ref=e8]'].join('\n');
+    const g = draftFromEffects([
+      nav(`${XB}/report/list`, REAL),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+      nav('https://x.test/report/list', GHOST404),   // pre-redirect ghost keyed to the SAME key
+    ] as never);
+    const labels = g.states.map((s) => s.label);
+    expect(labels).toContain('report-list');
+    expect(labels.join(',')).not.toMatch(/-reports\b/);   // healthy sibling NOT suffixed
+    expect((g.needsFix ?? []).some((n) => /error page/i.test(n.reason))).toBe(true);
+  });
+
+  it('shell edges live ONCE on _shell — a recorded click on a shell node does not leak onto the page it was clicked from', () => {
+    // click the sidebar "Reports" link FROM the announcements page; it must NOT become an
+    // affordance on `announcements` (it is a from-anywhere shell edge on `_shell`).
+    const g = draftFromEffects([
+      nav(`${XB}/report/list`, shell('Reports', ['- button "New report" [ref=e7]', '- textbox "Search" [ref=e8]'])),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+      { seq: 0, capturedAt: 0, fromUrl: `${XB}/announcements`, fromSnapshot: shell('Announcements'),
+        action: { role: 'link', name: 'Reports', ref: 'e3', elementFp: { role: 'link', name: 'Reports', near: null } },
+        toUrl: `${XB}/report/list`, toSnapshot: shell('Reports'), navigated: true, diff: { added: [], removed: [] } as any },
+    ] as never);
+    const ann = g.states.find((s) => s.label === 'announcements')!;
+    expect(ann.affordances.some((a) => a.label === 'Reports')).toBe(false);   // not leaked onto the page
+    const sh = g.states.find((s) => s.label === '_shell')!;
+    expect(sh.affordances.some((a) => a.kind === 'navigate' && a.to === 'report-list')).toBe(true);  // on _shell
+  });
+
+  it('opaque id tail segments are dropped from labels (/report/7001/{hash} → report, colliding vizzes split by tab)', () => {
+    // two structurally-DISTINCT vizzes of report 7001 (jaccard < 0.5 → dispose rejects the
+    // template merge): both key to the clean label `report`, so the collision resolver must
+    // distinguish them — the second by its unique `tab:Flat` (no distinguishing heading exists).
+    const VIZ_A = shell('Metric Report', ['- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]',
+      '- button "Export" [ref=e9]', '- button "Configure metrics" [ref=e10]', '- listitem "row" [ref=e11]']);
+    const VIZ_FLAT = shell('Metric Report', ['- tab "Flat" [ref=e7]', '- textbox "Search rows" [ref=e8]',
+      '- button "Download CSV" [ref=e9]', '- paragraph "Flat listing" [ref=e10]']);
+    const g = draftFromEffects([
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, VIZ_A),
+      nav(`${XB}/report/7001/bbbbbbbbbbbbbbbb`, VIZ_FLAT),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const labels = g.states.map((s) => s.label);
+    // both collide on the clean base `report` (opaque `7001`+hash dropped); the resolver
+    // distinguishes each by a UNIQUE TAB (no heading differs) → `report-table` + `report-flat`.
+    expect(labels).toContain('report-table');
+    expect(labels).toContain('report-flat');
+    expect(labels.every((l) => l.startsWith('report') ? /^report(-\w+)?$/.test(l) : true)).toBe(true);
+    expect(labels.join(',')).not.toMatch(/7001|aaaaaaaa|bbbbbbbb/);   // no raw id in any label
+  });
+
+  it('a folded per-chip name never anchors identity (report fp has no OS Remove / eCPM Remove)', () => {
+    const core = (extra: string[]) => shell('Metric Report', [
+      '- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]',
+      '- button "OS Remove" [ref=e10]', '- button "Revenue Remove" [ref=e11]',
+      '- button "eCPM Remove" [ref=e12]', '- button "Win Rate Remove" [ref=e13]', ...extra]);
+    const g = draftFromEffects([
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- button "Export" [ref=e14]'])),
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- button "Export" [ref=e14]'])),   // 2 landings → confirmed core
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const rep = g.states.find((s) => s.label === 'report')!;
+    expect(rep.fingerprint.join()).not.toMatch(/Remove/);   // folded chips excluded from identity
+    expect(rep.affordances.filter((a) => a.scope === 'row').some((a) => a.label === 'Remove')).toBe(true);  // one row fold
+  });
+
+  it('a bare date/number literal is never stored as an affordance or fingerprint token', () => {
+    const DATED = shell('Widget', ['- button "09 Jul 2026" [ref=e7]', '- button "10 Jul 2026" [ref=e8]',
+      '- button "Apply filter" [ref=e9]', '- paragraph "range" [ref=e10]']);
+    const g = draftFromEffects([
+      nav(`${XB}/widget/list`, DATED),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+    ] as never);
+    const w = g.states.find((s) => s.label === 'widget-list')!;
+    const all = g.states.flatMap((s) => s.affordances);
+    expect(all.some((a) => /^\d{2} \w{3} \d{4}$/.test(a.label))).toBe(false);
+    expect(w.fingerprint.join()).not.toMatch(/\d{2} \w{3} \d{4}/);
+    expect(w.affordances.some((a) => a.label === 'Apply filter')).toBe(true);   // real control kept
+  });
+
+  it('a recorded interior action with a null-name elementFp is dropped (unreliable coordinate)', () => {
+    // a personalized-widget combobox the recorder could not pin (fp.name null) → not stored.
+    const PAGE = shell('Widget', ['- combobox "Country" [ref=e7]', '- button "Apply filter" [ref=e8]',
+      '- paragraph "body" [ref=e9]', '- listitem "row" [ref=e10]']);
+    const g = draftFromEffects([
+      nav(`${XB}/widget/list`, PAGE),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+      { seq: 0, capturedAt: 0, fromUrl: `${XB}/widget/list`, fromSnapshot: PAGE,
+        action: { role: 'combobox', name: 'Country', ref: 'e7', elementFp: { role: 'combobox', name: null, near: null } },
+        toUrl: `${XB}/widget/list`, toSnapshot: PAGE, navigated: false, diff: { added: [], removed: [] } as any },
+    ] as never);
+    const w = g.states.find((s) => s.label === 'widget-list')!;
+    expect(w.affordances.some((a) => a.label === 'Country')).toBe(false);       // null-name fp → dropped
+    expect(w.affordances.some((a) => a.label === 'Apply filter')).toBe(true);   // named control kept
+  });
+
+  it('single-instance param page with a heading-only fingerprint is held out (no instance-data identity)', () => {
+    // one visit to /dashboard/8001 whose only non-shell token is heading:Demo User → needsFix,
+    // NOT a state fingerprinted on the user name.
+    const g = draftFromEffects([
+      nav(`${XB}/dashboard/8001`, shell('Demo User', ['- img "avatar" [ref=e7]', '- paragraph "welcome" [ref=e8]'])),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+    ] as never);
+    expect(g.states.every((s) => !s.fingerprint.join().includes('Demo User'))).toBe(true);
+    expect((g.needsFix ?? []).some((n) => /instance data/i.test(n.reason) && n.urlPattern.includes('/dashboard/8001'))).toBe(true);
   });
 });
