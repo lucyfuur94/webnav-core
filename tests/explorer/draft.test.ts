@@ -799,3 +799,173 @@ describe('draftFromEffects — dispose + SPA split run on SHELL-SUBTRACTED faces
     expect(labels).not.toContain('spa-view');   // the false single-cluster collapse must NOT happen
   });
 });
+
+// ── Task 9 (structure-inference): affordance synthesis stops storing DATA VALUES. Five rules:
+//  1. a recorded click on a node INSIDE an overlay (its FROM snapshot has it under a dialog/menu)
+//     emits NO page affordance — its structure already lives as the opener's children.
+//  2. reveal children drop foldRepeats(addedNodes).foldedNames (the enumerated value list) while
+//     keeping unique overlay controls (Search/Apply/Cancel).
+//  3. interior synthesis reads a page's CORE nodes only (not the union of every landing) and skips
+//     foldedNames — a value seen in one landing does not synthesize.
+//  4. ≥3 row-scoped repeats sharing a trailing word collapse to ONE scope:'row' affordance
+//     labeled by the suffix, elementFp:null (informational; mutates never route).
+//  5. a recorded `use type` on a textbox INSIDE an overlay (a picker search box) emits NO page
+//     input affordance either.
+describe('draftFromEffects — Task 9 overlay gate + folded row templates + core-only interior', () => {
+  const RB = 'https://rpt.test';
+  // a READY entry page with a distinct first segment so the URL model doesn't strip `report` as base.
+  const AUTH = ['- heading "Login" [ref=e1]', '- textbox "Username" [ref=e2]', '- textbox "Password" [ref=e3]',
+    '- button "Login" [ref=e4]', '- paragraph "Sign in" [ref=e5]', '- link "Forgot" [ref=e6]:\n    - /url: https://rpt.test/auth/forgot',
+    '- paragraph "Co" [ref=e7]', '- paragraph "v1" [ref=e8]'].join('\n');
+  // the report page: page-level durable actions (Add dimensions opener, Share, Run, Download) +
+  // padding to ≥8 ready nodes. NO value chips here (that's what mutation-afters used to leak in).
+  const REPORT = [
+    '- heading "Report Builder" [ref=e1]',
+    '- button "Add dimensions" [ref=e2]',
+    '- button "Share" [ref=e3]',
+    '- button "Run" [ref=e4]',
+    '- button "Download" [ref=e5]',
+    '- paragraph "Draft report" [ref=e6]',
+    '- listitem "Row 1" [ref=e7]',
+    '- listitem "Row 2" [ref=e8]',
+  ].join('\n');
+  // after clicking "Add dimensions": a dialog opens with its own controls (Search/Apply/Cancel) +
+  // an enumerated value list of dimension checkboxes sharing the trailing word "dimension".
+  const DIM_CHECKS = [
+    '  - checkbox "Publisher dimension" [ref=e11]',
+    '  - checkbox "Country dimension" [ref=e12]',
+    '  - checkbox "Device dimension" [ref=e13]',
+    '  - checkbox "Browser dimension" [ref=e14]',
+  ];
+  const REPORT_DIALOG = [
+    REPORT,
+    '- dialog "Choose dimensions" [ref=e10]:',
+    '  - textbox "Search" [ref=e15]',
+    ...DIM_CHECKS,
+    '  - button "Apply" [ref=e16]',
+    '  - button "Cancel" [ref=e17]',
+  ].join('\n');
+  // diff.added for the "Add dimensions" click = the dialog's contents (parsed SnapNodes carry depth).
+  const dialogAdded = parseSnapshot([
+    '- textbox "Search" [ref=e15]',
+    ...DIM_CHECKS.map((l) => l.replace(/^  /, '')),
+    '- button "Apply" [ref=e16]',
+    '- button "Cancel" [ref=e17]',
+  ].join('\n')).map((n) => ({ ...n, depth: 2 }));
+
+  const enter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${RB}/report/9`, toSnapshot: REPORT, navigated: true, diff: { added: [], removed: [] } as any };
+  // the opener click: from the plain report page → dialog appears (diff.added = dialog contents).
+  const openDialog: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/report/9`, fromSnapshot: REPORT,
+    action: { role: 'button', name: 'Add dimensions', ref: 'e2', elementFp: { role: 'button', name: 'Add dimensions', near: null } },
+    toUrl: `${RB}/report/9`, toSnapshot: REPORT_DIALOG, navigated: false, diff: { added: dialogAdded, removed: [] } as any };
+  // a click on a value checkbox INSIDE the open dialog (FROM = REPORT_DIALOG, so it's insideOverlay).
+  const clickInside: StoredActionEffect = { seq: 2, capturedAt: 0, fromUrl: `${RB}/report/9`, fromSnapshot: REPORT_DIALOG,
+    action: { role: 'checkbox', name: 'Publisher dimension', ref: 'e11', elementFp: { role: 'checkbox', name: 'Publisher dimension', near: null } },
+    toUrl: `${RB}/report/9`, toSnapshot: REPORT_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
+  // a `use type` in the dialog's search box (FROM = REPORT_DIALOG, so the textbox is insideOverlay).
+  const typeInside: StoredActionEffect = { seq: 3, capturedAt: 0, fromUrl: `${RB}/report/9`, fromSnapshot: REPORT_DIALOG,
+    action: { role: 'textbox', name: 'Search', ref: 'e15', elementFp: { role: 'textbox', name: 'Search', near: null } },
+    toUrl: `${RB}/report/9`, toSnapshot: REPORT_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
+
+  it('RULE 1: a click on an option inside a dialog does not become a page affordance', () => {
+    const g = draftFromEffects([enter, openDialog, clickInside] as never);
+    const s = g.states.find((x) => x.label === 'report-9')!;
+    // rule 1: the checkbox click inside the dialog is NOT a page affordance.
+    expect(s.affordances.some((a) => a.label === 'Publisher dimension')).toBe(false);
+    // the opener IS a reveal with its overlay controls (Share/Run/Download all still emit too).
+    const opener = s.affordances.find((a) => a.label === 'Add dimensions')!;
+    expect(opener.kind).toBe('reveal');
+    expect((opener.children ?? []).some((c) => c.label === 'Apply')).toBe(true);   // overlay control kept
+    // page-level durable actions survive.
+    for (const label of ['Share', 'Run', 'Download']) {
+      expect(s.affordances.some((a) => a.label === label), label).toBe(true);
+    }
+  });
+
+  it('RULE 2: reveal children drop the enumerated value list but keep unique overlay controls', () => {
+    const g = draftFromEffects([enter, openDialog] as never);
+    const s = g.states.find((x) => x.label === 'report-9')!;
+    const opener = s.affordances.find((a) => a.label === 'Add dimensions')!;
+    const childLabels = (opener.children ?? []).map((c) => c.label).sort();
+    // the 4 "<X> dimension" checkboxes fold OUT (foldedNames); Search/Apply/Cancel stay.
+    expect(childLabels).toEqual(['Apply', 'Cancel', 'Search']);
+    for (const chip of ['Publisher dimension', 'Country dimension', 'Device dimension', 'Browser dimension']) {
+      expect(childLabels).not.toContain(chip);
+    }
+  });
+
+  it('RULE 5: a use-type in a dialog search box does not become a page input affordance', () => {
+    const g = draftFromEffects([enter, openDialog, typeInside] as never);
+    const s = g.states.find((x) => x.label === 'report-9')!;
+    expect(s.affordances.some((a) => a.kind === 'input' && a.label === 'Search')).toBe(false);
+  });
+
+  it('RULE 4: ≥3 "<X> Remove" chips in a page core synthesize ONE scope:row affordance labeled Remove', () => {
+    // a report page whose CORE carries the row-scoped remove chips (seen on BOTH landings so they
+    // survive templateCore) — they must fold to one scope:'row' affordance, not four value chips.
+    const CORE_REPORT = (extra: string[]) => [
+      '- heading "Metric Report" [ref=e1]',
+      '- button "OS Remove" [ref=e2]',
+      '- button "Revenue Remove" [ref=e3]',
+      '- button "Win Rate Remove" [ref=e4]',
+      '- button "eCPM Remove" [ref=e5]',
+      '- button "Add metric" [ref=e6]',
+      '- paragraph "Report body" [ref=e7]',
+      ...extra,
+    ].join('\n');
+    const A = CORE_REPORT(['- listitem "Line A" [ref=e8]']);
+    const B2 = CORE_REPORT(['- listitem "Line B" [ref=e8]']);
+    const authEnter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+      action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+      toUrl: `${RB}/metric/7`, toSnapshot: A, navigated: true, diff: { added: [], removed: [] } as any };
+    const revisit: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/metric/7`, fromSnapshot: A,
+      action: { role: 'button', name: 'Add metric', ref: 'e6', elementFp: { role: 'button', name: 'Add metric', near: null } },
+      toUrl: `${RB}/metric/7`, toSnapshot: B2, navigated: true, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([authEnter, revisit] as never);
+    const s = g.states.find((x) => x.label === 'metric-7')!;
+    // no per-value chip is stored as its own affordance.
+    for (const chip of ['OS Remove', 'Revenue Remove', 'Win Rate Remove', 'eCPM Remove']) {
+      expect(s.affordances.some((a) => a.label === chip), chip).toBe(false);
+    }
+    // exactly one scope:'row' affordance, labeled by the shared suffix, no elementFp (informational).
+    const rows = s.affordances.filter((a) => a.scope === 'row');
+    expect(rows.length).toBe(1);
+    expect(rows[0].label).toBe('Remove');
+    expect(rows[0].kind).toBe('mutate');
+    expect(rows[0].elementFp ?? null).toBeNull();
+    // the genuinely-unique control still synthesizes.
+    expect(s.affordances.some((a) => a.label === 'Add metric')).toBe(true);
+  });
+
+  it('RULE 3: interior synthesis reads CORE nodes only — a value in ONE landing does not synthesize', () => {
+    // two landings of one page: a stable control on both (core) + a data value on only one (falls
+    // out of core). Interior synthesis reads coreNodes, so the one-visit value never becomes an
+    // affordance (the union would have leaked it). ≥8 ready nodes per landing.
+    const PAGE = (uniqueBtn: string) => [
+      '- heading "Inventory" [ref=e1]',
+      '- button "Refresh" [ref=e2]',
+      '- textbox "Filter" [ref=e3]',
+      `- button "${uniqueBtn}" [ref=e4]`,   // varies between landings → falls out of core
+      '- paragraph "Stock levels" [ref=e5]',
+      '- listitem "Item A" [ref=e6]',
+      '- listitem "Item B" [ref=e7]',
+      '- paragraph "Footer" [ref=e8]',
+    ].join('\n');
+    const V1 = PAGE('Sold: SKU-001');
+    const V2 = PAGE('Sold: SKU-999');
+    const authEnter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+      action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+      toUrl: `${RB}/inv/3`, toSnapshot: V1, navigated: true, diff: { added: [], removed: [] } as any };
+    const revisit: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/inv/3`, fromSnapshot: V1,
+      action: { role: 'button', name: 'Refresh', ref: 'e2', elementFp: { role: 'button', name: 'Refresh', near: null } },
+      toUrl: `${RB}/inv/3`, toSnapshot: V2, navigated: true, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([authEnter, revisit] as never);
+    const s = g.states.find((x) => x.label === 'inv-3')!;
+    // the stable control (core) synthesizes; neither one-landing value does.
+    expect(s.affordances.some((a) => a.label === 'Refresh')).toBe(true);
+    expect(s.affordances.some((a) => a.label === 'Sold: SKU-001')).toBe(false);
+    expect(s.affordances.some((a) => a.label === 'Sold: SKU-999')).toBe(false);
+  });
+});
