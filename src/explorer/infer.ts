@@ -1,6 +1,8 @@
 // Observation-based inference primitives (settled 2026-07-10, structure-inference design).
 // Pure + deterministic; ZERO site knowledge (#5a). Thresholds are documented tunables.
 
+import type { SnapNode } from '../playwright/snapshot.js';
+
 const segsOf = (url: string): string[] => {
   try { return new URL(url).pathname.split('/').filter(Boolean); } catch { return []; }
 };
@@ -50,4 +52,41 @@ export function proposeTemplates(keys: string[]): TemplateGroup[] {
     template: '/' + g.parts.map((s, j) => (j === g.paramPos ? '{param}' : s)).join('/'),
     keys: g.keys, paramPos: g.paramPos,
   }));
+}
+
+export type Face = Set<string>;
+
+export function faceOf(nodes: SnapNode[]): Face {
+  const f: Face = new Set();
+  for (const n of nodes) if (n.name && n.name.trim()) f.add(`${n.role}:${n.name}`);
+  return f;
+}
+
+export function jaccard(a: Face, b: Face): number {
+  if (!a.size && !b.size) return 1;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+// Roles that DECLARE a transient overlay container (WAI-ARIA). A node nested under one is
+// overlay content (a value being chosen, or the overlay's own controls) — never page structure.
+export const OVERLAY_ROLES: ReadonlySet<string> = new Set(['dialog', 'alertdialog', 'menu', 'listbox', 'tooltip']);
+
+/** Walk ancestors by indent depth (same containment logic shadow.ts uses): the nearest
+ *  lower-depth predecessor chain; true if any ancestor's role declares an overlay. */
+export function insideOverlay(nodes: SnapNode[], idx: number): boolean {
+  if (idx < 0 || idx >= nodes.length) return false;
+  let cur = nodes[idx].depth;
+  for (let i = idx - 1; i >= 0; i--) {
+    if (nodes[i].depth < cur) {
+      if (OVERLAY_ROLES.has(nodes[i].role)) return true;
+      cur = nodes[i].depth;
+    }
+  }
+  return false;
+}
+
+export function nodeIndexByName(nodes: SnapNode[], name: string): number {
+  return nodes.findIndex((n) => n.name === name);
 }
