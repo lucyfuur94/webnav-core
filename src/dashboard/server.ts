@@ -42,7 +42,7 @@ export interface RecordingsDeps {
   logs(): { now: number; lines: { t: number; line: string }[] };   // operator log stream (pushed via SSE 'log')
   notify(kind: string, line?: string): void;                       // cross-process realtime bridge: append log + emit SSE (used by `use session`)
   review(id: string, opts?: { model?: string; instructions?: string }): { ok: boolean; error?: string };  // start a headless-Claude capture-gap audit
-  reviewReport(id: string): { report: string; at: number } | null; // review.md + mtime (null = none yet)
+  reviewReport(id: string): { report: string; at: number; verdict?: { approved: boolean; gaps: number; reason?: string } | null } | null; // review.md + mtime + stored verdict (null = none yet)
   reviewRunning(): string | null;                                   // session id of an in-flight review
   reviewConfig(): { model: string; instructions: string };          // last-used (or default) audit config
   profiles(): { name: string; site: string | null; sessions: number; sizeMb: number; lastUsed: number; open: boolean }[];

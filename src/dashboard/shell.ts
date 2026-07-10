@@ -7,57 +7,199 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>webnav dashboard</title>
+<title>webnav</title>
+<!-- Favicon: the webnav waypoint mark (a map pin with a hollow center), inline data-URI so
+     the tab icon is self-contained — no external asset, no build step. Accent blue on transparent. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b9dff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z'/%3E%3Ccircle cx='12' cy='10' r='2.6' fill='%230f1115'/%3E%3C/svg%3E" />
+<!-- Theme bootstrap: set data-theme BEFORE first paint so there's no flash. Saved choice
+     (localStorage) wins; otherwise follow the OS preference. Runs inline, synchronously. -->
+<script>(function(){try{var s=localStorage.getItem('webnav-theme');var t=s||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <style>
-  :root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --border:#262b36; --fg:#e6e9ef; --muted:#8b93a3; --accent:#5b9dff; --danger:#ff6b6b; --ok:#3fb950; --warn:#e2b93d; --rec:#e5484d; }
+  /* THEME TOKENS. Dark is the default (identity-preserving); light is a companion ramp tuned to
+     pass WCAG on the same accent. The theme is chosen by data-theme on <html> (set by the toggle;
+     first load follows prefers-color-scheme). --bg-sunken = inputs/code (darker than bg in dark,
+     LIGHTER-surface in light — not an inverted literal); --on-accent = text on the accent button;
+     --overlay/--shadow = modal scrim + shadow, retuned per theme. */
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0f1115; --panel:#171a21; --bg-sunken:#0b0d11; --border:#262b36;
+    --fg:#e6e9ef; --muted:#8b93a3; --accent:#5b9dff; --on-accent:#08111f;
+    --danger:#ff6b6b; --ok:#3fb950; --warn:#e2b93d; --rec:#e5484d;
+    --overlay:rgba(4,6,10,.6); --shadow:0 16px 48px rgba(0,0,0,.5); --shadow-sm:0 4px 16px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg:#f6f7f9; --panel:#ffffff; --bg-sunken:#eef0f3; --border:#d6dae1;
+    --fg:#1a1d23; --muted:#5c6470; --accent:#2563d9; --on-accent:#ffffff;
+    --danger:#d13c3c; --ok:#1a883f; --warn:#9a6b00; --rec:#d6342c;
+    --overlay:rgba(20,24,31,.35); --shadow:0 16px 48px rgba(20,30,50,.18); --shadow-sm:0 4px 16px rgba(20,30,50,.12);
+  }
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
   header { display:flex; align-items:center; gap:16px; padding:14px 20px; border-bottom:1px solid var(--border); }
-  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .brand { display:inline-flex; align-items:center; gap:8px; }
+  header .brand .mark { width:20px; height:20px; color:var(--accent); flex:none; }
+  header .brand .word { font-size:16px; font-weight:600; letter-spacing:-0.01em; }
   header .sub { color:var(--muted); font-size:12px; }
-  nav { display:flex; gap:4px; padding:0 20px; border-bottom:1px solid var(--border); }
-  nav button, nav a { background:none; border:none; color:var(--muted); padding:10px 14px; cursor:pointer; font:inherit; text-decoration:none; border-bottom:2px solid transparent; }
-  nav button.active { color:var(--fg); border-bottom-color:var(--accent); }
-  nav a:hover, nav button:hover { color:var(--fg); }
-  main { padding:20px; display:grid; grid-template-columns:280px 1fr; gap:20px; }
+  .iconbtn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0;
+    background:none; border:1px solid var(--border); border-radius:8px; color:var(--muted); cursor:pointer; transition:color .15s ease, border-color .15s ease; }
+  .iconbtn:hover { color:var(--fg); border-color:var(--accent); }
+  .iconbtn svg { width:17px; height:17px; }
+  /* LEFT-PANE nav: a vertical sidebar below the header; content to its right. Scoped to
+     .shell > nav (direct child) so it does NOT restyle the detail view's inner sub-tab nav
+     (Steps/Videos/Review/Logs), which stays a horizontal tab row via its own rules below. */
+  .shell { display:flex; align-items:stretch; min-height:calc(100vh - 53px); }
+  .shell > nav { display:flex; flex-direction:column; gap:2px; padding:14px 10px; width:180px; flex:none;
+    border-right:1px solid var(--border); }
+  .shell > nav button { display:block; width:100%; text-align:left; background:none; border:none; color:var(--muted);
+    padding:8px 12px; border-radius:7px; cursor:pointer; font:inherit; }
+  .shell > nav button.active { color:var(--fg); background:var(--panel); box-shadow:inset 2px 0 0 var(--accent); }
+  .shell > nav button:hover:not(.active) { color:var(--fg); background:var(--panel); }
+  main { flex:1; min-width:0; padding:20px; display:grid; grid-template-columns:280px 1fr; gap:20px; }
+  /* detail sub-tabs: horizontal row (unchanged from the original top-nav look) */
+  .detail nav { display:flex; flex-direction:row; gap:4px; width:auto; padding:0; border-right:none; }
+  .detail nav button { display:inline-block; width:auto; background:none; border:none; color:var(--muted); padding:8px 12px; cursor:pointer; font:inherit; border-bottom:2px solid transparent; border-radius:0; }
+  .detail nav button.active { color:var(--fg); border-bottom-color:var(--accent); }
+  .detail nav button:hover { color:var(--fg); }
+  @media (max-width: 640px) { .shell { flex-direction:column; } .shell > nav { flex-direction:row; width:auto; flex-wrap:wrap; border-right:none; border-bottom:1px solid var(--border); } }
   .list { border:1px solid var(--border); border-radius:8px; overflow:hidden; align-self:start; }
   .list .row { padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border); }
   .list .row:last-child { border-bottom:none; }
   .list .row:hover { background:var(--panel); }
-  .list .row.active { background:var(--panel); border-left:2px solid var(--accent); }
+  .list .row.active { background:var(--panel); box-shadow:inset 2px 0 0 var(--accent); }
   .list .row .name { font-weight:500; }
   .list .row .meta { color:var(--muted); font-size:12px; }
   .detail { border:1px solid var(--border); border-radius:8px; padding:16px; min-height:200px; }
-  pre { background:#0b0d11; border:1px solid var(--border); border-radius:6px; padding:12px; overflow:auto; font-size:12px; max-height:70vh; }
+  /* ── Sessions: full-width list-primary layout ── */
+  /* One row = a grid so name+badges+meta line up in COLUMNS and never wrap (the old
+     280px column crammed everything into a block). Columns: select · name+badges ·
+     site · steps · video · date · delete. Meta columns hide on narrow viewports. */
+  .srow { display:grid; grid-template-columns:auto minmax(0,1fr) 160px 90px 56px 150px auto;
+    align-items:center; gap:14px; padding:11px 14px; cursor:pointer; border-bottom:1px solid var(--border); }
+  .srow:last-child { border-bottom:none; }
+  .srow:hover { background:var(--panel); }
+  .srow.active { background:var(--panel); box-shadow:inset 2px 0 0 var(--accent); }
+  .srow .nm { display:flex; align-items:center; gap:8px; min-width:0; }
+  .srow .nm .t { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .srow .col { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .srow .col.r { text-align:right; }
+  .badge { border:1px solid currentColor; border-radius:4px; padding:1px 6px; font-size:10px; line-height:1.5;
+    white-space:nowrap; display:inline-flex; align-items:center; gap:3px; }
+  .badge.origin-agent { color:var(--accent); }
+  .badge.origin-manual { color:var(--muted); }
+  .badge.ok { color:var(--ok); }
+  .badge.warn { color:var(--warn); }
+  .badge.fail { color:var(--danger); }
+  .badge.unrev { color:var(--muted); }
+  /* review VERDICT banner (outcome-first) + collapsed prose report */
+  .verdict { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:8px 0 10px; }
+  .verdict.ok { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 8%, transparent); }
+  .verdict.fail { border-color:var(--danger); background:color-mix(in srgb, var(--danger) 8%, transparent); }
+  .verdict .vh { font-weight:600; font-size:14px; }
+  .verdict.ok .vh { color:var(--ok); } .verdict.fail .vh { color:var(--danger); }
+  .verdict .vs { font-size:12px; margin-top:3px; }
+  .verdict .vm { font-size:11px; color:var(--muted); margin-top:5px; }
+  .reprep { border:1px solid var(--border); border-radius:6px; }
+  .reprep summary { cursor:pointer; padding:8px 12px; font-size:12px; color:var(--muted); user-select:none; }
+  .reprep summary:hover { color:var(--fg); }
+  .reprep[open] summary { border-bottom:1px solid var(--border); }
+  .reprep .repbody { padding:12px; font-size:13px; }
+  @media (max-width: 1100px) { .srow { grid-template-columns:auto minmax(0,1fr) 90px 150px auto; }
+    .srow .col.site, .srow .col.vid { display:none; } }
+  @media (max-width: 760px) { .srow { grid-template-columns:auto minmax(0,1fr) auto; }
+    .srow .col.steps, .srow .col.date { display:none; } }
+  /* breadcrumb shown when a session is selected (list hidden, detail full-width) */
+  .crumbs { display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:14px; }
+  .crumbs a { color:var(--muted); cursor:pointer; text-decoration:none; }
+  .crumbs a:hover { color:var(--fg); }
+  .crumbs .sep { color:var(--border); }
+  .crumbs .cur { color:var(--fg); font-weight:600; }
+  .listwrap.fade { animation: fadein .16s ease-out; }
+  @keyframes fadein { from { opacity:0 } to { opacity:1 } }
+  @media (prefers-reduced-motion: reduce) { .listwrap.fade { animation:none } }
+  pre { background:var(--bg-sunken); border:1px solid var(--border); border-radius:6px; padding:12px; overflow:auto; font-size:12px; max-height:70vh; }
   table { width:100%; border-collapse:collapse; }
   td, th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
   th { color:var(--muted); font-weight:500; font-size:12px; }
   code.val { font-family:ui-monospace,monospace; }
-  button.btn { background:var(--panel); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; }
+  button.btn { background:var(--panel); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; transition:border-color .15s ease, background .15s ease; }
   button.btn:hover:not(:disabled) { border-color:var(--accent); }
   button.btn.danger:hover:not(:disabled) { border-color:var(--danger); color:var(--danger); }
+  button.btn.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600; }
+  button.btn.primary:hover:not(:disabled) { filter:brightness(1.08); }
+  /* New-session MODAL (native <dialog>) */
+  dialog.dlg { border:1px solid var(--border); border-radius:12px; background:var(--panel); color:var(--fg); padding:0; width:min(440px,92vw); box-shadow:var(--shadow); }
+  dialog.dlg::backdrop { background:var(--overlay); backdrop-filter:blur(2px); }
+  .dlgform { display:flex; flex-direction:column; gap:14px; padding:22px 22px 18px; }
+  .dlgform h2 { margin:0; font-size:16px; font-weight:600; }
+  .dlgform label { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); }
+  .dlgform input { background:var(--bg-sunken); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:8px 10px; font:14px/1.4 inherit; }
+  /* keep the accent-border cue on focus, but DON'T strip the a11y outline on keyboard focus
+     (critique B: input:focus{outline:none} was killing :focus-visible for modal inputs). */
+  .dlgform input:focus { border-color:var(--accent); }
+  .dlgform input:focus:not(:focus-visible) { outline:none; }
+  .dlgmsg { font-size:12px; min-height:16px; }
+  .dlgbtns { display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
   button.btn:disabled { opacity:.4; cursor:not-allowed; }   /* disabled must LOOK disabled (was clickable-looking, live #3) */
-  .addrow input, .addrow select { background:#0b0d11; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:6px 8px; font:inherit; margin-right:6px; }
-  select { background:#0b0d11; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:4px 6px; font:inherit; }
-  input.inline { background:#0b0d11; border:1px solid var(--accent); color:var(--fg); border-radius:6px; padding:5px 8px; font:ui-monospace,monospace; width:90%; }
+  .addrow input, .addrow select { background:var(--bg-sunken); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:6px 8px; font:inherit; margin-right:6px; }
+  select { background:var(--bg-sunken); border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:4px 6px; font:inherit; }
+  input.inline { background:var(--bg-sunken); border:1px solid var(--accent); color:var(--fg); border-radius:6px; padding:5px 8px; font:ui-monospace,monospace; width:90%; }
   .cat-head { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:10px 0 2px; }
+  .info { color:var(--muted); font-size:13px; cursor:help; font-weight:400; }
+  /* Visual/Raw segmented toggle */
+  .seg { display:inline-flex; border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .segbtn { background:none; border:none; color:var(--muted); padding:4px 12px; cursor:pointer; font:inherit; font-size:12px; }
+  .segbtn.active { background:var(--panel); color:var(--fg); }
+  .segbtn:not(.active):hover { color:var(--fg); }
+  /* Visual graph */
+  .graphwrap { border:1px solid var(--border); border-radius:8px; background:var(--bg-sunken); padding:8px; }
+  .graph { display:block; max-height:70vh; }
+  .gnode:hover rect { fill:var(--panel); filter:brightness(1.15); }
+  .glegend { display:flex; flex-wrap:wrap; gap:16px; padding:8px 6px 2px; color:var(--muted); font-size:11px; }
+  .glegend span { display:inline-flex; align-items:center; gap:5px; }
+  .glegend .dot { width:16px; height:2px; border-radius:2px; display:inline-block; }
+  .glegend .dot.acc { background:var(--accent); height:3px; }
+  .glegend .dot.mut { background:var(--border); }
+  .gnote { color:var(--muted); font-size:11px; padding:6px 8px 0; font-style:italic; }
+  .gnode:focus-visible rect { stroke-width:2.5; }
+  /* node-detail panel (opens under the graph on click) */
+  .gpanel { margin-top:12px; border:1px solid var(--border); border-radius:8px; background:var(--panel); padding:14px 16px; }
+  .gpanel .phead { font-size:14px; margin-bottom:2px; }
+  .gpanel .psec { margin-top:12px; }
+  .gpanel .ptitle { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:5px; }
+  .gpanel .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .gpanel .chip { border:1px solid var(--border); border-radius:5px; padding:2px 8px; font-size:12px; background:var(--bg-sunken); white-space:nowrap; }
   .muted { color:var(--muted); }
   .empty { color:var(--muted); padding:40px 0; text-align:center; }
+  /* placeholder must meet contrast (critique: browser-default gray was 4.22:1) — --muted passes. */
+  input::placeholder, textarea::placeholder { color:var(--muted); opacity:1; }
+  /* keyboard/tap target floor: the row select checkbox was 13px (critique B) — bump it. */
+  .srow input[type=checkbox] { width:18px; height:18px; cursor:pointer; }
+  /* P0 (critique A): a long unbroken line in a review/markdown report grew a bare <div> to
+     4600px and dragged the layout off-screen with no scrollbar. Wrap + clip the detail pane. */
+  .detail { overflow-x:auto; }
+  .detail div, .detail p, .detail li { overflow-wrap:anywhere; }
   .pulse { animation: webnavpulse 1.2s ease-in-out infinite; }
   @keyframes webnavpulse { 50% { opacity:.35; } }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .list .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
   #toast { position:fixed; z-index:100; bottom:16px; right:16px; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
-  #toast .t { background:var(--panel); border:1px solid var(--danger); color:var(--fg); border-radius:8px; padding:10px 14px; font-size:13px; max-width:360px; box-shadow:0 4px 16px rgba(0,0,0,.4); animation: toastin .18s ease-out; }
+  #toast .t { background:var(--panel); border:1px solid var(--danger); color:var(--fg); border-radius:8px; padding:10px 14px; font-size:13px; max-width:360px; box-shadow:var(--shadow-sm); animation: toastin .18s ease-out; }
   @keyframes toastin { from { opacity:0; transform:translateY(8px); } }
 </style>
 </head>
 <body>
 <header>
-  <h1>webnav dashboard</h1>
+  <span class="brand">
+    <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/><circle cx="12" cy="10" r="2.6" fill="var(--bg)"/></svg>
+    <span class="word">webnav</span>
+  </span>
   <span class="sub" id="env"></span>
+  <span style="flex:1"></span>
+  <button id="themebtn" class="iconbtn" title="Toggle light / dark" aria-label="Toggle light / dark theme"></button>
 </header>
+<div class="shell">
 <nav>
   <button data-tab="recordings" class="active">Sessions</button>
   <button data-tab="sites">Sites</button>
@@ -65,6 +207,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <button data-tab="profiles">Profiles</button>
 </nav>
 <main id="main"></main>
+</div>
 
 <script>
 const main = document.getElementById('main');
@@ -77,6 +220,24 @@ document.querySelectorAll('nav button[data-tab]').forEach(b => {
     render();
   };
 });
+
+// ---------- THEME TOGGLE ----------
+// data-theme is already set pre-paint by the <head> bootstrap. This button flips it, persists
+// the choice, and swaps its own icon (moon when dark → click for light; sun when light).
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+function paintThemeBtn() {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const btn = document.getElementById('themebtn');
+  if (btn) btn.innerHTML = dark ? MOON : SUN;   // moon = currently dark (click → light); sun = currently light
+}
+document.getElementById('themebtn').onclick = () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('webnav-theme', next); } catch (e) {}
+  paintThemeBtn();
+};
+paintThemeBtn();
 
 async function getJSON(u, opts) { const r = await fetch(u, opts); if (!r.ok) throw new Error(u + ' -> ' + r.status); return r.json(); }
 function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
@@ -126,13 +287,206 @@ async function renderSites() {
       detail.innerHTML = '<div class="empty">loading…</div>';
       const full = await getJSON('/api/sites/' + encodeURIComponent(s.id));
       detail.innerHTML = '';
-      detail.append(el('<div style="margin-bottom:10px"><strong>'+esc(s.id)+'</strong> <span class="muted">'+esc(s.homeUrl)+'</span></div>'));
-      detail.append(el('<pre>'+esc(JSON.stringify(full, null, 2))+'</pre>'));
+      // Header + a Visual / Raw toggle. Visual = a flow graph (states + navigate edges); Raw = the JSON map.
+      const head = el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong>'+esc(s.id)+'</strong><span class="muted" style="flex:1">'+esc(s.homeUrl||'')+'</span><div class="seg"><button class="segbtn active" data-v="visual">Visual</button><button class="segbtn" data-v="raw">Raw</button></div></div>');
+      const body = el('<div></div>');
+      const draw = (view) => {
+        head.querySelectorAll('.segbtn').forEach(b => b.classList.toggle('active', b.dataset.v === view));
+        body.innerHTML = '';
+        if (view === 'raw') { body.append(el('<pre>'+esc(JSON.stringify(full, null, 2))+'</pre>')); }
+        else { body.append(graphView(full.states || [])); }
+      };
+      head.querySelectorAll('.segbtn').forEach(b => b.onclick = () => draw(b.dataset.v));
+      detail.append(head, body);
+      draw('visual');
     };
     rowKeyboard(row, () => row.click());
     list.append(row);
   });
   main.append(list, detail);
+}
+
+// What we KNOW about one page, filtered of noise. The map stores every affordance, but a lot is
+// (a) shared sidebar chrome (Close sidebar / Dark Mode / Switch to Classic / the account switcher)
+// and (b) individual DATA rows captured as mutates ("Demo Report - Jul 8…"). Neither describes the
+// PAGE. This extracts the signal: key actions, search/filters, what it operates on, sub-views.
+const CHROME_RE = /\\b(close sidebar|open sidebar|dark mode|light mode|switch to classic|logo|announcements|help center|dashboards|downloads|reports|analytics agent|admin)\\b/i;
+// a label that looks like a DATA ROW, not a control: contains a date/time or a "- <name>" byline.
+const DATAROW_RE = /\\b(\\d{1,2}:\\d{2}|\\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\b.*(IST|UTC|GMT|AM|PM)|·|—/i;
+const ROWSEL_RE = /press space to toggle|column with header selection|row selection/i;
+// controls that live INSIDE a sub-dialog/widget, not top-level page actions: pagination, chart-
+// axis config, date-range presets, toggles. Real but low-signal for "what can I do here".
+const SUBCTRL_RE = /\\b(first|previous|next|last) page\\b|move .* to secondary axis|remove (ad impressions|revenue|win rate|ecpm|united states)|\\b(daily|monthly|yesterday|custom|last 7 days|last 30 days|last month|this month|this year|mtd|ytd)\\b|select all|clear all|dismiss toast|drilldown|open setup panel|^(layout|category|series|cc|bcc)$/i;
+function pageFacts(state, chromeLabels) {
+  const aff = state.affordances || [];
+  const uniq = (arr) => [...new Set(arr)];
+  // a VALUE, not a control: a bare number (a chosen page-size like "20" — the option clicked in a
+  // dropdown, not an action), a date/number range, a currency, or very long free text.
+  const isValueLike = (s) => /^\\d+$/.test(s.trim()) || /\\d{1,2}\\s?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\\d+:\\d\\d|UTC|IST|\\d{4}-\\d|\\$|%/i.test(s) || s.length > 32;
+  // CHROME is computed from the DATA (a label present on most pages = a shared sidebar/global
+  // control), NOT a hardcoded list — that generically catches this account's "O Overview Merged
+  // Change" workspace-switcher, pagination, "Clear input", etc. without naming them. CHROME_RE is
+  // a small backstop for obvious theme controls on a single-page map.
+  const clean = (label) => label && !(chromeLabels && chromeLabels.has(label)) && !CHROME_RE.test(label) && !ROWSEL_RE.test(label) && !DATAROW_RE.test(label) && !SUBCTRL_RE.test(label) && !isValueLike(label);
+  // OPERATES-ON first (so we can exclude it from actions): domain vocabulary — shadow collection
+  // columns + checkbox fields naming a dimension/metric/column (report's Publisher/Revenue/eCPM).
+  const filtersRaw = ((state.declaredShadow||{}).filters||[]).filter(f => f.field && !ROWSEL_RE.test(f.field) && !CHROME_RE.test(f.field));
+  const columns = uniq(((state.declaredShadow||{}).collections||[]).flatMap(c => c.columns||[]).filter(clean));
+  const checkFields = uniq(filtersRaw.filter(f => f.control==='checkbox').map(f => f.field.replace(/ Renamed Previously .*/,'').trim()).filter(clean));
+  const operatesOn = uniq([...columns, ...checkFields]);
+  const domainSet = new Set(operatesOn);
+  // SEARCH + non-domain, non-checkbox filters (search boxes, selects, date pickers)
+  const filters = filtersRaw.filter(f => clean(f.field) && f.control!=='checkbox' && !/search/i.test(f.field));
+  const hasSearch = filtersRaw.some(f => /search/i.test(f.field)) || aff.some(a => a.kind==='input' && /search/i.test(a.label||''));
+  // key ACTIONS = mutate/reveal controls that are NOT chrome, NOT a domain field (those go under
+  // Operates-on), NOT a value, NOT a sidebar link. This is what you can DO on the page.
+  const actions = uniq(aff.filter(a => (a.kind==='mutate'||a.kind==='reveal') && clean(a.label)
+    && !domainSet.has(a.label)).map(a => a.label));
+  // SUB-VIEWS = self-loop nav (Table/Charts, Nested/Flat)
+  const subviews = uniq(aff.filter(a => a.kind==='navigate' && a.toState===state.id).map(a => a.label));
+  const counts = { navigate:0, reveal:0, mutate:0, input:0 };
+  aff.forEach(a => { if (counts[a.kind]!==undefined) counts[a.kind]++; });
+  return { actions, hasSearch, filters, operatesOn, subviews, counts };
+}
+
+// ---------- VISUAL GRAPH (zero-dep SVG, LAYERED TREE) ----------
+// A website is a HIERARCHY, not a peer-mesh: a hub → sections (report-list / dashboard-list /
+// downloads / help / announcements) → detail pages (a report, a dashboard) → deeper. The
+// "every page links to every other page" edges are just the SHARED SIDEBAR present on every
+// page — that's chrome, not structure, and drawing it as edges made a hairball (the radial
+// version's failure). So: SUPPRESS the sidebar mesh, keep only STRUCTURAL edges (a link from
+// few pages to a specific target), and lay the result out top-down by depth. The shared sidebar
+// is stated once as a caption, not 30 crossing lines.
+function graphView(states) {
+  const lbl = (s) => s.semanticName || (s.id||'').split(':').pop();
+  const byId = {}; states.forEach(s => byId[s.id] = s);
+  const idLbl = (id) => byId[id] ? lbl(byId[id]) : (id||'').split(':').pop();
+  const names = states.map(lbl);
+  const N = names.length;
+  if (!N) return el('<div class="empty">no states to graph</div>');
+  const svgEsc = (x) => String(x).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  // HIERARCHY IS READ FROM THE MAP, not guessed. Each state carries role + parentState, set at
+  // analyse time from the observed nav structure (a link on most pages = shared sidebar; a page
+  // reached only via a content link = a child). The viewer just lays it out — no frequency/URL
+  // heuristics here. parentState is a full id; map it to a label.
+  const parentLbl = (s) => (s.parentState && byId[s.parentState]) ? lbl(byId[s.parentState]) : null;
+  // structural (parent→child) edges come straight from parentState. Keep the drill-in link label
+  // by matching the parent's navigate affordance that points at this child.
+  const structural = [];
+  states.forEach(s => { const p = parentLbl(s); if (!p) return;
+    const parentSt = states.find(x => lbl(x) === p);
+    const via = (parentSt?.affordances || []).find(a => a.kind === 'navigate' && idLbl(a.toState) === lbl(s));
+    structural.push({ from: p, to: lbl(s), via: via ? (via.label || via.semanticStep || '') : '' });
+  });
+  const selfBy = {};
+  states.forEach(s => (s.affordances||[]).forEach(a => { if (a.kind === 'navigate' && a.toState && idLbl(a.toState) === lbl(s)) (selfBy[lbl(s)] = selfBy[lbl(s)] || []).push(a.label || a.semanticStep || ''); }));
+  // the shared sidebar = the distinct link labels that reach a SECTION (a parentless state) from
+  // more than one page — surfaced as a caption, not drawn.
+  const sectionSet = new Set(states.filter(s => !parentLbl(s)).map(lbl));
+  const sidebarLabels = [...new Set(states.flatMap(s => (s.affordances||[])
+    .filter(a => a.kind === 'navigate' && a.toState && sectionSet.has(idLbl(a.toState)) && idLbl(a.toState) !== lbl(s))
+    .map(a => a.label || '')))].filter(v => v && !/\b(logo|home)\b/i.test(v));
+
+  // LAYOUT: synthetic hub row 0; sections (no parent) row 1; a child sits one row below its
+  // parent — depth = length of the parentState chain.
+  const ROOT = '⌂ ' + (states[0] ? (states[0].id.split(':')[0]) : 'site');
+  const depthOf = (s, guard) => { let d = 1, cur = s, g = 0; while (parentLbl(cur) && g++ < 20) { const p = states.find(x => lbl(x) === parentLbl(cur)); if (!p) break; d++; cur = p; } return d; };
+  const depth = {}; names.forEach(n => { const s = states.find(x => lbl(x) === n); depth[n] = depthOf(s); });
+  const maxDepth = Math.max(1, ...Object.values(depth));
+
+  // LAYOUT: rows top→down, nodes spread across each row.
+  const NW = 158, NH = 48, rowGap = 118, colGap = 22, padX = 30, padTop = 54;  // taller box: name + summary line
+  const byRow = {}; for (let d=0; d<=maxDepth; d++) byRow[d] = [];
+  byRow[0] = [ROOT];
+  names.forEach(n => byRow[depth[n]].push(n));
+  const rowW = (r) => r.length * NW + (r.length-1) * colGap;
+  const maxRowW = Math.max(...Object.values(byRow).map(rowW));
+  const W = Math.max(560, maxRowW + padX*2), H = padTop + (maxDepth)*rowGap + NH + 40;
+  const pos = {};
+  for (let d=0; d<=maxDepth; d++){ const r=byRow[d]; const startX=(W - rowW(r))/2; r.forEach((n,i)=>{ pos[n]={x:startX + i*(NW+colGap) + NW/2, y:padTop + d*rowGap}; }); }
+
+  // edge from parent-center-bottom to child-center-top (clean vertical-ish flow, no center cross)
+  const link = (from,to,cls,label) => {
+    const a=pos[from], b=pos[to]; if(!a||!b) return '';
+    const ay=a.y+NH/2, by=b.y-NH/2, midY=(ay+by)/2;
+    const d='M '+a.x+' '+ay+' C '+a.x+' '+midY+', '+b.x+' '+midY+', '+b.x+' '+by;
+    const stroke = cls==='struct' ? 'var(--accent)' : 'var(--border)';
+    const sw = cls==='struct' ? 2 : 1.2;
+    let out = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none" marker-end="url(#'+(cls==='struct'?'ga':'gm')+')"'+(cls!=='struct'?' opacity="0.6"':'')+'/>';
+    if (label) out += '<text x="'+((a.x+b.x)/2)+'" y="'+(midY-3)+'" fill="var(--fg)" font-size="10" text-anchor="middle" paint-order="stroke" stroke="var(--bg-sunken)" stroke-width="3.5">'+svgEsc(label.length>24?label.slice(0,23)+'…':label)+'</text>';
+    return out;
+  };
+
+  let s = '<svg class="graph" viewBox="0 0 '+W+' '+H+'" width="100%" preserveAspectRatio="xMidYMid meet">';
+  s += '<defs><marker id="ga" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--accent)"/></marker>'
+     + '<marker id="gm" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 z" fill="var(--border)"/></marker></defs>';
+  // root → sections (faint, unlabeled — it's just "these are the sections")
+  byRow[1].forEach(n => { s += link(ROOT, n, 'sect', ''); });
+  // structural edges (bold, labeled) — parent → child (from stored parentState)
+  structural.forEach(e => { if (pos[e.from] && pos[e.to]) s += link(e.from, e.to, 'struct', e.via); });
+  // per-node facts (filtered) → a compact ONE-LINE summary shown under the name.
+  // CHROME LABELS = any affordance label present on ≥60% of pages (a shared sidebar/global
+  // control — the account switcher, pagination, Clear input, …). Computed from the data, so it
+  // catches site-specific chrome no hardcoded list would (e.g. "O Overview Merged Change").
+  const labelPages = {};
+  states.forEach(s => { const seen = new Set(); (s.affordances||[]).forEach(a => { if (a.label && !seen.has(a.label)) { seen.add(a.label); labelPages[a.label] = (labelPages[a.label]||0)+1; } }); });
+  const chromeCut2 = Math.max(3, Math.ceil(states.length * 0.6));
+  const chromeLabels = new Set(Object.entries(labelPages).filter(([,c]) => c >= chromeCut2).map(([l]) => l));
+  const factsBy = {}; states.forEach(st => factsBy[lbl(st)] = pageFacts(st, chromeLabels));
+  const summaryLine = (n) => { const f = factsBy[n]; if (!f) return '';
+    const bits = [];
+    if (f.actions.length) bits.push(f.actions.length + (f.actions.length===1?' action':' actions'));
+    if (f.hasSearch) bits.push('search');
+    if (f.operatesOn.length) bits.push(f.operatesOn.length + ' fields');
+    if (f.subviews.length) bits.push(f.subviews.length + ' views');
+    return bits.join(' · ');
+  };
+  // nodes (root first, then states). NH grows to fit the summary line.
+  const drawNode = (n, isRoot) => { const p=pos[n]; const summ = isRoot ? '' : summaryLine(n);
+    let g = '<g class="gnode" data-state="'+svgEsc(n)+'" tabindex="0" role="button" style="cursor:pointer">';
+    g += '<rect x="'+(p.x-NW/2)+'" y="'+(p.y-NH/2)+'" width="'+NW+'" height="'+NH+'" rx="8" fill="var(--panel)" stroke="'+(isRoot?'var(--muted)':'var(--accent)')+'" stroke-width="1.5"'+(isRoot?' stroke-dasharray="4 3"':'')+'/>';
+    g += '<text x="'+p.x+'" y="'+(p.y+(summ?-3:4))+'" fill="var(--fg)" font-size="12" font-weight="600" text-anchor="middle">'+svgEsc(n)+'</text>';
+    if (summ) g += '<text x="'+p.x+'" y="'+(p.y+13)+'" fill="var(--muted)" font-size="9" text-anchor="middle">'+svgEsc(summ)+'</text>';
+    return g + '</g>'; };
+  s += drawNode(ROOT, true);
+  names.forEach(n => { s += drawNode(n, false); });
+  s += '</svg>';
+
+  const sidebarNote = sidebarLabels.length
+    ? '<div class="gnote">Every page also shares a common sidebar (' + sidebarLabels.map(svgEsc).join(' · ') + ') — omitted here to show real structure.</div>'
+    : '';
+  const wrap = el('<div class="graphwrap">'+s+sidebarNote
+    + '<div class="glegend"><span><i class="dot acc"></i> navigates to a specific page</span><span><i class="dot mut"></i> section of the hub</span><span>↻ in-page sub-view</span><span class="muted">click a page for details</span></div>'
+    + '<div class="gpanel" style="display:none"></div></div>');
+  // click a node → render its full filtered facts into the panel
+  const panel = wrap.querySelector('.gpanel');
+  const openPanel = (name) => {
+    const st = states.find(x => lbl(x) === name); if (!st) { panel.style.display='none'; return; }
+    const f = factsBy[name];
+    const chips = (items) => items.length ? items.map(x => '<span class="chip">'+esc(x)+'</span>').join('') : '<span class="muted">—</span>';
+    const sec = (title, inner) => '<div class="psec"><div class="ptitle">'+title+'</div>'+inner+'</div>';
+    let html = '<div class="phead"><strong>'+esc(name)+'</strong> <span class="badge '+(st.role==='detail'?'origin-manual':'ok')+'">'+esc(st.role||'page')+'</span>'
+      + (st.parentState ? ' <span class="muted">under '+esc((st.parentState||'').split(':').pop())+'</span>' : '')
+      + '<button class="btn" style="float:right;padding:1px 8px" data-close>✕</button></div>';
+    html += '<div class="muted" style="font-size:12px;margin-bottom:8px">'+esc(st.urlPattern||'')+'</div>';
+    const actShown = f.actions.slice(0, 24);
+    html += sec('Key actions ('+f.actions.length+')', '<div class="chips">'+chips(actShown)
+      + (f.actions.length > actShown.length ? '<span class="chip muted">+'+(f.actions.length-actShown.length)+' more</span>' : '')+'</div>');
+    if (f.hasSearch || f.filters.length) html += sec('Search & filters', '<div class="chips">'+(f.hasSearch?'<span class="chip">🔍 search</span>':'')+chips(f.filters.filter(x=>!/search/i.test(x.field)).map(x=>x.field+' ('+x.control+')'))+'</div>');
+    if (f.operatesOn.length) html += sec('Operates on ('+f.operatesOn.length+')', '<div class="chips">'+chips(f.operatesOn)+'</div>');
+    if (f.subviews.length) html += sec('In-page sub-views', '<div class="chips">'+chips(f.subviews)+'</div>');
+    html += sec('Affordances', '<span class="muted" style="font-size:12px">'+f.counts.navigate+' navigate · '+f.counts.reveal+' reveal · '+f.counts.mutate+' mutate · '+f.counts.input+' input</span>');
+    panel.innerHTML = html; panel.style.display='';
+    panel.querySelector('[data-close]').onclick = () => { panel.style.display='none'; };
+  };
+  wrap.querySelectorAll('.gnode').forEach(g => {
+    const name = g.getAttribute('data-state');
+    if (name.indexOf('⌂') === 0) return;   // root isn't a real page
+    g.onclick = () => openPanel(name);
+    g.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); openPanel(name); } });
+  });
+  return wrap;
 }
 
 // ---------- PROFILES (named, shared logged-in browser states) ----------
@@ -141,7 +495,10 @@ async function renderProfiles() {
   const profs = await getJSON('/api/profiles');
   main.innerHTML = '';
   const wrap = el('<div></div>');
-  wrap.append(el('<div class="cat-head">Named browser profiles — a logged-in state kept on disk (Cloudflare / SSO / 2FA done once by hand). Every session under a profile reuses its login; a walk reuses it via <code class="val">--profile &lt;name&gt;</code>. New sessions use <code class="val">default</code>.</div>'));
+  // Title only + info icon (project rule: no descriptive subtitle prose; explanation behind an
+  // info affordance — matches the badge+title pattern used elsewhere). Was a ~190-char paragraph
+  // forced into the tiny-uppercase eyebrow style (critique A, P1).
+  wrap.append(el('<h2 style="font-size:15px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:6px">Browser profiles <span class="info" title="A logged-in browser state kept on disk (Cloudflare / SSO / 2FA done once by hand). Every session under a profile reuses its login; a walk reuses it via --profile &lt;name&gt;. New sessions use default." aria-label="about profiles">&#9432;</span></h2>'));
   const newBar = el('<div style="display:flex;gap:8px;margin:8px 0"><button class="btn">+ New profile</button></div>');
   newBar.querySelector('button').onclick = async () => {
     const name = prompt('New profile name (e.g. default, work-google):', 'default');
@@ -315,52 +672,61 @@ let rowEls = {};         // sessionId → its list row (for in-place refresh, no
 let detailCtx = null;    // { r, headBox, stepsBox, logsBox, subTab } for the open detail
 let lastLogT = 0;
 
+// Sessions tab = list-PRIMARY (full width). Selecting a session swaps in a breadcrumb +
+// full-width detail; the "Sessions" crumb returns to the list. openId (a session id) opens
+// straight into that session's detail (used after New session / a soft re-render on that view).
 async function renderRecordings(openId) {
   clearInterval(replayPoll); replayPoll = null;
-  main.style.gridTemplateColumns = '280px 1fr';
+  main.style.gridTemplateColumns = '1fr';
   const recs = await getJSON('/api/recordings');
   try { winSession = (await getJSON('/api/recordings/window')).session; } catch { winSession = null; }
   main.innerHTML = '';
   rowEls = {}; detailCtx = null;
-  const list = el('<div class="list"></div>');
-  const detail = el('<div class="detail"><div class="empty">open a window above, or select a recording</div></div>');
-  list.append(newRecordingCard());
-  let reopen = null;
+  // If asked to open a specific session (and it exists), go straight to its detail view.
+  if (openId && recs.some(r => r.sessionId === openId)) { openDetail(recs.find(r => r.sessionId === openId)); startEvents(); return; }
+
+  const wrap = el('<div class="listwrap fade"></div>');
   const selected = new Set();
-  const bulkBar = el('<div style="display:none;padding:8px 12px;border-bottom:1px solid var(--border)"><button class="btn danger">Delete selected</button></div>');
+  // Toolbar (FIXED height — its contents toggle, they never insert into the list, so the
+  // list NEVER reflows/shifts when you select a row). Left: count / "N selected". Right:
+  // Delete-selected (shown only when a selection exists) · Clear all · + New session.
+  const bar = el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:32px">'
+    + '<span class="muted bar-count" style="font-size:13px"></span><span style="flex:1"></span>'
+    + '<button class="btn danger bar-delsel" style="padding:2px 10px;display:none"></button>'
+    + (recs.length ? '<button class="btn danger bar-clear" style="padding:2px 10px">Clear all</button>' : '')
+    + '<button class="btn bar-new" style="padding:2px 10px">+ New session</button></div>');
+  wrap.append(bar);
+  const setCount = () => { bar.querySelector('.bar-count').textContent = selected.size
+    ? selected.size+' selected' : recs.length+' session'+(recs.length===1?'':'s'); };
   const syncBulk = () => {
-    bulkBar.style.display = selected.size ? '' : 'none';
-    bulkBar.querySelector('button').textContent = 'Delete selected ('+selected.size+')';
+    const b = bar.querySelector('.bar-delsel');
+    b.style.display = selected.size ? '' : 'none';
+    b.textContent = 'Delete selected ('+selected.size+')';
+    setCount();
   };
-  bulkBar.querySelector('button').onclick = async () => {
+  setCount();
+  bar.querySelector('.bar-delsel').onclick = async () => {
     if (!confirm('Delete '+selected.size+' session(s)?')) return;
     for (const id of selected) await fetch('/api/recordings/'+encodeURIComponent(id), { method:'DELETE' });
     renderRecordings();
   };
-  list.append(bulkBar);
-  if (recs.length) {
-    // Clear-all: a header row above the sessions. Typed confirm — it wipes every
-    // session's steps/videos/reviews (destructive, no undo).
-    const clearBar = el('<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)"><span class="muted" style="font-size:12px">'+recs.length+' session'+(recs.length===1?'':'s')+'</span><button class="btn danger" style="padding:2px 8px">Clear all</button></div>');
-    clearBar.querySelector('button').onclick = async () => {
-      if (prompt('Delete ALL '+recs.length+' sessions (steps, videos, reviews)? This cannot be undone. Type "delete all" to confirm:') !== 'delete all') return;
-      for (const rr of recs) await fetch('/api/recordings/'+encodeURIComponent(rr.sessionId), { method:'DELETE' });
-      renderRecordings();
-    };
-    list.append(clearBar);
-  }
+  const clearBtn = bar.querySelector('.bar-clear');
+  if (clearBtn) clearBtn.onclick = async () => {
+    if (prompt('Delete ALL '+recs.length+' sessions (steps, videos, reviews)? This cannot be undone. Type "delete all" to confirm:') !== 'delete all') return;
+    for (const rr of recs) await fetch('/api/recordings/'+encodeURIComponent(rr.sessionId), { method:'DELETE' });
+    renderRecordings();
+  };
+  bar.querySelector('.bar-new').onclick = () => openNewSessionDialog();
+
+  const list = el('<div class="list"></div>');
   recs.forEach(r => {
-    const row = el('<div class="row" style="display:flex;align-items:center;gap:8px"><input type="checkbox" style="width:auto" /><div style="flex:1"><div class="name"></div><div class="meta"></div></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
+    const row = el('<div class="srow"><input type="checkbox" style="width:auto" aria-label="select" /><div class="nm"></div><div class="col site"></div><div class="col steps r"></div><div class="col vid r"></div><div class="col date r"></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
     rowEls[r.sessionId] = row;
     fillRow(row, r);
-    row.onclick = () => showRecording(r, detail, list, row);
+    row.onclick = () => openDetail(r);
     rowKeyboard(row, () => row.click());
     const cb = row.querySelector('input[type=checkbox]');
-    cb.onclick = (e) => {
-      e.stopPropagation();
-      if (cb.checked) selected.add(r.sessionId); else selected.delete(r.sessionId);
-      syncBulk();
-    };
+    cb.onclick = (e) => { e.stopPropagation(); if (cb.checked) selected.add(r.sessionId); else selected.delete(r.sessionId); syncBulk(); };
     row.querySelector('button.danger').onclick = async (e) => {
       e.stopPropagation();
       if (!confirm('Delete session '+r.sessionId+'?')) return;
@@ -368,22 +734,52 @@ async function renderRecordings(openId) {
       renderRecordings();
     };
     list.append(row);
-    if (openId && r.sessionId === openId) reopen = () => showRecording(r, detail, list, row);
   });
-  if (!recs.length) list.append(el('<div class="empty">no sessions yet</div>'));
-  main.append(list, detail);
-  if (reopen) reopen();
+  if (!recs.length) list.append(el('<div class="empty">No sessions yet. Click <strong>+ New session</strong> to record one.</div>'));
+  wrap.append(list);
+  main.append(wrap);
   startEvents();
+}
+
+// Drill into ONE session: breadcrumb + full-width detail (list hidden). "Sessions" returns.
+function openDetail(r) {
+  main.style.gridTemplateColumns = '1fr';
+  main.innerHTML = '';
+  const wrap = el('<div class="listwrap fade"></div>');
+  const crumbs = el('<div class="crumbs"><a tabindex="0">Sessions</a><span class="sep">/</span><span class="cur"></span></div>');
+  crumbs.querySelector('.cur').textContent = r.sessionId;
+  const back = crumbs.querySelector('a');
+  back.onclick = () => renderRecordings();
+  back.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); renderRecordings(); } });
+  const detail = el('<div class="detail"></div>');
+  wrap.append(crumbs, detail);
+  main.append(wrap);
+  showRecording(r, detail);
 }
 function originTag(origin) {
   const agent = origin === 'agent';
-  const c = agent ? '#5b9dff' : '#8b93a3';
-  return '<span style="border:1px solid '+c+';color:'+c+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+(agent?'Agent':'Manual')+'</span>';
+  return '<span class="badge origin-'+(agent?'agent':'manual')+'">'+(agent?'Agent':'Manual')+'</span>';
+}
+// Capture-review badge from the stored verdict (webnav dev review). Verified (green) = zero
+// gaps, graph-ready; needs-fix (amber, with gap count) = review found capture gaps; nothing =
+// never reviewed. Titled with the verdict reason so hovering explains WHY.
+// Three states, all shown (so failed captures are VISIBLE, not just absent-of-green):
+//  approved → ✓ Verified (green) · reviewed-but-not-approved → ⚠ Failed N gaps (red) ·
+//  never reviewed → Unverified (grey). Only APPROVED sessions build the graph (approval gate).
+function reviewBadge(review) {
+  if (!review) return '<span class="badge unrev" title="not reviewed yet — run a review before building a graph from it">Unverified</span>';
+  if (review.approved) return '<span class="badge ok" title="'+esc(review.reason||'all on-screen actions captured')+'">✓ Verified</span>';
+  const n = review.gaps || 0;
+  return '<span class="badge fail" title="'+esc(review.reason||'capture gaps found — not used to build the graph')+'">⚠ Failed'+(n?' · '+n+' gap'+(n===1?'':'s'):'')+'</span>';
 }
 function fillRow(row, r) {
-  row.querySelector('.name').innerHTML = esc(r.sessionId)+' '+originTag(r.origin)+(r.active?' <span style="color:var(--rec)" class="pulse">●</span>':'');
-  const vid = r.videoCount ? ' · \\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N when takes exist
-  row.querySelector('.meta').textContent = (r.site||'?')+' · '+r.steps+' steps'+vid+' · '+new Date(r.startedAt).toLocaleString();
+  // name column: recording dot (if active) + name + Agent/Manual + Verified badges, on ONE line.
+  row.querySelector('.nm').innerHTML = (r.active ? '<span style="color:var(--rec)" class="pulse">●</span>' : '')
+    + '<span class="t">'+esc(r.sessionId)+'</span>'+originTag(r.origin)+reviewBadge(r.review);
+  const site = row.querySelector('.col.site'); if (site) site.textContent = r.site || '—';
+  const steps = row.querySelector('.col.steps'); if (steps) steps.textContent = r.steps+' step'+(r.steps===1?'':'s');
+  const vid = row.querySelector('.col.vid'); if (vid) vid.innerHTML = r.videoCount ? '\\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N
+  const date = row.querySelector('.col.date'); if (date) date.textContent = new Date(r.startedAt).toLocaleDateString();
 }
 
 // SOFT refresh (no flicker): update rows + the open detail's header IN PLACE.
@@ -395,10 +791,14 @@ async function softRefresh(kind) {
     recs = await getJSON('/api/recordings');
     winSession = (await getJSON('/api/recordings/window')).session;
   } catch { return; }
-  const ids = recs.map(r => r.sessionId).sort().join('|');
-  const anyChecked = [...document.querySelectorAll('.list input[type=checkbox]')].some(c => c.checked);
-  if (ids !== Object.keys(rowEls).sort().join('|')) { if (!anyChecked) renderRecordings(currentOpenId); return; }
-  recs.forEach(r => { const row = rowEls[r.sessionId]; if (row) fillRow(row, r); });
+  // DETAIL open: the list isn't rendered (rowEls empty) — just refresh the open header below,
+  // don't run the list-set diff (it would spuriously full-re-render every tick).
+  if (!detailCtx) {
+    const ids = recs.map(r => r.sessionId).sort().join('|');
+    const anyChecked = [...document.querySelectorAll('.list input[type=checkbox]')].some(c => c.checked);
+    if (ids !== Object.keys(rowEls).sort().join('|')) { if (!anyChecked) renderRecordings(); return; }
+    recs.forEach(r => { const row = rowEls[r.sessionId]; if (row) fillRow(row, r); });
+  }
   if (detailCtx) {
     const fresh = recs.find(r => r.sessionId === detailCtx.r.sessionId);
     if (fresh) {
@@ -428,25 +828,47 @@ function startEvents() {
   };
 }
 
-function newRecordingCard() {
-  const card = el('<div style="padding:12px;border-bottom:1px solid var(--border)"><div class="cat-head">New session</div><div class="addrow" style="display:flex;flex-direction:column;gap:6px"><input placeholder="session name" /><input placeholder="start url (optional — blank window, navigate yourself)" /><label class="muted" style="font-size:12px">profile <input placeholder="default" style="width:140px;margin:0 0 0 4px" /> <span title="which saved login to run under; leave as default. Empty = throwaway (no saved login).">(logged-in state reused; blank = throwaway)</span></label><button class="btn">Open window &amp; record</button></div><div class="muted" id="openmsg" style="font-size:12px;margin-top:6px"></div></div>');
-  const [sessIn, urlIn, profIn] = card.querySelectorAll('input');
-  // default name (editable): s-MMDDHHMMSS — SHORT on purpose: the playwright-cli
-  // daemon socket path embeds the session name and macOS caps socket paths at
-  // ~104 chars (live failure: 'session-0708-134206' overflowed → listen EINVAL).
+// New session as a native <dialog> MODAL (impeccable: use <dialog>, not an absolute div; it
+// escapes the stacking context + gives a backdrop + Esc-to-close for free). Collect name/url/
+// profile → open the window → close → drill STRAIGHT into that session's detail page.
+function openNewSessionDialog() {
+  document.getElementById('newdlg')?.remove();
   const d = new Date(), p2 = (x) => String(x).padStart(2, '0');
-  sessIn.value = 's-' + p2(d.getMonth()+1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
-  profIn.value = 'default';   // common case: every session shares the 'default' login
-  card.querySelector('button').onclick = async () => {
-    const msg = card.querySelector('#openmsg');
-    if (!sessIn.value) { msg.textContent = 'session name required'; return; }
+  // default name (editable): s-MMDDHHMMSS — SHORT on purpose (playwright-cli daemon socket
+  // path embeds it; macOS caps socket paths ~104 chars — a long name → listen EINVAL).
+  const defName = 's-' + p2(d.getMonth()+1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+  const dlg = el('<dialog id="newdlg" class="dlg">'
+    + '<form method="dialog" class="dlgform">'
+    + '<h2>New session</h2>'
+    + '<label>Session name<input name="sess" autocomplete="off" /></label>'
+    + '<label>Start URL <span class="muted">(optional)</span><input name="url" placeholder="blank window — navigate yourself" autocomplete="off" /></label>'
+    + '<label>Profile <span class="muted">(logged-in state reused; blank = throwaway)</span><input name="prof" autocomplete="off" /></label>'
+    + '<div class="dlgmsg muted"></div>'
+    + '<div class="dlgbtns"><button type="button" class="btn" value="cancel">Cancel</button><button type="button" class="btn primary" value="go">Open window &amp; record</button></div>'
+    + '</form></dialog>');
+  document.body.append(dlg);
+  const sessIn = dlg.querySelector('[name=sess]'), urlIn = dlg.querySelector('[name=url]'), profIn = dlg.querySelector('[name=prof]');
+  sessIn.value = defName; profIn.value = 'default';
+  const msg = dlg.querySelector('.dlgmsg');
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelector('[value=cancel]').onclick = close;
+  dlg.addEventListener('cancel', close);   // Esc
+  const go = async () => {
+    if (!sessIn.value.trim()) { msg.textContent = 'session name required'; sessIn.focus(); return; }
     const profile = profIn.value.trim();   // blank → throwaway (persistent:false)
+    msg.textContent = 'opening window…';
     const r = await fetch('/api/recordings/open', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value, persistent: !!profile, profile: profile || undefined }) });
-    msg.textContent = r.ok ? 'window opened — RECORDING (red border). Stop here or via the pill in the window.' : (await r.json()).error;
-    if (r.ok) setTimeout(() => renderRecordings(sessIn.value), 400);
+      body: JSON.stringify({ url: urlIn.value || 'about:blank', session: sessIn.value.trim(), persistent: !!profile, profile: profile || undefined }) });
+    if (!r.ok) { msg.textContent = (await r.json()).error || 'failed to open'; return; }
+    const id = sessIn.value.trim();
+    close();
+    // drill STRAIGHT into the new session's detail page (its window is opening + recording).
+    setTimeout(() => renderRecordings(id), 400);
   };
-  return card;
+  dlg.querySelector('[value=go]').onclick = go;
+  sessIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+  dlg.showModal();
+  sessIn.focus(); sessIn.select();
 }
 
 // The detail header: state + action buttons. Rebuilt IN PLACE on state changes.
@@ -604,7 +1026,7 @@ async function loadReview(ctx) {
   const runB = bar.querySelector('button');
   const modelSel = bar.querySelector('select');
   modelSel.value = ['sonnet','opus','haiku'].includes(cfg.model) ? cfg.model : 'sonnet';
-  const instrWrap = el('<div style="display:none;margin-bottom:10px"><div class="cat-head">Agent instructions (editable — saved as default for future runs)</div><textarea style="width:100%;min-height:180px;background:#0b0d11;border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:8px;font:12px ui-monospace,monospace"></textarea></div>');
+  const instrWrap = el('<div style="display:none;margin-bottom:10px"><div class="cat-head">Agent instructions (editable — saved as default for future runs)</div><textarea style="width:100%;min-height:180px;background:var(--bg-sunken);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:8px;font:12px ui-monospace,monospace"></textarea></div>');
   instrWrap.querySelector('textarea').value = cfg.instructions || '';
   bar.querySelector('[data-k=instr]').onclick = () => { instrWrap.style.display = instrWrap.style.display === 'none' ? '' : 'none'; };
   runB.onclick = async () => {
@@ -622,17 +1044,31 @@ async function loadReview(ctx) {
   }
   if (state && state.report) {
     const when = state.at ? new Date(state.at).toLocaleString() : '';
-    ctx.reviewBox.append(el('<div class="muted" style="font-size:12px;margin:6px 0">last run: '+esc(when)+'</div>'));
-    ctx.reviewBox.append(el('<div style="border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px">'+mdToHtml(state.report)+'</div>'));
+    // VERDICT-FIRST: a clear outcome banner (the answer at a glance), then the gap list, then the
+    // long prose report tucked behind an expander (it read as a wall of text before).
+    const v = state.verdict;
+    if (v) {
+      const ok = v.approved, n = v.gaps || 0;
+      const cls = ok ? 'ok' : 'fail';
+      const head = ok ? '✓ Verified — capture is complete' : ('⚠ Failed — '+n+' capture gap'+(n===1?'':'s'));
+      const sub = ok ? 'This session is APPROVED and eligible to build the graph.'
+                     : 'NOT approved — this session is excluded from graph building until it passes.';
+      ctx.reviewBox.append(el('<div class="verdict '+cls+'"><div class="vh">'+esc(head)+'</div>'
+        + '<div class="vs">'+esc(sub)+'</div><div class="vm">reviewed '+esc(when)+(v.reason?' · '+esc(v.reason):'')+'</div></div>'));
+    } else {
+      ctx.reviewBox.append(el('<div class="muted" style="font-size:12px;margin:6px 0">last run: '+esc(when)+'</div>'));
+    }
+    // full prose report behind a <details> expander (collapsed by default)
+    const rep = el('<details class="reprep"><summary>Full review report</summary><div class="repbody">'+mdToHtml(state.report)+'</div></details>');
+    ctx.reviewBox.append(rep);
   } else if (!state || !state.running) {
     ctx.reviewBox.append(el('<div class="empty">no review yet — run one above</div>'));
   }
 }
 
-async function showRecording(r, detail, list, row) {
+async function showRecording(r, detail) {
   currentOpenId = r.sessionId;
   clearInterval(replayPoll); replayPoll = null;
-  list.querySelectorAll('.row').forEach(x => x.classList.remove('active')); row.classList.add('active');
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
   const headBox = el('<div style="margin-bottom:10px"></div>');
@@ -704,12 +1140,12 @@ async function loadVideos(ctx) {
 function stepTable(steps, session) {
   const t = el('<table><tbody></tbody></table>'); const tb = t.querySelector('tbody');
   const ICON = { ok: '✓', fail: '✗', running: '▶', jumped: '↪', skipped: '⊘', pending: '·', '': '' };
-  const KIND = { input: ['input', '#5b9dff'], click: ['click', '#8b93a3'], navigate: ['nav', 'var(--ok)'], jump: ['jump', 'var(--ok)'], observe: ['page', '#8b93a3'] };
+  const KIND = { input: ['input', 'var(--accent)'], click: ['click', 'var(--muted)'], navigate: ['nav', 'var(--ok)'], jump: ['jump', 'var(--ok)'], observe: ['page', 'var(--muted)'] };
   const pathOf = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return u || ''; } };
   steps.forEach(s => {
-    const color = s.status==='ok'?'var(--ok)':s.status==='fail'?'#ff6b6b':'var(--muted)';
-    const [kLabel, kColor] = KIND[s.kind] || [s.kind || '', '#8b93a3'];
-    const kindChip = kLabel ? '<span style="border:1px solid '+kColor+';color:'+kColor+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+esc(kLabel)+'</span>' : '';
+    const color = s.status==='ok'?'var(--ok)':s.status==='fail'?'var(--danger)':'var(--muted)';
+    const [kLabel, kColor] = KIND[s.kind] || [s.kind || '', 'var(--muted)'];
+    const kindChip = kLabel ? '<span style="display:inline-block;white-space:nowrap;border:1px solid '+kColor+';color:'+kColor+';border-radius:4px;padding:0 5px;font-size:10px;text-transform:uppercase">'+esc(kLabel)+'</span>' : '';
     const val = (s.kind === 'input' && s.value !== undefined && s.value !== null)
       ? ' <code class="val" style="color:var(--warn)">= "'+esc(String(s.value))+'"</code>' : '';
     const dest = s.kind === 'navigate' || s.kind === 'jump'
@@ -718,7 +1154,7 @@ function stepTable(steps, session) {
     const when = s.capturedAt ? new Date(s.capturedAt).toLocaleTimeString() : '';
     const shot = s.shot && session ? '<img src="/replays/'+encodeURIComponent(session)+'/'+encodeURIComponent(s.shot)+'" style="height:44px;border-radius:4px;border:1px solid var(--border)" />' : '';
     const note = s.note ? ' <span class="muted">('+esc(s.note)+')</span>' : '';
-    tb.append(el('<tr><td style="width:22px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td style="width:52px">'+kindChip+'</td><td><div>'+esc(s.label||('step '+s.seq))+val+note+'</div>'+dest+'</td><td class="muted" style="width:90px;font-size:11px">'+esc(when)+'</td><td style="text-align:right">'+shot+'</td></tr>'));
+    tb.append(el('<tr><td style="width:22px;color:'+color+'">'+(ICON[s.status]||'')+'</td><td style="width:62px">'+kindChip+'</td><td><div>'+esc(s.label||('step '+s.seq))+val+note+'</div>'+dest+'</td><td class="muted" style="width:90px;font-size:11px;white-space:nowrap">'+esc(when)+'</td><td style="text-align:right">'+shot+'</td></tr>'));
   });
   return t;
 }
@@ -741,7 +1177,7 @@ function pollReplay(box, session) {
       save.onclick = () => ctl('supply')({ value: inp.value, save: true });
       prompt.append(p);
     } else if (st.waiting === 'confirm') {
-      const p = el('<div class="addrow" style="margin:8px 0"><span style="color:#ff6b6b">\\u26A0 \\u201C'+esc(st.waitingLabel||'')+'\\u201D looks like a commit (order/pay/delete). Fire it?</span> <button class="btn danger">Fire</button><button class="btn">Skip</button></div>');
+      const p = el('<div class="addrow" style="margin:8px 0"><span style="color:var(--danger)">\\u26A0 \\u201C'+esc(st.waitingLabel||'')+'\\u201D looks like a commit (order/pay/delete). Fire it?</span> <button class="btn danger">Fire</button><button class="btn">Skip</button></div>');
       const [fire, skip] = p.querySelectorAll('button');
       fire.onclick = () => ctl('confirm')({ fire: true }); skip.onclick = () => ctl('confirm')({ fire: false });
       prompt.append(p);

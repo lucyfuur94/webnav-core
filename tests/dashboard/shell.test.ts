@@ -8,7 +8,40 @@ describe('SHELL_HTML', () => {
     expect(SHELL_HTML.startsWith('<!DOCTYPE html>')).toBe(true);
     expect(SHELL_HTML).toContain('<html lang="en">');
     expect(SHELL_HTML).toContain('</html>');
-    expect(SHELL_HTML).toContain('<title>webnav dashboard</title>');
+    expect(SHELL_HTML).toContain('<title>webnav</title>');
+  expect(SHELL_HTML).toContain('class="brand"');       // logo mark + wordmark
+  expect(SHELL_HTML).toContain('rel="icon"');           // favicon (inline data-URI)
+  });
+
+  it('light/dark theming: both token sets, pre-paint bootstrap, and a toggle', () => {
+    expect(SHELL_HTML).toContain(':root[data-theme="light"]');   // light companion ramp
+    expect(SHELL_HTML).toContain("data-theme");                   // set on <html>
+    expect(SHELL_HTML).toContain("localStorage.getItem('webnav-theme')"); // persisted choice
+    expect(SHELL_HTML).toContain('id="themebtn"');                // the toggle button
+    expect(SHELL_HTML).toContain('--bg-sunken');                  // tokenized input/code bg (was #0b0d11)
+    // no stray hardcoded theme-color literals leaked outside the two :root token blocks
+    const body = SHELL_HTML.slice(SHELL_HTML.indexOf('* { box-sizing'));
+    expect(body).not.toContain('#0b0d11');   // → var(--bg-sunken)
+    expect(body).not.toContain('#8b93a3');   // → var(--muted)
+  });
+
+  it('review badge shows all THREE states: verified / failed / unverified', () => {
+    expect(SHELL_HTML).toContain('✓ Verified');       // approved (green)
+    expect(SHELL_HTML).toContain('⚠ Failed');          // reviewed-but-not-approved (red)
+    expect(SHELL_HTML).toContain('Unverified');        // never reviewed (grey)
+    expect(SHELL_HTML).toContain('.badge.fail');       // the red style exists
+  });
+
+  it('left-pane nav (sidebar), not a top tab bar', () => {
+    expect(SHELL_HTML).toContain('class="shell"');     // flex shell wrapping nav + main
+    expect(SHELL_HTML).toContain('.shell > nav');      // sidebar styles scoped to direct child
+    expect(SHELL_HTML).toContain('.detail nav');       // detail sub-tabs keep their own horizontal style
+  });
+
+  it('review is verdict-first with a collapsible full report', () => {
+    expect(SHELL_HTML).toContain('class="verdict');    // outcome banner
+    expect(SHELL_HTML).toContain('Full review report'); // prose behind an expander
+    expect(SHELL_HTML).toContain('excluded from graph building'); // failed-verdict copy
   });
 
   it('has the operator tabs: Sessions + Sites + Credentials + Profiles', () => {
@@ -73,10 +106,12 @@ it('detail offers session videos as capture ground-truth', () => {
   expect(SHELL_HTML).toContain('<video controls');
 });
 
-it('Sessions tab: renamed label, bulk delete, default session name', () => {
+it('Sessions tab: renamed label, bulk delete (in toolbar), new-session dialog, default session name', () => {
   expect(SHELL_HTML).toContain('>Sessions</button>');
   expect(SHELL_HTML).toContain('Delete selected');
-  expect(SHELL_HTML).toContain("sessIn.value = 's-'");   // SHORT: macOS ~104-char socket-path cap
+  expect(SHELL_HTML).toContain('openNewSessionDialog');              // + New session opens a modal
+  expect(SHELL_HTML).toContain('dialog id="newdlg"');                 // the native <dialog> modal
+  expect(SHELL_HTML).toContain("const defName = 's-'");              // SHORT: macOS ~104-char socket-path cap
 });
 
 

@@ -1,0 +1,252 @@
+{
+  "meta": {
+    "model": "claude-haiku-4-5",
+    "arms": {
+      "A": "webnav walk",
+      "C": "raw browser (use primitives)"
+    },
+    "metric_note": "toolCalls = agent-visible CLI calls (the cost signal). reachedGoal = arrived w/ live evidence. usedWalk (arm A) = actually used walk vs fell back to manual."
+  },
+  "runs": [
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "A",
+      "trial": 0,
+      "toolCalls": 6,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "C",
+      "trial": 0,
+      "toolCalls": 18,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "A",
+      "trial": 1,
+      "toolCalls": 5,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "C",
+      "trial": 1,
+      "toolCalls": 14,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "A",
+      "trial": 2,
+      "toolCalls": 10,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S2-detail",
+      "arm": "C",
+      "trial": 2,
+      "toolCalls": 28,
+      "reachedGoal": false,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "A",
+      "trial": 0,
+      "toolCalls": 28,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "C",
+      "trial": 0,
+      "toolCalls": 42,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "A",
+      "trial": 1,
+      "toolCalls": 52,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "C",
+      "trial": 1,
+      "toolCalls": 6,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "A",
+      "trial": 2,
+      "toolCalls": 45,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "saucedemo",
+      "taskId": "S3-overview",
+      "arm": "C",
+      "trial": 2,
+      "toolCalls": 127,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "A",
+      "trial": 0,
+      "toolCalls": 8,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "C",
+      "trial": 0,
+      "toolCalls": 10,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "A",
+      "trial": 1,
+      "toolCalls": 8,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "C",
+      "trial": 1,
+      "toolCalls": 8,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "A",
+      "trial": 2,
+      "toolCalls": 15,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "partial"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-detail",
+      "arm": "C",
+      "trial": 2,
+      "toolCalls": 12,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "A",
+      "trial": 0,
+      "toolCalls": 12,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "C",
+      "trial": 0,
+      "toolCalls": 4,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "A",
+      "trial": 1,
+      "toolCalls": 12,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "C",
+      "trial": 1,
+      "toolCalls": 8,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "wrong"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "A",
+      "trial": 2,
+      "toolCalls": 4,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    },
+    {
+      "site": "automationexercise",
+      "taskId": "AE-cart",
+      "arm": "C",
+      "trial": 2,
+      "toolCalls": 4,
+      "reachedGoal": true,
+      "usedWalk": null,
+      "verdict": "correct"
+    }
+  ]
+}

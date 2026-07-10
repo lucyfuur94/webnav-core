@@ -45,7 +45,7 @@ describe('startDashboard', () => {
     const r = await get('/');
     expect(r.headers.get('content-type')).toContain('text/html');
     const html = await r.text();
-    expect(html).toContain('webnav dashboard');
+    expect(html).toContain('<title>webnav</title>');
   });
 
   it('GET /api/sites lists seeded nodes with stateCount', async () => {
