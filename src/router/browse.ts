@@ -2,6 +2,7 @@ import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js';
 import { diffSnapshots, didNavigate } from '../explorer/diff.js';
+import { classifyReadiness } from './readiness.js';
 import type { RecordStore } from '../mapstore/record.js';
 import type { ActionRef } from '../mapstore/record.js';
 
@@ -134,9 +135,20 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
       if (args.text != null) await adapter.fill!(args.action.ref, args.text);
       else await adapter.act!(args.action.ref);
     }
-    const toSnapshot = await adapter.snapshot!();
+    let toSnapshot = await adapter.snapshot!();
     const toUrl = adapter.currentUrl ? await adapter.currentUrl() : args.fromUrl;
     const navigated = didNavigate(args.fromUrl, toUrl);
+    // SETTLE before using the snapshot, but ONLY when the action navigated: a
+    // client-side redirect/late render on the NEW page otherwise records a transient
+    // shell as the page (the ghost-state class of bugs). An in-page mutate/reveal has
+    // no such settledness concern — its snapshot IS the (possibly sparse) diff. Bounded
+    // retry, same gate as agent-session's navigate handler.
+    if (navigated) {
+      for (let i = 0; i < 3 && classifyReadiness(toSnapshot) === 'loading'; i++) {
+        await new Promise((r) => setTimeout(r, 700));
+        toSnapshot = await adapter.snapshot!();
+      }
+    }
     let recorded = false;
     if (args.recordStore.isActive(args.sessionId)) {
       args.recordStore.appendActionEffect(args.sessionId, {

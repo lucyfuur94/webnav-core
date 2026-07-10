@@ -128,6 +128,30 @@ describe('session review verdict (graph-ready gate)', () => {
   });
 });
 
+describe('requestedUrl (pre-settle URL, for redirect-alias inference)', () => {
+  it('persists requestedUrl on effects and returns it from actionEffects', () => {
+    const store = freshStore();
+    store.start('s-req');
+    store.appendActionEffect('s-req', {
+      fromUrl: 'https://x.test/a', fromSnapshot: '- heading "A"', action: null,
+      toUrl: 'https://x.test/v3/1/b', toSnapshot: '- heading "B"', navigated: true,
+      diff: { added: [], removed: [] }, requestedUrl: 'https://x.test/v3/b',
+    });
+    expect(store.actionEffects('s-req')[0].requestedUrl).toBe('https://x.test/v3/b');
+  });
+
+  it('old rows (no requested_url column value) read back as undefined, not null', () => {
+    const store = freshStore();
+    store.start('s-old');
+    store.appendActionEffect('s-old', {
+      fromUrl: 'https://x.test/a', fromSnapshot: '- heading "A"', action: null,
+      toUrl: 'https://x.test/b', toSnapshot: '- heading "B"', navigated: true,
+      diff: { added: [], removed: [] },
+    });
+    expect(store.actionEffects('s-old')[0].requestedUrl).toBeUndefined();
+  });
+});
+
 describe('renameSession (record-rename verb backing)', () => {
   it('renames the session across the row + observations; refuses collision/unknown', () => {
     const s = RecordStore.fromDatabase(new Database(':memory:'));

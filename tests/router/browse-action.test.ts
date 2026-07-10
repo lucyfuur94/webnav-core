@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
 import { runActionRecorded } from '../../src/router/browse.js';
@@ -37,12 +37,47 @@ describe('runActionRecorded', () => {
   it('records a navigation action-effect (navigated=true)', async () => {
     const rec = RecordStore.fromDatabase(new Database(':memory:'));
     rec.start('s');
+    // >=8 nodes with content roles so classifyReadiness sees 'ready' (not 'loading') —
+    // otherwise the settle loop (gated on navigated=true) retries 3x700ms real time.
+    const CART_PAGE = '- heading "Your Cart" [ref=e3]\n- link "Continue Shopping" [ref=e4]\n'
+      + '- button "Checkout" [ref=e5]\n- listitem "Item 1" [ref=e6]\n- listitem "Item 2" [ref=e7]\n'
+      + '- button "Remove" [ref=e8]\n- link "Home" [ref=e9]\n- paragraph "2 items" [ref=e10]';
     await runActionRecorded({
       sessionId: 's', recordStore: rec,
       fromUrl: 'https://x.com/inventory.html', fromSnapshot: BEFORE,
       action: { role: 'link', name: 'cart', ref: 'e9' },
-      adapter: fake('- heading "Your Cart" [ref=e3]', 'https://x.com/cart.html') as any,
+      adapter: fake(CART_PAGE, 'https://x.com/cart.html') as any,
     });
     expect(rec.actionEffects('s')[0].navigated).toBe(true);
+  });
+
+  it('settles a navigated action: retries a loading snapshot before recording (bounded)', async () => {
+    vi.useFakeTimers();
+    try {
+      const rec = RecordStore.fromDatabase(new Database(':memory:'));
+      rec.start('s');
+      const snaps = ['- generic "spinner"', '- heading "Your Cart" [ref=e3]\n- link "Continue Shopping" [ref=e4]\n'
+        + '- button "Checkout" [ref=e5]\n- listitem "Item 1" [ref=e6]\n- listitem "Item 2" [ref=e7]\n'
+        + '- button "Remove" [ref=e8]\n- link "Home" [ref=e9]\n- paragraph "2 items" [ref=e10]'];
+      let call = 0;
+      const adapter = {
+        open: async () => '', close: async () => '', act: async () => {},
+        snapshot: async () => snaps[Math.min(call++, snaps.length - 1)],
+        currentUrl: async () => 'https://x.com/cart.html',
+      };
+      const done = runActionRecorded({
+        sessionId: 's', recordStore: rec,
+        fromUrl: 'https://x.com/inventory.html', fromSnapshot: BEFORE,
+        action: { role: 'link', name: 'cart', ref: 'e9' },
+        adapter: adapter as any,
+      });
+      await vi.runAllTimersAsync();
+      await done;
+      const fx = rec.actionEffects('s')[0];
+      expect(fx.navigated).toBe(true);
+      expect(fx.toSnapshot).toContain('Your Cart');   // settled snapshot, not the spinner
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
 import { runAgentSession, enrichName } from '../../src/recorder/agent-session.js';
 
-const SNAP = 'RootWebArea "P" [ref=e1]\n  button "Login" [ref=e5]\n  textbox "User" [ref=e3]';
+// >=8 nodes with real content roles so classifyReadiness sees this as 'ready' (not
+// 'loading') — otherwise the navigate handler's settle loop would retry 3x700ms real
+// time on every test using this fixture.
+const SNAP = 'RootWebArea "P" [ref=e1]\n  heading "Sign in" [ref=e0]\n  button "Login" [ref=e5]\n  textbox "User" [ref=e3]\n  link "Help" [ref=e6]\n  link "About" [ref=e7]\n  paragraph "Welcome back" [ref=e8]\n  button "Cancel" [ref=e9]';
 
 // Fake adapter: records the calls made, returns canned snapshots/urls.
 // navigateOnActRef: when act() is called with this ref, currentUrl flips to a
@@ -166,6 +169,38 @@ describe('runAgentSession', () => {
     expect(fx[0].action?.hover).toBe(true);
     expect(fx[0].navigated).toBe(false);
     expect(res.steps).toBe(1);
+  });
+
+  it('navigate: settles (retries a loading snapshot) and records requestedUrl', async () => {
+    // fake timers: the settle loop's real setTimeout(700ms) would otherwise make
+    // this test slow; advancing fake time keeps the suite fast + deterministic.
+    vi.useFakeTimers();
+    try {
+      const store = RecordStore.fromDatabase(new Database(':memory:'));
+      store.start('nav-settle');
+      const ad = fakeAdapter();
+      // first snapshot after goto is a sparse loading shell; second is the real page
+      const snaps = ['- generic "spinner"', '- heading "Reports"\n- button "New Report"\n- link "Dashboards"\n- link "Downloads"\n- link "Help"\n- link "Announcements"\n- button "Search"\n- button "Refresh"\n- button "Sort"'];
+      let snapCall = 0;
+      ad.snapshot = async () => snaps[Math.min(snapCall++, snaps.length - 1)];
+      ad.currentUrl = async () => 'https://x.test/v3/1041/report/list';
+      const io = driver(['{"cmd":"navigate","url":"https://x.test/v3/report/list"}', '{"cmd":"quit"}']);
+      const done = runAgentSession({
+        sessionId: 'nav-settle', adapter: ad as never, store: store as never,
+        recover: (_s, ref) => ({ action: { role: '', name: null, ref } }),
+        readLine: io.readLine, write: io.write, notify: () => {},
+        startVideo: async () => {}, stopVideo: async () => null,
+        startUrl: 'https://x.test/',
+      });
+      await vi.runAllTimersAsync();
+      await done;
+      const eff = store.actionEffects('nav-settle')[0];
+      expect(eff.requestedUrl).toBe('https://x.test/v3/report/list');
+      expect(eff.toUrl).toBe('https://x.test/v3/1041/report/list');
+      expect(eff.toSnapshot).toContain('New Report');   // the SETTLED snapshot, not the spinner
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a NAMELESS click probes the element attributes for a label (title/aria-label)', async () => {

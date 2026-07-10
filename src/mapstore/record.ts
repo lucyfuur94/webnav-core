@@ -27,6 +27,8 @@ export interface ActionEffect {
   action: ActionRef | null;
   toUrl: string; toSnapshot: string;
   navigated: boolean; diff: SnapshotDiff;
+  requestedUrl?: string;  // the URL a navigate ASKED for, before settle — toUrl may differ
+                         // (client-side redirect); Task 7 uses the gap to alias requestedKey→settledKey
 }
 export interface StoredActionEffect extends ActionEffect { seq: number; capturedAt: number; }
 
@@ -57,7 +59,8 @@ export class RecordStore {
     const cols: any[] = this.db.prepare('PRAGMA table_info(record_observations)').all();
     const have = new Set(cols.map((c) => c.name));
     for (const [col, type] of [['from_url', 'TEXT'], ['from_snapshot', 'TEXT'], ['action', 'TEXT'],
-      ['to_url', 'TEXT'], ['to_snapshot', 'TEXT'], ['navigated', 'INTEGER'], ['diff', 'TEXT']] as const) {
+      ['to_url', 'TEXT'], ['to_snapshot', 'TEXT'], ['navigated', 'INTEGER'], ['diff', 'TEXT'],
+      ['requested_url', 'TEXT']] as const) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE record_observations ADD COLUMN ${col} ${type}`);
     }
     // start_url = the URL the operator ASKED to record at (not wherever an auth
@@ -179,12 +182,13 @@ export class RecordStore {
     this.db.prepare(
       `INSERT INTO record_observations
         (session_id,seq,url,fingerprint,declared_links,captured_at,
-         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff,requested_url)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(sessionId, seq.c,
         fx.toUrl, '[]', '[]', nowMs,
         fx.fromUrl, fx.fromSnapshot, JSON.stringify(fx.action),
-        fx.toUrl, fx.toSnapshot, fx.navigated ? 1 : 0, JSON.stringify(fx.diff));
+        fx.toUrl, fx.toSnapshot, fx.navigated ? 1 : 0, JSON.stringify(fx.diff),
+        fx.requestedUrl ?? null);
   }
   actionEffects(sessionId: string): StoredActionEffect[] {
     const rows: any[] = this.db.prepare(
@@ -193,6 +197,7 @@ export class RecordStore {
       fromUrl: r.from_url, fromSnapshot: r.from_snapshot,
       action: JSON.parse(r.action), toUrl: r.to_url, toSnapshot: r.to_snapshot,
       navigated: r.navigated === 1, diff: JSON.parse(r.diff),
+      requestedUrl: r.requested_url ?? undefined,
       seq: r.seq, capturedAt: r.captured_at,
     }));
   }

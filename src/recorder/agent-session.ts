@@ -12,6 +12,7 @@ import { runActionRecorded, parseEvalResult } from '../router/browse.js';
 import { diffSnapshots } from '../explorer/diff.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { INSTALLER_JS, MODE_JS } from './live.js';
+import { classifyReadiness } from '../router/readiness.js';
 import type { ActionEffect } from '../mapstore/record.js';
 
 // Paint the same REC overlay the human live-recorder uses, so an agent session's
@@ -126,12 +127,19 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           const fromSnapshot = fromUrl ? await deps.adapter.snapshot().catch(() => '') : '';
           await deps.adapter.goto(c.url);
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
-          const toSnapshot = await deps.adapter.snapshot();
+          // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
+          // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
+          let toSnapshot = await deps.adapter.snapshot();
+          for (let i = 0; i < 3 && classifyReadiness(toSnapshot) === 'loading'; i++) {
+            await new Promise((r) => setTimeout(r, 700));
+            toSnapshot = await deps.adapter.snapshot();
+          }
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
             deps.store.appendActionEffect(deps.sessionId, {
               fromUrl: fromUrl || c.url, fromSnapshot, action: null,
               toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] },
+              requestedUrl: c.url,
             });
             steps++; deps.notify('step', 'agent nav: ' + toUrl);
           }
