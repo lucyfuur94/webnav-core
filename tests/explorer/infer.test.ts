@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { inferUrlModel, proposeTemplates } from '../../src/explorer/infer.js';
+import { parseSnapshot } from '../../src/playwright/snapshot.js';
+import { faceOf, jaccard, insideOverlay, nodeIndexByName } from '../../src/explorer/infer.js';
 
 describe('inferUrlModel', () => {
   it('infers a multi-segment base shared by ≥80% of urls and merges base-less redirect ghosts', () => {
@@ -29,5 +31,34 @@ describe('proposeTemplates', () => {
   it('a group is only PROPOSED — /dashboard/list vs /dashboard/1210 still groups here (disposal is structural, draft-side)', () => {
     const groups = proposeTemplates(['/dashboard/list', '/dashboard/1210']);
     expect(groups[0].template).toBe('/dashboard/{param}');
+  });
+});
+
+const PAGE_WITH_DIALOG = [
+  '- button "Add dimensions" [ref=e1] [cursor=pointer]',
+  '- button "Share" [ref=e2]',
+  '- dialog [ref=e3]:',
+  '  - textbox "Search" [ref=e4]',
+  '  - checkbox "Publisher" [ref=e5]',
+  '  - checkbox "Country" [ref=e6]',
+  '  - button "Apply" [ref=e7]',
+  '- button "Run" [ref=e8]',
+].join('\n');
+
+describe('faces + overlay membership', () => {
+  const nodes = parseSnapshot(PAGE_WITH_DIALOG);
+  it('faceOf = role:name set of named nodes', () => {
+    expect(faceOf(nodes).has('button:Share')).toBe(true);
+    expect(faceOf(nodes).has('dialog:')).toBe(false);          // unnamed containers excluded
+  });
+  it('jaccard similarity', () => {
+    expect(jaccard(new Set(['a', 'b']), new Set(['b', 'c']))).toBeCloseTo(1 / 3);
+    expect(jaccard(new Set(), new Set())).toBe(1);             // two empty faces are identical
+  });
+  it('insideOverlay: picker options/controls are inside; openers and page buttons are not', () => {
+    expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Publisher'))).toBe(true);
+    expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Apply'))).toBe(true);
+    expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Add dimensions'))).toBe(false);
+    expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Run'))).toBe(false);   // AFTER the dialog, same depth
   });
 });
