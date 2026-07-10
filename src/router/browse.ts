@@ -86,6 +86,37 @@ export async function runNetwork(
   }
 }
 
+/** Bounded settle: retry while the snapshot classifies as 'loading' (3x700ms) so a
+ *  client-side redirect/late render is never captured as the page (the ghost-state
+ *  class of bugs). Pass `first` when the caller already took the initial snapshot.
+ *  Never infinite: a permanently-loading page proceeds after 3 retries. */
+export async function settleSnapshot(snap: () => Promise<string>, first?: string): Promise<string> {
+  let s = first ?? await snap();
+  for (let i = 0; i < 3 && classifyReadiness(s) === 'loading'; i++) {
+    await new Promise((r) => setTimeout(r, 700));
+    s = await snap();
+  }
+  return s;
+}
+
+/** Capture + record the effect of a standalone `use navigate` (cli.ts routes here
+ *  AFTER opening `url` on the adapter — caller owns the browser lifecycle and the
+ *  session auto-start). Settles before reading, records requestedUrl = the url the
+ *  agent ASKED for (toUrl may differ on a redirect — the draft's alias evidence). */
+export async function recordNavigateEffect(
+  url: string, sessionId: string, recordStore: RecordStore, adapter: BrowseAdapter,
+): Promise<{ toUrl: string }> {
+  const toSnapshot = await settleSnapshot(() => adapter.snapshot!());
+  const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
+  recordStore.appendActionEffect(sessionId, {
+    fromUrl: url, fromSnapshot: '', action: null,
+    toUrl, toSnapshot, navigated: true,
+    diff: diffSnapshots([], parseSnapshot(toSnapshot)),
+    requestedUrl: url,
+  });
+  return { toUrl };
+}
+
 export interface SnapshotRecordedResult { status: 'done' | 'failed'; url: string; recorded: boolean; reason?: string; }
 
 /** Open `url`, snapshot it, and (if `sessionId` is recording) append an
@@ -141,19 +172,29 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
     // SETTLE before using the snapshot, but ONLY when the action navigated: a
     // client-side redirect/late render on the NEW page otherwise records a transient
     // shell as the page (the ghost-state class of bugs). An in-page mutate/reveal has
-    // no such settledness concern — its snapshot IS the (possibly sparse) diff. Bounded
-    // retry, same gate as agent-session's navigate handler.
-    if (navigated) {
-      for (let i = 0; i < 3 && classifyReadiness(toSnapshot) === 'loading'; i++) {
-        await new Promise((r) => setTimeout(r, 700));
-        toSnapshot = await adapter.snapshot!();
+    // no such settledness concern — its snapshot IS the (possibly sparse) diff.
+    if (navigated) toSnapshot = await settleSnapshot(() => adapter.snapshot!(), toSnapshot);
+    // The clicked node's declared href = the URL the click ASKED for (observed
+    // evidence, judgment-free); the settled toUrl may differ when the server
+    // redirects the declared destination. Recording it lets the draft alias
+    // requestedKey→settledKey. Only a real cross-page http(s) destination
+    // counts: a '#'/javascript: href declares no destination, and recording one
+    // would alias the FROM page onto the TO page (state-merge poison).
+    let requestedUrl: string | undefined;
+    if (navigated && args.action.ref) {
+      const href = parseSnapshot(args.fromSnapshot).find((n) => n.ref === args.action.ref)?.url;
+      if (href) {
+        try {
+          const abs = new URL(href, args.fromUrl);
+          if (/^https?:$/.test(abs.protocol) && didNavigate(args.fromUrl, abs.href)) requestedUrl = abs.href;
+        } catch { /* unparseable href → no requested url */ }
       }
     }
     let recorded = false;
     if (args.recordStore.isActive(args.sessionId)) {
       args.recordStore.appendActionEffect(args.sessionId, {
         fromUrl: args.fromUrl, fromSnapshot: args.fromSnapshot, action: args.action,
-        toUrl, toSnapshot, navigated,
+        toUrl, toSnapshot, navigated, requestedUrl,
         diff: diffSnapshots(parseSnapshot(args.fromSnapshot), parseSnapshot(toSnapshot)),
       });
       recorded = true;
