@@ -537,4 +537,65 @@ Older items, resolved or parked:
 - **Dogfood + "failures are features":** use webnav on real problems; every failure becomes a feature to fix (this caught the open/goto bug, relative-link bug, license-noise bug, search chrome-leak, render-race).
 - **`dontAsk` permission mode** is set in `.claude/settings.local.json` (takes effect on a fresh session) to stop repeated allow-prompts.
 - The repo is public: `github.com/lucyfuur94/webnav` (CI on push/PR to `main`). The
+
+## Review-flow audit (2026-07-10, structure-inference)
+
+Task 14 — audited `webnav dev review` (capture-completeness gate) against the draft-engine
+rewrite (Tasks 7–10: observation-based inference, aliases, shell, provisional states, folded
+affordances; deleted `pathSlug`/`ID_SEG`/`stablePathKey`, `RECORD_COUNT_RE`/recordCount,
+`ShadowOpts`/subtab-container, `linkPageCount`/`sidebarCut`, no numeric-suffix naming). No code
+was stale; no fix applied.
+
+1. **Prompt/rubric references deleted concepts? NO.** `src/recorder/review.ts` (prompt builder
+   `buildReviewPrompt` L69–100, rubric `DEFAULT_INSTRUCTIONS` L28–39, `STRUCTURED_TAIL` L45–51)
+   and the `review` handler in `src/cli.ts` L667–701 build the prompt purely from
+   `RecordStore.actionEffects()` (raw per-step `fromUrl/toUrl/action/navigated`, `src/cli.ts`
+   L680–684) + extracted video frames — zero references to page unions, stable-path keys,
+   `-2`-suffix names, or record counts. Grepped `src/recorder/review.ts` for
+   `union|stablepath|pagekey|record.count` — no hits (the one `-2` match, L144, is ffmpeg's
+   `scale=800:-2` aspect-ratio flag, unrelated). The review flow sits entirely upstream of
+   `draftFromEffects` in the pipeline (steps → review → **then** graph-analyse/draft), so it
+   never touches draft's internal identity model at all. Confirmed against Tasks 7–10 reports
+   (`.superpowers/sdd/task-{7,8,9,10}-report.md`) for the exact deleted-symbol list.
+
+2. **Approval gate keys correctly through `record-rename`? YES.**
+   `RecordStore.renameSession` (`src/mapstore/record.ts` L148–157) updates
+   `record_sessions.session_id` (which carries the `review` column written by `setReview`,
+   L82–84) and `record_observations.session_id` in one transaction, both keyed on the same
+   `session_id` string. `reviewOf` (L85–89) and the graph-analyse gate (`src/cli.ts` L604–617,
+   `store.reviewOf(id)`) read that same column by the same key. Post-rename, `reviewOf(to)`
+   returns the verdict that was set under `from` — no separate id space, no stale reference.
+   `renameSession` also refuses when `to` already exists (L151), so a rename can't silently
+   merge/clobber another session's verdict.
+
+3. **Should review also gate on `receipt.requests`/provisional states? NO — confirmed.**
+   Review verifies **capture completeness**: did the recorder log every on-screen interaction
+   the video shows (`DEFAULT_INSTRUCTIONS` L28–36 — "CAPTURE GAPS: visible changes … with NO
+   captured step"). It operates on raw `actionEffects`, before `draftFromEffects` ever runs.
+   `provisional`/`receipt.requests` are the **analyse-side refine loop** — draft's structural
+   confidence that a state's identity/fingerprint needs another visit to firm up (Task 7's
+   `provisional` field, propagated from `templateCore`; surfaced as `requests` in
+   `graph-analyse --draft` output, `src/cli.ts` L619–628). These are two independent quality
+   gates at two different pipeline stages, on different questions ("did we record everything
+   the human/agent did" vs "is our structural inference confident yet"). Conflating them would
+   block graph-building on structural confidence (which needs MORE draft runs/visits, not a
+   better video review) — the approval gate would then never pass on a legitimately
+   single-visit-but-fully-captured session, which is not what it's for. Kept separate; no
+   change.
+
+4. **Settle-loop timing vs review's step↔frame matching: no wrong-verdict risk found.**
+   The scripted `use session navigate` path (`src/recorder/agent-session.ts` L124–146) settles
+   up to `3 × 700ms = 2.1s` (L133–136) reading the snapshot/URL, and stamps `capturedAt` via
+   `RecordStore.appendActionEffect`'s default `nowMs = Date.now()` (`src/mapstore/record.ts`
+   L178) called AFTER that loop (L139) — i.e. `capturedAt` is already the POST-settle
+   (post-render) moment, the same moment a scene-change video frame would show the page
+   arrived. The human-recorder path (`src/recorder/live-record.ts` L209) passes an explicit
+   `p.ev.t`, the real DOM event timestamp from `live.ts` L88 — no settle delay in that path at
+   all. Either way, the review's own tolerance window is `±5s` (`STRUCTURED_TAIL`,
+   `src/recorder/review.ts` L50) — comfortably absorbs the ≤2.1s settle window with margin to
+   spare. No misalignment found; no fix needed.
+
+**Regression:** `npx vitest run tests/mapstore/record.test.ts` → 14/14 passed (renameSession +
+setReview/reviewOf coverage). Full `npm test` also run clean before commit. No code changes —
+audit-only, per the task's own expected conclusion.
   website/hosted backend is the separate `webnav-site` repo.
