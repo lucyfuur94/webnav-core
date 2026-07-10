@@ -169,6 +169,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .gpanel .ptitle { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:5px; }
   .gpanel .chips { display:flex; flex-wrap:wrap; gap:6px; }
   .gpanel .chip { border:1px solid var(--border); border-radius:5px; padding:2px 8px; font-size:12px; background:var(--bg-sunken); white-space:nowrap; }
+  button.morebtn { border-radius:5px; padding:2px 8px; font-size:12px; }   /* .chips already wraps */
   .muted { color:var(--muted); }
   .empty { color:var(--muted); padding:40px 0; text-align:center; }
   /* placeholder must meet contrast (critique: browser-default gray was 4.22:1) — --muted passes. */
@@ -357,7 +358,12 @@ function pageFacts(state, chromeLabels) {
 // version's failure). So: SUPPRESS the sidebar mesh, keep only STRUCTURAL edges (a link from
 // few pages to a specific target), and lay the result out top-down by depth. The shared sidebar
 // is stated once as a caption, not 30 crossing lines.
-function graphView(states) {
+function graphView(allStates) {
+  // the site-wide chrome record (nav/header/footer, present on every page) isn't a page itself —
+  // it's shown once as its own card above the tree, not as a node inside it (Task 13).
+  const isShell = (s) => s.role === 'shell' || (s.id||'').split(':').pop() === '_shell';
+  const shellState = allStates.find(isShell);
+  const states = allStates.filter(s => !isShell(s));
   const lbl = (s) => s.semanticName || (s.id||'').split(':').pop();
   const byId = {}; states.forEach(s => byId[s.id] = s);
   const idLbl = (id) => byId[id] ? lbl(byId[id]) : (id||'').split(':').pop();
@@ -444,9 +450,11 @@ function graphView(states) {
   };
   // nodes (root first, then states). NH grows to fit the summary line.
   const drawNode = (n, isRoot) => { const p=pos[n]; const summ = isRoot ? '' : summaryLine(n);
+    const st = isRoot ? null : states.find(x => lbl(x) === n);
+    const provMark = st && st.provisional ? ' ◌' : '';   // grey "seen once" marker; full note in the click panel
     let g = '<g class="gnode" data-state="'+svgEsc(n)+'" tabindex="0" role="button" style="cursor:pointer">';
     g += '<rect x="'+(p.x-NW/2)+'" y="'+(p.y-NH/2)+'" width="'+NW+'" height="'+NH+'" rx="8" fill="var(--panel)" stroke="'+(isRoot?'var(--muted)':'var(--accent)')+'" stroke-width="1.5"'+(isRoot?' stroke-dasharray="4 3"':'')+'/>';
-    g += '<text x="'+p.x+'" y="'+(p.y+(summ?-3:4))+'" fill="var(--fg)" font-size="12" font-weight="600" text-anchor="middle">'+svgEsc(n)+'</text>';
+    g += '<text x="'+p.x+'" y="'+(p.y+(summ?-3:4))+'" fill="var(--fg)" font-size="12" font-weight="600" text-anchor="middle">'+svgEsc(n)+(provMark?'<tspan fill="var(--muted)">'+provMark+'</tspan>':'')+'</text>';
     if (summ) g += '<text x="'+p.x+'" y="'+(p.y+13)+'" fill="var(--muted)" font-size="9" text-anchor="middle">'+svgEsc(summ)+'</text>';
     return g + '</g>'; };
   s += drawNode(ROOT, true);
@@ -456,29 +464,54 @@ function graphView(states) {
   const sidebarNote = sidebarLabels.length
     ? '<div class="gnote">Every page also shares a common sidebar (' + sidebarLabels.map(svgEsc).join(' · ') + ') — omitted here to show real structure.</div>'
     : '';
-  const wrap = el('<div class="graphwrap">'+s+sidebarNote
+  // "Site shell" card: the chrome record's affordances (nav/header/footer present on every page)
+  // shown ONCE above the tree, not as a node inside it — see isShell above.
+  const shellCard = (() => {
+    if (!shellState) return '';
+    const affs = shellState.affordances || [];
+    if (!affs.length) return '';
+    const chip = (a) => '<span class="chip">'+esc(a.label)+' <span class="muted">'+esc(a.kind)+'</span>'
+      + (a.kind === 'navigate' && a.toState ? ' <span class="muted">&rarr; '+esc(idLbl(a.toState))+'</span>' : '')+'</span>';
+    return '<div class="gpanel" style="margin-bottom:12px"><div class="phead"><strong>Site shell</strong> <span class="muted">chrome on every page</span></div>'
+      + '<div class="chips" style="margin-top:8px">'+affs.map(chip).join('')+'</div></div>';
+  })();
+  const wrap = el('<div class="graphwrap">'+shellCard+s+sidebarNote
     + '<div class="glegend"><span><i class="dot acc"></i> navigates to a specific page</span><span><i class="dot mut"></i> section of the hub</span><span>↻ in-page sub-view</span><span class="muted">click a page for details</span></div>'
     + '<div class="gpanel" style="display:none"></div></div>');
   // click a node → render its full filtered facts into the panel
   const panel = wrap.querySelector('.gpanel');
+  // affordances scoped 'row' (a folded per-row repeat, e.g. 50 identical row-buttons folded to
+  // one) get a "per row" suffix chip so the count isn't misread as 50 distinct page actions.
+  const rowScoped = (state, label) => (state.affordances||[]).some(a => a.label === label && a.scope === 'row');
   const openPanel = (name) => {
     const st = states.find(x => lbl(x) === name); if (!st) { panel.style.display='none'; return; }
     const f = factsBy[name];
+    const actionChip = (x) => '<span class="chip">'+esc(x)+(rowScoped(st, x)?' <span class="muted">per row</span>':'')+'</span>';
     const chips = (items) => items.length ? items.map(x => '<span class="chip">'+esc(x)+'</span>').join('') : '<span class="muted">—</span>';
     const sec = (title, inner) => '<div class="psec"><div class="ptitle">'+title+'</div>'+inner+'</div>';
     let html = '<div class="phead"><strong>'+esc(name)+'</strong> <span class="badge '+(st.role==='detail'?'origin-manual':'ok')+'">'+esc(st.role||'page')+'</span>'
+      + (st.provisional ? ' <span class="badge unrev" title="'+esc(st.provisional)+'">◌ Seen once</span>' : '')
       + (st.parentState ? ' <span class="muted">under '+esc((st.parentState||'').split(':').pop())+'</span>' : '')
       + '<button class="btn" style="float:right;padding:1px 8px" data-close>✕</button></div>';
+    // urlPattern may carry a template placeholder ({param}) — render verbatim, never linkify.
     html += '<div class="muted" style="font-size:12px;margin-bottom:8px">'+esc(st.urlPattern||'')+'</div>';
+    if (st.provisional) html += '<div class="muted" style="font-size:12px;margin-bottom:8px">◌ '+esc(st.provisional)+'</div>';
     const actShown = f.actions.slice(0, 24);
-    html += sec('Key actions ('+f.actions.length+')', '<div class="chips">'+chips(actShown)
-      + (f.actions.length > actShown.length ? '<span class="chip muted">+'+(f.actions.length-actShown.length)+' more</span>' : '')+'</div>');
+    const moreCount = f.actions.length - actShown.length;
+    html += sec('Key actions ('+f.actions.length+')', '<div class="chips" data-actions>'+actShown.map(actionChip).join('')
+      + (moreCount > 0 ? '<button class="btn morebtn" data-more>+'+moreCount+' more</button>' : '')+'</div>');
     if (f.hasSearch || f.filters.length) html += sec('Search & filters', '<div class="chips">'+(f.hasSearch?'<span class="chip">🔍 search</span>':'')+chips(f.filters.filter(x=>!/search/i.test(x.field)).map(x=>x.field+' ('+x.control+')'))+'</div>');
     if (f.operatesOn.length) html += sec('Operates on ('+f.operatesOn.length+')', '<div class="chips">'+chips(f.operatesOn)+'</div>');
     if (f.subviews.length) html += sec('In-page sub-views', '<div class="chips">'+chips(f.subviews)+'</div>');
     html += sec('Affordances', '<span class="muted" style="font-size:12px">'+f.counts.navigate+' navigate · '+f.counts.reveal+' reveal · '+f.counts.mutate+' mutate · '+f.counts.input+' input</span>');
     panel.innerHTML = html; panel.style.display='';
     panel.querySelector('[data-close]').onclick = () => { panel.style.display='none'; };
+    const moreBtn = panel.querySelector('[data-more]');
+    if (moreBtn) moreBtn.onclick = () => {
+      const rest = f.actions.slice(actShown.length).map(actionChip).join('');
+      moreBtn.insertAdjacentHTML('beforebegin', rest);
+      moreBtn.remove();
+    };
   };
   wrap.querySelectorAll('.gnode').forEach(g => {
     const name = g.getAttribute('data-state');
