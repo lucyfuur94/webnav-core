@@ -90,3 +90,31 @@ export function insideOverlay(nodes: SnapNode[], idx: number): boolean {
 export function nodeIndexByName(nodes: SnapNode[], name: string): number {
   return nodes.findIndex((n) => n.name === name);
 }
+
+/** Shell = tokens present on ≥minFrac of DISTINCT pages. Needs ≥4 pages to claim anything —
+ *  on tiny evidence a "shell" would just be coincidence. */
+export function extractShell(faces: Face[], minFrac = 0.8): Face {
+  if (faces.length < 4) return new Set();
+  const count = new Map<string, number>();
+  for (const f of faces) for (const t of f) count.set(t, (count.get(t) ?? 0) + 1);
+  const shell: Face = new Set();
+  for (const [t, c] of count) if (c >= minFrac * faces.length) shell.add(t);
+  return shell;
+}
+
+export interface CoreResult { tokens: Face; provisional: string | null }
+
+/** A state's durable face = tokens repeating across its settled landings (majority k-of-n,
+ *  0.6 — tolerates one A/B-noisy visit in three). ONE landing = no variance signal: keep all,
+ *  mark provisional; analyse surfaces the note as a record-next request. */
+export function templateCore(landingFaces: Face[]): CoreResult {
+  if (landingFaces.length === 1) {
+    return { tokens: new Set(landingFaces[0]), provisional: 'seen once — record another visit to separate structure from data' };
+  }
+  const need = Math.ceil(landingFaces.length * 0.6);
+  const count = new Map<string, number>();
+  for (const f of landingFaces) for (const t of f) count.set(t, (count.get(t) ?? 0) + 1);
+  const tokens: Face = new Set();
+  for (const [t, c] of count) if (c >= need) tokens.add(t);
+  return { tokens, provisional: null };
+}
