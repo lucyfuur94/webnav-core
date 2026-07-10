@@ -6,11 +6,17 @@
 
 When something wrong shows up in a late stage (the graph, the dashboard, a walk), that is a SYMPTOM, not the bug. **Find the earliest stage in the pipeline that let it in and fix it there** — recording → effects → `draftFromEffects` → build → graph → viewer. A fix that scrubs/filters/special-cases the bad thing *after* it's already in the data is FORBIDDEN — it leaves every other consumer of that data still wrong and hides the real defect. Correct the producing logic so the symptom disappears everywhere at once, then **re-verify from the true source** (re-run the pipeline end-to-end, not just re-render) and close. If you can't reach the upstream source, say so explicitly rather than patching downstream. (User, repeated: "we can't patch downstream, fix logic upstream which solves downstream automatically and reverify and close.")
 
+## Structure inference (settled 2026-07-10 — `2026-07-10-structure-inference-design.md`)
+
+Recording→graph derives structure by OBSERVATION-BASED INFERENCE, never one-shot site-tuned heuristics. Five site-agnostic evidence axes: (1) **settledness** — only readiness-gated landings define a state's face; redirect-chain URLs are aliases, never states; (2) **declaration** — ARIA landmarks declare shell, dialog/menu/listbox declare overlays; a click INSIDE an overlay is a value selection, not a page affordance; (3) **cross-page variance** — nodes on ≥80% of pages = shell, stored once on the `_shell` state (edges project from-anywhere); (4) **cross-visit variance** — a state's core = what repeats across its landings; single-landing states are `provisional` and analyse REPORTS what to record next; (5) **within-page repetition** — ≥3 same-role siblings sharing a name suffix fold to ONE `scope:'row'` affordance. Identity = URL-template × structural-template (propose/dispose). **The map stores structure, never data values** (no option lists, no instance headings, no counts/dates). Enforced by `tests/guidelines.test.ts`.
+
 ## Subagent model (settled)
 
 **Subagents that USE or TEST webnav run on Haiku** (`claude-haiku-4-5-20251001`) — for both usage and testing. webnav is zero-LLM navigation infrastructure; its calling agent does the judgment, and that calling agent should be the cheap model — a deliberate dogfood of the cost thesis (a cheap agent + webnav's deterministic navigation should beat an expensive agent ad-hoc-driving the browser). Use `model: 'haiku'` on `Agent`/`Workflow agent()` calls that drive or exercise webnav. (Benchmark ARMS are a deliberate exception when a run must hold the model constant across arms — note it in that run's recipe.)
 
 **This Haiku rule is scoped ONLY to webnav-using/testing subagents.** For all other work — implementation, planning, code review, general tasks — use the best model for that task (do NOT downgrade to Haiku).
+
+**Division of labor (settled 2026-07-10):** Fable (the main session) DEFINES (specs, plans, designs) and REVIEWS; implementation/execution subagents run on **Opus** (hard rewrites) or **Sonnet** (mechanical/TDD tasks). The Haiku rule above still governs webnav-USING/TESTING subagents.
 
 ## CLI ergonomics (settled — agent-native, per clig.dev + CLI-Anything)
 

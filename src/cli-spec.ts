@@ -270,11 +270,11 @@ export const DEV_COMMANDS: CommandSpec[] = [
     args: [],
     flags: [
       { name: '--session', takesValue: true, description: 'Record session id. REPEATABLE — pass several to merge multiple drives of one site into one draft.' },
-      { name: '--host', takesValue: true, description: 'Auto-include EVERY recorded session for this host (e.g. progneo.analytics.mn) — drafts the whole site from all its drives at once.' },
+      { name: '--host', takesValue: true, description: 'Auto-include EVERY recorded session for this host (e.g. www.saucedemo.com) — drafts the whole site from all its drives at once.' },
       { name: '--draft', takesValue: false, description: 'Emit a ready-to-edit graph spec (states+affordances) instead of raw observations; `_warning` flags anything the self-verify found shaky.' },
       { name: '--skip-review-gate', takesValue: false, description: 'Build from ALL given sessions even if unreviewed/failed (bypasses the approval gate — for a deliberate raw build).' },
     ],
-    example: 'webnav dev graph-analyse --host progneo.analytics.mn --draft   # or: --session a --session b',
+    example: 'webnav dev graph-analyse --host www.saucedemo.com --draft   # or: --session a --session b',
   },
   {
     name: 'graph-edit',
@@ -298,7 +298,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
     summary: 'Wipe a site-node\'s INTERIOR (its states + edges) so the site can be RE-LEARNED from scratch through webnav. The node row itself stays. Use before re-recording a site whose map is stale/wrong — never hand-edit the DB.',
     args: [],
     flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host) to clear, e.g. github.com.' }],
-    example: 'webnav dev node-clear --node opensource-demo.orangehrmlive.com',
+    example: 'webnav dev node-clear --node www.saucedemo.com',
   },
   {
     name: 'node-rm',
@@ -319,7 +319,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
     summary: 'Load a map pack (the JSON `export-map` emits) into your local map, so you can `walk` a site someone else mapped WITHOUT re-learning it. Pure skeleton — set the login creds separately with `creds set`.',
     args: [{ name: 'file', required: true, description: 'Path to a map-pack JSON file. Also accepts --file.' }],
     flags: [{ name: '--file', takesValue: true, description: 'Map-pack path (alternative to the positional).' }],
-    example: 'webnav dev import-map mappacks/orangehrm.mappack.json',
+    example: 'webnav dev import-map mappacks/saucedemo.mappack.json',
   },
   {
     name: 'outline',
@@ -380,7 +380,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
     summary: 'Check that the affordance element fingerprints of the state the --session browser is currently on resolve UNIQUELY against the live page. The live-page check graph-edit (offline) cannot do: matchState identifies the state, then each navigate/input affordance\'s elementFp is resolved. status done = all unique · non-unique = some collide (exit 3) · no-match = not on a known state.',
     args: [],
     flags: [
-      { name: '--node', takesValue: true, description: 'Site-node id whose states to match against (e.g. opensource-demo.orangehrmlive.com).' },
+      { name: '--node', takesValue: true, description: 'Site-node id whose states to match against (e.g. www.saucedemo.com).' },
       { name: '--session', takesValue: true, description: 'A live browser session already ON the page to verify.' },
     ],
     example: 'webnav dev verify --node www.saucedemo.com --session sd1',

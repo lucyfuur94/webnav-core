@@ -158,7 +158,7 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     // Always run through mergeAffordances — even first-time (prior=[]) — so the payload dedups
     // WITHIN itself too. Two sessions' fragments of one page can each carry the same "Help
     // Center" link with different auto-ids; without this self-merge, both survived as an exact
-    // duplicate edge (live finding on progneo: report-list → help-center appeared twice).
+    // duplicate edge (live finding: report-list → help-center appeared twice).
     const affordances = mergeAffordances(prior?.affordances ?? [], incomingAff);
     const fingerprint = prior ? [...new Set([...(prior.fingerprint ?? []), ...(s.fingerprint ?? [])])] : (s.fingerprint ?? []);
     const declaredShadow = prior ? mergeShadow(prior.declaredShadow, s.declaredShadow) : (s.declaredShadow ?? null);

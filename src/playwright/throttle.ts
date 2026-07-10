@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 // Per-host politeness throttle: a minimum interval between page-OPENS to the same host, so a
-// burst of CLI invocations can't hammer one site into a bot-wall (the OrangeHRM incident).
+// burst of CLI invocations can't hammer one site into a bot-wall (a live incident on a test site).
 // This is POLITENESS, not evasion — it slows webnav down, it never disguises it (the hard
 // no-evasion line, CLAUDE.md). Bot-walls are still detected + escalated; this just stops us
 // provoking one. Each CLI call is a separate PROCESS, so the last-open time must persist

@@ -363,7 +363,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // CONTENT (a drill-down). So:
   //   • sidebar-target  → a SECTION (top-level, no parent).
   //   • reached only via a content link → a DETAIL, parent = the page that content link is ON.
-  // (Verified on progneo: sidebar links show on 8/9 pages; "OS and Device Report" on 1 — clean split.)
+  // (Verified live: sidebar links show on most pages; a single content drill-down link on 1 — clean split.)
   const stateLabels = new Set(states.map((s) => s.label));
   // per-page LINK LABELS present (from each page's unioned snapshot nodes)
   const linkPageCount = new Map<string, Set<string>>();   // link label → pages it appears on

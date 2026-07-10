@@ -116,7 +116,7 @@ export class PlaywrightAdapter {
 
   /**
    * Snapshot, but RETRY until the page is `ready` (a JS-SPA renders after first paint, so an
-   * immediate snapshot catches an unfinished shell — the OrangeHRM symptom). Re-snapshots up
+   * immediate snapshot catches an unfinished shell). Re-snapshots up
    * to `tries` times, `gapMs` apart, returning as soon as `classifyReadiness === 'ready'`;
    * returns the last snapshot if the budget is exhausted (so the caller still classifies it —
    * a genuine interstitial/bot-wall is surfaced, never evaded). The one-shot verbs (read /
