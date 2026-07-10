@@ -13,8 +13,14 @@ const page = (name: string, extra: SerializableNode[] = []): SerializableNode =>
 describe('ingest', () => {
   it('writes reconstructed ActionEffects that draftFromEffects can fold', () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
-    const from = serializeSnapshot(page('Login'));
-    const to = serializeSnapshot(page('Inventory', [{ role: 'link', name: 'Cart', url: 'https://s.test/cart' }]));
+    // pad each landing to ≥8 named nodes so classifyReadiness='ready' (draft's identity gate).
+    const pad = (prefix: string): SerializableNode[] => [
+      { role: 'heading', name: `${prefix} heading` }, { role: 'paragraph', name: `${prefix} intro` },
+      { role: 'listitem', name: `${prefix} item 1` }, { role: 'listitem', name: `${prefix} item 2` },
+      { role: 'button', name: `${prefix} action` }, { role: 'paragraph', name: `${prefix} footer` },
+    ];
+    const from = serializeSnapshot(page('Login', pad('Login')));
+    const to = serializeSnapshot(page('Inventory', [{ role: 'link', name: 'Cart', url: 'https://s.test/cart' }, ...pad('Inventory')]));
     const body: IngestBody = {
       sessionId: 'human-1',
       steps: [{
