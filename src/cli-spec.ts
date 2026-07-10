@@ -266,7 +266,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'graph-analyse',
-    summary: 'Mechanically derive a per-site navigation structure from one OR MORE record sessions. Default: raw observations (data only). With --draft: a ready, SELF-VERIFIED {node,states,edges} graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login wired) — one logical page = one state (in-page tabs/search/sort do NOT split it), and multiple sessions of the same site MERGE into one map. APPROVAL GATE: only sessions whose capture-review PASSED (`dev review`) are built from; a failed or never-reviewed session is excluded (reported as excludedUnverified) so the map is never trained on an untrusted capture. Drive a site, review each session until it passes, then `--draft` and pipe to graph-edit.',
+    summary: 'Mechanically derive a per-site navigation structure from one OR MORE record sessions. Default: raw observations (data only). With --draft: a ready, SELF-VERIFIED {node,states,edges} graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login wired) — one logical page = one state (in-page tabs/search/sort do NOT split it), and multiple sessions of the same site MERGE into one map. A state seen only once is marked `provisional` (identity unconfirmed) and its `receipt.requests` lists what to record again to confirm it — check requests, drive those states once more, re-draft. A synthetic `_shell` state (role shell) carries the site-wide chrome (nav/header/footer) as from-anywhere edges, not a page. APPROVAL GATE: only sessions whose capture-review PASSED (`dev review`) are built from; a failed or never-reviewed session is excluded (reported as excludedUnverified) so the map is never trained on an untrusted capture. Drive a site, review each session until it passes, then `--draft` and pipe to graph-edit.',
     args: [],
     flags: [
       { name: '--session', takesValue: true, description: 'Record session id. REPEATABLE — pass several to merge multiple drives of one site into one draft.' },
@@ -278,7 +278,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'graph-edit',
-    summary: 'Upsert a validated navigation graph into a site-node interior (creates the node if new).',
+    summary: 'Upsert a validated navigation graph into a site-node interior (creates the node if new). Accepts graph-analyse --draft output as-is, incl. a state\'s `provisional` (tri-state: omit key = keep prior, null = confirmed/clear, a string = still-provisional with that note) and an affordance\'s `scope: \'row\'` (a folded per-row repeat, e.g. one "edit" button standing for all table rows).',
     args: [],
     flags: [
       { name: '--node', takesValue: true, description: 'Site-node id (host), e.g. github.com.' },

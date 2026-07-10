@@ -53,4 +53,17 @@ describe('COMMANDS registry', () => {
   it('exports a version string', () => {
     expect(VERSION).toMatch(/\d+\.\d+\.\d+/);
   });
+
+  it('graph-analyse help teaches provisional states, requests, and the _shell state', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph-analyse')!;
+    expect(g.summary).toContain('provisional');
+    expect(g.summary).toContain('requests');
+    expect(g.summary.toLowerCase()).toContain('shell');
+  });
+
+  it('graph-edit help teaches provisional tri-state and scope passthrough', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph-edit')!;
+    expect(g.summary).toContain('provisional');
+    expect(g.summary).toContain('scope');
+  });
 });
