@@ -115,3 +115,35 @@ describe('session origin (agent vs manual tag)', () => {
     expect(s.originOf('m1')).toBe('agent');
   });
 });
+
+describe('session review verdict (graph-ready gate)', () => {
+  it('unreviewed = null; stores + reads back the verdict; re-review overwrites', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('r1');
+    expect(s.reviewOf('r1')).toBe(null);                       // never reviewed → not approved
+    s.setReview('r1', { approved: false, gaps: 2, at: 1000, model: 'sonnet', reason: '2 capture gap(s)' });
+    expect(s.reviewOf('r1')).toMatchObject({ approved: false, gaps: 2 });
+    s.setReview('r1', { approved: true, gaps: 0, at: 2000, model: 'sonnet' });  // re-review after fix
+    expect(s.reviewOf('r1')).toMatchObject({ approved: true, gaps: 0 });         // latest wins
+  });
+});
+
+describe('renameSession (record-rename verb backing)', () => {
+  it('renames the session across the row + observations; refuses collision/unknown', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('s1final');
+    s.appendActionEffect('s1final', { fromUrl: 'https://x/a', fromSnapshot: 'heading "A"', action: null, toUrl: 'https://x/a', toSnapshot: 'heading "A"', navigated: false, diff: { added: [], removed: [] } });
+    s.start('other');
+    expect(s.actionEffects('s1final').length).toBe(1);
+    // rename to a fresh name → effects follow
+    expect(s.renameSession('s1final', 'reports-list')).toBe(true);
+    expect(s.actionEffects('s1final').length).toBe(0);   // old id gone
+    expect(s.actionEffects('reports-list').length).toBe(1);  // effects moved
+    // refuse: target already exists
+    expect(s.renameSession('reports-list', 'other')).toBe(false);
+    // refuse: unknown source
+    expect(s.renameSession('nope', 'whatever')).toBe(false);
+    // no-op same id
+    expect(s.renameSession('reports-list', 'reports-list')).toBe(true);
+  });
+});

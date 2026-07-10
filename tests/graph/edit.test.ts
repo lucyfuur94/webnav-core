@@ -266,3 +266,56 @@ describe('editGraph — tolerates a graph missing edges/states (draft pipe-compa
     expect(() => editGraph(store, 'empty.example', {} as any)).not.toThrow();
   });
 });
+
+// ── incremental extension: re-editing a state MERGES affordances (keeps commons, adds new),
+// never clobbers — so a second recording session that shares some steps and adds new ones
+// expands the map instead of wiping the first session's captures. (Was a real bug: upsertState
+// does affordances=@aff, a full replace; editGraph now reads the existing state and unions.)
+describe('editGraph — re-edit MERGES affordances (incremental map extension)', () => {
+  it('edit [A,B] then [B,C] → [A,B,C] (commons kept, new added, none lost)', () => {
+    const store = freshStore();
+    editGraph(store, 'n.example', { states: [{ label: 'X', urlPattern: 'https://n.example/x', fingerprint: ['heading:X'],
+      affordances: [{ label: 'A', kind: 'mutate' }, { label: 'B', kind: 'mutate' }] }], edges: [] });
+    editGraph(store, 'n.example', { states: [{ label: 'X', urlPattern: 'https://n.example/x', fingerprint: ['heading:X'],
+      affordances: [{ label: 'B', kind: 'mutate' }, { label: 'C', kind: 'mutate' }] }], edges: [] });
+    const labels = store.getState('n.example:X')!.affordances!.map((a) => a.label).sort();
+    expect(labels).toEqual(['A', 'B', 'C']);   // A survived the second edit
+  });
+
+  it('a duplicate affordance that arrives WITH an elementFp upgrades the fp-less prior', () => {
+    const store = freshStore();
+    editGraph(store, 'n.example', { states: [{ label: 'Y', affordances: [{ id: 'aff_open', label: 'Open', kind: 'mutate' }] }], edges: [] });
+    editGraph(store, 'n.example', { states: [{ label: 'Y', affordances: [
+      { id: 'aff_open', label: 'Open', kind: 'mutate', elementFp: { role: 'button', name: 'Open', near: null } }] }], edges: [] });
+    const open = store.getState('n.example:Y')!.affordances!.find((a) => a.id === 'aff_open')!;
+    expect(open.elementFp).toEqual({ role: 'button', name: 'Open', near: null });   // fp-carrying version won
+    expect(store.getState('n.example:Y')!.affordances!.filter((a) => a.id === 'aff_open').length).toBe(1);  // not doubled
+  });
+
+  it('fingerprint + declaredShadow union across re-edits', () => {
+    const store = freshStore();
+    editGraph(store, 'n.example', { states: [{ label: 'Z', fingerprint: ['heading:Z'],
+      affordances: [], declaredShadow: { collections: [{ heading: 'Rows', columns: ['Name'], recordCount: 3 }] } }], edges: [] });
+    editGraph(store, 'n.example', { states: [{ label: 'Z', fingerprint: ['tab:Detail'],
+      affordances: [], declaredShadow: { filters: [{ field: 'Status', control: 'select' }] } }], edges: [] });
+    const z = store.getState('n.example:Z')!;
+    expect(z.fingerprint.sort()).toEqual(['heading:Z', 'tab:Detail']);
+    expect(z.declaredShadow!.collections!.length).toBe(1);   // kept from edit 1
+    expect(z.declaredShadow!.filters!.length).toBe(1);       // added in edit 2
+  });
+})
+
+it('dedups identical affordances WITHIN one payload (not just on re-edit)', () => {
+  const store = freshStore();
+  // two identical navigate affordances (different auto-ids) in ONE state's payload — as happens
+  // when two session fragments of the same page both carry the same sidebar link.
+  editGraph(store, 'n.example', { states: [
+    { label: 'target', affordances: [] },
+    { label: 'X', affordances: [
+      { label: 'Help Center', kind: 'navigate', to: 'target', elementFp: { role: 'link', name: 'Help Center', near: null } },
+      { label: 'Help Center', kind: 'navigate', to: 'target', elementFp: { role: 'link', name: 'Help Center', near: null } },
+    ] },
+  ], edges: [] });
+  const navs = store.getState('n.example:X')!.affordances!.filter((a) => a.kind === 'navigate' && a.toState === 'n.example:target');
+  expect(navs.length).toBe(1);   // the exact duplicate collapsed to one
+});

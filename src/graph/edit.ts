@@ -1,5 +1,5 @@
 import type { MapStore } from '../mapstore/store.js';
-import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind, type ElementFingerprint, type DeclaredShadow } from '../mapstore/types.js';
+import { makeState, makeEdge, makeAffordance, type Affordance, type AffordanceKind, type ElementFingerprint, type DeclaredShadow, type State } from '../mapstore/types.js';
 
 // Teach API accepts an affordance either as a bare label string (→ mutate, the
 // safe default for an in-page action with no declared transition) or as the full
@@ -22,7 +22,7 @@ export interface EditAffordanceObj {
                                    // heading-vs-button + identical siblings (e.g. table-row icon buttons)
 }
 export type EditAffordance = string | EditAffordanceObj;
-export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; }
+export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
@@ -78,6 +78,55 @@ function findNavTarget(affs: Affordance[], toId: string, via: string): Affordanc
   return targets.length === 1 ? targets[0] : null;
 }
 
+// Dedup key = the affordance's SEMANTIC identity, NOT its id (toAffordance auto-generates a fresh
+// id per call, so the same logical affordance from two edits would double under an id key). The
+// identity is kind|label|toState PLUS the elementFp — critically the `near` content-anchor, which
+// is what distinguishes same-(role,label) SIBLINGS (row-1 vs row-2 "Press Space to toggle", each
+// with a different `near`). Omitting the fp collapsed 50 distinct row buttons into 1. True
+// duplicates (identical role+name+near) still dedupe; genuinely-distinct siblings stay separate.
+function affKey(a: Affordance): string {
+  const fp = a.elementFp ? `${a.elementFp.role ?? ''}~${a.elementFp.name ?? ''}~${a.elementFp.near ?? ''}` : '';
+  return `${a.kind}|${a.label}|${a.toState ?? ''}|${fp}`;
+}
+
+// The semantic tuple WITHOUT the fp — same role+label+dest but possibly differing fp. Used for
+// the "fp upgrade" pass: a no-fp affordance that later gains an fp should be UPGRADED, not doubled.
+function affSemanticKey(a: Affordance): string { return `${a.kind}|${a.label}|${a.toState ?? ''}`; }
+
+/** Merge `incoming` affordances into `existing`, KEEPING existing (commons) and ADDING new ones.
+ *  Distinct same-(role,label) siblings (different `near`) stay separate (affKey includes the fp).
+ *  A no-fp entry that a later capture upgrades WITH an fp is replaced, not doubled. Recurses into
+ *  reveal children. Pure. */
+function mergeAffordances(existing: Affordance[], incoming: Affordance[]): Affordance[] {
+  const byKey = new Map<string, Affordance>();
+  const add = (a: Affordance) => {
+    const k = affKey(a);
+    const prev = byKey.get(k);
+    if (prev && (prev.children || a.children)) prev.children = mergeAffordances(prev.children ?? [], a.children ?? []);
+    if (!prev) byKey.set(k, a);
+  };
+  for (const a of existing) add(a);
+  for (const a of incoming) add(a);
+  // fp-upgrade pass: if a FP-carrying affordance shares the semantic tuple with a NO-FP one,
+  // drop the no-fp one (the fp is the richer, healed coordinate — never keep both).
+  const out = [...byKey.values()];
+  const fpSemantics = new Set(out.filter((a) => a.elementFp).map(affSemanticKey));
+  return out.filter((a) => a.elementFp || !fpSemantics.has(affSemanticKey(a)));
+}
+
+/** Merge two DeclaredShadows: union collections/filters/subTabs, keep an existing createsEntity. */
+function mergeShadow(existing: DeclaredShadow | null | undefined, incoming: DeclaredShadow | null | undefined): DeclaredShadow | null {
+  if (!existing) return incoming ?? null;
+  if (!incoming) return existing;
+  const uniq = <T>(arr: T[]) => { const seen = new Set<string>(); return arr.filter((x) => { const k = JSON.stringify(x); if (seen.has(k)) return false; seen.add(k); return true; }); };
+  return {
+    collections: uniq([...(existing.collections ?? []), ...(incoming.collections ?? [])]),
+    filters: uniq([...(existing.filters ?? []), ...(incoming.filters ?? [])]),
+    createsEntity: existing.createsEntity ?? incoming.createsEntity ?? null,
+    subTabs: uniq([...(existing.subTabs ?? []), ...(incoming.subTabs ?? [])]),
+  };
+}
+
 export function editGraph(store: MapStore, node: string, graph: EditGraph): EditResult {
   // Tolerate a graph missing `edges`/`states` (e.g. a `--draft` piped through `jq '{node,states}'`,
   // or a hand-authored spec with only states). The draft carries edges AS navigate affordances on
@@ -98,15 +147,34 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     }
   }
 
-  // Build payload states up front so the edge pass can author onto their
-  // affordances before anything is written.
-  const payloadStates = new Map(graph.states.map((s) => [s.label, makeState({
-    id: stateId(s.label), nodeId: node, semanticName: s.label,
-    urlPattern: s.urlPattern ?? '', role: 'detail',
-    fingerprint: s.fingerprint ?? [],
-    affordances: (s.affordances ?? []).map((a) => toAffordance(a, stateId)),
-    declaredShadow: s.declaredShadow ?? null,   // Layer 2: carry the domain-shadow evidence through
-  })]));
+  // Build payload states up front so the edge pass can author onto their affordances before
+  // anything is written. RE-EDIT MERGES, never clobbers: when a state already exists, keep its
+  // affordances (commons) + union the incoming ones, so extending a map with a new session that
+  // shares some steps and adds new ones preserves both. (Without this, upsertState's
+  // affordances=@aff replaces the whole blob — a partial re-edit would wipe prior captures.)
+  const payloadStates = new Map(graph.states.map((s) => {
+    const incomingAff = (s.affordances ?? []).map((a) => toAffordance(a, stateId));
+    const prior = store.getState(stateId(s.label));
+    // Always run through mergeAffordances — even first-time (prior=[]) — so the payload dedups
+    // WITHIN itself too. Two sessions' fragments of one page can each carry the same "Help
+    // Center" link with different auto-ids; without this self-merge, both survived as an exact
+    // duplicate edge (live finding on progneo: report-list → help-center appeared twice).
+    const affordances = mergeAffordances(prior?.affordances ?? [], incomingAff);
+    const fingerprint = prior ? [...new Set([...(prior.fingerprint ?? []), ...(s.fingerprint ?? [])])] : (s.fingerprint ?? []);
+    const declaredShadow = prior ? mergeShadow(prior.declaredShadow, s.declaredShadow) : (s.declaredShadow ?? null);
+    // hierarchy: role + parentState. On RE-EDIT the PRIOR wins — it was computed from the full
+    // (multi-session) build, whereas a partial single-session re-edit sees an incomplete nav
+    // structure and would mis-derive (e.g. call a known 'detail' a 'section' because this session
+    // never captured the parent edge). Only take the incoming when there's no prior (first write).
+    const role = (prior?.role as State['role']) ?? (s.role as State['role']) ?? 'detail';
+    const parentState = prior ? (prior.parentState ?? (s.parentState != null ? stateId(s.parentState) : null))
+                              : (s.parentState != null ? stateId(s.parentState) : null);
+    return [s.label, makeState({
+      id: stateId(s.label), nodeId: node, semanticName: s.label,
+      urlPattern: s.urlPattern ?? prior?.urlPattern ?? '', role,
+      fingerprint, affordances, declaredShadow, parentState,
+    })];
+  }));
 
   let statesWritten = 0, edgesWritten = 0;
   store.transaction(() => {

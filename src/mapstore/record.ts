@@ -19,6 +19,8 @@ export interface ActionRef {
                                           // carried into graph-analyse → graph-edit so authored maps get fingerprints
   value?: string;   // the supplied VARIABLE (typed text / chosen option) for NON-SECRET inputs —
                     // makes a recorded flow re-runnable with different values; secrets never captured
+  hover?: boolean;  // this action was a HOVER (reveal-on-hover menus/tooltips), not a click/type —
+                    // a same-page reveal; the diff shows what the hover exposed. Never navigates.
 }
 export interface ActionEffect {
   fromUrl: string; fromSnapshot: string;
@@ -31,6 +33,7 @@ export interface StoredActionEffect extends ActionEffect { seq: number; captured
 export interface RecordSessionInfo {
   sessionId: string; active: boolean; startedAt: number; stoppedAt: number | null;
   steps: number; site: string | null;
+  review?: { approved: boolean; gaps: number; at: number; model?: string; reason?: string } | null;  // capture-review verdict → dashboard "verified" badge
 }
 
 /** Persists raw page observations per record-session. Sibling of MapStore;
@@ -67,6 +70,19 @@ export class RecordStore {
     // origin = who recorded this session: 'agent' (use session / use-driven) or
     // 'manual' (human record-live / dashboard). Null (legacy rows) reads as 'manual'.
     if (!scols.has('origin')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN origin TEXT');
+    // review = the capture-review verdict JSON ({approved, gaps, at, model, reason}) — set
+    // by `dev review`. A session is GRAPH-READY only when approved (all on-screen actions
+    // captured as steps). Null (never reviewed) reads as not-approved.
+    if (!scols.has('review')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN review TEXT');
+  }
+  /** Store the capture-review verdict for a session (graph-ready gate). */
+  setReview(sessionId: string, verdict: { approved: boolean; gaps: number; at: number; model?: string; reason?: string }): void {
+    this.db.prepare('UPDATE record_sessions SET review=? WHERE session_id=?').run(JSON.stringify(verdict), sessionId);
+  }
+  reviewOf(sessionId: string): { approved: boolean; gaps: number; at: number; model?: string; reason?: string } | null {
+    const r: any = this.db.prepare('SELECT review FROM record_sessions WHERE session_id=?').get(sessionId);
+    if (!r?.review) return null;
+    try { return JSON.parse(r.review); } catch { return null; }
   }
   /** Tag who recorded the session ('agent' | 'manual'); only sets if not already set. */
   setOrigin(sessionId: string, origin: 'agent' | 'manual'): void {
@@ -123,6 +139,19 @@ export class RecordStore {
     this.clearSession(sessionId);
     this.db.prepare('DELETE FROM record_sessions WHERE session_id=?').run(sessionId);
   }
+  /** Rename a recording's id across BOTH tables (session row + its observations). Refuses
+   *  if `to` already exists (would merge two recordings silently). Returns false if `from`
+   *  is unknown or `to` is taken. On-disk video/review dirs are moved by the CLI caller. */
+  renameSession(from: string, to: string): boolean {
+    if (from === to) return true;
+    const exists = (id: string) => !!this.db.prepare('SELECT 1 FROM record_sessions WHERE session_id=?').get(id);
+    if (!exists(from) || exists(to)) return false;
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE record_sessions SET session_id=? WHERE session_id=?').run(to, from);
+      this.db.prepare('UPDATE record_observations SET session_id=? WHERE session_id=?').run(to, from);
+    })();
+    return true;
+  }
   isActive(sessionId: string): boolean {
     const r: any = this.db.prepare('SELECT active FROM record_sessions WHERE session_id=?').get(sessionId);
     return !!r && r.active === 1;
@@ -169,7 +198,7 @@ export class RecordStore {
   }
   listSessions(): RecordSessionInfo[] {
     const rows: any[] = this.db.prepare(
-      `SELECT s.session_id, s.active, s.started_at, s.stopped_at,
+      `SELECT s.session_id, s.active, s.started_at, s.stopped_at, s.review,
         (SELECT COUNT(*) FROM record_observations o
           WHERE o.session_id = s.session_id AND o.from_snapshot IS NOT NULL) AS steps,
         (SELECT o2.from_url FROM record_observations o2
@@ -177,7 +206,9 @@ export class RecordStore {
           ORDER BY o2.seq LIMIT 1) AS first_url
        FROM record_sessions s ORDER BY s.started_at DESC`).all();
     const hostOf = (u: string | null) => { try { return u ? new URL(u).host : null; } catch { return null; } };
+    const parseReview = (v: string | null) => { if (!v) return null; try { return JSON.parse(v); } catch { return null; } };
     return rows.map((r) => ({ sessionId: r.session_id, active: r.active === 1,
-      startedAt: r.started_at, stoppedAt: r.stopped_at ?? null, steps: r.steps, site: hostOf(r.first_url) }));
+      startedAt: r.started_at, stoppedAt: r.stopped_at ?? null, steps: r.steps, site: hostOf(r.first_url),
+      review: parseReview(r.review) }));
   }
 }

@@ -266,13 +266,15 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'graph-analyse',
-    summary: 'Mechanically derive a per-site navigation structure from a record session. Default: raw observations (data only). With --draft: a ready, SELF-VERIFIED {node,states,edges} graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login wired) — drive a site once via the use verbs, then `--draft` and pipe to graph-edit. No hand-authoring fingerprints/URLs.',
+    summary: 'Mechanically derive a per-site navigation structure from one OR MORE record sessions. Default: raw observations (data only). With --draft: a ready, SELF-VERIFIED {node,states,edges} graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges, login wired) — one logical page = one state (in-page tabs/search/sort do NOT split it), and multiple sessions of the same site MERGE into one map. APPROVAL GATE: only sessions whose capture-review PASSED (`dev review`) are built from; a failed or never-reviewed session is excluded (reported as excludedUnverified) so the map is never trained on an untrusted capture. Drive a site, review each session until it passes, then `--draft` and pipe to graph-edit.',
     args: [],
     flags: [
-      { name: '--session', takesValue: true, description: 'Record session id from `dev record-start`.' },
-      { name: '--draft', takesValue: false, description: 'Emit a ready-to-edit graph spec (states+affordances) instead of raw observations; `_warning` flags states/edges the self-verify found shaky — curate those, then pipe to graph-edit.' },
+      { name: '--session', takesValue: true, description: 'Record session id. REPEATABLE — pass several to merge multiple drives of one site into one draft.' },
+      { name: '--host', takesValue: true, description: 'Auto-include EVERY recorded session for this host (e.g. progneo.analytics.mn) — drafts the whole site from all its drives at once.' },
+      { name: '--draft', takesValue: false, description: 'Emit a ready-to-edit graph spec (states+affordances) instead of raw observations; `_warning` flags anything the self-verify found shaky.' },
+      { name: '--skip-review-gate', takesValue: false, description: 'Build from ALL given sessions even if unreviewed/failed (bypasses the approval gate — for a deliberate raw build).' },
     ],
-    example: 'webnav dev graph-analyse --session map-1 --draft',
+    example: 'webnav dev graph-analyse --host progneo.analytics.mn --draft   # or: --session a --session b',
   },
   {
     name: 'graph-edit',
@@ -351,6 +353,27 @@ export const DEV_COMMANDS: CommandSpec[] = [
     args: [],
     flags: [{ name: '--session', takesValue: true, description: 'Record session id from `dev record-start`.' }],
     example: 'webnav dev effects --session map-1',
+  },
+  {
+    name: 'record-rename',
+    summary: 'Rename a recording\'s id (across the session row + its observations) and move its on-disk video/review dirs — so a session reads as what it captures (e.g. reports-list) instead of an ad-hoc id (s1final). Refuses if the target id already exists.',
+    args: [],
+    flags: [
+      { name: '--from', takesValue: true, description: 'Current session id.' },
+      { name: '--to', takesValue: true, description: 'New session id (must not already exist).' },
+    ],
+    example: 'webnav dev record-rename --from s1final --to reports-list',
+  },
+  {
+    name: 'review',
+    summary: 'Audit a recorded session\'s VIDEO against its captured STEPS (Sonnet over ffmpeg frames) → capture gaps: on-screen changes with no recorded step. Writes an APPROVED verdict tag on the session when zero gaps (→ graph-ready) or needs-fix with the gap list (exit 3). The per-session gate: a session should be APPROVED before you build a graph from it.',
+    args: [{ name: 'session', required: false, description: 'Record session id (or pass --session).' }],
+    flags: [
+      { name: '--session', takesValue: true, description: 'Record session id to review.' },
+      { name: '--model', takesValue: true, description: 'Review model (default sonnet).' },
+      { name: '--instructions', takesValue: true, description: 'Override the audit task prose (advanced).' },
+    ],
+    example: 'webnav dev review --session s1v3',
   },
   {
     name: 'verify',

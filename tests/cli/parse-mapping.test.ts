@@ -8,11 +8,20 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses record-stop', () => {
     expect(parseArgs(['dev', 'record-stop', '--session', 's1'])).toEqual({ cmd: 'record-stop', session: 's1' });
   });
-  it('parses graph-analyse', () => {
-    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1'])).toEqual({ cmd: 'graph-analyse', session: 's1', draft: false });
+  it('parses graph-analyse (single session → sessions array)', () => {
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1'])).toEqual({ cmd: 'graph-analyse', sessions: ['s1'], host: undefined, draft: false, skipReviewGate: false });
   });
   it('parses graph-analyse --draft', () => {
-    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1', '--draft'])).toEqual({ cmd: 'graph-analyse', session: 's1', draft: true });
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1', '--draft'])).toEqual({ cmd: 'graph-analyse', sessions: ['s1'], host: undefined, draft: true, skipReviewGate: false });
+  });
+  it('parses graph-analyse with MULTIPLE --session flags (merge)', () => {
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1', '--session', 's2', '--draft'])).toEqual({ cmd: 'graph-analyse', sessions: ['s1', 's2'], host: undefined, draft: true, skipReviewGate: false });
+  });
+  it('parses graph-analyse --host (all sessions for a site)', () => {
+    expect(parseArgs(['dev', 'graph-analyse', '--host', 'x.test', '--draft'])).toEqual({ cmd: 'graph-analyse', sessions: [], host: 'x.test', draft: true, skipReviewGate: false });
+  });
+  it('parses graph-analyse --skip-review-gate', () => {
+    expect(parseArgs(['dev', 'graph-analyse', '--session', 's1', '--draft', '--skip-review-gate'])).toEqual({ cmd: 'graph-analyse', sessions: ['s1'], host: undefined, draft: true, skipReviewGate: true });
   });
   it('parses graph-edit with node + graph json', () => {
     expect(parseArgs(['dev', 'graph-edit', '--node', 'example.com', '--graph', '{"states":[],"edges":[]}']))

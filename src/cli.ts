@@ -22,7 +22,7 @@ export type ParsedArgs =
   | { cmd: 'record-start'; session: string }
   | { cmd: 'record-stop'; session: string }
   | { cmd: 'record-live'; session: string; url: string; interval: number; browser: BrowserOpts }
-  | { cmd: 'graph-analyse'; session: string; draft: boolean }
+  | { cmd: 'graph-analyse'; sessions: string[]; host?: string; draft: boolean; skipReviewGate: boolean }
   | { cmd: 'graph-edit'; node: string; graph: string }
   | { cmd: 'graph-show'; node: string }
   | { cmd: 'node-clear'; node: string }
@@ -40,6 +40,8 @@ export type ParsedArgs =
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
+  | { cmd: 'record-rename'; from: string; to: string }
+  | { cmd: 'review'; session: string; model: string; instructions?: string }
   | { cmd: 'capture-loop'; objective: string; exploreCmd: string; sessionPrefix: string; maxRounds: number; model: string }
   | { cmd: 'verify'; node: string; session: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
@@ -63,6 +65,14 @@ function flagValue(args: string[], ...names: string[]): string | undefined {
     if (i !== -1) return args[i + 1];
   }
   return undefined;
+}
+
+// Collect EVERY value of a repeated flag (e.g. `--session a --session b`). Used by
+// graph-analyse to draft from MULTIPLE recording sessions of one site in one pass.
+function flagValues(args: string[], name: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) if (args[i] === name && args[i + 1] !== undefined) out.push(args[i + 1]);
+  return out;
 }
 
 // Browser launch flags shared by the verbs that open a browser (read / navigate /
@@ -164,7 +174,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // session comes from --session, falling back to the first positional — both humans
   // and agents naturally type `graph-analyse <id> --draft`, and the flag-only parse
   // silently queried session '' and reported "empty" (live-acceptance trap).
-  if (cmd === 'graph-analyse') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', draft: rest.includes('--draft') };
+  // sessions: repeated --session flags, or a single positional; --host <h> auto-includes
+  // every recorded session for that host (drafts the whole site from all its drives at once).
+  if (cmd === 'graph-analyse') {
+    const multi = flagValues(rest, '--session');
+    const host = flagValue(rest, '--host');
+    // positional session fallback (`graph-analyse <id>`) ONLY when no --session/--host given —
+    // else `--host x` would grab `x` as a positional. Skip a value that follows a value-flag.
+    const flagVals = new Set(['--host', '--session', '--browser', '--profile'].flatMap((f) => { const i = rest.indexOf(f); return i >= 0 ? [rest[i + 1]] : []; }));
+    const pos = (!multi.length && !host) ? rest.find((a) => !a.startsWith('--') && !flagVals.has(a)) : undefined;
+    const sessions = multi.length ? multi : (pos ? [pos] : []);
+    return { cmd, sessions, host, draft: rest.includes('--draft'), skipReviewGate: rest.includes('--skip-review-gate') };
+  }
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
@@ -175,6 +196,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'record-rename') return { cmd, from: flagValue(rest, '--from') ?? '', to: flagValue(rest, '--to') ?? '' };
+  if (cmd === 'review') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', model: flagValue(rest, '--model') ?? 'sonnet', instructions: flagValue(rest, '--instructions') };
   if (cmd === 'capture-loop') return { cmd, objective: flagValue(rest, '--objective') ?? '', exploreCmd: flagValue(rest, '--explore-cmd') ?? '', sessionPrefix: flagValue(rest, '--session-prefix') ?? 'cl', maxRounds: Number(flagValue(rest, '--max-rounds') ?? 5), model: flagValue(rest, '--model') ?? 'sonnet' };
   if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'sessions') {
@@ -360,6 +383,12 @@ async function main() {
     const profilesRoot = join(homedir(), '.webnav', 'profiles');
     // profile resolve + prep (same discipline as every other launch path)
     const sbrowser = { ...args.browser };
+    // Maximized-window config for HEADED capture sessions (repo-root playwright-cli.json;
+    // adapter applies it only when headed). Resolved from THIS module so CWD doesn't matter.
+    if (sbrowser.headed) {
+      const { fileURLToPath } = await import('node:url');
+      sbrowser.configPath = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'playwright-cli.json');
+    }
     let profName: string | null = null;
     if (args.profile) {
       const { resolveProfile } = await import('./playwright/adapter.js');
@@ -554,20 +583,53 @@ async function main() {
   }
   if (args.cmd === 'graph-analyse') {
     const { RecordStore } = await import('./mapstore/record.js');
-    const effects = new RecordStore(dbPath()).actionEffects(args.session);
+    const store = new RecordStore(dbPath());
+    // Resolve the session set: explicit --session (repeatable), or every recorded session
+    // for --host. MULTIPLE sessions of one site fold into ONE draft: their effects are
+    // concatenated in order and stable-pathname keying merges same-page visits automatically.
+    let sessionIds = args.sessions;
+    if (args.host) {
+      sessionIds = store.listSessions().filter((s) => s.site === args.host && s.steps > 0)
+        .map((s) => s.sessionId);
+    }
+    if (sessionIds.length === 0) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev graph-analyse --session <S> [--session <S2> …] [--host <h>] [--draft]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    // APPROVAL GATE: only build the map from sessions whose capture-review PASSED. A failed OR
+    // never-reviewed session is NOT trusted — training the graph on it would bake in whatever the
+    // review flagged (a missed step, a broken capture). --skip-review-gate bypasses for a
+    // deliberate raw build. Excluded sessions are reported, not silently dropped.
+    const excluded: { session: string; reason: string }[] = [];
+    if (!args.skipReviewGate) {
+      const kept: string[] = [];
+      for (const id of sessionIds) {
+        const rev = store.reviewOf(id);
+        if (rev?.approved) kept.push(id);
+        else excluded.push({ session: id, reason: rev ? `review failed (${rev.gaps} gap${rev.gaps===1?'':'s'})` : 'never reviewed' });
+      }
+      sessionIds = kept;
+      if (sessionIds.length === 0) {
+        console.log(JSON.stringify({ status: 'error', reason: 'no APPROVED sessions to build from', excluded,
+          hint: 'run `webnav dev review --session <S>` until it passes, or pass --skip-review-gate to build from raw sessions anyway' }, null, 2));
+        process.exitCode = 2; return;
+      }
+    }
+    const effects = sessionIds.flatMap((id) => store.actionEffects(id));
     if (args.draft) {
-      // --draft: fold the recorded walk-through into a ready, SELF-VERIFIED {node,states,edges}
+      // --draft: fold the recorded walk-through(s) into a ready, SELF-VERIFIED {node,states,edges}
       // graph-edit spec (absolute URLs, uniqueness fingerprints, resolvable edges) so learning
-      // is "drive once → accept", not hand-author. The agent curates + pipes to graph-edit.
+      // is "drive → accept", not hand-author. The agent pipes it straight to graph-edit.
       const { draftFromEffects } = await import('./explorer/draft.js');
       const draft = draftFromEffects(effects);
-      console.log(JSON.stringify({ status: draft.states.length ? 'done' : 'empty', ...draft }, null, 2));
+      console.log(JSON.stringify({ status: draft.states.length ? 'done' : 'empty', sessions: sessionIds,
+        ...(excluded.length ? { excludedUnverified: excluded } : {}), ...draft }, null, 2));
       if (draft.states.length === 0) process.exitCode = 3;
       return;
     }
     const { analyseActionEffects } = await import('./explorer/analyse.js');
     const result = analyseActionEffects(effects);
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, ...(excluded.length ? { excludedUnverified: excluded } : {}) }, null, 2));
     if (result.sites.length === 0) process.exitCode = 3;
     return;
   }
@@ -581,6 +643,60 @@ async function main() {
     process.stderr.write(`webnav ingest listening on http://127.0.0.1:${args.port}/ingest\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port }));
     await new Promise(() => {}); // run until killed
+    return;
+  }
+  if (args.cmd === 'record-rename') {
+    // Rename a recording's id (DB row + its observations) AND move its on-disk video/review
+    // dirs, so a session reads as what it captures (reports-list) not an ad-hoc id (s1final).
+    if (!args.from || !args.to) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev record-rename --from <id> --to <id>' }, null, 2)); process.exitCode = 2; return; }
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { renameSync, existsSync } = await import('node:fs');
+    const ok = new RecordStore(dbPath()).renameSession(args.from, args.to);
+    if (!ok) { console.log(JSON.stringify({ status: 'error', reason: `cannot rename: '${args.from}' unknown or '${args.to}' already exists` }, null, 2)); process.exitCode = 2; return; }
+    // move on-disk recordings/ + reviews/ dirs to match (best-effort; DB is the source of truth)
+    for (const root of ['recordings', 'reviews']) {
+      const src = join(homedir(), '.webnav', root, args.from);
+      const dst = join(homedir(), '.webnav', root, args.to);
+      if (existsSync(src) && !existsSync(dst)) { try { renameSync(src, dst); } catch { /* */ } }
+    }
+    console.log(JSON.stringify({ status: 'done', from: args.from, to: args.to }, null, 2));
+    return;
+  }
+  if (args.cmd === 'review') {
+    // Audit ONE recorded session's VIDEO against its captured STEPS (Sonnet over ffmpeg
+    // frames) → capture gaps. Writes a review verdict tag on the session: APPROVED (zero
+    // gaps → graph-ready) or needs-fix (gaps listed). This is the per-session gate the
+    // user asked for. Reuses runSessionReview (the same call capture-loop makes).
+    if (!args.session) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev review --session <S> [--model sonnet]' }, null, 2)); process.exitCode = 2; return; }
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { runSessionReview } = await import('./recorder/review.js');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
+    const store = new RecordStore(dbPath());
+    const fx = store.actionEffects(args.session);
+    if (fx.length === 0) { console.log(JSON.stringify({ status: 'empty', session: args.session, hint: 'no captured steps — nothing to review' }, null, 2)); process.exitCode = 3; return; }
+    const steps = fx.map((e) => ({
+      seq: e.seq,
+      kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
+      label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
+    }));
+    const videosRoot = join(homedir(), '.webnav', 'recordings');
+    const reviewsRoot = join(homedir(), '.webnav', 'reviews');
+    const res = await runSessionReview(args.session, {
+      videosDir: join(videosRoot, args.session), outDir: join(reviewsRoot, args.session),
+      steps, logs: [], log: (l) => process.stderr.write(l + '\n'),
+      claudeModel: args.model, instructions: args.instructions, structured: true,
+    });
+    const gaps = typeof res === 'string' ? [] : res.gaps;
+    const approved = gaps.length === 0;
+    const at = Date.now();
+    store.setReview(args.session, { approved, gaps: gaps.length, at, model: args.model,
+      reason: approved ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)` });
+    console.log(JSON.stringify({ status: approved ? 'approved' : 'needs-fix', session: args.session,
+      approved, gaps, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
+    if (!approved) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'effects') {
@@ -629,7 +745,7 @@ async function main() {
       },
       review: async (session) => {
         const steps = new RecordStore(dbPath()).actionEffects(session).map((e) => ({
-          seq: e.seq, kind: e.action ? (e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
+          seq: e.seq, kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
           label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
         }));
         const res = await runSessionReview(session, { videosDir: join(videosRoot, session), outDir: join(reviewsRoot, session),
@@ -1086,7 +1202,8 @@ async function main() {
         if (!/^[\w.-]+$/.test(id) || id === '.' || id === '..') return null;
         try {
           const f = join(reviewsRoot, id, 'review.md');
-          return { report: readFileSync(f, 'utf8'), at: statSync(f).mtimeMs };
+          const verdict = recordStore.reviewOf(id);   // stored {approved,gaps,...} → verdict banner
+          return { report: readFileSync(f, 'utf8'), at: statSync(f).mtimeMs, verdict };
         } catch { return null; }
       },
       reviewRunning: () => reviewBusy,
