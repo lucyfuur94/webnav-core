@@ -4,7 +4,7 @@ import { matchState, hasToken } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -35,7 +35,7 @@ export const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
   declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
-  role?: 'hub' | 'section' | 'detail';  // site-tree level, derived from the OBSERVED nav structure
+  role?: 'hub' | 'section' | 'detail' | 'shell';  // site-tree level ('shell' = the site-wide chrome record, not a page)
   parentState?: string | null;       // the section/page this drills DOWN from (label); null = top-level
   provisional?: string | null;       // seen once — core is unseparated data-vs-structure; record again
   _warning?: string;   // self-verify flag: non-unique fingerprint / unresolvable edge — agent curates
@@ -89,8 +89,6 @@ function isErrorLanding(nodes: SnapNode[]): boolean {
 // by the cross-link mesh, not here.)
 const INPUT_ROLES = new Set(['textbox', 'combobox', 'checkbox', 'searchbox', 'spinbutton']);
 function childKind(role: string): DraftAffordance['kind'] { return INPUT_ROLES.has(role) ? 'input' : 'mutate'; }
-// Label from the STABLE path (ids already stripped) so a state reads `report` / `dashboard`,
-// not `16116-bd5a1a4a…` (the raw record id). Uses the last 1-2 non-account segments.
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
 
 // Label from the non-{param} tail segments (≤2) of a template/key path so a state reads
@@ -122,15 +120,6 @@ function clusterFaces(faces: Face[], t: number): number[][] {
   return [...groups.values()];
 }
 
-// STABLE page identity — the key that makes one logical page ONE state regardless of what's
-// currently shown on it. A page is identified by its URL PATHNAME with the volatile parts
-// removed: (a) query string + hash (a `?currentTab=`/sort/filter is an in-page mutate, not a
-// new page), and (b) trailing ID-ish path segments (`/report/16116/<hash>` and its Flat/Nested
-// viz variants, `/dashboard/1210` — the collection is the page; the specific record/sub-view is
-// state ON it). Generic: any run of trailing segments that look like ids (digits, hashes, uuids)
-// collapses to the collection path. NOT site-specific. Two DIFFERENT records of the same
-// collection therefore share one state coordinate (correct per the affordance model — same
-// page-type, reached by the same route; the record id is a runtime input, not map structure).
 // A logical page: identified by its aliased URL key, defined by its SETTLED READY landings.
 // - landings/faces: only navigated + classifyReadiness==='ready' snapshots feed identity
 //   (Task 9 uses non-nav toSnapshots for affordances only — NOT here).
@@ -201,12 +190,23 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot);
   });
 
-  // ── 3. PROPOSE/DISPOSE templates (rule 3) ──
-  // Group keys by proposeTemplates; a group MERGES only when every member's first-landing face
-  // is structurally close (jaccard≥0.5) to the group's first member. Merged members map to a
-  // single canonical key (the template); non-merged keys keep their own key.
+  // ── SHELL (axis 3), computed PRE-MERGE from the distinct pages' first-landing faces ──
+  // The shared chrome = tokens on ≥80% of DISTINCT pages (extractShell; ≥4-page gate). One face
+  // per page (its first landing), NOT per landing — else a page visited many times would drown
+  // out the cross-page signal. Computed here (before template merge) on purpose: the dispose
+  // check and the SPA split both compare shell-SUBTRACTED faces (design doc: structural
+  // similarity runs on non-shell nodes), so single-segment chrome-heavy pages don't over-merge
+  // under /{param} on their identical sidebars.
   const observedKeys = [...landingsByKey.keys()];
-  const firstFace = (k: string): Face => faceOf(landingsByKey.get(k)![0]);
+  const shell = extractShell(observedKeys.map((k) => faceOf(landingsByKey.get(k)![0])));
+  const minusShell = (f: Face): Face => new Set([...f].filter((t) => !shell.has(t)));
+
+  // ── 3. PROPOSE/DISPOSE templates (rule 3) ──
+  // Group keys by proposeTemplates; a group MERGES only when every member's first-landing face,
+  // WITH SHELL SUBTRACTED, is structurally close (jaccard≥0.5) to the group's first member. On
+  // shell-subtracted faces so shared chrome can't inflate the similarity (the over-merge fix).
+  // Merged members map to a single canonical key (the template); non-merged keys keep their key.
+  const firstFace = (k: string): Face => minusShell(faceOf(landingsByKey.get(k)![0]));
   const canonical = new Map<string, string>();         // member key → canonical (template) key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   for (const g of proposeTemplates(observedKeys)) {
@@ -237,11 +237,11 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   };
   const makePage = (k: string, url: string, template: string | null, landings: SnapNode[][], labelBase: string): PageInfo => {
     const faces = landings.map(faceOf);
-    // rule 5: durable face = templateCore(faces) minus shell. Shell subtraction is Task 8 — seam:
-    // subtract an empty set for now (templateCore already collapses multi-landing variance).
+    // rule 5: durable face = templateCore(faces) minus shell — the site chrome lives on `_shell`,
+    // not on each page's core (else every state carries the whole sidebar, e.g. a 13-node shell
+    // duplicated across every page).
     const { tokens, provisional } = templateCore(faces);
-    const shell: Face = new Set();                     // ponytail: Task 8 fills this via extractShell
-    const core: Face = new Set([...tokens].filter((t) => !shell.has(t)));
+    const core = minusShell(tokens);
     const nodes: SnapNode[] = [];
     for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
     const coreNodes = landings[0].filter((n) => n.name && n.name.trim() && core.has(`${n.role}:${n.name}`));
@@ -249,8 +249,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   };
   for (const [k, { landings, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
-    // rule 4: SPA split — single-link cluster the landing faces at jaccard≥0.5.
-    const clusters = clusterFaces(landings.map(faceOf), 0.5);
+    // rule 4: SPA split — single-link cluster the landing faces at jaccard≥0.5, on SHELL-
+    // SUBTRACTED faces (same as dispose): the shared chrome is on every SPA view, so leaving it
+    // in would falsely collapse structurally-distinct views into one cluster.
+    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))), 0.5);
     if (clusters.length <= 1) { pages.push(makePage(k, url, template, landings, labelBase)); continue; }
     // >1 cluster at one key → split states, each named by a heading UNIQUE to its cluster.
     const clusterCores = clusters.map((idxs) => templateCore(idxs.map((i) => faceOf(landings[i]))).tokens);
@@ -389,18 +391,26 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // affordances too — NOT just the links that were clicked. One forward walk-through captures
   // every module's landing snapshot, which carries the full sidebar (Dashboard/other modules);
   // synthesizing those edges means modules aren't dead-ends and the agent never hand-authors
-  // (error-prone) back-edges. Each is a {role:link,name} fp the resolver handles; skip a link
-  // if an edge to that target already exists, or if it points at the page's own url.
+  // (error-prone) back-edges. Each is a {role:link,name} fp the resolver handles.
+  // Match a link's href through key() — base-strip + ALIAS — NOT raw sameTarget: a sidebar link
+  // often points at the PRE-REDIRECT ghost url (`/auth/login`) while the page actually SETTLED at
+  // the aliased key (`/dashboard/index`). sameTarget on the raw href would find no page and drop
+  // the edge (the redirect-mismatch mesh gap). Links live on landing nodes (`p.nodes` = union of the
+  // page's ready landings — mutation-after snapshots are never landings, so never here).
+  // SKIP shell links: a `link:X` in the shell is a from-anywhere edge that lives on `_shell`, not
+  // duplicated onto every page state.
+  const labelByKey = new Map<string, string>();   // canonical page key → its label (alias-resolved)
+  for (const p of pageList) if (!labelByKey.has(p.key)) labelByKey.set(p.key, p.label);
   for (const p of pageList) {
-    const byUrl = (url: string) => pageList.find((q) => sameTarget(q.url, url) || q.url === url);
     for (const n of p.nodes) {
       if (n.role !== 'link' || !n.name || !n.url) continue;
-      const target = byUrl(n.url);
-      if (!target || target.label === p.label) continue;          // unknown target / self
+      if (shell.has(`link:${n.name}`)) continue;                   // shell link → lives on _shell
+      const targetLabel = labelByKey.get(key(n.url));              // alias-aware resolution
+      if (!targetLabel || targetLabel === p.label) continue;       // unknown target / self
       const have = affById.get(p.label) ?? [];
-      if (have.some((a) => a.to === target.label)) continue;       // already have this edge
-      pushAff(p.label, { id: `aff_${affSeq++}_${target.label}`, label: n.name, kind: 'navigate',
-        to: target.label, elementFp: { role: 'link', name: n.name, near: null } });
+      if (have.some((a) => a.to === targetLabel)) continue;        // already have this edge
+      pushAff(p.label, { id: `aff_${affSeq++}_${targetLabel}`, label: n.name, kind: 'navigate',
+        to: targetLabel, elementFp: { role: 'link', name: n.name, near: null } });
     }
   }
 
@@ -466,23 +476,16 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   }
 
   // ── HIERARCHY (role + parentState), from the OBSERVED nav structure ──
-  // A website is a tree: a hub → sections (reachable from the shared sidebar) → detail pages
-  // (drilled INTO from a section). We tell them apart WITHOUT URL/frequency guessing: a link
-  // present on MOST pages is the shared SIDEBAR (global nav); a link present on only 1-2 pages is
-  // CONTENT (a drill-down). So:
-  //   • sidebar-target  → a SECTION (top-level, no parent).
+  // A website is a tree: sections (reachable from the shared shell/sidebar) → detail pages
+  // (drilled INTO from a section). We tell them apart WITHOUT URL/frequency guessing: a SHELL
+  // link is global nav; any other (content) link is a drill-down. So:
+  //   • shell-linked page   → a SECTION (top-level, no parent).
   //   • reached only via a content link → a DETAIL, parent = the page that content link is ON.
-  // (Verified live: sidebar links show on most pages; a single content drill-down link on 1 — clean split.)
+  // isSidebarLink now reads the SHELL directly (a link:X on the site chrome) rather than re-
+  // counting ≥60%-of-pages presence — same signal, one source of truth. `logo`/`home` stay a
+  // hard-coded chrome heuristic (they're global nav even when a small site's shell didn't fire).
   const stateLabels = new Set(states.map((s) => s.label));
-  // per-page LINK LABELS present (from each page's unioned snapshot nodes)
-  const linkPageCount = new Map<string, Set<string>>();   // link label → pages it appears on
-  for (const p of pageList) {
-    if (!stateLabels.has(p.label)) continue;
-    for (const n of p.nodes) if (n.role === 'link' && n.name) (linkPageCount.get(n.name) ?? linkPageCount.set(n.name, new Set()).get(n.name)!).add(p.label);
-  }
-  const nPages = states.length;
-  const sidebarCut = Math.max(3, Math.ceil(nPages * 0.6));
-  const isSidebarLink = (label: string) => (linkPageCount.get(label)?.size ?? 0) >= sidebarCut || /\b(logo|home)\b/i.test(label);
+  const isSidebarLink = (label: string) => shell.has(`link:${label}`) || /\b(logo|home)\b/i.test(label);
   // For each state, find a CONTENT (non-sidebar) navigate edge that lands on it → that's its parent.
   const parentOf = new Map<string, string>();
   for (const s of states) {
@@ -497,6 +500,45 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     s.parentState = parent;
     s.role = parent ? 'detail' : 'section';   // has a content parent → detail; else a top-level section
   }
+  // pageStates: the real pages (hierarchy + receipt + walk example see ONLY these). `_shell` is a
+  // site-level record, not a page — appended to `states` below but never a hierarchy node / entry.
+  const pageStates = [...states];
+
+  // ── SHELL STATE (axis 3, rule 2): the shared chrome, stored ONCE. Emitted only when shell is
+  // non-empty (the ≥4-page gate already guards this). Its affordances = the shell's declared
+  // interactive tokens: a shell `link:X` whose observed href keys (alias-aware) to a known page →
+  // a navigate to that page (a from-anywhere edge); shell buttons/inputs → mutate/input by role.
+  // We look up a representative SnapNode per shell token from the page landings to recover the
+  // link href (for alias resolution) and preserve the exact role.
+  if (shell.size) {
+    const repNode = new Map<string, SnapNode>();   // shell token → a representative node (for url/role)
+    for (const p of pageList) for (const n of p.nodes) {
+      if (!n.name) continue;
+      const tok = `${n.role}:${n.name}`;
+      if (shell.has(tok) && !repNode.has(tok)) repNode.set(tok, n);
+    }
+    const shellAff: DraftAffordance[] = [];
+    const goodLabels = new Set(pageStates.map((s) => s.label));
+    for (const tok of shell) {
+      const n = repNode.get(tok);
+      if (!n || !n.name) continue;
+      if (n.role === 'link') {
+        // navigate only if the href resolves (alias-aware) to a GOOD page state.
+        const targetLabel = n.url ? labelByKey.get(key(n.url)) : undefined;
+        if (!targetLabel || !goodLabels.has(targetLabel)) continue;   // dead/unknown shell link → drop
+        shellAff.push({ id: `sh_${affSeq++}_${targetLabel}`, label: n.name, kind: 'navigate',
+          to: targetLabel, elementFp: { role: 'link', name: n.name, near: null } });
+      } else if (INPUT_ROLES.has(n.role) || n.role === 'button') {
+        const aff: DraftAffordance = { id: `sh_${affSeq++}_${slug(n.name)}`, label: n.name,
+          kind: childKind(n.role), elementFp: { role: n.role, name: n.name, near: null } };
+        if (COMMIT_WORDS.test(n.name)) aff.needsClassification = true;   // flag, agent classifies (#2/#5a)
+        shellAff.push(aff);
+      }
+    }
+    const firstUrl = pageStates[0]?.urlPattern ?? '';
+    const originOf = (u: string): string => { try { return new URL(u).origin; } catch { return u; } };
+    states.push({ label: '_shell', role: 'shell', urlPattern: originOf(firstUrl), fingerprint: [], affordances: shellAff });
+  }
 
   // needsFix (the agent's "your move"): held-out degenerate landings + identity failures — an
   // SPA cluster with no distinguishing heading (rule 4), a name collision that stayed unresolved
@@ -509,18 +551,21 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     ...[...nameNeedsFix.entries()].map(([p, reason]) => ({ label: p.label, urlPattern: p.url, reason, affordances: 0 })),
   ];
   // requests: provisional states (seen once) surfaced as a record-next ask (rule 2 + core).
-  const requests = states.filter((s) => s.provisional).map((s) => `${s.label}: ${s.provisional}`);
+  // `_shell` is never provisional (no `provisional` field) so it's naturally excluded.
+  const requests = pageStates.filter((s) => s.provisional).map((s) => `${s.label}: ${s.provisional}`);
 
-  const entry = states.length ? states[0].label : null;
+  // entry / walkExample / receipt.states see ONLY page states — `_shell` is site chrome, not a
+  // navigable page in the tree.
+  const entry = pageStates.length ? pageStates[0].label : null;
   const node = host(pageList[0]?.url ?? '') ? { capabilities: [], topics: [] } : undefined;
   return {
     node, states, edges: [],
     ...(needsFix.length ? { needsFix } : {}),
     receipt: {
       entry,
-      states: states.map((s) => s.label),
-      walkExample: entry && states.length > 1
-        ? `webnav walk --start ${host(pageList[0].url)}:${entry} --goal ${host(pageList[0].url)}:${states[states.length - 1].label} --headless`
+      states: pageStates.map((s) => s.label),
+      walkExample: entry && pageStates.length > 1
+        ? `webnav walk --start ${host(pageList[0].url)}:${entry} --goal ${host(pageList[0].url)}:${pageStates[pageStates.length - 1].label} --headless`
         : null,
       requests,
     },
