@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -195,14 +195,27 @@ function distinguishingHeading(core: Face, others: Face[]): string | null {
 // non-shell tokens). 8 matches classifyReadiness's minNodes. All thresholds documented tunables.
 const sameFace = (a: Face, b: Face): boolean =>
   jaccard(a, b) >= 0.5 || (Math.min(a.size, b.size) >= 8 && containment(a, b) >= 0.9);
-// Single-link clustering of faces under `sameFace` (union-find). Returns clusters as index
-// groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at one
-// URL); same-structure repeat visits — and partial renders of one page — stay in one cluster.
-function clusterFaces(faces: Face[]): number[][] {
+// DISPOSE-ONLY control arm (live finding): two INSTANCES of one template share their CONTROL
+// skeleton even when instance data (product names, prices, related items) drags full-face
+// jaccard under the 0.5 bar (measured: full faces 0.45-0.49, control faces IDENTICAL). Gate:
+// the smaller control face must carry ≥4 tokens — sparser controls can't claim template
+// identity (a list page and a viewer sharing one Search button must not merge). NOT used by
+// the SPA-split: same-URL views legitimately differ by their controls. Thresholds are
+// documented tunables.
+const sameControls = (a: Face, b: Face): boolean => {
+  const ca = controlFace(a), cb = controlFace(b);
+  return Math.min(ca.size, cb.size) >= 4 && (jaccard(ca, cb) >= 0.6 || containment(ca, cb) >= 0.9);
+};
+// Single-link clustering of faces under a same-page predicate (union-find). Returns clusters as
+// index groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at
+// one URL); same-structure repeat visits — and partial renders of one page — stay in one cluster.
+// The predicate defaults to `sameFace`; a template-merged key passes the SAME predicate its
+// dispose used (incl. the control arm), else the split instantly undoes the dispose's merge.
+function clusterFaces(faces: Face[], same: (a: Face, b: Face) => boolean = sameFace): number[][] {
   const parent = faces.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   for (let i = 0; i < faces.length; i++) for (let j = i + 1; j < faces.length; j++) {
-    if (sameFace(faces[i], faces[j])) parent[find(i)] = find(j);
+    if (same(faces[i], faces[j])) parent[find(i)] = find(j);
   }
   const groups = new Map<number, number[]>();
   faces.forEach((_, i) => (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i));
@@ -314,13 +327,21 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   const firstFace = (k: string): Face => minusShell(faceOf(landingsByKey.get(k)![0]));
   const canonical = new Map<string, string>();         // member key → canonical (template) key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
+  const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
   for (const g of proposeTemplates(observedKeys)) {
     const members = g.keys.filter((k) => landingsByKey.has(k) && !canonical.has(k));
     if (members.length < 2) continue;
+    // The CONTROL arm applies only to INSTANCE-shaped templates: every member's varying segment
+    // is an opaque id (digits / long hex — the sanctioned URL-shape prior). A varying WORD
+    // segment names a SECTION, not an instance: /report/list vs /dashboard/list share their
+    // data-grid controls, and control-merging them fused three different sections into one
+    // false /{param}/list state (live finding).
+    const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
     const anchor = firstFace(members[0]);
-    const merged = members.filter((k) => sameFace(firstFace(k), anchor));
+    const merged = members.filter((k) => { const f = firstFace(k); return sameFace(f, anchor) || (opaqueParams && sameControls(f, anchor)); });
     if (merged.length < 2) continue;                   // dispose: not structurally one page
     for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
+    if (opaqueParams) opaqueTemplates.add(g.template);
   }
   const canonKey = (k: string): string => canonical.get(k) ?? k;
 
@@ -368,10 +389,16 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   };
   for (const [k, { landings, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
-    // rule 4: SPA split — single-link cluster the landing faces at jaccard≥0.5, on SHELL-
-    // SUBTRACTED faces (same as dispose): the shared chrome is on every SPA view, so leaving it
-    // in would falsely collapse structurally-distinct views into one cluster.
-    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))));
+    // rule 4: SPA split — single-link cluster the landing faces, on SHELL-SUBTRACTED faces (same
+    // as dispose): the shared chrome is on every SPA view, so leaving it in would falsely
+    // collapse structurally-distinct views into one cluster. A key merged under an OPAQUE-id
+    // template clusters with the dispose's OWN predicate (control arm included): its landings are
+    // different INSTANCES whose full faces differ by data — re-clustering them with the stricter
+    // same-URL predicate would instantly undo the merge and name states by instance headings.
+    const pred = opaqueTemplates.has(k)
+      ? (a: Face, b: Face) => sameFace(a, b) || sameControls(a, b)
+      : sameFace;
+    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))), pred);
     // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
     // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
     // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404

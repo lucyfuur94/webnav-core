@@ -1340,6 +1340,49 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(s.declaredShadow?.collections?.[0]?.columns).toEqual(['Id', 'Full Name', 'Job Title']);
   });
 
+  it('two template instances with identical CONTROL faces merge even when instance data drags full-face jaccard under the bar', () => {
+    // ae finding: /product_details/1 vs /product_details/3 — full faces jaccard 0.45-0.49 after
+    // shell subtraction (product names/prices/related items differ) but CONTROL faces identical.
+    // Controls are the template's skeleton; the pages must merge into ONE state labeled from the
+    // template, no instance-heading qualifier, fingerprint free of both instance headings.
+    const CONTROLS = ['- button "Add to cart" [ref=e7]', '- spinbutton "Quantity" [ref=e8]',
+      '- tab "Reviews" [ref=e9]', '- tab "Details" [ref=e10]', '- button "Add to wishlist" [ref=e11]'];
+    const P1 = shell('Blue Top', [...CONTROLS, '- paragraph "Rs. 500" [ref=e12]',
+      '- paragraph "Blue cotton top" [ref=e13]', '- paragraph "In stock" [ref=e14]']);
+    const P3 = shell('Sleeveless Dress', [...CONTROLS, '- paragraph "Rs. 900" [ref=e12]',
+      '- paragraph "White summer dress" [ref=e13]', '- paragraph "Made to order" [ref=e14]']);
+    const g = draftFromEffects([
+      nav(`${XB}/product_details/1`, P1),
+      nav(`${XB}/product_details/3`, P3),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const labels = g.states.map((s) => s.label);
+    expect(labels.filter((l) => l.startsWith('product-details')).length).toBe(1);   // ONE merged state
+    expect(labels).toContain('product-details');                                    // template label, no qualifier
+    expect(labels.join(',')).not.toMatch(/blue-top|sleeveless/);                     // no instance data in labels
+    const p = g.states.find((s) => s.label === 'product-details')!;
+    expect(p.fingerprint.join()).not.toMatch(/Blue Top|Sleeveless Dress/);           // identity is structural
+  });
+
+  it('anti-merge: same-template-shaped keys with DISJOINT control sets still split', () => {
+    // a real list page and a real viewer at /view/list vs /view/9001: each has ≥4 controls but
+    // the sets are disjoint — the control arm must NOT merge them (wrong-merge is the worse error).
+    const LIST = shell('Views', ['- button "New view" [ref=e7]', '- button "Refresh list" [ref=e8]',
+      '- textbox "Search views" [ref=e9]', '- button "Next page" [ref=e10]', '- listitem "row" [ref=e11]']);
+    const VIEWER = shell('Sales KPIs', ['- button "Setup panel" [ref=e7]', '- button "Customize it" [ref=e8]',
+      '- combobox "Filter field" [ref=e9]', '- button "Full screen" [ref=e10]', '- img "chart" [ref=e11]']);
+    const g = draftFromEffects([
+      nav(`${XB}/view/list`, LIST),
+      nav(`${XB}/view/9001`, VIEWER),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const labels = g.states.map((s) => s.label);
+    expect(labels).toContain('view-list');
+    expect(labels).toContain('view');        // /view/9001, opaque id dropped — SEPARATE state, no merge
+  });
+
   it('needsFix carries no duplicate (label, reason) entries', () => {
     // two genuinely-different HEADING-LESS faces at one key (low jaccard AND low containment):
     // still split, neither nameable → both clusters report the same (label, reason) → ONE entry.
