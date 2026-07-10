@@ -115,6 +115,25 @@ function clickedInOverlay(nodes: SnapNode[], action: { role: string; name: strin
   if (!action.name) return false;
   return nodes.some((n, i) => n.role === action.role && n.name === action.name && insideOverlay(nodes, i));
 }
+
+// Enumerated VALUE DOMAIN among an overlay's added nodes (axis 2): ≥3 same-role SAME-DEPTH nodes
+// with DISTINCT names are the overlay's choice list (a picker's dimension checkboxes) — data to
+// read live at walk time, never persisted. foldRepeats generalized past the shared-trailing-word
+// requirement, but scoped to REVEAL CHILDREN only: a page toolbar legitimately carries many
+// distinct same-depth buttons, so interior synthesis must never apply this.
+// ponytail: a revealed panel's own toolbar of ≥3 distinct buttons at one depth also folds — an
+// acceptable loss (children are informational; the walk re-reads the overlay live at the pause).
+function enumeratedNames(added: SnapNode[]): Set<string> {
+  const groups = new Map<string, Set<string>>();
+  for (const n of added) {
+    if (!n.name || !n.name.trim()) continue;
+    const k = `${n.role}|${n.depth}`;
+    (groups.get(k) ?? groups.set(k, new Set()).get(k)!).add(n.name);
+  }
+  const out = new Set<string>();
+  for (const names of groups.values()) if (names.size >= 3) for (const nm of names) out.add(nm);
+  return out;
+}
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
 
 // A control whose accessible NAME is nothing but a bare data literal — a date (`09 Jul 2026`,
@@ -247,7 +266,17 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     if (!urlByKey.has(k)) urlByKey.set(k, url);
   };
   effects.forEach((e, i) => {
-    if (i === 0 && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);   // the entry page
+    // per-session ENTRY landing (Task 15 review finding): the CLI concatenates sessions and each
+    // session's seq restarts at 0, so a session boundary is OBSERVABLE as a seq reset (seq ≤ the
+    // previous effect's; verified on the real 5-session data — strictly increasing within a
+    // session, 0 at each start). A session's first effect enters ON a real page whose only
+    // observation may be its fromSnapshot (a session recorded entirely on one page never
+    // navigates TO it) — the old i===0-only rule dropped that page for every session but the
+    // first, so all its recorded actions lost their fromLabel and were silently discarded (the
+    // report-builder husk: 46 real actions dropped). Seed the entry landing at EVERY boundary,
+    // through the same readiness-gated pushLanding path.
+    const sessionStart = i === 0 || e.seq <= effects[i - 1].seq;
+    if (sessionStart && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);
     if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot);
   });
 
@@ -362,10 +391,15 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // job; affordance synthesis targets the FIRST page for a key (the common non-split case).
   const pageForKey = new Map<string, PageInfo>();
   for (const p of pageList) if (!pageForKey.has(p.key)) pageForKey.set(p.key, p);
+  // URL → the PAGE key: alias-resolved AND canonicalized. A page that merged into a {param}
+  // template is registered under the TEMPLATE key (p.key), so every lookup from a raw URL must
+  // apply canonKey too — without it, every recorded action FROM a merged member URL resolved no
+  // label and was silently dropped (the report-builder husk's second cause, latent until the
+  // per-session entry landings made the /report/16116/{param} merge actually happen).
+  const fromPageKey = (url: string) => canonKey(key(url));
   const pageKeyForEffectLanding = new Map<number, string>();
-  effects.forEach((e, i) => { if (e.navigated && e.toSnapshot && ready(e.toSnapshot)) pageKeyForEffectLanding.set(i, key(e.toUrl)); });
+  effects.forEach((e, i) => { if (e.navigated && e.toSnapshot && ready(e.toSnapshot)) pageKeyForEffectLanding.set(i, fromPageKey(e.toUrl)); });
   const labelOf = (k: string | null) => (k ? pageForKey.get(k)?.label ?? null : null);
-  const fromPageKey = (url: string) => key(url);
 
   // ── 2. partition GOOD vs DEGENERATE, then fingerprint the good set against ITSELF ──
   // A degenerate landing (404/error, or no distinctive content) is held OUT of `states` and
@@ -440,8 +474,20 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
 
   // ── 3+4. affordances per FROM page from the recorded transitions ──
   const affById = new Map<string, DraftAffordance[]>();   // page label → its affordances
+  // One repertoire row per DISTINCT control: recorded ids are per-click (`aff_N_…`), so a
+  // re-clicked control must dedup by control identity (kind+label+to), not id — else every
+  // repeat click duplicates the affordance (the builder had `Remove` ×6, `Share` ×2). A
+  // re-observed REVEAL may expose children an earlier click didn't → union children by label;
+  // a later navigate that gained `needs` (login inputs) keeps them.
   const pushAff = (label: string, a: DraftAffordance) => {
-    const list = affById.get(label) ?? []; if (!list.some((x) => x.id === a.id)) list.push(a); affById.set(label, list);
+    const list = affById.get(label) ?? []; affById.set(label, list);
+    const twin = list.find((x) => x.kind === a.kind && x.label === a.label && x.to === a.to);
+    if (!twin) { list.push(a); return list; }
+    if (a.children?.length) {
+      const have = new Set((twin.children ?? []).map((c) => c.label));
+      twin.children = [...(twin.children ?? []), ...a.children.filter((c) => !have.has(c.label))];
+    }
+    if (a.needs && !twin.needs) { twin.needs = a.needs; twin.acceptsInput = a.acceptsInput; }
     return list;
   };
   let affSeq = 0;
@@ -475,13 +521,19 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // else MUTATE (an in-place change — sort/filter/search). Carries the recovered elementFp.
       if (e.action.name) {
         const fp: ElementFingerprint = e.action.elementFp ?? { role: e.action.role, name: e.action.name, near: null };
-        // reveal children are DE-VALUED (rule 2): drop members of foldRepeats(added).foldedNames —
-        // the enumerated value list an overlay lays out (e.g. 28 dimension checkboxes) is DATA, not
-        // structure; only the overlay's unique controls (Search/Apply/Cancel/View All) are kept.
+        // reveal children are DE-VALUED (rule 2), two folds:
+        //  • foldRepeats — names sharing a trailing word (`<X> Remove` chips);
+        //  • enumeratedNames — ≥3 same-role SAME-DEPTH children with distinct names are the
+        //    overlay's enumerated VALUE DOMAIN (a picker's 17 dimension checkboxes: Publisher,
+        //    Country, Month…) — data read LIVE at walk time, never persisted (axis 2). The
+        //    overlay's own controls (Apply/Cancel/Close/Search/tabs) never repeat ≥3-distinct
+        //    at one role+depth, so they survive. Safe ONLY inside an overlay — a PAGE toolbar
+        //    legitimately has many distinct buttons (interior synthesis must not use this).
         const addedNodes = e.diff?.added ?? [];
         const { foldedNames } = foldRepeats(addedNodes);
+        const valueDomain = enumeratedNames(addedNodes);
         const children: DraftAffordance[] = addedNodes
-          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name))
+          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
             kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
             ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
@@ -535,7 +587,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     for (const n of p.nodes) {
       if (n.role !== 'link' || !n.name || !n.url) continue;
       if (shell.has(`link:${n.name}`)) continue;                   // shell link → lives on _shell
-      const targetLabel = labelByKey.get(key(n.url));              // alias-aware resolution
+      const targetLabel = labelByKey.get(fromPageKey(n.url));      // alias- AND canonical-aware
       if (!targetLabel || targetLabel === p.label) continue;       // unknown target / self
       const have = affById.get(p.label) ?? [];
       if (have.some((a) => a.to === targetLabel)) continue;        // already have this edge
@@ -692,7 +744,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       if (!n || !n.name) continue;
       if (n.role === 'link') {
         // navigate only if the href resolves (alias-aware) to a GOOD page state.
-        const targetLabel = n.url ? labelByKey.get(key(n.url)) : undefined;
+        const targetLabel = n.url ? labelByKey.get(fromPageKey(n.url)) : undefined;
         if (!targetLabel || !goodLabels.has(targetLabel)) continue;   // dead/unknown shell link → drop
         shellAff.push({ id: `sh_${affSeq++}_${targetLabel}`, label: n.name, kind: 'navigate',
           to: targetLabel, elementFp: { role: 'link', name: n.name, near: null } });

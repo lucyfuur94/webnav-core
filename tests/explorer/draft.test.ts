@@ -1201,6 +1201,99 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(w.affordances.some((a) => a.label === 'Apply filter')).toBe(true);   // named control kept
   });
 
+  it('a session that starts ON a page never navigated-to keeps that page + its recorded actions (per-session entry landings)', () => {
+    // session boundary = seq reset in the concatenated stream. Session 2 enters DIRECTLY on
+    // /builder/edit and only acts in-page — with the old i===0-only entry rule that page never
+    // became a landing, so fromLabel was null and every recorded action was silently dropped
+    // (the report-builder husk: 46 real actions lost).
+    const BUILDER = shell('Builder', ['- button "Add widget" [ref=e7]', '- button "Save As" [ref=e8]', '- paragraph "canvas" [ref=e9]']);
+    const inPage = (seq: number, name: string): StoredActionEffect => ({ seq, capturedAt: 0,
+      fromUrl: `${XB}/builder/edit`, fromSnapshot: BUILDER,
+      action: { role: 'button', name, ref: 'e7', elementFp: { role: 'button', name, near: null } },
+      toUrl: `${XB}/builder/edit`, toSnapshot: BUILDER, navigated: false, diff: { added: [], removed: [] } as any });
+    const g = draftFromEffects([
+      // session 1 (seqs 0..1): enters on /home, navigates around — never touches /builder/edit.
+      { ...nav(`${XB}/alpha/list`, shell('Alpha', ['- button "New alpha" [ref=e7]', '- paragraph "A" [ref=e8]'])), seq: 0 },
+      { ...nav(`${XB}/beta/list`, shell('Beta', ['- button "New beta" [ref=e7]', '- paragraph "B" [ref=e8]'])), seq: 1 },
+      // session 2 (seq RESETS to 0): starts on /builder/edit, acts in-page only.
+      inPage(0, 'Add widget'),
+      inPage(1, 'Save As'),
+    ] as never);
+    const b = g.states.find((s) => s.label === 'builder-edit')!;
+    expect(b, 'the session-2 entry page must be a state').toBeDefined();
+    expect(b.affordances.some((a) => a.label === 'Add widget')).toBe(true);
+    expect(b.affordances.some((a) => a.label === 'Save As')).toBe(true);
+  });
+
+  it('a recorded action FROM a member URL of a merged {param} template attaches to the merged state', () => {
+    // /item/1111/edit and /item/2222/edit merge under /item/{param}/edit; a recorded REVEAL from
+    // the 2222 member URL must land on the merged state. (Latent bug: lookups used the raw key
+    // while merged pages register under the canonical template key — the action was dropped.)
+    // Asserted via a reveal-with-children, which interior synthesis cannot produce.
+    const FACE = shell('Item Editor', ['- tab "Design" [ref=e7]', '- button "Publish it" [ref=e8]', '- paragraph "editor" [ref=e9]']);
+    const g = draftFromEffects([
+      nav(`${XB}/item/1111/edit`, FACE),
+      nav(`${XB}/item/2222/edit`, FACE),
+      { seq: 2, capturedAt: 0, fromUrl: `${XB}/item/2222/edit`, fromSnapshot: FACE,
+        action: { role: 'button', name: 'Publish it', ref: 'e8', elementFp: { role: 'button', name: 'Publish it', near: null } },
+        toUrl: `${XB}/item/2222/edit`, toSnapshot: FACE, navigated: false,
+        diff: { added: [
+          { role: 'menuitem', name: 'To staging', ref: 'e20', url: null, raw: '', depth: 2 },
+          { role: 'menuitem', name: 'To prod', ref: 'e21', url: null, raw: '', depth: 2 },
+        ], removed: [] } as any },
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const merged = g.states.find((s) => s.urlPattern.includes('/item/1111/edit'))!;
+    expect(merged, 'merged template state').toBeDefined();
+    const reveal = merged.affordances.find((a) => a.kind === 'reveal' && a.label === 'Publish it');
+    expect(reveal, 'recorded reveal from the member URL').toBeTruthy();
+    expect((reveal!.children ?? []).map((c) => c.label).sort()).toEqual(['To prod', 'To staging']);
+  });
+
+  it('an overlay\'s enumerated value domain (≥3 same-role same-depth distinct names) never persists as reveal children', () => {
+    // a picker overlay: 4 dimension checkboxes at one depth (the VALUE domain — read live at walk
+    // time) + the overlay's own controls (Apply/Cancel at another depth) which must survive.
+    const PAGE = shell('Editor', ['- button "Pick dimensions" [ref=e7]', '- paragraph "x" [ref=e8]', '- listitem "row" [ref=e9]']);
+    const added = [
+      { role: 'dialog', name: 'All Dimensions', ref: 'e19', url: null, raw: '', depth: 2 },
+      { role: 'checkbox', name: 'Publisher', ref: 'e20', url: null, raw: '', depth: 6 },
+      { role: 'checkbox', name: 'Country', ref: 'e21', url: null, raw: '', depth: 6 },
+      { role: 'checkbox', name: 'Month', ref: 'e22', url: null, raw: '', depth: 6 },
+      { role: 'checkbox', name: 'Device', ref: 'e23', url: null, raw: '', depth: 6 },
+      { role: 'button', name: 'Apply', ref: 'e24', url: null, raw: '', depth: 4 },
+      { role: 'button', name: 'Cancel', ref: 'e25', url: null, raw: '', depth: 4 },
+    ];
+    const g = draftFromEffects([
+      { ...nav(`${XB}/editor/main`, PAGE), seq: 0 },
+      { seq: 1, capturedAt: 0, fromUrl: `${XB}/editor/main`, fromSnapshot: PAGE,
+        action: { role: 'button', name: 'Pick dimensions', ref: 'e7', elementFp: { role: 'button', name: 'Pick dimensions', near: null } },
+        toUrl: `${XB}/editor/main`, toSnapshot: PAGE, navigated: false, diff: { added, removed: [] } as any },
+    ] as never);
+    const ed = g.states.find((s) => s.label === 'editor-main')!;
+    const reveal = ed.affordances.find((a) => a.kind === 'reveal' && a.label === 'Pick dimensions')!;
+    const childLabels = (reveal.children ?? []).map((c) => c.label).sort();
+    expect(childLabels).toEqual(['Apply', 'Cancel']);   // controls kept; Publisher/Country/Month/Device dropped
+  });
+
+  it('a control clicked twice yields ONE affordance; reveal children are unioned', () => {
+    const PAGE = shell('Catalog', ['- button "Filter" [ref=e7]', '- paragraph "x" [ref=e8]', '- listitem "row" [ref=e9]']);
+    const click = (seq: number, added: any[]): StoredActionEffect => ({ seq, capturedAt: 0,
+      fromUrl: `${XB}/catalog/list`, fromSnapshot: PAGE,
+      action: { role: 'button', name: 'Filter', ref: 'e7', elementFp: { role: 'button', name: 'Filter', near: null } },
+      toUrl: `${XB}/catalog/list`, toSnapshot: PAGE, navigated: false, diff: { added, removed: [] } as any });
+    const g = draftFromEffects([
+      { ...nav(`${XB}/catalog/list`, PAGE), seq: 0 },
+      click(1, [{ role: 'menuitem', name: 'By price', ref: 'e20', url: null, raw: '', depth: 2 }]),
+      click(2, [{ role: 'menuitem', name: 'By price', ref: 'e20', url: null, raw: '', depth: 2 },
+                { role: 'menuitem', name: 'By size', ref: 'e21', url: null, raw: '', depth: 2 }]),
+    ] as never);
+    const cat = g.states.find((s) => s.label === 'catalog-list')!;
+    const filters = cat.affordances.filter((a) => a.label === 'Filter');
+    expect(filters.length).toBe(1);                       // deduped by control identity, not click id
+    expect((filters[0].children ?? []).map((c) => c.label).sort()).toEqual(['By price', 'By size']);
+  });
+
   it('single-instance param page with a heading-only fingerprint is held out (no instance-data identity)', () => {
     // one visit to /dashboard/1210 whose only non-shell token is heading:Testuser → needsFix,
     // NOT a state fingerprinted on the user name.

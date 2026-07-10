@@ -35,10 +35,21 @@ describe.skipIf(!existsSync(DB))('progneo offline acceptance', () => {
     expect(shell, '_shell state').toBeDefined();
     expect(shell.affordances.length).toBeGreaterThanOrEqual(8);
 
-    // report page: page-level (non-row) affordances bounded — no ~130-affordance data explosion
-    const report = g.states.find((s) => s.label === 'report')!;
-    expect(report, 'report state').toBeDefined();
-    expect(report.affordances.filter((a) => !a.scope).length).toBeLessThanOrEqual(30);
+    // The BUILDER state — picked by urlPattern (the report-builder session's entry page), not by
+    // label (viz-variant merging/naming may move the label). Bounded on BOTH sides: the upper
+    // bound kills the ~130-affordance data explosion; the LOWER bounds kill the hollow-pass husk
+    // (Task 15 review finding: 46 genuine recorded builder actions were dropped by the
+    // i===0-only entry-landing rule + the missing canonical-key attribution, and 3 affordances
+    // sailed under `≤30`).
+    const builder = g.states.find((s) => s.urlPattern.includes('/report/16116/bd5a'))!;
+    expect(builder, 'builder state (bd5a urlPattern)').toBeDefined();
+    const builderPageLevel = builder.affordances.filter((a) => !a.scope);
+    expect(builderPageLevel.length).toBeGreaterThanOrEqual(8);
+    expect(builderPageLevel.length).toBeLessThanOrEqual(30);
+    // ground-truth recorded builder actions must be present (as affordance or reveal label)
+    const builderNames = new Set(builder.affordances.flatMap((a) => [a.label, ...(a.children ?? []).map((c) => c.label)]));
+    const groundTruth = ['Share', 'Save As / Schedule', 'Add dimensions', 'Add metrics', 'Download as formatted CSV', 'Save Visualization'];
+    expect(groundTruth.filter((n) => builderNames.has(n)).length).toBeGreaterThanOrEqual(4);
 
     // no fingerprint anchored on instance data (the logged-in user's name)
     expect(g.states.every((s) => !s.fingerprint.join().includes('Testuser'))).toBe(true);
