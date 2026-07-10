@@ -1,6 +1,37 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-07-07 · **Branch:** `main` · **Tests:** 494 unit pass + 7 skip · **Build:** green
+**Updated:** 2026-07-11 · **Branch:** `structure-inference` (merging to `main`) · **Tests:** 673 unit pass + 7 skip (live e2e) · **Build:** green
+
+> **2026-07-11 — STRUCTURE INFERENCE shipped: recording→graph is now observation-based, zero site-tuned heuristics.**
+> Full redesign per `2026-07-10-structure-inference-design.md` + plan `2026-07-10-structure-inference.md`.
+> The draft engine infers structure from five site-agnostic evidence axes (settledness/aliases ·
+> ARIA declaration · cross-page shell · cross-visit template cores with `provisional` marking ·
+> within-page repetition folds); identity = URL-template × structural-template (propose/dispose,
+> control-face arm, containment for partial renders, fixpoint multi-param merge); recorder settles
+> before capture and records `requestedUrl` (incl. clicked links' declared hrefs) on all agent paths;
+> `_shell` state carries site chrome once (from-anywhere edges, heal writes back to the owner);
+> foreign-host landings are excluded as blocked doors (never states); the map REPORTS what to record
+> next (`receipt.requests`) and the dashboard badges provisional states. Deleted: ID_SEG, pathSlug,
+> RECORD_COUNT_RE, subTabContainer, union-of-mutation-afters, `-2` suffixes — enforced by
+> `tests/guidelines.test.ts`.
+> **Validated live on four sites, same code, no site conditionals:**
+> - **the analytics SPA** (6 real sessions): ONE confirmed `report` builder (template `/report/{param}/{param}`,
+>   22 page-level affordances, 12/12 ground-truth actions), shell extracted, no ghost states, no
+>   data-values, no instance-heading fingerprints; SSO wall reported as a blocked door, not a state.
+> - **saucedemo**: seeded walk login→checkout-complete completes end-to-end (resume protocol intact).
+> - **OrangeHRM**: the historical redirect-mismatch mesh bug is CLOSED (declared-href aliases);
+>   login state modeled (inputs + acceptsInput:credentials); partial-render landings no longer
+>   lose pages (containment clustering); grid columns reach the shadow.
+> - **automationexercise**: two product pages merge into ONE `product-details` template state,
+>   cross-instance confirmed, no product names anywhere.
+> **Open items:** (1) the analytics SPA dashboard confirm-visit blocked by Cloudflare SSO mid-session —
+> needs a user re-login, then `dashboard` confirms and its needsFix clears; (2) GATED: the human
+> recorder (`live-record.ts`) still lacks declared-href `requestedUrl` capture (same fix as the
+> agent paths; capture-engine edits await explicit user OK); (3) `ingest.ts` extension path
+> (deprecated) unpatched; (4) minor ledger (edge-label instance names on row-links, same-name
+> child folds, kind+label dedup doubling) in `.superpowers/sdd/progress.md` for follow-up.
+> Review-flow audit (2026-07-10, below-referenced): review gates capture completeness; analyse
+> `requests` is the separate structural-refine loop — deliberately NOT conflated.
 
 > **2026-07-08 — control center hardened through 8 live test-drive batches + FLOW VARIABLES.**
 > The dashboard Recordings control center (built 2026-07-07) was exercised hands-on and hardened:
