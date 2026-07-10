@@ -234,7 +234,9 @@ export class MapStore implements IMapStore {
     if (fromState === shellId) return [];
     const shell = this.getState(shellId);
     if (!shell) return [];
-    return this.projectFromAffordances(shell).map((e) => ({ ...e, fromState }));
+    // affordanceOwner: viaAffordance lives on the SHELL state, not the asking page — a heal
+    // (healStep → recordElementFp) must write back there, not to fromState.
+    return this.projectFromAffordances(shell).map((e) => ({ ...e, fromState, affordanceOwner: shellId }));
   }
   /** NOTE: does NOT fan the `_shell` from-anywhere edges out onto every page here — this is the
    *  flat human-facing listing (graph-show/outline/mermaid); duplicating N shell edges across
