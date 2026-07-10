@@ -36,6 +36,8 @@ const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkb
 export const COMMIT_WORDS = /\b(delete|remove|save|submit|confirm|place\s*order|pay|apply|finish|purchase|buy|send)\b/i;
 export interface DraftState {
   label: string; urlPattern: string; fingerprint: string[]; affordances: DraftAffordance[];
+  template?: string | null;          // the {param} URL template this state was merged under (e.g.
+                                     // /report/{param}/{param}); urlPattern stays the first observed full URL
   declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
   role?: 'hub' | 'section' | 'detail' | 'shell';  // site-tree level ('shell' = the site-wide chrome record, not a page)
   parentState?: string | null;       // the section/page this drills DOWN from (label); null = top-level
@@ -206,6 +208,7 @@ const sameControls = (a: Face, b: Face): boolean => {
   const ca = controlFace(a), cb = controlFace(b);
   return Math.min(ca.size, cb.size) >= 4 && (jaccard(ca, cb) >= 0.6 || containment(ca, cb) >= 0.9);
 };
+const unionOf = (fs: Face[]): Face => { const u: Face = new Set(); for (const f of fs) for (const t of f) u.add(t); return u; };
 // Single-link clustering of faces under a same-page predicate (union-find). Returns clusters as
 // index groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at
 // one URL); same-structure repeat visits — and partial renders of one page — stay in one cluster.
@@ -262,6 +265,12 @@ interface PageInfo {
  * hierarchy, self-verify, needsFix assembly.
  */
 export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
+  // The map's HOST = where the recording started (the operator's site). A landing that SETTLED
+  // on another host is a blocked door (SSO wall, CDN interstitial) — Finding 7 / doors posture:
+  // detect + escalate (needsFix), never a state of THIS site's map, never a site rule.
+  const mapHost = host(effects[0]?.fromUrl ?? '');
+  const foreignHosts = new Map<string, string>();      // foreign host → first observed URL there
+
   // ── 1. KEY: URL model + alias map (rule 1) ──
   const allUrls: string[] = [];
   effects.forEach((e, i) => {
@@ -269,10 +278,18 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     if (e.toUrl) allUrls.push(e.toUrl);
     if (e.requestedUrl) allUrls.push(e.requestedUrl);
   });
-  const model = inferUrlModel(allUrls);
+  // foreign-host URLs must not dilute the base inference (enough interstitial hits would push
+  // the real tenant prefix under the 80% bar and break every key, incl. the ghost merge).
+  const model = inferUrlModel(mapHost ? allUrls.filter((u) => host(u) === mapHost) : allUrls);
   const alias = new Map<string, string>();   // requested key → settled key (pre-redirect ghost)
   for (const e of effects) {
     if (!e.navigated || !e.requestedUrl) continue;
+    // an alias is only valid WITHIN the map's host: a navigate that requested a page of this
+    // site but SETTLED on a foreign host hit a blocked door (SSO wall) — aliasing the legit key
+    // to the wall's key would pull every real landing of that page onto the foreign key (live
+    // finding: /dashboard/list aliased onto a Cloudflare /cdn-cgi/access/login key, so the real
+    // dashboard-list state vanished and a wall-named ghost carried its landings).
+    if (mapHost && (host(e.requestedUrl) !== mapHost || host(e.toUrl) !== mapHost)) continue;
     const rk = model.keyOf(e.requestedUrl), sk = model.keyOf(e.toUrl);
     if (rk !== sk) alias.set(rk, sk);
   }
@@ -289,6 +306,11 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   const urlByKey = new Map<string, string>();          // first full URL observed for a key
   const pushLanding = (url: string, snap: string) => {
     if (!ready(snap)) return;
+    // FOREIGN-HOST gate (Finding 7): a ready landing on another host is a blocked door — record
+    // it once per host for needsFix and refuse it as a landing (no page → no state, no request,
+    // and the from-page's navigate edge to it never materializes: labelOf finds no page).
+    const h = host(url);
+    if (mapHost && h && h !== mapHost) { if (!foreignHosts.has(h)) foreignHosts.set(h, url); return; }
     const k = key(url);
     (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(parseSnapshot(snap));
     if (!urlByKey.has(k)) urlByKey.set(k, url);
@@ -325,9 +347,11 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // shell-subtracted faces so shared chrome can't inflate the similarity (the over-merge fix).
   // Merged members map to a single canonical key (the template); non-merged keys keep their key.
   const firstFace = (k: string): Face => minusShell(faceOf(landingsByKey.get(k)![0]));
-  const canonical = new Map<string, string>();         // member key → canonical (template) key
+  const canonical = new Map<string, string>();         // member key → its merged template key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
+  const faceFor = new Map<string, Face>();             // key (original OR template) → anchor face
+  for (const k of observedKeys) faceFor.set(k, firstFace(k));
   for (const g of proposeTemplates(observedKeys)) {
     const members = g.keys.filter((k) => landingsByKey.has(k) && !canonical.has(k));
     if (members.length < 2) continue;
@@ -337,13 +361,57 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // data-grid controls, and control-merging them fused three different sections into one
     // false /{param}/list state (live finding).
     const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
-    const anchor = firstFace(members[0]);
-    const merged = members.filter((k) => { const f = firstFace(k); return sameFace(f, anchor) || (opaqueParams && sameControls(f, anchor)); });
+    const anchor = faceFor.get(members[0])!;
+    const merged = members.filter((k) => { const f = faceFor.get(k)!; return sameFace(f, anchor) || (opaqueParams && sameControls(f, anchor)); });
     if (merged.length < 2) continue;                   // dispose: not structurally one page
     for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
+    // a template's face = the UNION of its members' faces (the template's whole OBSERVED
+    // repertoire). A single anchor face is a fragile representative: one report's anchor was its
+    // FULL builder view, a sibling report's anchor its SPARSE list view — cross-template jaccard
+    // 0.07 even though each template had a member view nearly identical to the other's (0.81).
+    // The union lets the fixpoint's containment arms see that shared member evidence.
+    faceFor.set(g.template, unionOf(merged.map((m) => faceFor.get(m)!)));
     if (opaqueParams) opaqueTemplates.add(g.template);
   }
-  const canonKey = (k: string): string => canonical.get(k) ?? k;
+  // ── 3b. FIXPOINT over canonicalized keys (Finding 8): single-position proposal cannot merge
+  // MULTI-param URLs (/report/16128/f9e43 vs /report/16116/bd5a differ at TWO positions → no
+  // proposal → one sibling state per report id: instance explosion). After the positional pass,
+  // repeat a pairwise unification over the CANONICAL keys with `{param}` as a wildcard: two keys
+  // equal everywhere but ONE position (a {param} matches anything) merge under the SAME dispose
+  // arms — full-face OR (both differing segs opaque AND control-face). Bounded by the max
+  // segment count (each pass abstracts ≥1 position); over-merge is no easier than the positional
+  // pass since the arms and the word-segment gate are identical.
+  const resolveCanon = (k: string): string => { let c = k; while (canonical.has(c)) c = canonical.get(c)!; return c; };
+  const segsOfKey = (k: string): string[] => k.split('/').filter(Boolean);
+  const maxPasses = Math.max(0, ...observedKeys.map((k) => segsOfKey(k).length));
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const current = [...new Set(observedKeys.map(resolveCanon))];
+    let mergedAny = false;
+    for (let i = 0; i < current.length; i++) for (let j = i + 1; j < current.length; j++) {
+      const a = current[i], b = current[j];
+      if (canonical.has(a) || canonical.has(b)) continue;          // re-merged earlier this pass
+      const sa = segsOfKey(a), sb = segsOfKey(b);
+      if (sa.length !== sb.length || !sa.length) continue;
+      let diff = -1, ok = true;                                    // {param}-wildcard unification
+      for (let x = 0; x < sa.length && ok; x++) {
+        if (sa[x] === sb[x] || sa[x] === '{param}' || sb[x] === '{param}') continue;
+        if (diff >= 0) ok = false; else diff = x;
+      }
+      if (!ok || diff < 0) continue;
+      const bothOpaque = isOpaqueSeg(sa[diff]) && isOpaqueSeg(sb[diff]);
+      const fa = faceFor.get(a)!, fb = faceFor.get(b)!;
+      if (!(sameFace(fa, fb) || (bothOpaque && sameControls(fa, fb)))) continue;
+      const t = '/' + sa.map((s, x) => (x === diff || s === '{param}' || sb[x] === '{param}') ? '{param}' : s).join('/');
+      if (t !== a) canonical.set(a, t);                            // never a self-loop
+      if (t !== b) canonical.set(b, t);
+      faceFor.set(t, unionOf([faceFor.get(t) ?? new Set<string>(), fa, fb]));   // union repertoire
+      templateForKey.set(t, t);
+      if (bothOpaque || opaqueTemplates.has(a) || opaqueTemplates.has(b)) opaqueTemplates.add(t);
+      mergedAny = true;
+    }
+    if (!mergedAny) break;
+  }
+  const canonKey = resolveCanon;
 
   // fold each observed key's landings/url into its canonical key.
   const byCanon = new Map<string, { landings: SnapNode[][]; url: string; template: string | null }>();
@@ -718,6 +786,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       .map((a) => (a.children ? { ...a, children: a.children.filter((c) => !isDataLiteral(c.label)) } : a));
     states.push({
       label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint, affordances,
+      ...(p.template ? { template: p.template } : {}),
       ...(hasShadow ? { declaredShadow: shadow } : {}),
       ...(p.provisional ? { provisional: p.provisional } : {}),
     });
@@ -827,6 +896,8 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     })),
     ...splitNeedsFix.map((s) => ({ label: s.label, urlPattern: s.url, reason: s.reason, affordances: 0 })),
     ...[...nameNeedsFix.entries()].map(([p, reason]) => ({ label: p.label, urlPattern: p.url, reason, affordances: 0 })),
+    ...[...foreignHosts.entries()].map(([h, url]) => ({
+      label: h, urlPattern: url, reason: `foreign-host interstitial (blocked door at ${h})`, affordances: 0 })),
   ].filter((n) => { const k = `${n.label}|${n.reason}`; if (nfSeen.has(k)) return false; nfSeen.add(k); return true; });
   // requests: provisional states (seen once) surfaced as a record-next ask (rule 2 + core).
   // `_shell` is never provisional (no `provisional` field) so it's naturally excluded.
