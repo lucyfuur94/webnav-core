@@ -28,8 +28,12 @@
 > needs a user re-login, then `dashboard` confirms and its needsFix clears; (2) GATED: the human
 > recorder (`live-record.ts`) still lacks declared-href `requestedUrl` capture (same fix as the
 > agent paths; capture-engine edits await explicit user OK); (3) `ingest.ts` extension path
-> (deprecated) unpatched; (4) minor ledger (edge-label instance names on row-links, same-name
-> child folds, kind+label dedup doubling) in `.superpowers/sdd/progress.md` for follow-up.
+> (deprecated) unpatched; (4) follow-up nits from the final
+> whole-branch review (one cleanup pass): degenerate reason string says 'blank/empty' for the
+> all-tokens-collided case (draft.ts ~565/575) · kind+label dedup can double a control as
+> mutate+reveal (draft.ts ~608) · row-scoped navigate templates for instance-named row links
+> (the 'Demo User' edge-label class) · shell-heal test should drive healStep directly · a
+> focused mixed-role negative test for foldRepeats.
 > Review-flow audit (2026-07-10, below-referenced): review gates capture completeness; analyse
 > `requests` is the separate structural-refine loop — deliberately NOT conflated.
 
