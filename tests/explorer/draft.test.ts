@@ -581,3 +581,163 @@ describe('draftFromEffects — degenerate landings go to needsFix, good states s
     expect(home.affordances.some((a) => a.kind === 'navigate' && a.to === 'data-reports')).toBe(true);   // good edge kept
   });
 });
+
+// ── site SHELL (structure-inference axis 3, Task 8): nodes present on ≥80% of the site's
+// DISTINCT pages are the shared chrome (sidebar/topbar). They are stored ONCE on a synthetic
+// `_shell` state (role:'shell') — NOT duplicated as navigate affordances on every page state.
+// A 5-link sidebar present on 5 distinct-first-segment pages → shell fires (≥4-page gate),
+// each shell link that keys to a known page becomes a `_shell` navigate; page states carry
+// NO sidebar-link navigates. Spec: 2026-07-10-structure-inference-design.md (axis 3).
+describe('draftFromEffects — site shell state (stored once, not per-page duplicates)', () => {
+  const SB = 'https://sd.test';
+  // a 5-link sidebar shared by every page + the page's own heading + page-specific content
+  // (so each landing is classifyReadiness='ready' AND uniquely fingerprintable by its heading).
+  const NAV = [
+    `- link "Home" [ref=e2]:\n    - /url: ${SB}/main/home`,
+    `- link "Downloads" [ref=e3]:\n    - /url: ${SB}/dl/list`,
+    `- link "Reports" [ref=e4]:\n    - /url: ${SB}/rep/list`,
+    `- link "Settings" [ref=e5]:\n    - /url: ${SB}/cfg/settings`,
+    `- link "Help" [ref=e6]:\n    - /url: ${SB}/help/center`,
+  ];
+  const page = (heading: string, extra: string[]): string =>
+    [`- heading "${heading}" [ref=e1]`, ...NAV, ...extra].join('\n');
+  const HOME = page('Home', ['- heading "Welcome" [ref=e7]', '- paragraph "Recent activity" [ref=e8]']);
+  const DOWNLOADS = page('Downloads', ['- button "Download all" [ref=e7]', '- listitem "report.csv" [ref=e8]']);
+  const REPORTS = page('Reports', ['- button "New report" [ref=e7]', '- textbox "Search reports" [ref=e8]']);
+  const SETTINGS = page('Settings', ['- textbox "Display name" [ref=e7]', '- button "Save prefs" [ref=e8]']);
+  const HELP = page('Help', ['- textbox "Ask a question" [ref=e7]', '- button "Contact support" [ref=e8]']);
+  const shellNav = (toUrl: string, snap: string): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: `${SB}/main/home`, fromSnapshot: HOME,
+       action: { role: 'link', name: 'x', ref: 'e2', elementFp: { role: 'link', name: 'x', near: null } },
+       toUrl, toSnapshot: snap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    shellNav(`${SB}/main/home`, HOME),
+    shellNav(`${SB}/dl/list`, DOWNLOADS),
+    shellNav(`${SB}/rep/list`, REPORTS),
+    shellNav(`${SB}/cfg/settings`, SETTINGS),
+    shellNav(`${SB}/help/center`, HELP),
+  ] as never);
+
+  it('extracts a _shell state once; page states carry no sidebar-duplicate affordances', () => {
+    const shell = g.states.find((s) => s.label === '_shell')!;
+    expect(shell).toBeTruthy();
+    expect(shell.role).toBe('shell');
+    // the shell carries the sidebar links as navigate affordances to the known pages.
+    expect(shell.affordances.some((a) => a.kind === 'navigate' && a.to === 'dl-list')).toBe(true);
+    expect(shell.affordances.some((a) => a.kind === 'navigate' && a.to === 'rep-list')).toBe(true);
+    // a page state must NOT re-carry the sidebar link (it lives on _shell now).
+    const reports = g.states.find((s) => s.label === 'rep-list')!;
+    expect(reports.affordances.filter((a) => a.kind === 'navigate' && a.to === 'dl-list')).toHaveLength(0);
+    expect(reports.affordances.filter((a) => a.kind === 'navigate' && a.to === 'help-center')).toHaveLength(0);
+  });
+
+  it('_shell is excluded from hierarchy roles and from receipt.states', () => {
+    const shell = g.states.find((s) => s.label === '_shell')!;
+    expect(shell.role).toBe('shell');           // not hub/section/detail
+    expect(shell.parentState).toBeUndefined();  // never placed in the tree
+    expect(g.receipt.states).not.toContain('_shell');
+    // the real pages ARE in the receipt
+    expect(g.receipt.states).toContain('rep-list');
+  });
+});
+
+// ── alias-aware mesh (Task 8 controller): a page's declared sidebar link href can differ from
+// the URL the walk actually SETTLED at (a redirect). The mesh must resolve the link href through
+// key() (base-strip + alias) — NOT raw sameTarget — so the synthesized edge still lands on the
+// right state. This isolates the rk≠sk alias path Task 7 left untested: the link href would NOT
+// merge by base-strip alone; only the requestedUrl→settled alias closes the gap.
+describe('draftFromEffects — mesh resolves an alias (redirect: href ≠ landed URL)', () => {
+  const AB = 'https://a.test';
+  // every landing settled under /dashboard/index (aliased FROM /auth/login via requestedUrl),
+  // but the page's own sidebar link to the dashboard is href="/auth/login" (the pre-redirect
+  // ghost). Distinct first segments elsewhere so nothing ELSE templates together.
+  const linkTo = (href: string, label: string, ref: string) => `- link "${label}" [ref=${ref}]:\n    - /url: ${href}`;
+  const SB2 = [
+    linkTo(`${AB}/auth/login`, 'Dashboard', 'e2'),   // href is the pre-redirect ghost, NOT the settled url
+    linkTo(`${AB}/pim/list`, 'People', 'e3'),
+    linkTo(`${AB}/leave/list`, 'Leave', 'e4'),
+    linkTo(`${AB}/time/list`, 'Time', 'e5'),
+  ];
+  const pg = (h: string, extra: string[]) => [`- heading "${h}" [ref=e1]`, ...SB2, ...extra].join('\n');
+  const DASH = pg('Dashboard', ['- heading "My Actions" [ref=e7]', '- paragraph "Time at work" [ref=e8]', '- listitem "Pending review" [ref=e9]']);
+  const PEOPLE = pg('People', ['- button "Add employee" [ref=e7]', '- listitem "Jane Doe" [ref=e8]', '- paragraph "43 records" [ref=e9]']);
+  const LEAVE = pg('Leave', ['- button "Apply leave" [ref=e7]', '- listitem "Pending" [ref=e8]', '- paragraph "Balance 12d" [ref=e9]']);
+  const TIME = pg('Time', ['- button "Punch in" [ref=e7]', '- listitem "Today" [ref=e8]', '- paragraph "This week" [ref=e9]']);
+  // dashboard was REQUESTED at /auth/login but SETTLED at /dashboard/index → alias auth/login→dashboard/index.
+  const dashEff: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${AB}/pim/list`, fromSnapshot: PEOPLE,
+    action: { role: 'link', name: 'Dashboard', ref: 'e2', elementFp: { role: 'link', name: 'Dashboard', near: null } },
+    requestedUrl: `${AB}/auth/login`, toUrl: `${AB}/dashboard/index`, toSnapshot: DASH, navigated: true, diff: { added: [], removed: [] } as any };
+  const other = (from: string, fromSnap: string, toUrl: string, toSnap: string): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: from, fromSnapshot: fromSnap,
+       action: { role: 'link', name: 'x', ref: 'e3', elementFp: { role: 'link', name: 'x', near: null } },
+       toUrl, toSnapshot: toSnap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    dashEff,
+    other(`${AB}/dashboard/index`, DASH, `${AB}/pim/list`, PEOPLE),
+    other(`${AB}/dashboard/index`, DASH, `${AB}/leave/list`, LEAVE),
+    other(`${AB}/dashboard/index`, DASH, `${AB}/time/list`, TIME),
+  ] as never);
+
+  it('a sidebar link href=/auth/login resolves to the settled dashboard-index state via alias', () => {
+    // sanity: the settled state exists under its settled label, NOT under an auth-login label.
+    const labels = g.states.map((s) => s.label);
+    expect(labels).toContain('dashboard-index');
+    expect(labels).not.toContain('auth-login');
+    // the People page's OWN sidebar link (href=/auth/login) must mesh to dashboard-index —
+    // sameTarget on the raw href would look for a /auth/login page and find nothing.
+    const shell = g.states.find((s) => s.label === '_shell');
+    const carrier = shell ?? g.states.find((s) => s.label === 'pim-list')!;
+    const edge = carrier.affordances.find((a) => a.kind === 'navigate' && a.to === 'dashboard-index');
+    expect(edge, 'alias-resolved edge to dashboard-index').toBeTruthy();
+    expect(edge!.elementFp).toEqual({ role: 'link', name: 'Dashboard', near: null });
+  });
+});
+
+// ── shell-based hierarchy (Task 8 rule 4): a page reached by a SHELL link is a top-level
+// section; a page reached only by a CONTENT (non-shell) drill-in link is a detail with that
+// page as parent. isSidebarLink(label) = shell.has('link:'+label) || /logo|home/. Replaces the
+// old ≥60%-of-pages recount.
+describe('draftFromEffects — shell-based hierarchy (sections vs details)', () => {
+  const HB = 'https://h.test';
+  // 4 shell pages (a shared 4-link sidebar) so shell fires; the Reports page carries an EXTRA
+  // content link to a detail page NOT in the sidebar → that detail is a `detail` under reports.
+  const NAV = [
+    `- link "Home" [ref=e2]:\n    - /url: ${HB}/main/home`,
+    `- link "Reports" [ref=e3]:\n    - /url: ${HB}/rep/list`,
+    `- link "People" [ref=e4]:\n    - /url: ${HB}/ppl/list`,
+    `- link "Settings" [ref=e5]:\n    - /url: ${HB}/cfg/index`,
+  ];
+  const pg = (h: string, extra: string[]) => [`- heading "${h}" [ref=e1]`, ...NAV, ...extra].join('\n');
+  const HOME = pg('Home', ['- heading "Welcome" [ref=e7]', '- paragraph "Overview" [ref=e8]', '- listitem "Recent" [ref=e9]']);
+  const PEOPLE = pg('People', ['- button "Add person" [ref=e7]', '- listitem "Someone" [ref=e8]', '- paragraph "Roster" [ref=e9]']);
+  const SETTINGS = pg('Settings', ['- textbox "Name" [ref=e7]', '- button "Save it" [ref=e8]', '- paragraph "Prefs" [ref=e9]']);
+  // Reports has a CONTENT link (NOT in the sidebar) to a specific report detail page.
+  const REPORTS = pg('Reports', ['- button "New report" [ref=e7]',
+    `- link "Q3 revenue report" [ref=e8]:\n    - /url: ${HB}/rep/9001`, '- paragraph "Saved reports" [ref=e9]']);
+  const DETAIL = pg('Q3 revenue report', ['- tab "Table" [ref=e7]', '- button "Export it" [ref=e8]', '- paragraph "Rendered" [ref=e9]']);
+  const hnav = (from: string, fromSnap: string, toUrl: string, toSnap: string, name = 'x', ref = 'e2'): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: from, fromSnapshot: fromSnap,
+       action: { role: 'link', name, ref, elementFp: { role: 'link', name, near: null } },
+       toUrl, toSnapshot: toSnap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    // the recorded clicks are the SHELL links (their action.name = the sidebar link name), so
+    // isSidebarLink recognizes them — a real sidebar click records the link's accessible name.
+    hnav(`${HB}/main/home`, HOME, `${HB}/main/home`, HOME, 'Home', 'e2'),
+    hnav(`${HB}/main/home`, HOME, `${HB}/rep/list`, REPORTS, 'Reports', 'e3'),
+    hnav(`${HB}/main/home`, HOME, `${HB}/ppl/list`, PEOPLE, 'People', 'e4'),
+    hnav(`${HB}/main/home`, HOME, `${HB}/cfg/index`, SETTINGS, 'Settings', 'e5'),
+    // drill IN from Reports to a specific report via a content link (never in the sidebar).
+    hnav(`${HB}/rep/list`, REPORTS, `${HB}/rep/9001`, DETAIL, 'Q3 revenue report', 'e8'),
+  ] as never);
+
+  it('shell-linked pages are sections; a content-linked page is a detail of its parent', () => {
+    const reports = g.states.find((s) => s.label === 'rep-list')!;
+    const people = g.states.find((s) => s.label === 'ppl-list')!;
+    expect(reports.role).toBe('section');       // reached by the sidebar (shell) link
+    expect(reports.parentState).toBeNull();
+    expect(people.role).toBe('section');
+    const detail = g.states.find((s) => s.label === 'rep-9001')!;
+    expect(detail.role).toBe('detail');          // reached only by a content link ON reports
+    expect(detail.parentState).toBe('rep-list');
+  });
+});
