@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -184,14 +184,25 @@ function distinguishingHeading(core: Face, others: Face[]): string | null {
   }
   return null;
 }
-// Single-link clustering of faces at a jaccard threshold (union-find over the ≥t edges).
-// Returns clusters as index groups. One key with structurally-distinct landings splits into
-// >1 cluster (SPA views at one URL); same-structure repeat visits stay in one cluster.
-function clusterFaces(faces: Face[], t: number): number[][] {
+// Two faces are "the same page" when jaccard ≥ 0.5 OR containment ≥ 0.9. The containment arm
+// joins a PARTIAL RENDER (a subset face — the page captured before its data grid arrived) to its
+// full sibling, which jaccard alone splits (live finding: 199- vs 33-token landings of ONE list
+// page → jaccard 0.17, containment 1.0; the split lost the page to needsFix). A genuinely
+// different page is neither jaccard-close nor contained. The containment arm requires the
+// SMALLER face to carry ≥8 tokens of evidence: a near-empty chrome-only face is "contained" in
+// anything by coincidence (real case: a 1-token page merged into an unrelated one under a false
+// /{param} template), while a real partial render always has a rendered skeleton (observed: 10+
+// non-shell tokens). 8 matches classifyReadiness's minNodes. All thresholds documented tunables.
+const sameFace = (a: Face, b: Face): boolean =>
+  jaccard(a, b) >= 0.5 || (Math.min(a.size, b.size) >= 8 && containment(a, b) >= 0.9);
+// Single-link clustering of faces under `sameFace` (union-find). Returns clusters as index
+// groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at one
+// URL); same-structure repeat visits — and partial renders of one page — stay in one cluster.
+function clusterFaces(faces: Face[]): number[][] {
   const parent = faces.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   for (let i = 0; i < faces.length; i++) for (let j = i + 1; j < faces.length; j++) {
-    if (jaccard(faces[i], faces[j]) >= t) parent[find(i)] = find(j);
+    if (sameFace(faces[i], faces[j])) parent[find(i)] = find(j);
   }
   const groups = new Map<number, number[]>();
   faces.forEach((_, i) => (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i));
@@ -211,6 +222,10 @@ interface PageInfo {
   key: string; url: string; template: string | null; label: string;
   landings: SnapNode[][]; faces: Face[]; core: Face; coreNodes: SnapNode[]; provisional: string | null;
   nodes: SnapNode[];
+  shadowNodes: SnapNode[];   // core-named + UNNAMED structural nodes (a `table` has no name but
+                             // anchors its columnheaders; depth walks need the container chain) —
+                             // extractShadow reads THIS, not coreNodes, else collections are
+                             // silently empty on every site
 }
 
 /**
@@ -303,7 +318,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const members = g.keys.filter((k) => landingsByKey.has(k) && !canonical.has(k));
     if (members.length < 2) continue;
     const anchor = firstFace(members[0]);
-    const merged = members.filter((k) => jaccard(firstFace(k), anchor) >= 0.5);
+    const merged = members.filter((k) => sameFace(firstFace(k), anchor));
     if (merged.length < 2) continue;                   // dispose: not structurally one page
     for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
   }
@@ -327,22 +342,36 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   };
   const makePage = (k: string, url: string, template: string | null, landings: SnapNode[][], labelBase: string): PageInfo => {
     const faces = landings.map(faceOf);
-    // rule 5: durable face = templateCore(faces) minus shell — the site chrome lives on `_shell`,
-    // not on each page's core (else every state carries the whole sidebar, e.g. a 13-node shell
-    // duplicated across every page).
-    const { tokens, provisional } = templateCore(faces);
+    // PARTIAL-RENDER exclusion (axis 1 settledness): a landing whose face is a (near-)strict
+    // subset of a sibling's (containment ≥ 0.95, strictly smaller) was captured before the page
+    // finished rendering — absence-due-to-non-render is NOT evidence of absence, so it must not
+    // feed templateCore (it would intersect the core down to the sparse subset: the husk class).
+    // Excluded from the CORE computation only — it stays a landing/face for identity checks. If
+    // only one full landing remains, templateCore's seen-once rule marks the state provisional:
+    // honest (we truly saw the full page once).
+    const isPartial = (i: number) => faces.some((g, j) => j !== i && faces[i].size < g.size && containment(faces[i], g) >= 0.95);
+    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i));
+    // rule 5: durable face = templateCore(full faces) minus shell — the site chrome lives on
+    // `_shell`, not on each page's core (else every state carries the whole sidebar).
+    const { tokens, provisional } = templateCore(coreIdx.map((i) => faces[i]));
     const core = minusShell(tokens);
     const nodes: SnapNode[] = [];
     for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
-    const coreNodes = landings[0].filter((n) => n.name && n.name.trim() && core.has(`${n.role}:${n.name}`));
-    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes };
+    // coreNodes from the first FULL landing — a partial landings[0] would filter the full core
+    // down to its own sparse subset of nodes.
+    const coreNodes = landings[coreIdx[0]].filter((n) => n.name && n.name.trim() && core.has(`${n.role}:${n.name}`));
+    // shadowNodes: the same landing keeping core-named nodes AND unnamed structural containers —
+    // extractShadow anchors columns on the (nameless) `table` node and walks depths; a named-only
+    // view has no containers, so its collections came out empty on every site.
+    const shadowNodes = landings[coreIdx[0]].filter((n) => !n.name || !n.name.trim() || core.has(`${n.role}:${n.name}`));
+    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes, shadowNodes };
   };
   for (const [k, { landings, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
     // rule 4: SPA split — single-link cluster the landing faces at jaccard≥0.5, on SHELL-
     // SUBTRACTED faces (same as dispose): the shared chrome is on every SPA view, so leaving it
     // in would falsely collapse structurally-distinct views into one cluster.
-    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))), 0.5);
+    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))));
     // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
     // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
     // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404
@@ -638,7 +667,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   const states: DraftState[] = [];
   pageList.forEach((p, pi) => {
     if (degenerate.has(pi)) return;                    // held out → needsFix
-    const shadow = extractShadow(p.coreNodes);   // rule 2: shadow from the durable core, not the union
+    const shadow = extractShadow(p.shadowNodes);   // rule 2: durable core + structural containers, not the union
     // extractShadow no longer emits subTabs (site-specific container lookup deleted, rule 2), so
     // the check drops it — a freshly-extracted shadow only carries collections/filters/createsEntity.
     const hasShadow = (shadow.collections?.length || shadow.filters?.length || shadow.createsEntity);
@@ -762,14 +791,16 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
 
   // needsFix (the agent's "your move"): held-out degenerate landings + identity failures — an
   // SPA cluster with no distinguishing heading (rule 4), a name collision that stayed unresolved
-  // (rule 6). Each carries its reason.
+  // (rule 6). Each carries its reason. Unique by (label, reason): several lost clusters of ONE
+  // key are one problem, not one row per cluster.
+  const nfSeen = new Set<string>();
   const needsFix: DegenerateState[] = [
     ...[...degenerate.entries()].map(([i, reason]) => ({
       label: pageList[i].label, urlPattern: pageList[i].url, reason, affordances: (affById.get(pageList[i].label) ?? []).length,
     })),
     ...splitNeedsFix.map((s) => ({ label: s.label, urlPattern: s.url, reason: s.reason, affordances: 0 })),
     ...[...nameNeedsFix.entries()].map(([p, reason]) => ({ label: p.label, urlPattern: p.url, reason, affordances: 0 })),
-  ];
+  ].filter((n) => { const k = `${n.label}|${n.reason}`; if (nfSeen.has(k)) return false; nfSeen.add(k); return true; });
   // requests: provisional states (seen once) surfaced as a record-next ask (rule 2 + core).
   // `_shell` is never provisional (no `provisional` field) so it's naturally excluded.
   const requests = pageStates.filter((s) => s.provisional).map((s) => `${s.label}: ${s.provisional}`);

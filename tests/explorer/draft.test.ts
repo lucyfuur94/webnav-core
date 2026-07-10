@@ -1294,6 +1294,69 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect((filters[0].children ?? []).map((c) => c.label).sort()).toEqual(['By price', 'By size']);
   });
 
+  it('a partial-render landing (strict-subset face) joins its full sibling — ONE state, core from the full face', () => {
+    // live OrangeHRM finding: visit 2 of a list page was captured before its grid rendered —
+    // 33-token face ⊂ 199-token face, jaccard 0.17 but containment 1.0. Jaccard-only clustering
+    // split them, neither had a distinguishing heading → BOTH to needsFix → the page was LOST.
+    // Fixture: full 18-node face; partial = an 8-node strict subset (ready, but pre-render).
+    const EXTRAS = ['- textbox "Employee Name" [ref=e7]', '- button "Search people" [ref=e8]',
+      '- button "Reset" [ref=e9]', '- button "Add employee" [ref=e10]', '- columnheader "First Name" [ref=e11]',
+      '- columnheader "Last Name" [ref=e12]', '- button "Next page" [ref=e13]', '- listitem "row one" [ref=e14]',
+      '- listitem "row two" [ref=e15]', '- paragraph "records" [ref=e16]', '- button "Prev page" [ref=e17]',
+      '- checkbox "Select all rows" [ref=e18]'];
+    const FULL = shell('Employees', EXTRAS);
+    const PARTIAL = shell('Employees', EXTRAS.slice(0, 2));   // 8 nodes, strict subset of FULL
+    const g = draftFromEffects([
+      { ...nav(`${XB}/people/list`, FULL), seq: 0 },
+      { ...nav(`${XB}/people/list`, PARTIAL), seq: 1 },
+    ] as never);
+    const states = g.states.filter((s) => s.label === 'people-list');
+    expect(states.length, 'exactly one people-list state').toBe(1);
+    expect((g.needsFix ?? []).some((n) => n.label === 'people-list')).toBe(false);
+    // core comes from the FULL face (the partial is excluded from templateCore's input), so the
+    // full page's controls synthesize; one full landing remains → honest seen-once provisional.
+    expect(states[0].affordances.some((a) => a.label === 'Add employee')).toBe(true);
+    expect(states[0].provisional ?? '').toMatch(/seen once/);
+  });
+
+  it('a core table\'s columns reach the declared shadow (unnamed containers preserved for extractShadow)', () => {
+    // extractShadow anchors collections on the NAMELESS `table` node; feeding it named-core-only
+    // nodes silently emptied every collection. shadowNodes keeps the structural containers.
+    const GRID = [
+      '- heading "Employees" [ref=e1]',
+      '- table [ref=e2]:',
+      '  - columnheader "Id" [ref=e3]',
+      '  - columnheader "Full Name" [ref=e4]',
+      '  - columnheader "Job Title" [ref=e5]',
+      '- button "Add employee" [ref=e6]',
+      '- paragraph "records" [ref=e7]',
+      '- listitem "row" [ref=e8]',
+    ].join('\n');
+    const g = draftFromEffects([
+      { ...nav(`${XB}/staff/list`, GRID), seq: 0 },
+      { ...nav(`${XB}/staff/list`, GRID), seq: 1 },   // 2 identical landings → confirmed core
+    ] as never);
+    const s = g.states.find((x) => x.label === 'staff-list')!;
+    expect(s.declaredShadow?.collections?.[0]?.columns).toEqual(['Id', 'Full Name', 'Job Title']);
+  });
+
+  it('needsFix carries no duplicate (label, reason) entries', () => {
+    // two genuinely-different HEADING-LESS faces at one key (low jaccard AND low containment):
+    // still split, neither nameable → both clusters report the same (label, reason) → ONE entry.
+    const A = ['- button "Alpha one" [ref=e1]', '- button "Alpha two" [ref=e2]', '- paragraph "aaa" [ref=e3]',
+      '- listitem "a1" [ref=e4]', '- listitem "a2" [ref=e5]', '- link "AlphaLink" [ref=e6]',
+      '- paragraph "a3" [ref=e7]', '- button "Alpha three" [ref=e8]'].join('\n');
+    const B = ['- button "Beta one" [ref=e1]', '- button "Beta two" [ref=e2]', '- paragraph "bbb" [ref=e3]',
+      '- listitem "b1" [ref=e4]', '- listitem "b2" [ref=e5]', '- link "BetaLink" [ref=e6]',
+      '- paragraph "b3" [ref=e7]', '- button "Beta three" [ref=e8]'].join('\n');
+    const g = draftFromEffects([
+      { ...nav(`${XB}/spa/thing`, A), seq: 0 },
+      { ...nav(`${XB}/spa/thing`, B), seq: 1 },
+    ] as never);
+    const entries = (g.needsFix ?? []).filter((n) => n.label === 'spa-thing');
+    expect(entries.length).toBe(1);   // deduped by (label, reason), not one row per lost cluster
+  });
+
   it('single-instance param page with a heading-only fingerprint is held out (no instance-data identity)', () => {
     // one visit to /dashboard/1210 whose only non-shell token is heading:Testuser → needsFix,
     // NOT a state fingerprinted on the user name.
