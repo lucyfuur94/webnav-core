@@ -1,6 +1,11 @@
 import type { ElementFingerprint } from '../playwright/fingerprint.js';
 export type { ElementFingerprint };
-export type StateRole = 'search-entry' | 'result-list' | 'detail' | 'sub-detail';
+// Hierarchy role of a state in the site tree (set at analyse time from the OBSERVED nav
+// structure — a link on most pages is global chrome; a page reached only by a content link is a
+// child). 'section' = a top-level area reachable from the shared sidebar (report-list,
+// dashboard-list, …); 'detail' = a page you drill INTO from a section (a specific report). The
+// legacy search-entry/result-list/sub-detail values are kept for back-compat.
+export type StateRole = 'hub' | 'section' | 'detail' | 'search-entry' | 'result-list' | 'sub-detail';
 // 'unclassified' = webnav read this action but does NOT decide if it's safe;
 // the agent classifies it via needs-classification only if a route must traverse it.
 export type EdgeKind = 'safe-reversible' | 'commit-point' | 'navigate' | 'unclassified';
@@ -65,6 +70,10 @@ export interface State {
   semanticName: string;
   urlPattern: string;
   role: StateRole;
+  parentState: string | null;   // the state this page drills DOWN from (its parent in the site
+                                // tree), set at analyse time from a content drill-down edge; null
+                                // for a section/hub (hangs off the top). Makes hierarchy a stored
+                                // property the viewer reads directly, not a layout guess.
   availableSignals: string[];   // capability, NOT goal intent
   fingerprint: string[];        // key declared elements that identify this state
   affordances: Affordance[];    // the node's full typed repertoire (source of truth); [] = none
@@ -79,6 +88,7 @@ export function makeState(
     fingerprint: [],
     affordances: [],
     declaredShadow: null,
+    parentState: null,
     ...init,
   };
 }

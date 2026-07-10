@@ -60,8 +60,24 @@ describe('draftFromEffects', () => {
     }
   });
 
-  it('login state fingerprints on its textboxes+button (ZERO headings case)', () => {
-    expect(byLabel['auth-login'].fingerprint.some((t) => t.startsWith('textbox:') || t.startsWith('button:'))).toBe(true);
+  it('login state gets a MINIMAL unique fingerprint (heading:Login suffices here)', () => {
+    // the login fixture has heading "Login" — the minimal-prefix algorithm correctly keys on
+    // it (unique among the 4 pages). The point is uniqueness + minimality, not which role.
+    const login = byLabel['auth-login'];
+    expect(login.fingerprint).toEqual(['heading:Login']);
+    expect(login._warning).toBeUndefined();
+  });
+
+  it('a ZERO-heading page fingerprints on its textbox/button tokens instead', () => {
+    // when a page truly has NO heading, candidateTokens falls through to button/textbox — verify
+    // the fingerprint still resolves (the real "sparse page" case).
+    const NOHEAD = ['- textbox "Email" [ref=e1]', '- textbox "PIN" [ref=e2]', '- button "Enter" [ref=e3]'].join('\n');
+    const HOME = ['- heading "Home" [ref=e9]', '- link "Login" [ref=e5]:\n    - /url: https://z.test/login'].join('\n');
+    const d = draftFromEffects([
+      { seq: 0, capturedAt: 0, fromUrl: 'https://z.test/home', fromSnapshot: HOME, action: { role: 'link', name: 'Login', ref: 'e5', elementFp: { role: 'link', name: 'Login', near: null } }, toUrl: 'https://z.test/login', toSnapshot: NOHEAD, navigated: true, diff: { added: [], removed: [] } },
+    ] as any);
+    const login = d.states.find((s) => s.label === 'login')!;
+    expect(login.fingerprint.some((t) => t.startsWith('textbox:') || t.startsWith('button:'))).toBe(true);
   });
 
   it('reconstructs the action:null (use navigate) edge by scanning the from-page links', () => {
@@ -298,5 +314,114 @@ describe('navigating commit-words (live finding: human fired Finish)', () => {
     const finish = overview.affordances.find((a) => a.kind === 'navigate' && a.label === 'Finish')!;
     expect(finish.needsClassification).toBe(true);   // a walk must NOT auto-fire this (#2)
     expect((finish as any).commit).not.toBe(true);   // candidate flag only — agent classifies (#5a)
+  });
+});
+
+// ── stable-pathname keying: one LOGICAL page = one state, even as its in-page tabs/search/
+// sort mutate the snapshot (each shifts the top tokens). The OLD keying (url+top-tokens)
+// split one page into report-list / report-list-2 / …; the fix keys by pathname so the
+// fragments MERGE and their repertoire unions. Also: query params + trailing id segments
+// are stripped, so /report/list?currentTab=owned and /report/7001/<hash> collapse correctly.
+import { stablePathKey } from '../../src/explorer/draft.js';
+describe('draftFromEffects — stable-pathname keying (one page, not many)', () => {
+  it('stablePathKey strips query, hash, and trailing id/hash segments', () => {
+    expect(stablePathKey('https://x.test/v3/9999/report/list?currentTab=owned')).toBe('/v3/9999/report/list');
+    expect(stablePathKey('https://x.test/v3/9999/report/7001/bd5a1a4a6352048e18d747c7e95ce3a0?source=listing')).toBe('/v3/9999/report');
+    expect(stablePathKey('https://x.test/v3/9999/dashboard/8001')).toBe('/v3/9999/dashboard');
+    expect(stablePathKey('https://x.test/v3/9999/report/draft')).toBe('/v3/9999/report/draft'); // non-id trailing kept
+  });
+
+  it('in-page mutations at ONE url do NOT split into multiple states', () => {
+    const L = 'https://x.test/list';
+    // same page, snapshot changes as tabs switch — different top tokens each time
+    const SNAP_A = ['RootWebArea "P" [ref=e1]', '  heading "Reports" [ref=e2]', '  tab "Standard" [ref=e3]', '  button "New" [ref=e4]'].join('\n');
+    const SNAP_B = ['RootWebArea "P" [ref=e1]', '  heading "Reports" [ref=e2]', '  tab "Favourites" [ref=e3]', '  button "Sort" [ref=e5]'].join('\n');
+    const effs = [
+      // a same-page mutate (navigated:false) that changed the snapshot
+      { seq: 0, capturedAt: 0, fromUrl: L, fromSnapshot: SNAP_A, action: { role: 'tab', name: 'Favourites', ref: 'e3' }, toUrl: L, toSnapshot: SNAP_B, navigated: false, diff: { added: [], removed: [] } },
+    ];
+    const draft = draftFromEffects(effs as any);
+    expect(draft.states.length).toBe(1);                 // ONE state, not two
+    // the merged state's node-union carries BOTH snapshots' controls → interior-synth sees New AND Sort
+    const labels = draft.states[0].affordances.map((a) => a.label);
+    expect(labels).toContain('New');
+    expect(labels).toContain('Sort');
+  });
+});
+
+// ── multi-session merge: concatenated effects from several sessions of ONE site fold into
+// one map because stable keying puts same-page visits in the same state. (The CLI does the
+// concat; here we prove draftFromEffects merges a concatenated effects list.)
+describe('draftFromEffects — multi-session merge (concatenated effects, one map)', () => {
+  const home = 'https://x.test/home';
+  const other = 'https://x.test/other';
+  const HOME = ['RootWebArea "H" [ref=e1]', '  heading "Home" [ref=e2]',
+    '  link "Other" [ref=e3]:\n    - /url: https://x.test/other', '  button "AlphaAction" [ref=e4]'].join('\n');
+  const HOME2 = ['RootWebArea "H" [ref=e1]', '  heading "Home" [ref=e2]',
+    '  link "Other" [ref=e3]:\n    - /url: https://x.test/other', '  button "BetaAction" [ref=e5]'].join('\n');
+  const OTHER = ['RootWebArea "O" [ref=e1]', '  heading "Other Page" [ref=e2]'].join('\n');
+  // session 1 explored Home's AlphaAction; session 2 explored Home's BetaAction + navigated to Other.
+  const s1 = [{ seq: 0, capturedAt: 0, fromUrl: home, fromSnapshot: HOME, action: { role: 'button', name: 'AlphaAction', ref: 'e4', elementFp: { role: 'button', name: 'AlphaAction', near: null } }, toUrl: home, toSnapshot: HOME, navigated: false, diff: { added: [], removed: [] } }];
+  const s2 = [
+    { seq: 0, capturedAt: 0, fromUrl: home, fromSnapshot: HOME2, action: { role: 'button', name: 'BetaAction', ref: 'e5', elementFp: { role: 'button', name: 'BetaAction', near: null } }, toUrl: home, toSnapshot: HOME2, navigated: false, diff: { added: [], removed: [] } },
+    { seq: 1, capturedAt: 0, fromUrl: home, fromSnapshot: HOME2, action: { role: 'link', name: 'Other', ref: 'e3', elementFp: { role: 'link', name: 'Other', near: null } }, toUrl: other, toSnapshot: OTHER, navigated: true, diff: { added: [], removed: [] } },
+  ];
+  const draft = draftFromEffects([...s1, ...s2] as any);
+  const byLabel = Object.fromEntries(draft.states.map((s) => [s.label, s]));
+
+  it('same page from two sessions → ONE merged state (home), plus the distinct other page', () => {
+    expect(draft.states.length).toBe(2);   // home (merged) + other
+    expect(byLabel['home']).toBeTruthy();
+    expect(byLabel['other']).toBeTruthy();
+  });
+  it('the merged home state has affordances from BOTH sessions', () => {
+    const labels = byLabel['home'].affordances.map((a) => a.label);
+    expect(labels).toContain('AlphaAction');   // session 1
+    expect(labels).toContain('BetaAction');    // session 2
+  });
+  it('a navigate edge recorded in session 2 lands correctly in the merged map', () => {
+    const toOther = byLabel['home'].affordances.find((a) => a.kind === 'navigate' && a.to === 'other');
+    expect(toOther).toBeTruthy();
+  });
+});
+
+// ── degenerate landings → needsFix (partial success): a 404/error page and a no-distinctive-
+// content (chrome-only) landing are HELD OUT of `states` so they don't poison the good states'
+// fingerprints, and reported in `needsFix` for the agent to resolve. The good states still emit.
+describe('draftFromEffects — degenerate landings go to needsFix, good states still emit', () => {
+  const B = 'https://q.test';
+  const HOME = ['- heading "Home" [ref=e1]', '- link "Reports" [ref=e2]:\n    - /url: https://q.test/reports',
+    '- link "Agent" [ref=e3]:\n    - /url: https://q.test/agent', '- link "Blank" [ref=e4]:\n    - /url: https://q.test/blank'].join('\n');
+  const REPORTS = ['- heading "Reports" [ref=e1]', '- link "Home" [ref=e2]:\n    - /url: https://q.test/home'].join('\n');
+  const NOT_FOUND = ['- heading "Page not found" [ref=e1]', '- paragraph "This page could not be found."'].join('\n');
+  // a blank landing: NO heading, only the shared sidebar chrome the other pages also have.
+  const BLANK = ['- link "Reports" [ref=e2]:\n    - /url: https://q.test/reports', '- link "Agent" [ref=e3]:\n    - /url: https://q.test/agent'].join('\n');
+  const effs = [
+    { seq: 0, capturedAt: 0, fromUrl: `${B}/home`, fromSnapshot: HOME, action: { role: 'link', name: 'Reports', ref: 'e2', elementFp: { role: 'link', name: 'Reports', near: null } }, toUrl: `${B}/reports`, toSnapshot: REPORTS, navigated: true, diff: { added: [], removed: [] } },
+    { seq: 1, capturedAt: 0, fromUrl: `${B}/home`, fromSnapshot: HOME, action: { role: 'link', name: 'Agent', ref: 'e3', elementFp: { role: 'link', name: 'Agent', near: null } }, toUrl: `${B}/agent`, toSnapshot: NOT_FOUND, navigated: true, diff: { added: [], removed: [] } },
+    { seq: 2, capturedAt: 0, fromUrl: `${B}/home`, fromSnapshot: HOME, action: { role: 'link', name: 'Blank', ref: 'e4', elementFp: { role: 'link', name: 'Blank', near: null } }, toUrl: `${B}/blank`, toSnapshot: BLANK, navigated: true, diff: { added: [], removed: [] } },
+  ];
+  const draft = draftFromEffects(effs as any);
+  const labels = draft.states.map((s) => s.label);
+
+  it('the 404 page is held out of states and reported in needsFix', () => {
+    expect(labels).not.toContain('agent');
+    const nf = (draft.needsFix ?? []).find((d) => d.label === 'agent');
+    expect(nf).toBeTruthy();
+    expect(nf!.reason).toMatch(/error page/i);
+  });
+  it('the blank chrome-only landing is held out too (no distinctive content)', () => {
+    expect(labels).not.toContain('blank');
+    expect((draft.needsFix ?? []).some((d) => d.label === 'blank' && /distinctive|chrome/i.test(d.reason))).toBe(true);
+  });
+  it('the good states (home, reports) still emit with clean unique fingerprints', () => {
+    expect(labels).toContain('home');
+    expect(labels).toContain('reports');
+    for (const s of draft.states) expect(s._warning).toBeUndefined();   // no ambiguity poisoning
+  });
+  it('good states carry NO navigate affordance pointing at a degenerate (dead) target', () => {
+    const home = draft.states.find((s) => s.label === 'home')!;
+    expect(home.affordances.some((a) => a.kind === 'navigate' && (a.to === 'agent' || a.to === 'blank'))).toBe(false);
+    expect(home.affordances.some((a) => a.kind === 'navigate' && a.to === 'reports')).toBe(true);   // good edge kept
   });
 });

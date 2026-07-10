@@ -81,6 +81,9 @@ export class MapStore implements IMapStore {
     if (!scols2.some((c) => c.name === 'declared_shadow')) {     // Layer 2 domain-shadow evidence
       this.db.exec('ALTER TABLE states ADD COLUMN declared_shadow TEXT');
     }
+    if (!scols2.some((c) => c.name === 'parent_state')) {        // hierarchy: the page this drills down from
+      this.db.exec('ALTER TABLE states ADD COLUMN parent_state TEXT');
+    }
     const ecols2: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
     if (!ecols2.some((c) => c.name === 'core')) {
       this.db.exec('ALTER TABLE edges ADD COLUMN core INTEGER');
@@ -100,15 +103,16 @@ export class MapStore implements IMapStore {
     // Explicit column names (NOT positional VALUES): on a migrated DB the
     // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
     // schema. Naming the columns keeps the write correct regardless of order.
-    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow)
-      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow)
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
-      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow`)
+      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent`)
       .run({
         id: s.id, nodeId: s.nodeId, semanticName: s.semanticName, urlPattern: s.urlPattern, role: s.role,
         sig: JSON.stringify(s.availableSignals), fp: JSON.stringify(s.fingerprint),
         aff: JSON.stringify(s.affordances ?? []),
         shadow: s.declaredShadow ? JSON.stringify(s.declaredShadow) : null,
+        parent: s.parentState ?? null,
       });
   }
   getState(id: string): State | null {
@@ -373,7 +377,8 @@ function rowToState(r: any): State {
     role: r.role, availableSignals: JSON.parse(r.available_signals),
     fingerprint: JSON.parse(r.fingerprint),
     affordances: r.affordances ? JSON.parse(r.affordances) : [],
-    declaredShadow: r.declared_shadow ? JSON.parse(r.declared_shadow) : null };
+    declaredShadow: r.declared_shadow ? JSON.parse(r.declared_shadow) : null,
+    parentState: r.parent_state ?? null };
 }
 
 function rowToEdge(r: any): Edge {
