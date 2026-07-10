@@ -84,6 +84,9 @@ export class MapStore implements IMapStore {
     if (!scols2.some((c) => c.name === 'parent_state')) {        // hierarchy: the page this drills down from
       this.db.exec('ALTER TABLE states ADD COLUMN parent_state TEXT');
     }
+    if (!scols2.some((c) => c.name === 'provisional')) {         // seen-once note (Task 7-10 draft)
+      this.db.exec('ALTER TABLE states ADD COLUMN provisional TEXT');
+    }
     const ecols2: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
     if (!ecols2.some((c) => c.name === 'core')) {
       this.db.exec('ALTER TABLE edges ADD COLUMN core INTEGER');
@@ -103,16 +106,17 @@ export class MapStore implements IMapStore {
     // Explicit column names (NOT positional VALUES): on a migrated DB the
     // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
     // schema. Naming the columns keeps the write correct regardless of order.
-    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state)
-      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent)
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state,provisional)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent,@provisional)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
-      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent`)
+      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent, provisional=@provisional`)
       .run({
         id: s.id, nodeId: s.nodeId, semanticName: s.semanticName, urlPattern: s.urlPattern, role: s.role,
         sig: JSON.stringify(s.availableSignals), fp: JSON.stringify(s.fingerprint),
         aff: JSON.stringify(s.affordances ?? []),
         shadow: s.declaredShadow ? JSON.stringify(s.declaredShadow) : null,
         parent: s.parentState ?? null,
+        provisional: s.provisional ?? null,
       });
   }
   getState(id: string): State | null {
@@ -202,9 +206,11 @@ export class MapStore implements IMapStore {
     return out;
   }
 
-  /** Edges leaving a state = stored edges UNION projected-from-affordances, deduped
+  /** Edges leaving a state = stored edges UNION projected-from-affordances UNION the
+   *  site's `_shell` navigate affordances (from-anywhere: the shell's nav/header/footer
+   *  links are reachable from every page, not just the shell record itself), deduped
    *  by (from,to,semanticStep) preferring the stored row (carries the self-heal
-   *  selector_cache and teach-written fields). */
+   *  selector_cache and teach-written fields) then the state's own projected edges. */
   edgesFrom(fromState: string): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges WHERE from_state=?').all(fromState);
     const stored = rows.map(rowToEdge);
@@ -212,8 +218,28 @@ export class MapStore implements IMapStore {
     if (!s) return stored;
     const have = new Set(stored.map(edgeKey));
     const projected = this.projectFromAffordances(s).filter((e) => !have.has(edgeKey(e)));
-    return [...stored, ...projected];
+    for (const e of projected) have.add(edgeKey(e));
+    const shellEdges = this.shellEdgesFor(fromState, s.nodeId).filter((e) => !have.has(edgeKey(e)));
+    return [...stored, ...projected, ...shellEdges];
   }
+
+  /** Project the node's `_shell` navigate affordances as edges FROM `fromState` (from-anywhere:
+   *  shell chrome — nav/header/footer — is present on every page, not routable only from the
+   *  shell record). No-op when `fromState` IS the shell (it projects its own affordances above,
+   *  and re-adding them here would just be filtered as duplicates anyway) or when the node has
+   *  no `_shell` state. */
+  private shellEdgesFor(fromState: string, nodeId: string | null): Edge[] {
+    if (!nodeId) return [];
+    const shellId = `${nodeId}:_shell`;
+    if (fromState === shellId) return [];
+    const shell = this.getState(shellId);
+    if (!shell) return [];
+    return this.projectFromAffordances(shell).map((e) => ({ ...e, fromState }));
+  }
+  /** NOTE: does NOT fan the `_shell` from-anywhere edges out onto every page here — this is the
+   *  flat human-facing listing (graph-show/outline/mermaid); duplicating N shell edges across
+   *  every page would just be noise for a human reading the map. The router (`edgesFrom`, used
+   *  per-node by findPath's Dijkstra) is where from-anywhere routing actually needs them. */
   allEdges(): Edge[] {
     const rows: any[] = this.db.prepare('SELECT * FROM edges ORDER BY from_state, to_state, semantic_step').all();
     const stored = rows.map(rowToEdge);
@@ -234,6 +260,12 @@ export class MapStore implements IMapStore {
    * affordance becomes an edge tagged with the affordance id that triggers it
    * (`viaAffordance`, so the UI can anchor the arrow to that row). navigate/reveal
    * with no toState emit a `dangling` stub (to=null) so the UI shows "unexplored".
+   *
+   * DELIBERATELY does not fan `_shell`'s navigate affordances out onto every OTHER state here the
+   * way `edgesFrom` does (from-anywhere routing) — the `_shell` state's own affordances already
+   * walk() below (it's one of `statesForNode`), so its edges appear once, anchored to `_shell`.
+   * The viewer renders `_shell` as its own distinct chrome node (Task 13) rather than every page
+   * repeating identical "open the nav menu" arrows.
    */
   interiorEdges(nodeId: string): InteriorEdge[] {
     const out: InteriorEdge[] = [];
@@ -378,7 +410,8 @@ function rowToState(r: any): State {
     fingerprint: JSON.parse(r.fingerprint),
     affordances: r.affordances ? JSON.parse(r.affordances) : [],
     declaredShadow: r.declared_shadow ? JSON.parse(r.declared_shadow) : null,
-    parentState: r.parent_state ?? null };
+    parentState: r.parent_state ?? null,
+    provisional: r.provisional ?? null };
 }
 
 function rowToEdge(r: any): Edge {

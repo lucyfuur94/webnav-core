@@ -11,6 +11,7 @@ export interface EditAffordanceObj {
   id?: string;                // stable id; auto-generated from the label if omitted
   label: string;
   kind?: AffordanceKind;      // default 'mutate'
+  scope?: 'row';              // a folded per-row repeat (informational; elementFp stays null)
   to?: string;                // navigate/reveal destination STATE LABEL (→ node:label)
   commit?: boolean;
   needs?: string[];           // precondition affordance ids
@@ -22,7 +23,9 @@ export interface EditAffordanceObj {
                                    // heading-vs-button + identical siblings (e.g. table-row icon buttons)
 }
 export type EditAffordance = string | EditAffordanceObj;
-export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; }
+// provisional: undefined = leave prior as-is (the common case — most edits say nothing about
+// it); null = CLEAR prior (a confirming re-record removes the seen-once note); string = set/replace.
+export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; provisional?: string | null; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
@@ -50,6 +53,7 @@ function toAffordance(a: EditAffordance, stateId: (label: string) => string): Af
     id: a.id ?? 'aff_' + (_affSeq++) + '_' + slug(a.label),
     label: a.label,
     kind: a.kind ?? 'mutate',
+    ...(a.scope ? { scope: a.scope } : {}),
     toState: a.to ? stateId(a.to) : null,
     commit: a.commit ?? false,
     needs: a.needs ?? [],
@@ -169,10 +173,16 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     const role = (prior?.role as State['role']) ?? (s.role as State['role']) ?? 'detail';
     const parentState = prior ? (prior.parentState ?? (s.parentState != null ? stateId(s.parentState) : null))
                               : (s.parentState != null ? stateId(s.parentState) : null);
+    // provisional is a tri-state: `s.provisional === undefined` (key omitted — the common case;
+    // draftFromEffects only emits the key when it has a note) means LEAVE the prior note as-is;
+    // `null` means the incoming edit explicitly CLEARS it (a confirming re-record removing the
+    // seen-once flag); a string SETS/replaces it. Never merge/append here — that's draft's job
+    // (it appends onto ITS OWN provisional before this ever reaches editGraph).
+    const provisional = s.provisional !== undefined ? s.provisional : (prior?.provisional ?? null);
     return [s.label, makeState({
       id: stateId(s.label), nodeId: node, semanticName: s.label,
       urlPattern: s.urlPattern ?? prior?.urlPattern ?? '', role,
-      fingerprint, affordances, declaredShadow, parentState,
+      fingerprint, affordances, declaredShadow, parentState, provisional,
     })];
   }));
 
