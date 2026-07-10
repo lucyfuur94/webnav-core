@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { inferUrlModel, proposeTemplates } from '../../src/explorer/infer.js';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import { faceOf, jaccard, insideOverlay, nodeIndexByName } from '../../src/explorer/infer.js';
+import { extractShell, templateCore } from '../../src/explorer/infer.js';
 
 describe('inferUrlModel', () => {
   it('infers a multi-segment base shared by ≥80% of urls and merges base-less redirect ghosts', () => {
@@ -60,5 +61,38 @@ describe('faces + overlay membership', () => {
     expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Apply'))).toBe(true);
     expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Add dimensions'))).toBe(false);
     expect(insideOverlay(nodes, nodeIndexByName(nodes, 'Run'))).toBe(false);   // AFTER the dialog, same depth
+  });
+});
+
+describe('extractShell', () => {
+  it('nodes on ≥80% of distinct pages are shell', () => {
+    const sidebar = ['link:Reports', 'link:Dashboards', 'button:Dark Mode'];
+    const faces = [
+      new Set([...sidebar, 'heading:Reports', 'button:New Report']),
+      new Set([...sidebar, 'heading:Dashboards']),
+      new Set([...sidebar, 'heading:Downloads']),
+      new Set([...sidebar, 'heading:Help Center']),
+      new Set([...sidebar, 'heading:Announcements']),
+    ];
+    expect(extractShell(faces)).toEqual(new Set(sidebar));
+  });
+  it('empty when fewer than 4 pages (no shell claim on tiny evidence)', () => {
+    expect(extractShell([new Set(['a']), new Set(['a'])])).toEqual(new Set());
+  });
+});
+
+describe('templateCore', () => {
+  it('n≥2: keeps tokens in ≥60% of landings (structure), drops the varying remainder (data)', () => {
+    const r = templateCore([
+      new Set(['button:Refresh list', 'link:file-aug.csv', 'tab:Owned']),
+      new Set(['button:Refresh list', 'link:file-sep.csv', 'tab:Owned']),
+    ]);
+    expect(r.tokens).toEqual(new Set(['button:Refresh list', 'tab:Owned']));   // rows fell out
+    expect(r.provisional).toBeNull();
+  });
+  it('n=1: keeps everything but marks provisional with an actionable note', () => {
+    const r = templateCore([new Set(['heading:Dashboards', 'link:ASJDH'])]);
+    expect(r.tokens.size).toBe(2);
+    expect(r.provisional).toMatch(/seen once/i);
   });
 });
