@@ -21,7 +21,9 @@ function healStep(store: MapStore, edge: Edge, beforeNodes: SnapNode[], chosen: 
   if (!chosen) return;
   const near = chosenIdx >= 0 ? deriveNear(beforeNodes, chosenIdx, chosen.role, chosen.name) : null;
   if (edge.viaAffordance && (chosen.name || near)) {
-    store.recordElementFp(edge.fromState, edge.viaAffordance, { role: chosen.role, name: chosen.name, near });
+    // affordanceOwner: a projected _shell edge rewrites fromState to the asking page, but the
+    // affordance lives on the shell state — write the repair where the affordance actually is.
+    store.recordElementFp(edge.affordanceOwner ?? edge.fromState, edge.viaAffordance, { role: chosen.role, name: chosen.name, near });
     return;
   }
   // legacy stored-edge fallback (no backing affordance): name-only selector cache, as before.

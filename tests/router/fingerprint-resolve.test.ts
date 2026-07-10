@@ -90,4 +90,35 @@ describe('store.recordElementFp — heal writes the owning affordance (B1)', () 
     s.upsertState(makeState({ id: 'sd:inv', nodeId: 'sd', semanticName: 'inv', urlPattern: '', role: 'detail' }));
     expect(s.recordElementFp('sd:inv', 'nope', { role: 'x', name: 'y', near: null })).toBe(false);
   });
+
+  it('a heal on a projected _shell edge writes the fp onto the SHELL affordance, not the asking page', () => {
+    const s = store();
+    s.upsertState(makeState({ id: 'n:_shell', nodeId: 'n', semanticName: '_shell', urlPattern: 'https://n.example', role: 'shell',
+      affordances: [makeAffordance({ id: 'sh_reports', label: 'Reports', kind: 'navigate', toState: 'n:report-list' })] }));
+    s.upsertState(makeState({ id: 'n:report-list', nodeId: 'n', semanticName: 'report-list', urlPattern: '', role: 'section' }));
+    s.upsertState(makeState({ id: 'n:downloads', nodeId: 'n', semanticName: 'downloads', urlPattern: '', role: 'section' }));
+    const edge = s.edgesFrom('n:downloads').find((e) => e.toState === 'n:report-list')!;
+    expect(edge.affordanceOwner).toBe('n:_shell');   // shell-projected edge carries its owner
+    // heal exactly the way healStep does: target affordanceOwner ?? fromState
+    const ok = s.recordElementFp(edge.affordanceOwner ?? edge.fromState, edge.viaAffordance!,
+      { role: 'link', name: 'Reports', near: null });
+    expect(ok).toBe(true);   // NOT silently dropped
+    // the repair landed on the shell state's affordance…
+    expect(s.getState('n:_shell')!.affordances[0].elementFp).toEqual({ role: 'link', name: 'Reports', near: null });
+    // …so EVERY page's shell-projected edge now carries it
+    expect(s.edgesFrom('n:downloads').find((e) => e.toState === 'n:report-list')!.elementFp)
+      .toEqual({ role: 'link', name: 'Reports', near: null });
+  });
+
+  it('regression: healing a normal own edge still writes to its own state (affordanceOwner absent)', () => {
+    const s = store();
+    s.upsertState(makeState({ id: 'sd:inv', nodeId: 'sd', semanticName: 'inv', urlPattern: '', role: 'detail',
+      affordances: [makeAffordance({ id: 'aff_cart', label: 'open cart', kind: 'navigate', toState: 'sd:cart' })] }));
+    const edge = s.edgesFrom('sd:inv')[0];
+    expect(edge.affordanceOwner).toBeUndefined();
+    const ok = s.recordElementFp(edge.affordanceOwner ?? edge.fromState, edge.viaAffordance!,
+      { role: 'link', name: 'Cart', near: null });
+    expect(ok).toBe(true);
+    expect(s.getState('sd:inv')!.affordances[0].elementFp).toEqual({ role: 'link', name: 'Cart', near: null });
+  });
 });

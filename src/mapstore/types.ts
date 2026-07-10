@@ -114,6 +114,8 @@ export interface Edge {
   cost: number;                 // playwright-cli call count (§4.1); webnav makes no LLM calls
   viaAffordance?: string;       // id of the affordance this edge was PROJECTED from (so a heal can
                                 // write elementFp back onto that affordance); absent for stored/legacy rows
+  affordanceOwner?: string;     // state id that OWNS viaAffordance; set only on projected _shell edges
+                                // where fromState ≠ owner, so a heal writes back to the right state
 }
 
 // Viewer-facing edge (one node's interior). `viaAffordance` = the affordance id
