@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
-import { runAgentSession } from '../../src/recorder/agent-session.js';
+import { runAgentSession, enrichName } from '../../src/recorder/agent-session.js';
 
 const SNAP = 'RootWebArea "P" [ref=e1]\n  button "Login" [ref=e5]\n  textbox "User" [ref=e3]';
 
@@ -20,7 +20,8 @@ function fakeAdapter(navigateOnActRef?: string) {
     currentUrl: async () => url,
     fill: async (r: string, t: string) => { calls.push('fill:' + r + '=' + t); },
     act: async (r: string) => { calls.push('act:' + r); if (r === navigateOnActRef) url = 'https://s.test/after-click'; },
-    evalJs: async (js: string) => { calls.push('eval'); return JSON.stringify('EVAL:' + js); },
+    hover: async (r: string) => { calls.push('hover:' + r); },
+    evalJs: async (js: string, ref?: string) => { calls.push('eval' + (ref ? ':' + ref : '')); return JSON.stringify('EVAL:' + js); },
     close: async () => { calls.push('close'); },
   };
 }
@@ -146,5 +147,76 @@ describe('runAgentSession', () => {
     const errs = io.out.filter((o) => o.ok === false);
     expect(errs.length).toBe(2);   // bad json + unknown cmd, both handled, no crash
     expect(ad.calls).toContain('close');
+  });
+
+  it('hover records a same-page effect marked action.hover, never navigates', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('h1');
+    const ad = fakeAdapter();
+    const io = driver(['{"cmd":"hover","ref":"e5"}', '{"cmd":"quit"}']);
+    const res = await runAgentSession({
+      sessionId: 'h1', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'button', name: 'Menu', ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    expect(ad.calls).toContain('hover:e5');
+    const fx = store.actionEffects('h1');
+    expect(fx.length).toBe(1);
+    expect(fx[0].action?.hover).toBe(true);
+    expect(fx[0].navigated).toBe(false);
+    expect(res.steps).toBe(1);
+  });
+
+  it('a NAMELESS click probes the element attributes for a label (title/aria-label)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('n1');
+    const ad = fakeAdapter();
+    // the name-probe eval (passed WITH a ref) returns a tooltip label for the icon
+    ad.evalJs = async (js: string, ref?: string) => {
+      if (ref === 'e9') return JSON.stringify('Duplicate');
+      return JSON.stringify('EVAL:' + js);
+    };
+    const io = driver(['{"cmd":"click","ref":"e9"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'n1', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'button', name: null, ref } }),  // NO accessible name
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    const fx = store.actionEffects('n1');
+    expect(fx.length).toBe(1);
+    expect(fx[0].action?.name).toBe('Duplicate');   // probed label, not null / not the URL
+  });
+});
+
+// The probe JS is executed in the browser (can't run here), but its LOGIC is the contract:
+// a label-less sort header ('Name') whose text IS its label must resolve to that text, and
+// a whole-row textContent must NOT be scraped (leaf-vs-container rule). We assert the JS
+// SOURCE encodes the intended last-resort text fallback + its length/newline bound.
+describe('NAME_PROBE_JS (source contract)', () => {
+  it('reads data-tooltip-content (this app\'s tooltip attribute) and falls back to short own-text', async () => {
+    const { NAME_PROBE_JS } = await import('../../src/recorder/agent-session.js');
+    expect(NAME_PROBE_JS).toContain('data-tooltip-content');   // the progneo tooltip source
+    expect(NAME_PROBE_JS).toContain('el.textContent');          // last-resort own-text (sort headers / date-range button)
+    expect(NAME_PROBE_JS).toContain('length <= 120');           // bounded single-line — long labels OK, no multi-row scrape
+  });
+});
+
+describe('enrichName', () => {
+  it('keeps the recovered accessible name when present', () => {
+    expect(enrichName('Login', 'ignored')).toBe('Login');
+  });
+  it('falls back to the probed attribute label when name is empty', () => {
+    expect(enrichName(null, 'Duplicate')).toBe('Duplicate');
+    expect(enrichName('', '  Expand details ')).toBe('Expand details');
+  });
+  it('returns null when neither is available', () => {
+    expect(enrichName(null, '')).toBe(null);
+    expect(enrichName('  ', undefined)).toBe(null);
+  });
+  it('REJECTS a playwright error blob as a name (stale-ref eval returns "### Error …")', () => {
+    expect(enrichName(null, '### Error\nError: Ref e1318 not found in the current page')).toBe(null);
+    expect(enrichName('', 'Error: something broke')).toBe(null);
   });
 });

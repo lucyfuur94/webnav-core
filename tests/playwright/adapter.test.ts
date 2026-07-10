@@ -83,6 +83,21 @@ describe('PlaywrightAdapter', () => {
     expect(calls[0]).toEqual(['-s=s', 'open', 'https://x', '--headed', '--persistent', '--profile', '/tmp/p', '--browser', 'firefox']);
   });
 
+  it('configPath emits --config ONLY when headed (headless keeps a fixed viewport)', async () => {
+    const headedCalls: string[][] = [];
+    const h = new PlaywrightAdapter('s', async (args) => { headedCalls.push(args); return 'ok'; },
+      undefined, { headed: true, configPath: '/tmp/pw.json' });
+    await h.open('https://x');
+    expect(headedCalls[0]).toContain('--config');
+    expect(headedCalls[0]).toContain('/tmp/pw.json');
+
+    const headlessCalls: string[][] = [];
+    const l = new PlaywrightAdapter('s', async (args) => { headlessCalls.push(args); return 'ok'; },
+      undefined, { headed: false, configPath: '/tmp/pw.json' });
+    await l.open('https://x');
+    expect(headlessCalls[0]).not.toContain('--config');   // headless: config skipped
+  });
+
   it('browser flags apply ONLY to open, not to subsequent commands', async () => {
     const calls: string[][] = [];
     const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; },

@@ -128,6 +128,31 @@ export const INSTALLER_JS = `() => {
     requestAnimationFrame(() => { r.style.transform = 'scale(1.7)'; r.style.opacity = '0'; });
     setTimeout(() => r.remove(), 800);
   };
+  // POINTER DOT: a persistent cursor marker that follows the mouse, so the session
+  // VIDEO shows WHERE the agent/human is pointing — essential for hover-revealed menus
+  // (a hover has no click ripple, so without this you can't see what's being hovered).
+  // Agent hovers go through playwright's real mouse → dispatch mousemove → this moves.
+  // One reused element (not per-move), pointer-events:none, aria-hidden (never in the
+  // a11y snapshot). Only visible while recording (the frame extractor still keys on the
+  // bigger scene changes; the dot is a small always-on locator, not a scene-change bait).
+  const pointer = () => {
+    let el = document.getElementById('__webnav_ptr');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__webnav_ptr';
+      el.setAttribute('aria-hidden', 'true');
+      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .05s linear,top .05s linear;display:none;';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    return el;
+  };
+  document.addEventListener('mousemove', (ev) => {
+    const el = pointer();
+    const on = document.documentElement.dataset.webnavRec === '1';
+    el.style.display = on ? 'block' : 'none';
+    el.style.left = ev.clientX + 'px';
+    el.style.top = ev.clientY + 'px';
+  }, true);
   // ownText/nearestLabel: a role-bearing wrapper (e.g. a chart's role="toolbar"
   // holding BOTH a legend and a dropdown) passes the old takeText check and its
   // whole-subtree textContent bled the legend's text onto a dropdown click. These
