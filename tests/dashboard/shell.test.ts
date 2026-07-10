@@ -169,3 +169,13 @@ it('sessions carry an Agent/Manual origin tag', () => {
   expect(SHELL_HTML).toContain('Agent');
   expect(SHELL_HTML).toContain('Manual');
 });
+
+it('Sites view renders the shell once and badges provisional states', () => {
+  expect(SHELL_HTML).toContain('Site shell');
+  expect(SHELL_HTML).toContain('Seen once');
+  expect(SHELL_HTML).toContain("=== '_shell'");   // the skip guard in graphView
+});
+it('key-actions +N more is a real toggle, not a dead chip', () => {
+  expect(SHELL_HTML).toContain('morebtn');
+  expect(SHELL_HTML).not.toMatch(/\+\d+ more<\/span>/);
+});
