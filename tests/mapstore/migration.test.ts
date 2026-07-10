@@ -47,6 +47,17 @@ describe('node_id migration', () => {
     expect(store.getState('github:repo-detail')?.declaredShadow).toBeNull();
   });
 
+  it('adds provisional to a legacy db and round-trips it', () => {
+    const db = legacyDb();
+    const store = MapStore.fromDatabase(db);   // migrate() must ALTER TABLE ADD provisional
+    store.upsertState(makeState({ id: 'github:result-list', nodeId: 'github.com',
+      semanticName: 'github:result-list', urlPattern: 'https://github.com/search*', role: 'result-list',
+      provisional: 'seen once, confirm on re-record' }));
+    expect(store.getState('github:result-list')?.provisional).toBe('seen once, confirm on re-record');
+    // the pre-existing legacy row has no provisional note → null, not a crash
+    expect(store.getState('github:repo-detail')?.provisional).toBeNull();
+  });
+
   it('upsertState writes correctly on a MIGRATED db (node_id is the LAST column there)', () => {
     // After ALTER TABLE ADD COLUMN, node_id is appended last — not 2nd as in
     // fresh schema. A positional INSERT would shift every field by one. Write a

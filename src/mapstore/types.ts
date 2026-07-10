@@ -5,7 +5,9 @@ export type { ElementFingerprint };
 // child). 'section' = a top-level area reachable from the shared sidebar (report-list,
 // dashboard-list, …); 'detail' = a page you drill INTO from a section (a specific report). The
 // legacy search-entry/result-list/sub-detail values are kept for back-compat.
-export type StateRole = 'hub' | 'section' | 'detail' | 'search-entry' | 'result-list' | 'sub-detail';
+// 'shell' = the site-wide chrome record (nav/header/footer affordances present on every page,
+// not a page itself) — synthesized by draftFromEffects as `<node>:_shell` (Task 7-10).
+export type StateRole = 'hub' | 'section' | 'detail' | 'search-entry' | 'result-list' | 'sub-detail' | 'shell';
 // 'unclassified' = webnav read this action but does NOT decide if it's safe;
 // the agent classifies it via needs-classification only if a route must traverse it.
 export type EdgeKind = 'safe-reversible' | 'commit-point' | 'navigate' | 'unclassified';
@@ -23,6 +25,8 @@ export interface Affordance {
   id: string;                   // stable within its owning state, e.g. 'aff_cart'
   label: string;                // human/agent-readable, e.g. 'open the shopping cart'
   kind: AffordanceKind;
+  scope?: 'row';                 // a folded per-row repeat (>=3 identical siblings folded to
+                                 // one informational affordance); elementFp is null for these.
   elementFp?: ElementFingerprint | null;  // durable element key (role+name+content anchor); absent/null = legacy name-only resolution
   commit: boolean;              // irreversible (Place Order/Pay/Delete) — NEVER auto-fired (#2)
   toState: string | null;       // navigate/reveal destination; null = unexplored or n/a
@@ -78,6 +82,8 @@ export interface State {
   fingerprint: string[];        // key declared elements that identify this state
   affordances: Affordance[];    // the node's full typed repertoire (source of truth); [] = none
   declaredShadow: DeclaredShadow | null;  // Layer 2 domain-shadow evidence; null = none captured
+  provisional: string | null;   // seen only once — identity may rest on instance data, not
+                                // structure; a note asking the agent to record again to confirm.
 }
 
 export function makeState(
@@ -89,6 +95,7 @@ export function makeState(
     affordances: [],
     declaredShadow: null,
     parentState: null,
+    provisional: null,
     ...init,
   };
 }

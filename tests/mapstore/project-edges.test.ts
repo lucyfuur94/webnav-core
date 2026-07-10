@@ -41,6 +41,36 @@ describe('edge projection from affordances', () => {
     expect(s.edgesFrom('sd:over')[0].kind).toBe('commit-point');
   });
 
+  it('edgesFrom projects _shell navigate affordances as from-anywhere edges', () => {
+    const s = store();
+    s.upsertState(makeState({ id: 'x.test:_shell', nodeId: 'x.test', semanticName: '_shell', urlPattern: 'https://x.test', role: 'shell', fingerprint: [],
+      affordances: [makeAffordance({ id: 'a1', label: 'Reports', kind: 'navigate', toState: 'x.test:report-list' })] }));
+    s.upsertState(makeState({ id: 'x.test:report-list', nodeId: 'x.test', semanticName: 'report-list', urlPattern: 'https://x.test/report/list', role: 'section', fingerprint: ['heading:Reports'] }));
+    s.upsertState(makeState({ id: 'x.test:downloads', nodeId: 'x.test', semanticName: 'downloads', urlPattern: 'https://x.test/download/list', role: 'section', fingerprint: ['heading:Downloads'] }));
+    const edges = s.edgesFrom('x.test:downloads');
+    expect(edges.some((e) => e.toState === 'x.test:report-list' && e.fromState === 'x.test:downloads')).toBe(true);
+  });
+
+  it('does not duplicate a shell edge when the state already has its own edge to the same target', () => {
+    const s = store();
+    s.upsertState(makeState({ id: 'x.test:_shell', nodeId: 'x.test', semanticName: '_shell', urlPattern: 'https://x.test', role: 'shell', fingerprint: [],
+      affordances: [makeAffordance({ id: 'a1', label: 'Reports', kind: 'navigate', toState: 'x.test:report-list' })] }));
+    s.upsertState(makeState({ id: 'x.test:report-list', nodeId: 'x.test', semanticName: 'report-list', urlPattern: '', role: 'section' }));
+    s.upsertState(makeState({ id: 'x.test:downloads', nodeId: 'x.test', semanticName: 'downloads', urlPattern: '', role: 'section',
+      affordances: [makeAffordance({ id: 'a2', label: 'Reports', kind: 'navigate', toState: 'x.test:report-list' })] }));
+    const edges = s.edgesFrom('x.test:downloads');
+    expect(edges.filter((e) => e.toState === 'x.test:report-list')).toHaveLength(1);
+  });
+
+  it('a state\'s OWN edges do not get shell edges projected onto the shell record itself', () => {
+    const s = store();
+    s.upsertState(makeState({ id: 'x.test:_shell', nodeId: 'x.test', semanticName: '_shell', urlPattern: 'https://x.test', role: 'shell', fingerprint: [],
+      affordances: [makeAffordance({ id: 'a1', label: 'Reports', kind: 'navigate', toState: 'x.test:report-list' })] }));
+    s.upsertState(makeState({ id: 'x.test:report-list', nodeId: 'x.test', semanticName: 'report-list', urlPattern: '', role: 'section' }));
+    // edgesFrom('_shell') should return exactly ONE edge (its own), not doubled by the shell-projection.
+    expect(s.edgesFrom('x.test:_shell')).toHaveLength(1);
+  });
+
   it('stored edge wins over a duplicate projected edge (carries the self-heal selector cache)', () => {
     const s = store();
     s.upsertState(makeState({ id: 'sd:inv', nodeId: 'sd', semanticName: 'inv', urlPattern: '', role: 'detail',

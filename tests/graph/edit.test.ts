@@ -234,6 +234,36 @@ describe('editGraph — gates author needs on the affordance (source of truth)',
   });
 });
 
+describe('editGraph — shell role, row scope, provisional', () => {
+  it('accepts role "shell" and scope "row" and persists them', () => {
+    const store = freshStore();
+    editGraph(store, 'x.example', {
+      states: [{ label: '_shell', role: 'shell', affordances: [
+        { id: 'a1', label: 'Reports', kind: 'navigate', to: 'report-list' },
+        { id: 'a2', label: 'Remove', kind: 'mutate', scope: 'row' },
+      ] }, { label: 'report-list' }],
+      edges: [],
+    });
+    const shell = store.getState('x.example:_shell')!;
+    expect(shell.role).toBe('shell');
+    expect(shell.affordances.find((a) => a.id === 'a2')!.scope).toBe('row');
+  });
+
+  it('provisional: incoming string sets it, omitted key keeps prior, explicit null clears it', () => {
+    const store = freshStore();
+    editGraph(store, 'x.example', { states: [{ label: 'p', provisional: 'seen once, confirm on re-record' }], edges: [] });
+    expect(store.getState('x.example:p')!.provisional).toBe('seen once, confirm on re-record');
+
+    // omitted key (no `provisional` at all) → prior note survives the re-edit
+    editGraph(store, 'x.example', { states: [{ label: 'p', fingerprint: ['heading:P'] }], edges: [] });
+    expect(store.getState('x.example:p')!.provisional).toBe('seen once, confirm on re-record');
+
+    // explicit null → clears (a confirming second recording)
+    editGraph(store, 'x.example', { states: [{ label: 'p', provisional: null }], edges: [] });
+    expect(store.getState('x.example:p')!.provisional).toBeNull();
+  });
+});
+
 describe('editGraph — elementFp authoring', () => {
   it('round-trips an affordance elementFp through graph-edit into the projected edge', () => {
     const store = MapStore.fromDatabase(new Database(':memory:'));

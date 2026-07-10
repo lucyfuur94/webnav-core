@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MapStore } from '../../src/mapstore/store.js';
-import { makeEdge, makeNodeEdge } from '../../src/mapstore/types.js';
+import { makeEdge, makeNodeEdge, makeState } from '../../src/mapstore/types.js';
 
 function freshStore() { return new MapStore(':memory:'); }
 
@@ -29,6 +29,19 @@ describe('MapStore', () => {
   it('recordSelector is a no-op for an unknown edge (no throw)', () => {
     const s = freshStore();
     expect(() => s.recordSelector('nope', 'x', 'y', 'z')).not.toThrow();
+  });
+
+  it('provisional persists through upsertState/getState round-trip', () => {
+    const s = freshStore();
+    s.upsertState(makeState({ id: 'a', nodeId: 'n', semanticName: 'a', urlPattern: 'x', role: 'detail',
+      provisional: 'identity rests on a heading that may be instance data' }));
+    expect(s.getState('a')?.provisional).toBe('identity rests on a heading that may be instance data');
+  });
+
+  it('provisional defaults to null when not set', () => {
+    const s = freshStore();
+    s.upsertState(makeState({ id: 'b', nodeId: 'n', semanticName: 'b', urlPattern: 'x', role: 'detail' }));
+    expect(s.getState('b')?.provisional).toBeNull();
   });
 
   // ─── Internet graph (inter-site) ───────────────────────────────────────────
