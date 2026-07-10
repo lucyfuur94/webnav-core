@@ -4,7 +4,7 @@ import { matchState, hasToken } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, insideOverlay, nodeIndexByName, foldRepeats, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -91,6 +91,17 @@ function isErrorLanding(nodes: SnapNode[]): boolean {
 // by the cross-link mesh, not here.)
 const INPUT_ROLES = new Set(['textbox', 'combobox', 'checkbox', 'searchbox', 'spinbutton']);
 function childKind(role: string): DraftAffordance['kind'] { return INPUT_ROLES.has(role) ? 'input' : 'mutate'; }
+// Was the recorded action's target inside an overlay? A NAME alone is ambiguous when the page
+// also carries a same-named node outside the overlay (a page heading "Search" shadowing the
+// picker's textbox "Search" — the first-match gate read the heading and leaked the overlay
+// control). So: match ROLE+NAME, and gate if ANY match is inside an overlay — the FROM snapshot
+// has the overlay OPEN, so the recorded interaction most plausibly targeted the overlay instance.
+// The flip side is harmless: a legit page-level twin re-emerges via interior synthesis from
+// coreNodes, so preferring the overlay member never loses a real page affordance.
+function clickedInOverlay(nodes: SnapNode[], action: { role: string; name: string | null }): boolean {
+  if (!action.name) return false;
+  return nodes.some((n, i) => n.role === action.role && n.name === action.name && insideOverlay(nodes, i));
+}
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
 
 // Label from the non-{param} tail segments (≤2) of a template/key path so a state reads
@@ -348,7 +359,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // duplicate every picked value (a chosen dimension, a typed search term) as page structure —
       // exactly the DATA-VALUE leak this task removes. Test on the FROM snapshot (the page as it
       // was when clicked), parsed above — never landings.
-      if (e.action.name && insideOverlay(fromNodes, nodeIndexByName(fromNodes, e.action.name))) return;
+      if (clickedInOverlay(fromNodes, e.action)) return;
       // a `use type` on a textbox → an input affordance (login or any field).
       if (e.action.role === 'textbox' && e.action.name) {
         pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',

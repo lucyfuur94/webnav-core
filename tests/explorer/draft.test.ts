@@ -939,6 +939,56 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
     expect(s.affordances.some((a) => a.label === 'Add metric')).toBe(true);
   });
 
+  it('overlay gate matches ROLE+NAME: a page-level heading "Search" cannot shadow the dialog textbox "Search"', () => {
+    // review fix: nodeIndexByName(first match) read the page heading (not in overlay) → gate false
+    // → the picker's search box leaked as a page input. Role+name matching finds the textbox.
+    const PAGE = [
+      '- heading "Search" [ref=e1]',            // page-level SAME NAME, different role, depth 0
+      '- button "New query" [ref=e2]',
+      '- paragraph "Saved searches" [ref=e3]',
+      '- listitem "Query A" [ref=e4]',
+      '- listitem "Query B" [ref=e5]',
+      '- paragraph "Body" [ref=e6]',
+      '- listitem "Query C" [ref=e7]',
+      '- paragraph "Footer" [ref=e8]',
+    ].join('\n');
+    const PAGE_DIALOG = [PAGE, '- dialog "Pick" [ref=e10]:', '  - textbox "Search" [ref=e11]', '  - button "Apply" [ref=e12]'].join('\n');
+    const enter2: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+      action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+      toUrl: `${RB}/qry/1`, toSnapshot: PAGE, navigated: true, diff: { added: [], removed: [] } as any };
+    const typeInDialog: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/qry/1`, fromSnapshot: PAGE_DIALOG,
+      action: { role: 'textbox', name: 'Search', ref: 'e11', elementFp: { role: 'textbox', name: 'Search', near: null } },
+      toUrl: `${RB}/qry/1`, toSnapshot: PAGE_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([enter2, typeInDialog] as never);
+    const s = g.states.find((x) => x.label === 'qry-1')!;
+    expect(s.affordances.some((a) => a.kind === 'input' && a.label === 'Search')).toBe(false);
+  });
+
+  it('legit-double: same role+name page-level AND in-overlay → exactly ONE page affordance (not zero, not two)', () => {
+    // the flip side of preferring the overlay member: gating the recorded click loses nothing,
+    // because the page-level twin is in coreNodes and interior synthesis re-adds it (dedup holds).
+    const PAGE = [
+      '- heading "Records" [ref=e1]',
+      '- button "Filter" [ref=e2]',             // page-level control
+      '- button "Export" [ref=e3]',
+      '- paragraph "All records" [ref=e4]',
+      '- listitem "Row 1" [ref=e5]',
+      '- listitem "Row 2" [ref=e6]',
+      '- paragraph "Body" [ref=e7]',
+      '- paragraph "Footer" [ref=e8]',
+    ].join('\n');
+    const PAGE_DIALOG = [PAGE, '- dialog "Options" [ref=e10]:', '  - button "Filter" [ref=e11]', '  - button "Close" [ref=e12]'].join('\n');
+    const enter2: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+      action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+      toUrl: `${RB}/rec/2`, toSnapshot: PAGE, navigated: true, diff: { added: [], removed: [] } as any };
+    const clickFilter: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/rec/2`, fromSnapshot: PAGE_DIALOG,
+      action: { role: 'button', name: 'Filter', ref: 'e11', elementFp: { role: 'button', name: 'Filter', near: null } },
+      toUrl: `${RB}/rec/2`, toSnapshot: PAGE_DIALOG, navigated: false, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([enter2, clickFilter] as never);
+    const s = g.states.find((x) => x.label === 'rec-2')!;
+    expect(s.affordances.filter((a) => a.label === 'Filter').length).toBe(1);
+  });
+
   it('RULE 3: interior synthesis reads CORE nodes only — a value in ONE landing does not synthesize', () => {
     // two landings of one page: a stable control on both (core) + a data value on only one (falls
     // out of core). Interior synthesis reads coreNodes, so the one-visit value never becomes an
