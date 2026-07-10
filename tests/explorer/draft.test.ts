@@ -487,6 +487,63 @@ describe('draftFromEffects — observation-based identity', () => {
   });
 });
 
+// ── Task 10: fingerprints + shadow from the template CORE; requests carry the notes.
+// The core (templateCore over the landing faces, minus shell) is the durable structure; a token
+// that varies across landings is DATA and must never anchor identity. These pin: (1) a big
+// heading that differs per instance falls OUT of the fingerprint; (1b) a param page whose only
+// durable token is a heading gets the "may be instance data" warning; (3) that warning flows into
+// receipt.requests.
+describe('draftFromEffects — core-derived fingerprints (Task 10 rule 1)', () => {
+  // Two visits to ONE parameterized dashboard: SAME skeleton (sidebar + Widgets/Export),
+  // DIFFERENT big heading (a per-instance title: "Demo User dashboard" vs "Q3 Board"). The
+  // heading VARIES → falls out of core → must not appear in the fingerprint.
+  const dashLanding = (heading: string) => shell(heading, [
+    '- button "Add widget" [ref=e7]', '- button "Export" [ref=e8]', '- listitem "Widget A" [ref=e9]',
+  ]);
+  it('a big heading that differs per instance is NOT in the fingerprint (no instance-data identity)', () => {
+    // /dashboard/7 and /dashboard/8 merge to /dashboard/{param}; the differing heading is data.
+    const g = draftFromEffects([
+      nav(`${XB}/dashboard/7`, dashLanding('Demo User dashboard')),
+      nav(`${XB}/dashboard/8`, dashLanding('Q3 Board')),
+      // 3 more distinct pages so the shared sidebar registers as shell (≥4-page gate).
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "Download all" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+    ] as never);
+    const dash = g.states.find((s) => /dashboard/.test(s.label))!;
+    expect(dash).toBeTruthy();
+    // the fingerprint contains NEITHER varying heading — they fell out of core by variance.
+    expect(dash.fingerprint.join()).not.toContain('Demo User');
+    expect(dash.fingerprint.join()).not.toContain('Q3 Board');
+    // and it still resolves to a real durable token (Add widget / Export are core).
+    expect(dash.fingerprint.every((t) => !t.startsWith('heading:'))).toBe(true);
+  });
+
+  it('param page whose only durable non-shell token is a heading gets the instance-data warning', () => {
+    // two param instances (/employee/7, /employee/8) merge to /employee/{param}: their ONLY
+    // non-shell content is a per-instance heading (everything else — the sidebar + a Save/Refresh
+    // control set present on EVERY page — is shell). So each instance's shell-subtracted face is
+    // just {heading:Employee Profile} → they merge (jaccard 1.0), and the core is heading-only.
+    // A heading-only fingerprint on a {param} page ⇒ that heading may be instance DATA ⇒ warn.
+    const common = ['- button "Save" [ref=e6b]', '- button "Refresh" [ref=e6c]'];   // on every page → shell
+    const g = draftFromEffects([
+      nav(`${XB}/employee/7`, shell('Employee Profile', common)),
+      nav(`${XB}/employee/8`, shell('Employee Profile', common)),
+      nav(`${XB}/announcements`, shell('Announcements', common)),
+      nav(`${XB}/help-center`, shell('Help Center', common)),
+      nav(`${XB}/download/list`, shell('Downloads', common)),
+    ] as never);
+    const emp = g.states.find((s) => /employee/.test(s.label))!;
+    expect(emp).toBeTruthy();
+    // fingerprint is heading-only (all other content is shell → subtracted; only heading:Employee Profile core)
+    expect(emp.fingerprint).toEqual(['heading:Employee Profile']);
+    // rule 1: the provisional note warns the identity rests on a possibly-instance heading.
+    expect(emp.provisional).toContain('identity rests on a heading that may be instance data');
+    // rule 3: it flows into receipt.requests.
+    expect(g.receipt.requests.some((r) => r.includes('identity rests on a heading that may be instance data'))).toBe(true);
+  });
+});
+
 // ── multi-session merge: concatenated effects from several sessions of ONE site fold into
 // one map because stable keying puts same-page visits in the same state. (The CLI does the
 // concat; here we prove draftFromEffects merges a concatenated effects list.)

@@ -1,6 +1,6 @@
 import type { StoredActionEffect } from '../mapstore/record.js';
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
-import { matchState, hasToken } from './fingerprint.js';
+import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
@@ -75,6 +75,18 @@ function candidateTokens(nodes: SnapNode[]): string[] {
   }
   return out;
 }
+// On a PARAMETERIZED page (URL template carries `{param}`), a big `heading:` is often the
+// instance's TITLE (a user's name, a report's name) — durable enough to survive templateCore
+// only because we saw one instance, but it is really per-instance DATA. So demote headings to
+// the END of the candidate order: prefer any non-heading structural token (a tab, a button) for
+// identity, and fall back to a heading only as a last resort. Non-param pages keep heading-first.
+function candidateTokensFor(coreNodes: SnapNode[], isParam: boolean): string[] {
+  const cands = candidateTokens(coreNodes);
+  if (!isParam) return cands;
+  const headings = cands.filter((t) => t.startsWith('heading:'));
+  const rest = cands.filter((t) => !t.startsWith('heading:'));
+  return [...rest, ...headings];
+}
 
 const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 40) || 'state';
 
@@ -135,15 +147,17 @@ function clusterFaces(faces: Face[], t: number): number[][] {
 
 // A logical page: identified by its aliased URL key, defined by its SETTLED READY landings.
 // - landings/faces: only navigated + classifyReadiness==='ready' snapshots feed identity
-//   (Task 9 uses non-nav toSnapshots for affordances only — NOT here).
-// - core/coreNodes: the durable face (templateCore, minus shell — shell arrives Task 8) + the
-//   first landing filtered to core.
-// - nodes/fpNodes: bridge fields the affordance/hierarchy/self-verify sections consume —
-//   nodes = union of every landing (full repertoire), fpNodes = first landing (fingerprint src).
+//   (Task 9 uses non-nav toSnapshots for affordances only — NOT here). landings[0] is the raw
+//   entry view (error-page detection reads it).
+// - core/coreNodes: the durable, data-separated face (templateCore, minus shell) + the first
+//   landing filtered to core. Task 10 draws BOTH the fingerprint and the shadow from here.
+// - nodes: the ONE remaining bridge field — the union of every landing (full repertoire). Only
+//   the cross-link mesh + the `_shell` synthesis still read it, and both genuinely need the union:
+//   a sidebar/content link's href must be recoverable even from a landing where it isn't core.
 interface PageInfo {
   key: string; url: string; template: string | null; label: string;
   landings: SnapNode[][]; faces: Face[]; core: Face; coreNodes: SnapNode[]; provisional: string | null;
-  nodes: SnapNode[]; fpNodes: SnapNode[];
+  nodes: SnapNode[];
 }
 
 /**
@@ -258,7 +272,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const nodes: SnapNode[] = [];
     for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
     const coreNodes = landings[0].filter((n) => n.name && n.name.trim() && core.has(`${n.role}:${n.name}`));
-    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes, fpNodes: landings[0] };
+    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes };
   };
   for (const [k, { landings, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
@@ -309,34 +323,50 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // out of the fingerprint exclusivity computation — otherwise its all-chrome fingerprint
   // makes every real page read 'ambiguous'. It's reported in `needsFix` for the agent (#5a).
   const degenerate = new Map<number, string>();   // page index → reason
-  // pass A: error pages are degenerate up front (regardless of fingerprint).
-  pageList.forEach((p, i) => { if (isErrorLanding(p.fpNodes)) degenerate.set(i, `error page (heading matches not-found/error)`); });
+  // pass A: error pages are degenerate up front (regardless of fingerprint). Read the raw first
+  // landing (an error heading is announced on the page itself, not necessarily in the durable core).
+  pageList.forEach((p, i) => { if (isErrorLanding(p.landings[0])) degenerate.set(i, `error page (heading matches not-found/error)`); });
 
-  // A page's fingerprint = the MINIMAL prefix of its candidate tokens that no OTHER GOOD page's
-  // LANDING view (fpNodes) fully satisfies. Purely PAIRWISE against fixed landing views (does
-  // NOT depend on other stubs' in-progress fingerprints — that ordering bug produced 30-token
-  // fingerprints). Fingerprint from the LANDING (fpNodes): it carries the distinctive heading;
-  // the unioned repertoire buries it under shared sidebar chrome.
+  // A page's fingerprint = the MINIMAL prefix of its CORE candidate tokens (Task 10) that no
+  // OTHER GOOD page's LANDING FACE fully satisfies. Fingerprint from the CORE, not the union or
+  // a single landing: a token that VARIED across this page's landings is data (dropped by
+  // templateCore) and must never anchor identity. Exclusivity is checked against every OTHER
+  // page's landing faces — an fp is exclusive only when NO face of any other good page contains
+  // all its tokens (so a walk can't land on a sibling and match this state too). Purely pairwise
+  // (does NOT depend on other stubs' in-progress fingerprints — that ordering bug produced 30-token
+  // fingerprints).
   const goodIdx = (i: number) => !degenerate.has(i);
   const stubs: State[] = pageList.map((p) => makeState({
     id: 'd:' + p.label, nodeId: 'd', semanticName: p.label, urlPattern: p.url, role: 'detail', fingerprint: [],
   }));
   for (let pi = 0; pi < pageList.length; pi++) {
     if (degenerate.has(pi)) continue;                 // error pages: no fingerprint attempt
-    const cands = candidateTokens(pageList[pi].fpNodes);
+    const p = pageList[pi];
+    const isParam = !!p.template && p.template.includes('{param}');
+    const cands = candidateTokensFor(p.coreNodes, isParam);
+    // pass B (empty core): a good page whose durable core carries NO candidate token — its only
+    // content is shared shell chrome (a blank/empty landing) — has no distinctive identity. Held
+    // out with a clear reason (matches upstream: identity is drawn from the core, and an empty
+    // core is genuinely indistinguishable from every other logged-in page).
+    if (!cands.length) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
     const fp: string[] = [];
     let exclusive = false;
     for (const tok of cands) {
       fp.push(tok);
-      // exclusive = no OTHER GOOD page's landing satisfies EVERY token in fp so far.
-      exclusive = pageList.every((q, qi) => qi === pi || !goodIdx(qi) || !fp.every((t) => hasToken(q.fpNodes, t)));
+      // exclusive = NO face of any OTHER GOOD page contains EVERY token in fp so far.
+      exclusive = pageList.every((q, qi) => qi === pi || !goodIdx(qi) || q.faces.every((f) => !fp.every((t) => f.has(t))));
       if (exclusive) break;
     }
-    // pass B: a good page that NEVER became exclusive (its content is only shared chrome — a
-    // blank/empty landing) is degenerate too. Held out with a clear reason.
-    if (!exclusive && cands.length) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
-    if (fp.length === 0 && cands.length) fp.push(cands[0]);
+    // a page that NEVER became exclusive (its core content is shared with a sibling) is degenerate.
+    if (!exclusive) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
     stubs[pi].fingerprint = fp;
+    // rule 1: on a {param} page, if identity STILL rests only on heading token(s) (all we had),
+    // that heading may be per-instance data — record a different instance to confirm. Set/append
+    // the provisional note so it surfaces in receipt.requests (append semantics, not overwrite).
+    if (isParam && fp.length && fp.every((t) => t.startsWith('heading:'))) {
+      const note = 'identity rests on a heading that may be instance data — record a different {param} instance';
+      p.provisional = p.provisional ? `${p.provisional}; ${note}` : note;
+    }
   }
 
   // ── 3+4. affordances per FROM page from the recorded transitions ──
@@ -481,8 +511,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   const states: DraftState[] = [];
   pageList.forEach((p, pi) => {
     if (degenerate.has(pi)) return;                    // held out → needsFix
-    const shadow = extractShadow(p.nodes);
-    const hasShadow = (shadow.collections?.length || shadow.filters?.length || shadow.createsEntity || shadow.subTabs?.length);
+    const shadow = extractShadow(p.coreNodes);   // rule 2: shadow from the durable core, not the union
+    // extractShadow no longer emits subTabs (site-specific container lookup deleted, rule 2), so
+    // the check drops it — a freshly-extracted shadow only carries collections/filters/createsEntity.
+    const hasShadow = (shadow.collections?.length || shadow.filters?.length || shadow.createsEntity);
     const affordances = (affById.get(p.label) ?? []).filter((a) => !(a.kind === 'navigate' && a.to && degenLabels.has(a.to)));
     states.push({
       label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint, affordances,
@@ -494,18 +526,27 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // ── 5. self-verify the GOOD states: flag any non-unique fingerprint / unresolvable affordance ──
   // (matchState against the good stubs only — degenerate stubs have empty fingerprints and are
   //  excluded from `states`, so they can't cause a spurious ambiguous here.)
+  // Verify against the page's CORE nodes (Task 10) — the same view synthesis draws affordances
+  // and fingerprints from. Verifying the fp against a UNION landing that also carried a transient
+  // twin, or an affordance against the union while it was synthesized from core, produced spurious
+  // _warnings (a prior reviewer flagged the union/core mismatch); coreNodes makes them consistent.
   const goodStubs = pageList.map((p, pi) => stubs[pi]).filter((_, pi) => !degenerate.has(pi));
   for (const st of states) {
     const pi = pageList.findIndex((p) => p.label === st.label);
-    const m = matchState(pageList[pi].fpNodes, goodStubs);
+    const m = matchState(pageList[pi].coreNodes, goodStubs);
     if (!(m.status === 'matched' && m.state.id === stubs[pi].id)) {
       st._warning = `fingerprint not unique (matchState: ${m.status}) — curate`;
     }
     for (const a of st.affordances) {
-      if (a.elementFp && (a.kind === 'navigate' || a.kind === 'mutate' || a.kind === 'input' || a.kind === 'reveal')) {
-        if (resolveByFingerprint(a.elementFp, pageList[pi].nodes) === null) {
-          st._warning = (st._warning ? st._warning + '; ' : '') + `affordance "${a.label}" won't resolve on this page`;
-        }
+      if (!a.elementFp) continue;
+      // Resolve against the SAME node set the affordance was synthesized from (consistency with
+      // synthesis — the prior union/core mismatch produced spurious _warnings): interior
+      // input/mutate/reveal come from the CORE (and are already gated on resolving there), so verify
+      // on coreNodes; a NAVIGATE's link lives in the full landing/shell (subtracted from core), so
+      // verify it against the union `nodes`.
+      const against = a.kind === 'navigate' ? pageList[pi].nodes : pageList[pi].coreNodes;
+      if (resolveByFingerprint(a.elementFp, against) === null) {
+        st._warning = (st._warning ? st._warning + '; ' : '') + `affordance "${a.label}" won't resolve on this page`;
       }
     }
   }

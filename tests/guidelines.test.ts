@@ -17,7 +17,7 @@ describe('core guidelines (settled 2026-07-10)', () => {
     const SITES = /the analytics SPA|orangehrm|analytics\.mn|automationexercise/i;
     for (const p of files) expect(SITES.test(readFileSync(p, 'utf8')), p).toBe(false);
   });
-  it.fails('no site-shaped one-shot heuristics (deleted 2026-07-10)', () => {
+  it('no site-shaped one-shot heuristics (deleted 2026-07-10)', () => {
     const BANNED = [/records?\s+found/i, /\bID_SEG\b/, /subTabContainer/];
     for (const p of files) for (const re of BANNED) expect(re.test(readFileSync(p, 'utf8')), `${p} ~ ${re}`).toBe(false);
   });
