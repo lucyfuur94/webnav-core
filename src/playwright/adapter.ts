@@ -22,6 +22,9 @@ export interface BrowserOpts {
   persistent?: boolean;
   profile?: string;
   browser?: string;
+  configPath?: string;   // playwright-cli --config (JSON): used to launch the window MAXIMIZED
+                         // (launchOptions.args --start-maximized + contextOptions.viewport:null)
+                         // for headed capture sessions. Ignored on headless (fixed viewport is fine).
 }
 
 const defaultRun: RunFn = async (args) => {
@@ -43,13 +46,16 @@ export class PlaywrightAdapter {
     return this.run([`-s=${this.session}`, ...args]);
   }
 
-  /** The `open`-only launch flags from BrowserOpts (headed/persistent/profile/browser). */
+  /** The `open`-only launch flags from BrowserOpts (headed/persistent/profile/browser/config). */
   private openFlags(): string[] {
     const f: string[] = [];
     if (this.opts.headed) f.push('--headed');
     if (this.opts.persistent) f.push('--persistent');
     if (this.opts.profile) f.push('--profile', this.opts.profile);
     if (this.opts.browser) f.push('--browser', this.opts.browser);
+    // --config launches the window MAXIMIZED (viewport follows the window). Headed only:
+    // headless has no window to maximize and wants a fixed viewport, so skip it there.
+    if (this.opts.configPath && this.opts.headed) f.push('--config', this.opts.configPath);
     return f;
   }
 
@@ -62,6 +68,7 @@ export class PlaywrightAdapter {
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
   press(key: string) { return this.exec('press', key); }
+  hover(ref: string) { return this.exec('hover', ref); }
   evalJs(func: string, ref?: string) { return this.exec('eval', func, ...(ref ? [ref] : [])); }
   network() { return this.exec('network'); }
   goBack() { return this.exec('go-back'); }
