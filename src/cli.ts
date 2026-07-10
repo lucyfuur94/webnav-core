@@ -1495,8 +1495,6 @@ async function main() {
       // re-navigate an existing session (whereas `goto` requires the session to
       // already exist, which fails on the first navigate of a fresh session).
       await adapter.open(args.url);
-      const toSnapshot = await adapter.snapshot();
-      const toUrl = await adapter.currentUrl();
       const rec = new RecordStore(dbPath());
       // Auto-start recording so an agent session is a first-class, dashboard-visible
       // recording (steps + video) without a separate record-start. Video capture
@@ -1512,13 +1510,11 @@ async function main() {
         // were recorded"). Agent video needs a long-lived process owning the session
         // (like the human live-loop) — tracked as a follow-up, NOT faked here.
       }
-      const { diffSnapshots } = await import('./explorer/diff.js');
-      const { parseSnapshot } = await import('./playwright/snapshot.js');
-      rec.appendActionEffect(args.session, {
-        fromUrl: args.url, fromSnapshot: '', action: null,
-        toUrl, toSnapshot, navigated: true,
-        diff: diffSnapshots([], parseSnapshot(toSnapshot)),
-      });
+      // Settle + record via the shared seam (same gate as agent-session/runActionRecorded):
+      // a client-side redirect otherwise records a pre-render shell as the page, and the
+      // requestedUrl (what the agent ASKED for) is the draft's redirect-alias evidence.
+      const { recordNavigateEffect } = await import('./router/browse.js');
+      const { toUrl } = await recordNavigateEffect(args.url, args.session, rec, adapter);
       console.log(JSON.stringify({ status: 'done', url: toUrl, recorded: true }, null, 2));
     } catch (e) {
       console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));

@@ -8,11 +8,10 @@
 //
 // Pure core: deps injected (adapter, store, io, notify, video) so it's unit-tested
 // with scripted stdin + a fake adapter — no real browser.
-import { runActionRecorded, parseEvalResult } from '../router/browse.js';
+import { runActionRecorded, parseEvalResult, settleSnapshot } from '../router/browse.js';
 import { diffSnapshots } from '../explorer/diff.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { INSTALLER_JS, MODE_JS } from './live.js';
-import { classifyReadiness } from '../router/readiness.js';
 import type { ActionEffect } from '../mapstore/record.js';
 
 // Paint the same REC overlay the human live-recorder uses, so an agent session's
@@ -129,11 +128,7 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
           // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
-          let toSnapshot = await deps.adapter.snapshot();
-          for (let i = 0; i < 3 && classifyReadiness(toSnapshot) === 'loading'; i++) {
-            await new Promise((r) => setTimeout(r, 700));
-            toSnapshot = await deps.adapter.snapshot();
-          }
+          const toSnapshot = await settleSnapshot(() => deps.adapter.snapshot());
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
             deps.store.appendActionEffect(deps.sessionId, {
