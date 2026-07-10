@@ -1383,6 +1383,56 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(labels).toContain('view');        // /view/9001, opaque id dropped — SEPARATE state, no merge
   });
 
+  it('a landing that settled on a FOREIGN host is a blocked door — never a state, one deduped needsFix entry', () => {
+    // an SSO/CDN interstitial (e.g. a Cloudflare Access wall) settles on another host; it must
+    // not mint states inside this site's map (doors posture: detect + escalate, never a state).
+    const WALL = ['- heading "Sign in to continue" [ref=e1]', '- textbox "Email" [ref=e2]',
+      '- button "Send code" [ref=e3]', '- paragraph "Protected by SSO" [ref=e4]',
+      '- link "Help" [ref=e5]', '- paragraph "wall" [ref=e6]', '- img "logo" [ref=e7]', '- paragraph "x" [ref=e8]'].join('\n');
+    const g = draftFromEffects([
+      nav(`${XB}/report/list`, shell('Reports', ['- button "New report" [ref=e7]', '- textbox "Search" [ref=e8]'])),
+      nav('https://sso.wall.test/cdn-cgi/access/login/a?kid=1', WALL),
+      nav('https://sso.wall.test/cdn-cgi/access/login/b?kid=2', WALL),   // 2nd visit → still ONE entry
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+    ] as never);
+    expect(g.states.some((s) => s.urlPattern.includes('sso.wall.test'))).toBe(false);   // never a state
+    const foreign = (g.needsFix ?? []).filter((n) => /foreign-host interstitial/.test(n.reason));
+    expect(foreign.length).toBe(1);                                                     // deduped per host
+    expect(foreign[0].reason).toContain('sso.wall.test');
+    expect(g.receipt.requests.join()).not.toMatch(/sso\.wall\.test|sign-in/i);           // absent from requests
+    expect(g.states.some((s) => s.label === 'report-list')).toBe(true);                 // from-page keeps working
+  });
+
+  it('fixpoint template proposal merges multi-param URLs (/r/{id}/{viz} instances → ONE state)', () => {
+    // /r/1/aaaa… + /r/1/bbbb… merge in pass 1 (/r/1/{param}); /r/2/cccc… differs from that
+    // template at TWO raw positions — only {param}-wildcard unification in a SECOND pass can
+    // merge them (→ /r/{param}/{param}). Identical control faces, instance data differs.
+    const CONTROLS = ['- button "Run query" [ref=e7]', '- spinbutton "Rows" [ref=e8]',
+      '- tab "Grid" [ref=e9]', '- tab "Plot" [ref=e10]', '- button "Export data" [ref=e11]'];
+    const inst = (h: string, p: string) => shell(h, [...CONTROLS,
+      `- paragraph "${p} one" [ref=e12]`, `- paragraph "${p} two" [ref=e13]`, `- paragraph "${p} three" [ref=e14]`]);
+    const g = draftFromEffects([
+      nav(`${XB}/r/1/aaaaaaaaaaaaaaaaaaaa`, inst('OS and Device', 'alpha')),
+      nav(`${XB}/r/1/bbbbbbbbbbbbbbbbbbbb`, inst('OS and Device', 'beta')),
+      nav(`${XB}/r/2/cccccccccccccccccccc`, inst('Browser and Device', 'gamma')),
+      // anti-merge: same URL shape but a different first WORD segment = a different SECTION with
+      // its OWN controls (faithful: sibling sections differ in what you can do) — must stay split.
+      nav(`${XB}/q/2/dddddddddddddddddddd`, shell('Other Section', ['- button "Setup panel" [ref=e7]',
+        '- combobox "Filter field" [ref=e8]', '- button "Full screen" [ref=e9]', '- button "Customize it" [ref=e10]',
+        '- paragraph "delta one" [ref=e11]', '- paragraph "delta two" [ref=e12]'])),
+      // filler sections so the instance pages' controls stay under the 80% cross-page shell bar
+      // (a real site has many pages; 4-of-5 pages sharing controls would legitimately read as shell).
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const rStates = g.states.filter((s) => /\/r\//.test(s.urlPattern));
+    expect(rStates.length, 'the three /r instances collapse to ONE state').toBe(1);
+    expect(rStates[0].label).toBe('r');                                    // template label, no instance names
+    expect(rStates[0].provisional ?? null).toBeNull();                     // ≥2 instances → confirmed
+    expect(rStates[0].fingerprint.join()).not.toMatch(/OS and Device|Browser and Device/);
+    expect(g.states.some((s) => /\/q\//.test(s.urlPattern))).toBe(true);   // other section stays split
+  });
+
   it('needsFix carries no duplicate (label, reason) entries', () => {
     // two genuinely-different HEADING-LESS faces at one key (low jaccard AND low containment):
     // still split, neither nameable → both clusters report the same (label, reason) → ONE entry.
