@@ -74,6 +74,17 @@ export function jaccard(a: Face, b: Face): number {
   return inter / (a.size + b.size - inter);
 }
 
+/** Containment |A∩B| / min(|A|,|B|): 1 when the smaller face is a subset of the larger. A
+ *  PARTIAL RENDER (a page captured before its data grid arrived) reads as contained-in the full
+ *  face even when jaccard is tiny (real case: 33-token subset of a 199-token list page → jaccard
+ *  0.17, containment 1.0), while a genuinely different page is not. Thresholds live at call sites. */
+export function containment(a: Face, b: Face): number {
+  if (!a.size || !b.size) return a.size === b.size ? 1 : 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / Math.min(a.size, b.size);
+}
+
 // Roles that DECLARE a transient overlay container (WAI-ARIA). A node nested under one is
 // overlay content (a value being chosen, or the overlay's own controls) — never page structure.
 export const OVERLAY_ROLES: ReadonlySet<string> = new Set(['dialog', 'alertdialog', 'menu', 'listbox', 'tooltip']);
