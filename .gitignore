@@ -18,3 +18,4 @@ tests/tmp/
 # webnav-recorder: don't commit tsc output
 webnav-recorder/*.js
 webnav-recorder/package-lock.json
+take-*.webm

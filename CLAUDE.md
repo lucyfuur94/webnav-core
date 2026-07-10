@@ -2,6 +2,10 @@
 
 > **Read this first, every session. These are settled decisions. Do not deviate without an explicit decision to change them.**
 
+## Fix upstream, never patch downstream (settled 2026-07-10 — HARD RULE)
+
+When something wrong shows up in a late stage (the graph, the dashboard, a walk), that is a SYMPTOM, not the bug. **Find the earliest stage in the pipeline that let it in and fix it there** — recording → effects → `draftFromEffects` → build → graph → viewer. A fix that scrubs/filters/special-cases the bad thing *after* it's already in the data is FORBIDDEN — it leaves every other consumer of that data still wrong and hides the real defect. Correct the producing logic so the symptom disappears everywhere at once, then **re-verify from the true source** (re-run the pipeline end-to-end, not just re-render) and close. If you can't reach the upstream source, say so explicitly rather than patching downstream. (User, repeated: "we can't patch downstream, fix logic upstream which solves downstream automatically and reverify and close.")
+
 ## Subagent model (settled)
 
 **Subagents that USE or TEST webnav run on Haiku** (`claude-haiku-4-5-20251001`) — for both usage and testing. webnav is zero-LLM navigation infrastructure; its calling agent does the judgment, and that calling agent should be the cheap model — a deliberate dogfood of the cost thesis (a cheap agent + webnav's deterministic navigation should beat an expensive agent ad-hoc-driving the browser). Use `model: 'haiku'` on `Agent`/`Workflow agent()` calls that drive or exercise webnav. (Benchmark ARMS are a deliberate exception when a run must hold the model constant across arms — note it in that run's recipe.)
