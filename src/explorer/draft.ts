@@ -4,6 +4,8 @@ import { matchState, hasToken } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, type Face } from './infer.js';
+import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
 // action.elementFp) into a ready-to-edit graph-edit spec — absolute URLs, uniqueness-driven
@@ -35,6 +37,7 @@ export interface DraftState {
   declaredShadow?: DeclaredShadow;   // Layer 2: declared domain-shadow evidence (collections/filters/...)
   role?: 'hub' | 'section' | 'detail';  // site-tree level, derived from the OBSERVED nav structure
   parentState?: string | null;       // the section/page this drills DOWN from (label); null = top-level
+  provisional?: string | null;       // seen once — core is unseparated data-vs-structure; record again
   _warning?: string;   // self-verify flag: non-unique fingerprint / unresolvable edge — agent curates
 }
 // A landing the draft could NOT place as a clean state — a 404/error page, or a page with no
@@ -47,7 +50,7 @@ export interface DraftGraph {
   node?: { capabilities?: string[]; topics?: string[] };
   states: DraftState[]; edges: never[];
   needsFix?: DegenerateState[];   // landings held out (404 / no distinctive fingerprint)
-  receipt: { entry: string | null; states: string[]; walkExample: string | null };
+  receipt: { entry: string | null; states: string[]; walkExample: string | null; requests: string[] };
 }
 
 // candidate fingerprint tokens for a page, most-distinctive first: headings, then
@@ -88,13 +91,36 @@ const INPUT_ROLES = new Set(['textbox', 'combobox', 'checkbox', 'searchbox', 'sp
 function childKind(role: string): DraftAffordance['kind'] { return INPUT_ROLES.has(role) ? 'input' : 'mutate'; }
 // Label from the STABLE path (ids already stripped) so a state reads `report` / `dashboard`,
 // not `16116-bd5a1a4a…` (the raw record id). Uses the last 1-2 non-account segments.
-function pathSlug(url: string): string {
-  const p = stablePathKey(url).split('/').filter(Boolean);
-  // drop a leading version + numeric-account prefix (v3, 1041) for a clean label
-  const meaningful = p.filter((s) => !/^v\d+$/i.test(s) && !/^\d+$/.test(s));
-  return slug(meaningful.slice(-2).join('-') || meaningful.slice(-1).join('-') || 'home');
-}
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
+
+// Label from the non-{param} tail segments (≤2) of a template/key path so a state reads
+// `report-list` / `dashboard`, not the raw record id. `/` → `home`. No numeric suffixes.
+function labelFromKey(key: string): string {
+  const segs = key.split('/').filter(Boolean).filter((s) => s !== '{param}');
+  return slug(segs.slice(-2).join('-') || 'home');
+}
+// The first `heading:` core token NOT shared by any of the `others` cores — the distinguishing
+// heading used to name an SPA split / break a label collision. null if none distinguishes.
+function distinguishingHeading(core: Face, others: Face[]): string | null {
+  for (const t of core) {
+    if (!t.startsWith('heading:')) continue;
+    if (others.every((o) => !o.has(t))) return t.slice('heading:'.length);
+  }
+  return null;
+}
+// Single-link clustering of faces at a jaccard threshold (union-find over the ≥t edges).
+// Returns clusters as index groups. One key with structurally-distinct landings splits into
+// >1 cluster (SPA views at one URL); same-structure repeat visits stay in one cluster.
+function clusterFaces(faces: Face[], t: number): number[][] {
+  const parent = faces.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < faces.length; i++) for (let j = i + 1; j < faces.length; j++) {
+    if (jaccard(faces[i], faces[j]) >= t) parent[find(i)] = find(j);
+  }
+  const groups = new Map<number, number[]>();
+  faces.forEach((_, i) => (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i));
+  return [...groups.values()];
+}
 
 // STABLE page identity — the key that makes one logical page ONE state regardless of what's
 // currently shown on it. A page is identified by its URL PATHNAME with the volatile parts
@@ -105,81 +131,163 @@ function host(url: string): string | null { try { return new URL(url).host; } ca
 // collapses to the collection path. NOT site-specific. Two DIFFERENT records of the same
 // collection therefore share one state coordinate (correct per the affordance model — same
 // page-type, reached by the same route; the record id is a runtime input, not map structure).
-const ID_SEG = /^(\d+|[0-9a-f]{16,}|[0-9a-f-]{20,})$/i;   // numeric id, long hex hash, or uuid-ish
-export function stablePathKey(url: string): string {
-  let path: string;
-  try { path = new URL(url).pathname; } catch { return url; }
-  const segs = path.split('/').filter(Boolean);
-  // drop trailing id-ish segments so /report/16116/<hash> → /report, /dashboard/1210 → /dashboard.
-  // keep a trailing NON-id segment (…/report/list stays; …/report/draft stays).
-  while (segs.length && ID_SEG.test(segs[segs.length - 1])) segs.pop();
-  return '/' + segs.join('/');
+// A logical page: identified by its aliased URL key, defined by its SETTLED READY landings.
+// - landings/faces: only navigated + classifyReadiness==='ready' snapshots feed identity
+//   (Task 9 uses non-nav toSnapshots for affordances only — NOT here).
+// - core/coreNodes: the durable face (templateCore, minus shell — shell arrives Task 8) + the
+//   first landing filtered to core.
+// - nodes/fpNodes: bridge fields the affordance/hierarchy/self-verify sections consume —
+//   nodes = union of every landing (full repertoire), fpNodes = first landing (fingerprint src).
+interface PageInfo {
+  key: string; url: string; template: string | null; label: string;
+  landings: SnapNode[][]; faces: Face[]; core: Face; coreNodes: SnapNode[]; provisional: string | null;
+  nodes: SnapNode[]; fpNodes: SnapNode[];
 }
 
-// nodes = UNION of every visit's snapshot (full repertoire, for interior-synthesis/shadow).
-// fpNodes = ONE representative LANDING snapshot (stable + distinctive, for the fingerprint) —
-// unioning snapshots for the fingerprint diluted the distinctive heading and left every page
-// sharing the sidebar chrome → huge ambiguous fingerprints. Keep them separate.
-interface PageInfo { url: string; nodes: SnapNode[]; fpNodes: SnapNode[]; slug: string; label: string; }
-
 /**
- * Build a draft graph from recorded action-effects. Steps:
- *  1. distinct LANDING pages keyed by (toUrl + landing fingerprint) — SPA tabs at one url split.
- *  2. per page: a UNIQUENESS-driven fingerprint (greedy minimal token set that makes matchState
- *     resolve this page uniquely vs all others) + absolute urlPattern.
- *  3. per recorded transition: a navigate affordance on the FROM state carrying the captured
- *     elementFp; when the action was a bare `use navigate` (action:null), reconstruct it by
- *     scanning the FROM page's links for the one whose url matches the toUrl → {role:link,name}.
- *  4. login: `use type` actions become input affordances; the following navigate gets
- *     needs:[them] + acceptsInput:'credentials'.
- *  5. self-verify: matchState each page's own snapshot against the set, resolveByFingerprint
- *     each edge — flag failures with _warning so the agent curates BEFORE walking.
+ * Build a draft graph from recorded action-effects. Observation-based identity (2026-07-10):
+ *  1. KEY: infer the site's URL model from every observed url; alias a pre-redirect ghost
+ *     (requestedUrl ≠ settled toUrl) to the settled key so the ghost merges. `key(url)` =
+ *     follow-alias(keyOf(url)) — Task 8's mesh reuses it.
+ *  2. LANDINGS: a page's identity landings = navigated toSnapshots (+ the first effect's
+ *     fromSnapshot) that classifyReadiness==='ready'. Non-nav toSnapshots feed affordances
+ *     only (Task 9), not identity.
+ *  3. PROPOSE/DISPOSE: proposeTemplates over the keys; a group merges iff every member's
+ *     first-landing face is jaccard≥0.5 with the group's first member — same-structure param
+ *     URLs collapse, a list-vs-detail pair does not.
+ *  4. SPA SPLIT: within one key with ≥2 landings, cluster faces at jaccard≥0.5; >1 cluster →
+ *     split states named by a distinguishing heading (else needsFix).
+ *  5. CORE: templateCore(faces) minus shell (shell arrives Task 8); coreNodes = first landing
+ *     filtered to core tokens.
+ *  6. NAME: labelFromKey(template ?? key); collisions broken by a distinguishing core heading
+ *     (else both to needsFix). NO numeric suffixes.
+ * Then (unchanged, some re-pointed in Tasks 8–10): uniqueness fingerprint, affordance synthesis,
+ * hierarchy, self-verify, needsFix assembly.
  */
 export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
-  // ── 1. distinct LOGICAL pages, keyed by STABLE PATHNAME (query/hash + trailing ids
-  // stripped). One page = one state even as its tabs/search/sort mutate the snapshot, and
-  // effects from DIFFERENT recording sessions that touched the same page land in the same
-  // state automatically (that IS the multi-session merge — a consequence of stable keying,
-  // not separate merge logic). We UNION each page's snapshot nodes across every visit so the
-  // fingerprint + interior-synthesis see the full repertoire the page ever showed. ──
-  const pages = new Map<string, PageInfo>();           // stable key → page (nodes = union)
-  // union nodes by role:name (dedup), preferring the FIRST seen (landing) order.
+  // ── 1. KEY: URL model + alias map (rule 1) ──
+  const allUrls: string[] = [];
+  effects.forEach((e, i) => {
+    if (i === 0 && e.fromUrl) allUrls.push(e.fromUrl);
+    if (e.toUrl) allUrls.push(e.toUrl);
+    if (e.requestedUrl) allUrls.push(e.requestedUrl);
+  });
+  const model = inferUrlModel(allUrls);
+  const alias = new Map<string, string>();   // requested key → settled key (pre-redirect ghost)
+  for (const e of effects) {
+    if (!e.navigated || !e.requestedUrl) continue;
+    const rk = model.keyOf(e.requestedUrl), sk = model.keyOf(e.toUrl);
+    if (rk !== sk) alias.set(rk, sk);
+  }
+  const key = (url: string): string => { const k = model.keyOf(url); return alias.get(k) ?? k; };
+
+  // ── 2. LANDINGS: gather ready landing snapshots per key (rule 2) ──
+  // landingsByKey: identity landings (navigated + ready toSnapshots, + the FIRST effect's
+  // fromSnapshot = the entry). A page with NO ready landing never becomes a state (rule 2).
+  // urlByKey: the FIRST observed full URL for a key → the merged page's urlPattern. Non-nav
+  // toSnapshots are NOT landings — they feed affordance synthesis (Task 9), read from the raw
+  // effect there, not from this map.
+  const ready = (snap: string) => classifyReadiness(snap) === 'ready';
+  const landingsByKey = new Map<string, SnapNode[][]>();
+  const urlByKey = new Map<string, string>();          // first full URL observed for a key
+  const pushLanding = (url: string, snap: string) => {
+    if (!ready(snap)) return;
+    const k = key(url);
+    (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(parseSnapshot(snap));
+    if (!urlByKey.has(k)) urlByKey.set(k, url);
+  };
+  effects.forEach((e, i) => {
+    if (i === 0 && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);   // the entry page
+    if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot);
+  });
+
+  // ── 3. PROPOSE/DISPOSE templates (rule 3) ──
+  // Group keys by proposeTemplates; a group MERGES only when every member's first-landing face
+  // is structurally close (jaccard≥0.5) to the group's first member. Merged members map to a
+  // single canonical key (the template); non-merged keys keep their own key.
+  const observedKeys = [...landingsByKey.keys()];
+  const firstFace = (k: string): Face => faceOf(landingsByKey.get(k)![0]);
+  const canonical = new Map<string, string>();         // member key → canonical (template) key
+  const templateForKey = new Map<string, string>();    // canonical key → its template string
+  for (const g of proposeTemplates(observedKeys)) {
+    const members = g.keys.filter((k) => landingsByKey.has(k) && !canonical.has(k));
+    if (members.length < 2) continue;
+    const anchor = firstFace(members[0]);
+    const merged = members.filter((k) => jaccard(firstFace(k), anchor) >= 0.5);
+    if (merged.length < 2) continue;                   // dispose: not structurally one page
+    for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
+  }
+  const canonKey = (k: string): string => canonical.get(k) ?? k;
+
+  // fold each observed key's landings/url into its canonical key.
+  const byCanon = new Map<string, { landings: SnapNode[][]; url: string; template: string | null }>();
+  for (const k of observedKeys) {
+    const ck = canonKey(k);
+    const entry = byCanon.get(ck) ?? { landings: [], url: urlByKey.get(k)!, template: templateForKey.get(ck) ?? null };
+    entry.landings.push(...landingsByKey.get(k)!);
+    byCanon.set(ck, entry);
+  }
+
+  // ── 4+5+6. per canonical key → PageInfo(s): SPA split, core, naming ──
+  const pages: PageInfo[] = [];
+  const splitNeedsFix: { label: string; url: string; reason: string }[] = [];
   const mergeNodes = (into: SnapNode[], add: SnapNode[]) => {
     const seen = new Set(into.map((n) => `${n.role}:${n.name}`));
-    for (const n of add) { const k = `${n.role}:${n.name}`; if (!seen.has(k)) { seen.add(k); into.push(n); } }
+    for (const n of add) { const t = `${n.role}:${n.name}`; if (!seen.has(t)) { seen.add(t); into.push(n); } }
   };
-  const fpLanded = new Set<string>();   // keys whose fpNodes came from a real LANDING snapshot
-  const pageKeyForEffectLanding = new Map<number, string>();   // effect index → its TO page key
-  // isLanding = this snapshot is a page the walk NAVIGATED TO (the clean landing view) — the
-  // best fingerprint source. A from/mutation snapshot only seeds fpNodes if no landing is seen.
-  const ensurePage = (url: string, snap: string, isLanding: boolean): string => {
-    const key = stablePathKey(url);
-    const nodes = parseSnapshot(snap);
-    const existing = pages.get(key);
-    if (existing) {
-      mergeNodes(existing.nodes, nodes);                 // union → full repertoire
-      if (isLanding && !fpLanded.has(key)) { existing.fpNodes = nodes; fpLanded.add(key); }  // upgrade fp to a landing view
-      return key;
+  const makePage = (k: string, url: string, template: string | null, landings: SnapNode[][], labelBase: string): PageInfo => {
+    const faces = landings.map(faceOf);
+    // rule 5: durable face = templateCore(faces) minus shell. Shell subtraction is Task 8 — seam:
+    // subtract an empty set for now (templateCore already collapses multi-landing variance).
+    const { tokens, provisional } = templateCore(faces);
+    const shell: Face = new Set();                     // ponytail: Task 8 fills this via extractShell
+    const core: Face = new Set([...tokens].filter((t) => !shell.has(t)));
+    const nodes: SnapNode[] = [];
+    for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
+    const coreNodes = landings[0].filter((n) => n.name && n.name.trim() && core.has(`${n.role}:${n.name}`));
+    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes, fpNodes: landings[0] };
+  };
+  for (const [k, { landings, url, template }] of byCanon) {
+    const labelBase = labelFromKey(template ?? k);
+    // rule 4: SPA split — single-link cluster the landing faces at jaccard≥0.5.
+    const clusters = clusterFaces(landings.map(faceOf), 0.5);
+    if (clusters.length <= 1) { pages.push(makePage(k, url, template, landings, labelBase)); continue; }
+    // >1 cluster at one key → split states, each named by a heading UNIQUE to its cluster.
+    const clusterCores = clusters.map((idxs) => templateCore(idxs.map((i) => faceOf(landings[i]))).tokens);
+    clusters.forEach((idxs, ci) => {
+      const others = clusterCores.filter((_, j) => j !== ci);
+      const distinct = distinguishingHeading(clusterCores[ci], others);
+      const clusterLandings = idxs.map((i) => landings[i]);
+      if (!distinct) { splitNeedsFix.push({ label: labelBase, url, reason: 'same-url state with no distinguishing heading' }); return; }
+      pages.push(makePage(k, url, template, clusterLandings, `${labelBase}-${slug(distinct)}`));
+    });
+  }
+
+  // ── 6b. NAME collisions: append a distinguishing core heading; still colliding → both needsFix ──
+  const nameNeedsFix = new Map<PageInfo, string>();
+  const byLabelGroups = new Map<string, PageInfo[]>();
+  for (const p of pages) (byLabelGroups.get(p.label) ?? byLabelGroups.set(p.label, []).get(p.label)!).push(p);
+  for (const [, group] of byLabelGroups) {
+    if (group.length < 2) continue;
+    for (const p of group) {
+      const distinct = distinguishingHeading(p.core, group.filter((q) => q !== p).map((q) => q.core));
+      if (distinct) p.label = `${p.label}-${slug(distinct)}`;
     }
-    let label = pathSlug(url);
-    const taken = new Set([...pages.values()].map((p) => p.label));
-    if (taken.has(label)) { let i = 2; while (taken.has(`${label}-${i}`)) i++; label = `${label}-${i}`; }
-    pages.set(key, { url, nodes, fpNodes: nodes, slug: label, label });
-    if (isLanding) fpLanded.add(key);
-    return key;
-  };
-  // landing of the FIRST effect's fromUrl is a page too (the entry); then every toUrl.
-  effects.forEach((e, i) => {
-    if (e.fromSnapshot) ensurePage(e.fromUrl, e.fromSnapshot, false);   // the page the action was taken ON
-    if (e.navigated && e.toSnapshot) pageKeyForEffectLanding.set(i, ensurePage(e.toUrl, e.toSnapshot, true));
-    // a SAME-PAGE mutation's AFTER snapshot shows controls the mutation revealed (a picker/
-    // menu opened, a filtered result appeared) — union it into the same page so the state's
-    // repertoire is the FULL page, not just its landing view. NOT a fingerprint source.
-    else if (!e.navigated && e.toSnapshot) ensurePage(e.toUrl, e.toSnapshot, false);
-  });
-  const pageList = [...pages.values()];
-  const labelOf = (key: string) => pages.get(key)?.label ?? null;
-  const fromPageKey = (url: string) => stablePathKey(url);
+    // re-check: any still-duplicate label → all its members go to needsFix (name collision unresolved).
+    const still = new Map<string, PageInfo[]>();
+    for (const p of group) (still.get(p.label) ?? still.set(p.label, []).get(p.label)!).push(p);
+    for (const [, dupes] of still) if (dupes.length > 1) for (const p of dupes) nameNeedsFix.set(p, 'name collision unresolved');
+  }
+
+  const pageList = pages.filter((p) => !nameNeedsFix.has(p));
+  // effect → its TO page (primary page for the settled key). SPA-split attribution is Task 9's
+  // job; affordance synthesis targets the FIRST page for a key (the common non-split case).
+  const pageForKey = new Map<string, PageInfo>();
+  for (const p of pageList) if (!pageForKey.has(p.key)) pageForKey.set(p.key, p);
+  const pageKeyForEffectLanding = new Map<number, string>();
+  effects.forEach((e, i) => { if (e.navigated && e.toSnapshot && ready(e.toSnapshot)) pageKeyForEffectLanding.set(i, key(e.toUrl)); });
+  const labelOf = (k: string | null) => (k ? pageForKey.get(k)?.label ?? null : null);
+  const fromPageKey = (url: string) => key(url);
 
   // ── 2. partition GOOD vs DEGENERATE, then fingerprint the good set against ITSELF ──
   // A degenerate landing (404/error, or no distinctive content) is held OUT of `states` and
@@ -334,6 +442,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     states.push({
       label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint, affordances,
       ...(hasShadow ? { declaredShadow: shadow } : {}),
+      ...(p.provisional ? { provisional: p.provisional } : {}),
     });
   });
 
@@ -389,10 +498,18 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     s.role = parent ? 'detail' : 'section';   // has a content parent → detail; else a top-level section
   }
 
-  // needsFix: the held-out degenerate landings, each with its reason (the agent's "your move").
-  const needsFix: DegenerateState[] = [...degenerate.entries()].map(([i, reason]) => ({
-    label: pageList[i].label, urlPattern: pageList[i].url, reason, affordances: (affById.get(pageList[i].label) ?? []).length,
-  }));
+  // needsFix (the agent's "your move"): held-out degenerate landings + identity failures — an
+  // SPA cluster with no distinguishing heading (rule 4), a name collision that stayed unresolved
+  // (rule 6). Each carries its reason.
+  const needsFix: DegenerateState[] = [
+    ...[...degenerate.entries()].map(([i, reason]) => ({
+      label: pageList[i].label, urlPattern: pageList[i].url, reason, affordances: (affById.get(pageList[i].label) ?? []).length,
+    })),
+    ...splitNeedsFix.map((s) => ({ label: s.label, urlPattern: s.url, reason: s.reason, affordances: 0 })),
+    ...[...nameNeedsFix.entries()].map(([p, reason]) => ({ label: p.label, urlPattern: p.url, reason, affordances: 0 })),
+  ];
+  // requests: provisional states (seen once) surfaced as a record-next ask (rule 2 + core).
+  const requests = states.filter((s) => s.provisional).map((s) => `${s.label}: ${s.provisional}`);
 
   const entry = states.length ? states[0].label : null;
   const node = host(pageList[0]?.url ?? '') ? { capabilities: [], topics: [] } : undefined;
@@ -405,6 +522,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       walkExample: entry && states.length > 1
         ? `webnav walk --start ${host(pageList[0].url)}:${entry} --goal ${host(pageList[0].url)}:${states[states.length - 1].label} --headless`
         : null,
+      requests,
     },
   };
 }
