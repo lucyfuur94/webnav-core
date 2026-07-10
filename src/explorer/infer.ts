@@ -85,6 +85,19 @@ export function containment(a: Face, b: Face): number {
   return inter / Math.min(a.size, b.size);
 }
 
+// Interactive CONTROL roles — a template's SKELETON. Two instances of one page template share
+// what you can DO (buttons/fields/tabs) even when their text/link tokens are all instance data
+// (product names, prices, related items). Observational, no site tokens.
+export const CONTROL_ROLES: ReadonlySet<string> =
+  new Set(['button', 'textbox', 'combobox', 'searchbox', 'spinbutton', 'checkbox', 'tab']);
+
+/** The sub-face of interactive-control tokens ('role:name' filtered to CONTROL_ROLES). */
+export function controlFace(f: Face): Face {
+  const out: Face = new Set();
+  for (const t of f) if (CONTROL_ROLES.has(t.slice(0, t.indexOf(':')))) out.add(t);
+  return out;
+}
+
 // Roles that DECLARE a transient overlay container (WAI-ARIA). A node nested under one is
 // overlay content (a value being chosen, or the overlay's own controls) — never page structure.
 export const OVERLAY_ROLES: ReadonlySet<string> = new Set(['dialog', 'alertdialog', 'menu', 'listbox', 'tooltip']);
