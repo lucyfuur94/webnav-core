@@ -741,3 +741,61 @@ describe('draftFromEffects — shell-based hierarchy (sections vs details)', () 
     expect(detail.parentState).toBe('rep-list');
   });
 });
+
+// ── shell-subtracted structural similarity (over-merge guard, mutation-proven gap): the dispose
+// check and the SPA-split clustering MUST compare faces with the shell removed. This fixture is
+// tuned so RAW-face jaccard is ≥0.5 (9 shared chrome tokens vs 4 distinct tokens per page →
+// 9/17 ≈ 0.529 — they'd falsely merge/collapse on raw faces) while shell-subtracted jaccard is 0
+// (fully distinct content → they stay separate). Reverting minusShell to raw faceOf in either
+// site makes these tests fail (verified by mutation before commit).
+describe('draftFromEffects — dispose + SPA split run on SHELL-SUBTRACTED faces', () => {
+  const MB = 'https://m.test';
+  // 9-token chrome (6 links + 3 buttons) on EVERY page — heavy enough to push raw jaccard over
+  // the 0.5 merge threshold between any two pages. 5 distinct keys → extractShell fires (≥4).
+  const CHROME = [
+    `- link "Home" [ref=e2]:\n    - /url: ${MB}/main/home`,
+    `- link "Settings" [ref=e3]:\n    - /url: ${MB}/cfg/settings`,
+    `- link "Items" [ref=e4]:\n    - /url: ${MB}/item/list`,
+    `- link "Views" [ref=e5]:\n    - /url: ${MB}/spa/view`,
+    `- link "Docs" [ref=e6]:\n    - /url: ${MB}/ext/docs`,
+    `- link "Support" [ref=e7]:\n    - /url: ${MB}/ext/support`,
+    '- button "Open Menu" [ref=e8]', '- button "Log out" [ref=e9]', '- button "Toggle theme" [ref=e10]',
+  ];
+  const pg = (h: string, extra: string[]) => [`- heading "${h}" [ref=e1]`, ...CHROME, ...extra].join('\n');
+  const HOME = pg('Home', ['- paragraph "Welcome" [ref=e11]', '- listitem "Recent" [ref=e12]', '- paragraph "Overview" [ref=e13]']);
+  const SETTINGS = pg('Settings', ['- textbox "Display name" [ref=e11]', '- button "Save prefs" [ref=e12]', '- paragraph "Preferences" [ref=e13]']);
+  // two pages under ONE /{param} template (/item/list vs /item/9001), structurally DISTINCT:
+  const ITEM_LIST = pg('All items', ['- button "New item" [ref=e11]', '- listitem "Row one" [ref=e12]', '- paragraph "Sorted by date" [ref=e13]']);
+  const ITEM_DETAIL = pg('Item detail', ['- tab "Overview" [ref=e11]', '- button "Archive it" [ref=e12]', '- paragraph "Metadata" [ref=e13]']);
+  // two landings at ONE key (/spa/view), structurally distinct — the SPA-split case:
+  const SPA_OWNED = pg('Owned things', ['- button "New thing" [ref=e11]', '- listitem "Mine" [ref=e12]', '- paragraph "Owner view" [ref=e13]']);
+  const SPA_SHARED = pg('Shared things', ['- button "Ask access" [ref=e11]', '- listitem "Theirs" [ref=e12]', '- paragraph "Shared view" [ref=e13]']);
+  const mnav = (toUrl: string, toSnap: string): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: `${MB}/main/home`, fromSnapshot: HOME,
+       action: { role: 'link', name: 'x', ref: 'e2', elementFp: { role: 'link', name: 'x', near: null } },
+       toUrl, toSnapshot: toSnap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    mnav(`${MB}/cfg/settings`, SETTINGS),
+    mnav(`${MB}/item/list`, ITEM_LIST),
+    mnav(`${MB}/item/9001`, ITEM_DETAIL),
+    mnav(`${MB}/spa/view`, SPA_OWNED),
+    mnav(`${MB}/spa/view`, SPA_SHARED),
+  ] as never);
+  const labels = g.states.map((s) => s.label);
+
+  it('dispose: chrome-heavy /{param} pages with distinct content stay SEPARATE states', () => {
+    // raw faces would merge (jaccard 9/17 ≈ 0.529 ≥ 0.5) into one templated 'item' state;
+    // shell-subtracted faces (jaccard 0) must dispose the merge — two states survive.
+    expect(labels).toContain('item-list');
+    expect(labels).toContain('item-9001');
+    expect(labels).not.toContain('item');   // the false template merge must NOT happen
+  });
+
+  it('SPA split: chrome-heavy same-URL landings with distinct content still split', () => {
+    // raw faces would cluster together (0.529 ≥ 0.5) into one 'spa-view' state; shell-subtracted
+    // clustering keeps them apart, each named by its distinguishing heading.
+    expect(labels.some((l) => /owned/.test(l))).toBe(true);
+    expect(labels.some((l) => /shared/.test(l))).toBe(true);
+    expect(labels).not.toContain('spa-view');   // the false single-cluster collapse must NOT happen
+  });
+});
