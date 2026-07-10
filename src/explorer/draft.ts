@@ -4,7 +4,7 @@ import { matchState, hasToken } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, templateCore, extractShell, insideOverlay, nodeIndexByName, foldRepeats, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -17,9 +17,11 @@ import { classifyReadiness } from '../router/readiness.js';
 // The graph-edit-shaped draft (what graph-edit --graph accepts; agent curates then pipes it).
 export interface DraftAffordance {
   id: string; label: string; kind: 'navigate' | 'input' | 'mutate' | 'reveal';
-  to?: string; elementFp?: ElementFingerprint; acceptsInput?: string; needs?: string[]; core?: boolean;
+  to?: string; elementFp?: ElementFingerprint | null; acceptsInput?: string; needs?: string[]; core?: boolean;
   children?: DraftAffordance[];     // reveal: the ARIA-named affordances the overlay exposed
   needsClassification?: boolean;    // label matched a commit-word → agent classifies (commit stays false, #2/#5a)
+  scope?: 'row';                    // a folded per-row repeat (≥3 "<X> Remove" chips → one Remove);
+                                    // informational repertoire, elementFp:null (mutates never route, #affordance model)
 }
 
 // Roles that count as a real, resolvable child of a revealed overlay (ARIA role + name only;
@@ -340,6 +342,13 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const fromNodes = parseSnapshot(e.fromSnapshot);
     // ── non-navigating recorded action → in-page affordance (Layer 1) ──
     if (!e.navigated && e.action) {
+      // OVERLAY GATE (rules 1+5): a recorded action on a node that was INSIDE an overlay on the
+      // page-as-clicked (its FROM snapshot has it nested under a dialog/menu/listbox) is NOT a page
+      // affordance — its structure already lives as the OPENER's `children`. Emitting it too would
+      // duplicate every picked value (a chosen dimension, a typed search term) as page structure —
+      // exactly the DATA-VALUE leak this task removes. Test on the FROM snapshot (the page as it
+      // was when clicked), parsed above — never landings.
+      if (e.action.name && insideOverlay(fromNodes, nodeIndexByName(fromNodes, e.action.name))) return;
       // a `use type` on a textbox → an input affordance (login or any field).
       if (e.action.role === 'textbox' && e.action.name) {
         pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',
@@ -350,8 +359,13 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // else MUTATE (an in-place change — sort/filter/search). Carries the recovered elementFp.
       if (e.action.name) {
         const fp: ElementFingerprint = e.action.elementFp ?? { role: e.action.role, name: e.action.name, near: null };
-        const children: DraftAffordance[] = (e.diff?.added ?? [])
-          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role))
+        // reveal children are DE-VALUED (rule 2): drop members of foldRepeats(added).foldedNames —
+        // the enumerated value list an overlay lays out (e.g. 28 dimension checkboxes) is DATA, not
+        // structure; only the overlay's unique controls (Search/Apply/Cancel/View All) are kept.
+        const addedNodes = e.diff?.added ?? [];
+        const { foldedNames } = foldRepeats(addedNodes);
+        const children: DraftAffordance[] = addedNodes
+          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
             kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
             ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
@@ -419,20 +433,30 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // (declared-but-unclicked structure is real). STRICT ARIA: a fillable role → input, any other
   // named button → mutate. NO layout/proximity inference (#5a-bounded). Skip elements already
   // captured (by a recorded action or as a navigate link), and links (the mesh owns those).
-  // VERIFY-BEFORE-EMIT: only synthesize if the {role,name} fingerprint resolves UNIQUELY on this
-  // page (resolveByFingerprint != null). This is the mechanical filter that drops the noise a real
-  // page is full of — the 11 identical icon-glyph row buttons (ambiguous → null), a textbox named
-  // by its placeholder that won't match (no match → null) — WITHOUT any judgment about meaning.
-  // A genuinely unique, addressable control (one "Add", a "Search" button) survives.
+  // Reads the page's CORE nodes only (Task 9), NOT the union of every landing — a value that
+  // appeared in one visit but is not in the durable core (a per-row datum, a one-off chip) must
+  // never synthesize as structure (the union leaked exactly these). resolveByFingerprint is still
+  // checked against the same coreNodes so an ambiguous control (11 identical icon glyphs) is dropped.
+  // FOLD FIRST (rule 4): ≥3 same-role/depth core nodes sharing a trailing word are one row-scoped
+  // repeat — emit ONE informational scope:'row' affordance (label = the shared suffix, elementFp
+  // null: mutates never route, so no resolution is needed) and skip the folded names below.
   for (const p of pageList) {
-    for (const n of p.nodes) {
+    const { folds, foldedNames } = foldRepeats(p.coreNodes);
+    for (const fold of folds) {
+      const aff: DraftAffordance = { id: `aff_${affSeq++}_${slug(fold.suffix)}`, label: fold.suffix,
+        kind: childKind(fold.role), scope: 'row', elementFp: null };
+      if (COMMIT_WORDS.test(fold.suffix)) aff.needsClassification = true;   // "Remove"/"Delete" → agent classifies (#2/#5a)
+      pushAff(p.label, aff);
+    }
+    for (const n of p.coreNodes) {
       if (!n.name || !n.name.trim()) continue;
+      if (foldedNames.has(n.name)) continue;                       // a folded per-row value → not its own affordance
       if (n.role === 'link' || n.role === 'heading') continue;     // links → mesh; headings → fingerprint
       if (!INPUT_ROLES.has(n.role) && n.role !== 'button') continue; // only declared interactive controls
       const have = affById.get(p.label) ?? [];
       if (have.some((a) => a.label === n.name && (a.kind === 'input' || a.kind === 'mutate' || a.kind === 'reveal'))) continue;
       const fp: ElementFingerprint = { role: n.role, name: n.name, near: null };
-      if (resolveByFingerprint(fp, p.nodes) === null) continue;    // not a reliable coordinate → skip (no guess)
+      if (resolveByFingerprint(fp, p.coreNodes) === null) continue;  // not a reliable coordinate → skip (no guess)
       const aff: DraftAffordance = { id: `aff_${affSeq++}_${slug(n.name)}`, label: n.name, kind: childKind(n.role), elementFp: fp };
       if (COMMIT_WORDS.test(n.name)) aff.needsClassification = true;
       pushAff(p.label, aff);
