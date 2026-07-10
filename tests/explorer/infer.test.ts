@@ -23,6 +23,17 @@ describe('inferUrlModel', () => {
     expect(m.base).toEqual([]);
     expect(m.keyOf('https://g.test/facebook/react')).toBe('/facebook/react');
   });
+  // Task 15 finding: snapshot link hrefs are RELATIVE (`/v3/1041/report/list`), not absolute.
+  // keyOf must strip the base from a relative href to the SAME key as the absolute toUrl — else
+  // every sidebar link keyed to `/` and no from-anywhere shell edge ever resolved (progneo shell
+  // had 4 affordances instead of the sidebar's full set until this was fixed).
+  it('keys a RELATIVE href to the same key as the absolute url (shell edges resolve)', () => {
+    const m = inferUrlModel(['https://x.test/v3/1041/report/list', 'https://x.test/v3/1041/dashboard/list',
+      'https://x.test/v3/1041/announcements', 'https://x.test/v3/1041/help-center']);
+    expect(m.base).toEqual(['v3', '1041']);
+    expect(m.keyOf('/v3/1041/report/list')).toBe('/report/list');   // relative → same key as absolute
+    expect(m.keyOf('https://x.test/v3/1041/report/list')).toBe('/report/list');
+  });
 });
 
 describe('proposeTemplates', () => {

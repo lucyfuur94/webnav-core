@@ -69,6 +69,7 @@ function candidateTokens(nodes: SnapNode[]): string[] {
   for (const role of TOKEN_ROLES) {
     for (const n of nodes) {
       if (n.role !== role || !n.name || !n.name.trim()) continue;
+      if (isDataLiteral(n.name)) continue;   // identity must never rest on a bare date/number (#5)
       const tok = `${role}:${n.name}`;
       if (!seen.has(tok)) { seen.add(tok); out.push(tok); }
     }
@@ -116,18 +117,51 @@ function clickedInOverlay(nodes: SnapNode[], action: { role: string; name: strin
 }
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
 
-// Label from the non-{param} tail segments (≤2) of a template/key path so a state reads
-// `report-list` / `dashboard`, not the raw record id. `/` → `home`. No numeric suffixes.
-function labelFromKey(key: string): string {
+// A control whose accessible NAME is nothing but a bare data literal — a date (`09 Jul 2026`,
+// `2026-07-09`) or a lone number/currency — is per-instance DATA, never durable structure (the
+// value changes every day/instance; the design explicitly REFUSES to store dates). This is a
+// universal content-TYPE prior (like the ERROR_HEADING phrases), NOT a site-specific token — it
+// names no product, matches no app-ism. Conservative: only an ENTIRE-name match (a real control
+// like "Due 09 Jul 2026" or "Delete" is untouched), so it never eats a labelled affordance.
+const DATA_LITERAL =
+  /^(?:\d{1,2}[ /-]\w{3,9}[ /-]\d{2,4}|\d{4}-\d{2}-\d{2}|[£$€]?\s?\d[\d,.]*%?)$/;
+const isDataLiteral = (name: string): boolean => DATA_LITERAL.test(name.trim());
+
+// A path segment that is an opaque instance id — all-digits or a long hex/uuid-ish token. The
+// design's sanctioned URL-SHAPE prior (a digit/hex segment is probably a param); site-AGNOSTIC (no
+// product tokens). Used to both flag param pages and keep ids out of labels; `{param}` (an already-
+// abstracted template slot) counts as opaque too.
+const isOpaqueSeg = (s: string): boolean => s === '{param}' || /^\d+$/.test(s) || /^[0-9a-f]{16,}$/i.test(s);
+// A key whose TAIL segment is opaque is PROBABLY a parameterized instance page. Used ONLY to demote
+// a heading to "probably instance data" — never as silent truth. A page that formed a real {param}
+// template already reads as param; this catches the LONE opaque-id instance (e.g. `/dashboard/1210`)
+// that never grouped into a template.
+function looksParameterizedKey(key: string): boolean {
   const segs = key.split('/').filter(Boolean).filter((s) => s !== '{param}');
+  const tail = segs[segs.length - 1];
+  return !!tail && isOpaqueSeg(tail);
+}
+
+// Label from the MEANINGFUL (non-opaque, non-{param}) tail segments (≤2) of a template/key path,
+// so a state reads `report-list` / `report` / `dashboard`, never a raw record id (`16116-c8c6…`).
+// Opaque id segments (`16116`, a uuid, `{param}`) are dropped — they carry no human meaning and
+// two instances of the same page (`/report/16116/{hash}` variants) then collide on the SAME clean
+// label, so the name-collision resolver distinguishes them by a structural heading/tab. `/` → home.
+function labelFromKey(key: string): string {
+  const segs = key.split('/').filter(Boolean).filter((s) => s !== '{param}' && !isOpaqueSeg(s));
   return slug(segs.slice(-2).join('-') || 'home');
 }
-// The first `heading:` core token NOT shared by any of the `others` cores — the distinguishing
-// heading used to name an SPA split / break a label collision. null if none distinguishes.
+// The first DURABLE STRUCTURAL token of `core` that no `others` face carries — used to name an
+// SPA split or break a label collision. A `heading:` is preferred (a view's own title reads best,
+// e.g. `report-flat`); a `tab:` is the fallback (two vizzes of one report differ only by their tab
+// set — `tab:Flat` distinguishes them where no heading does). Returns the bare name; null if
+// nothing structural distinguishes (→ the caller sends the pair to needsFix, never a wrong merge).
 function distinguishingHeading(core: Face, others: Face[]): string | null {
-  for (const t of core) {
-    if (!t.startsWith('heading:')) continue;
-    if (others.every((o) => !o.has(t))) return t.slice('heading:'.length);
+  for (const prefix of ['heading:', 'tab:']) {
+    for (const t of core) {
+      if (!t.startsWith(prefix)) continue;
+      if (others.every((o) => !o.has(t))) return t.slice(prefix.length);
+    }
   }
   return null;
 }
@@ -280,10 +314,25 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // SUBTRACTED faces (same as dispose): the shared chrome is on every SPA view, so leaving it
     // in would falsely collapse structurally-distinct views into one cluster.
     const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))), 0.5);
-    if (clusters.length <= 1) { pages.push(makePage(k, url, template, landings, labelBase)); continue; }
-    // >1 cluster at one key → split states, each named by a heading UNIQUE to its cluster.
-    const clusterCores = clusters.map((idxs) => templateCore(idxs.map((i) => faceOf(landings[i]))).tokens);
-    clusters.forEach((idxs, ci) => {
+    // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
+    // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
+    // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404
+    // (a bare `/x/list` → "Page not found", which base-inference merges into the settled tenant
+    // `/1234/x/list`). Hold error clusters out as needsFix; they must NOT force an SPA split or
+    // suffix the healthy sibling's name. What's left is the REAL cluster(s).
+    const errorCluster = (idxs: number[]) => idxs.every((i) => isErrorLanding(landings[i]));
+    const realClusters = clusters.filter((idxs) => !errorCluster(idxs));
+    for (const idxs of clusters) if (errorCluster(idxs)) splitNeedsFix.push({ label: labelBase, url, reason: 'error page (heading matches not-found/error)' });
+    // ≤1 REAL cluster → not an SPA split: the single page at labelBase (no suffix), landings = its
+    // real cluster (or, if every cluster was an error, all landings — the whole page is degenerate,
+    // partition-good-vs-degenerate below holds it out honestly).
+    if (realClusters.length <= 1) {
+      const keep = realClusters.length === 1 ? realClusters[0].map((i) => landings[i]) : landings;
+      pages.push(makePage(k, url, template, keep, labelBase)); continue;
+    }
+    // ≥2 real clusters at one key → genuine SPA split, each named by a heading UNIQUE to its cluster.
+    const clusterCores = realClusters.map((idxs) => templateCore(idxs.map((i) => faceOf(landings[i]))).tokens);
+    realClusters.forEach((idxs, ci) => {
       const others = clusterCores.filter((_, j) => j !== ci);
       const distinct = distinguishingHeading(clusterCores[ci], others);
       const clusterLandings = idxs.map((i) => landings[i]);
@@ -342,8 +391,15 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   for (let pi = 0; pi < pageList.length; pi++) {
     if (degenerate.has(pi)) continue;                 // error pages: no fingerprint attempt
     const p = pageList[pi];
-    const isParam = !!p.template && p.template.includes('{param}');
-    const cands = candidateTokensFor(p.coreNodes, isParam);
+    // param = a formed {param} template OR a lone opaque-id-tail key (the sanctioned URL-shape
+    // prior) — either way the big heading is "probably instance data", handled provisionally below.
+    const isParam = (!!p.template && p.template.includes('{param}')) || looksParameterizedKey(p.key);
+    // A FOLDED per-row/per-chip name (axis 5: `<X> Remove` metric chips, row `Delete`s) is value-
+    // bound DATA — it must never anchor identity (else `report`'s fp rests on `OS Remove`/`eCPM
+    // Remove`, the specific metrics of one instance). Drop the folded names from the fp candidates.
+    const { foldedNames: fpFolded } = foldRepeats(p.coreNodes);
+    const fpNodes = fpFolded.size ? p.coreNodes.filter((n) => !(n.name && fpFolded.has(n.name))) : p.coreNodes;
+    const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
     // content is shared shell chrome (a blank/empty landing) — has no distinctive identity. Held
     // out with a clear reason (matches upstream: identity is drawn from the core, and an empty
@@ -359,13 +415,26 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     }
     // a page that NEVER became exclusive (its core content is shared with a sibling) is degenerate.
     if (!exclusive) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
+    // rule 1 (axis 4): on a {param} page whose identity rests ONLY on heading token(s), the
+    // discriminator is CROSS-INSTANCE VARIANCE, split by how many instances we saw:
+    //   • ≥2 instances (provisional=null): the heading REPEATED across instances → it's the
+    //     page-type TITLE (structural), not per-instance data. Keep it as the fingerprint. (The
+    //     `/employee/{param}` "Employee Profile" case — confirmed structural by repetition.)
+    //   • 1 instance (provisional set): cannot separate the heading from data — it may be the
+    //     instance's own name (a user, a report → the `heading:Testuser` failure). No durable
+    //     identity YET: hold out as needsFix with the record-next ask, never a silent instance-data
+    //     fingerprint. A param page with a STRUCTURAL token (tab/button) already kept it above.
+    const headingOnly = fp.length && fp.every((t) => t.startsWith('heading:'));
+    if (isParam && headingOnly && p.provisional) {
+      degenerate.set(pi, 'identity rests only on a heading that is likely instance data — record a different {param} instance to separate structure from data');
+      continue;
+    }
     stubs[pi].fingerprint = fp;
-    // rule 1: on a {param} page, if identity STILL rests only on heading token(s) (all we had),
-    // that heading may be per-instance data — record a different instance to confirm. Set/append
-    // the provisional note so it surfaces in receipt.requests (append semantics, not overwrite).
-    if (isParam && fp.length && fp.every((t) => t.startsWith('heading:'))) {
+    // ≥2-instance heading-only identity is structural-but-still-worth-flagging: surface the
+    // record-next note (kept, not held out). Matches the pre-rewrite provisional-warning contract.
+    if (isParam && headingOnly && !p.provisional) {
       const note = 'identity rests on a heading that may be instance data — record a different {param} instance';
-      p.provisional = p.provisional ? `${p.provisional}; ${note}` : note;
+      p.provisional = note;
     }
   }
 
@@ -381,6 +450,12 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const fromLabel = labelOf(fromPageKey(e.fromUrl));
     if (!fromLabel) return;
     const fromNodes = parseSnapshot(e.fromSnapshot);
+    // SHELL GATE (axis 3): a recorded action ON a shell node (a click on `Dark Mode`/`Close
+    // sidebar`/`O Overview Merged Change`, a nav via `Help Center`/`Announcements`) is a SHELL
+    // affordance — it lives ONCE on `_shell` (synthesized below), NOT duplicated onto whatever
+    // page it happened to be clicked from. Same principle the cross-link mesh already applies to
+    // shell links; without it the chrome leaks onto every page as a broken page affordance.
+    if (e.action?.name && shell.has(`${e.action.role}:${e.action.name}`)) return;
     // ── non-navigating recorded action → in-page affordance (Layer 1) ──
     if (!e.navigated && e.action) {
       // OVERLAY GATE (rules 1+5): a recorded action on a node that was INSIDE an overlay on the
@@ -515,7 +590,24 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // extractShadow no longer emits subTabs (site-specific container lookup deleted, rule 2), so
     // the check drops it — a freshly-extracted shadow only carries collections/filters/createsEntity.
     const hasShadow = (shadow.collections?.length || shadow.filters?.length || shadow.createsEntity);
-    const affordances = (affById.get(p.label) ?? []).filter((a) => !(a.kind === 'navigate' && a.to && degenLabels.has(a.to)));
+    const affordances = (affById.get(p.label) ?? [])
+      // drop a navigate to a held-out (degenerate) page — no dead edges.
+      .filter((a) => !(a.kind === 'navigate' && a.to && degenLabels.has(a.to)))
+      // UNRESOLVABLE-COORDINATE GATE (#3: store only DURABLE fingerprints): an INTERIOR affordance
+      // (mutate/input) whose recovered elementFp has NO usable name is not a reliable coordinate —
+      // a walk can't deterministically re-find `combobox` (no name) among many, and in practice
+      // these are the personalized chart widgets the recorder couldn't pin (a dashboard's `Country`
+      // dimension, `Bar Chart Vz`, `Toggle Right Panel` — all null-name fps = per-instance data).
+      // Exempt: navigate (target in union/shell, verified separately), row folds (elementFp:null by
+      // design), and a REVEAL that exposed named children (its opener may be unnamed but the overlay
+      // it opened IS real declared structure).
+      .filter((a) => a.kind === 'navigate' || a.scope === 'row' || !a.elementFp
+        || (a.kind === 'reveal' && !!a.children?.length)
+        || (!!a.elementFp.name && a.elementFp.name.trim() !== ''))
+      // DATA-LITERAL GATE: a control named purely by a date/number is instance data (#5 refuses
+      // dates), even when it resolves — refuse it as a stored affordance (its reveal children too).
+      .filter((a) => !isDataLiteral(a.label))
+      .map((a) => (a.children ? { ...a, children: a.children.filter((c) => !isDataLiteral(c.label)) } : a));
     states.push({
       label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint, affordances,
       ...(hasShadow ? { declaredShadow: shadow } : {}),

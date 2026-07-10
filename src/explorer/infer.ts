@@ -3,8 +3,13 @@
 
 import type { SnapNode } from '../playwright/snapshot.js';
 
+// Path segments of a URL. Accepts BOTH absolute (`https://h/v3/1041/x`) and RELATIVE
+// (`/v3/1041/x`) forms — snapshot link hrefs are usually relative, and keying them must
+// land on the same key as the absolute toUrl (else every sidebar link keys to `/` and no
+// from-anywhere shell edge ever resolves). A dummy base makes the relative parse succeed
+// without affecting the pathname.
 const segsOf = (url: string): string[] => {
-  try { return new URL(url).pathname.split('/').filter(Boolean); } catch { return []; }
+  try { return new URL(url, 'http://_').pathname.split('/').filter(Boolean); } catch { return []; }
 };
 
 export interface UrlModel { base: string[]; keyOf(url: string): string }
