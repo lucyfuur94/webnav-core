@@ -9,20 +9,21 @@ const fixture = (name: string) =>
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../fixtures', name), 'utf8');
 
 // Layer 2: extract the DECLARED domain shadow (evidence, never interpretation #5a) from a page
-// snapshot — collections (table heading + columns + record count), real-ARIA filter controls,
-// the Add-button's owning entity heading, and sub-tab labels. Grounded in the frozen real
-// OrangeHRM PIM snapshot (tests/fixtures/orangehrm-pim-table.yml).
+// snapshot — collections (table heading + columns), real-ARIA filter controls, and the
+// Add-button's owning entity heading. Grounded in the frozen real OrangeHRM PIM snapshot
+// (tests/fixtures/orangehrm-pim-table.yml). A record COUNT is data, not structure (rule 2,
+// 2026-07-10) — never extracted. subTabs/subTabContainer removed (site-specific container names).
 describe('extractShadow — declared domain shadow (Layer 2)', () => {
   const pim = parseSnapshot(fixture('orangehrm-pim-table.yml'));
   const shadow = extractShadow(pim);
 
-  it('captures the collection: table heading + column headers + record count (verbatim)', () => {
+  it('captures the collection: table heading + column headers (verbatim, NO record count)', () => {
     expect(shadow.collections?.length).toBeGreaterThanOrEqual(1);
     const c = shadow.collections![0];
     // columns are the columnheader nodes' names, verbatim. The empty select-all checkbox
     // columnheader ("") is dropped (no semantic value).
     expect(c.columns).toEqual(['Id', 'First (& Middle) Name', 'Last Name', 'Job Title', 'Employment Status', 'Sub Unit', 'Supervisor', 'Actions']);
-    expect(c.recordCount).toBe(132);                 // parsed from "(132) Records Found"
+    expect(c.recordCount ?? null).toBeNull();         // rule 2: a count is DATA — never populated
     expect(c.heading).toBe('Employee Information');   // nearest enclosing heading
   });
 
@@ -46,7 +47,6 @@ describe('extractShadow — declared domain shadow (Layer 2)', () => {
       ...(shadow.collections ?? []).flatMap((c) => [c.heading, ...c.columns]),
       ...(shadow.filters ?? []).map((f) => f.field),
       shadow.createsEntity,
-      ...(shadow.subTabs ?? []),
     ].filter(Boolean) as string[];
     // strip Private-Use-Area glyphs + collapse whitespace from the raw too (the only transform
     // extractShadow applies); every captured value must then appear literally in that cleaned raw.
@@ -63,22 +63,27 @@ describe('extractShadow — declared domain shadow (Layer 2)', () => {
     expect(s.createsEntity ?? null).toBeNull();
   });
 
-  it('parses a record count from varied phrasings, ignores when absent', () => {
+  it('rule 2: a record COUNT is DATA — never extracted even when the page declares one', () => {
+    // "(47) Records Found" is a data value (it changes with the rows), not structure. The shadow
+    // records the table's SHAPE (heading + columns), never its size.
     const withCount = parseSnapshot('- table [ref=e1]:\n  - columnheader "Name" [ref=e2]\n- generic [ref=e3]: (47) Records Found');
-    expect(extractShadow(withCount).collections![0].recordCount).toBe(47);
-    const noCount = parseSnapshot('- table [ref=e1]:\n  - columnheader "Name" [ref=e2]');
-    expect(extractShadow(noCount).collections![0].recordCount).toBeNull();
+    const c = extractShadow(withCount).collections![0];
+    expect(c.columns).toEqual(['Name']);
+    expect(c.recordCount ?? null).toBeNull();          // populated by nothing
   });
 
-  it('captures sub-tabs from the topbar tab/link labels', () => {
-    // leave-style topbar: Apply / My Leave / Entitlements / Reports as tab-ish links
+  it('rule 2: a filter control INSIDE an overlay is skipped (an enumerated value list is data)', () => {
+    // a real-ARIA textbox that lives under a dialog/listbox is the overlay's own control (a search
+    // box for a value picker), not the page's declared filter surface — insideOverlay gates it out.
     const snap = parseSnapshot([
-      '- navigation "Topbar Menu" [ref=e1]:',
-      '  - link "Apply" [ref=e2]',
-      '  - link "My Leave" [ref=e3]',
-      '  - link "Assign Leave" [ref=e4]',
+      '- textbox "Employee Name" [ref=e1]',            // page-level filter → kept
+      '- dialog "Pick a dimension" [ref=e2]:',
+      '  - textbox "Search options" [ref=e3]',         // overlay control → skipped
+      '  - checkbox "Region" [ref=e4]',                // enumerated value in the overlay → skipped
     ].join('\n'));
-    const s = extractShadow(snap, { subTabContainer: 'Topbar Menu' });
-    expect(s.subTabs).toEqual(['Apply', 'My Leave', 'Assign Leave']);
+    const fields = (extractShadow(snap).filters ?? []).map((f) => f.field);
+    expect(fields).toContain('Employee Name');
+    expect(fields).not.toContain('Search options');
+    expect(fields).not.toContain('Region');
   });
 });
