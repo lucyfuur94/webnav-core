@@ -24,4 +24,16 @@ describe('matchState', () => {
     const nodes = parseSnapshot('- searchbox "Search" [ref=e1]');
     expect(matchState(nodes, dup).status).toBe('ambiguous');
   });
+  it('a state with an EMPTY fingerprint is never a match candidate (matched or ambiguous)', () => {
+    // `[].every()` is vacuously true — without the guard an empty-fp state (`_shell`, a degenerate
+    // stub) matches EVERY page: live finding, a walk arriving at a real state escalated
+    // `ambiguous:[state,_shell]` forever.
+    const shell: State = { id: '_shell', semanticName: '_shell', urlPattern: '*', role: 'shell',
+      availableSignals: [], fingerprint: [] };
+    const nodes = parseSnapshot('- searchbox "Search" [ref=e1]');
+    // alongside a real match → still uniquely matched, never ambiguous-with-_shell
+    expect(matchState(nodes, [...states, shell])).toEqual({ status: 'matched', state: states[0] });
+    // alone → none, not matched-on-nothing
+    expect(matchState(nodes, [shell]).status).toBe('none');
+  });
 });

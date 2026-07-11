@@ -483,12 +483,12 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // ── 2. LANDINGS: gather ready landing snapshots per key (rule 2) ──
   // landingsByKey: identity landings (navigated + ready toSnapshots, + the FIRST effect's
   // fromSnapshot = the entry). A page with NO ready landing never becomes a state (rule 2).
-  // urlByKey: the FIRST observed full URL for a key → the merged page's urlPattern. Non-nav
-  // toSnapshots are NOT landings — they feed affordance synthesis (Task 9), read from the raw
-  // effect there, not from this map.
+  // urlVotes → urlByKey: each READY landing votes for its full URL; the key's urlPattern is
+  // chosen after the scan (most-observed rule below). Non-nav toSnapshots are NOT landings —
+  // they feed affordance synthesis (Task 9), read from the raw effect there, not from this map.
   const ready = (snap: string) => classifyReadiness(snap) === 'ready';
   const landingsByKey = new Map<string, SnapNode[][]>();
-  const urlByKey = new Map<string, string>();          // first full URL observed for a key
+  const urlVotes = new Map<string, Map<string, number>>();   // key → settled landing URL → count
   const pushLanding = (url: string, snap: string) => {
     if (!ready(snap)) return;
     // FOREIGN-HOST gate (Finding 7): a ready landing on another host is a blocked door — record
@@ -498,7 +498,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     if (mapHost && h && h !== mapHost) { if (!foreignHosts.has(h)) foreignHosts.set(h, url); return; }
     const k = key(url);
     (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(parseSnapshot(snap));
-    if (!urlByKey.has(k)) urlByKey.set(k, url);
+    const votes = urlVotes.get(k) ?? urlVotes.set(k, new Map()).get(k)!;
+    votes.set(url, (votes.get(url) ?? 0) + 1);
   };
   effects.forEach((e, i) => {
     // per-session ENTRY landing (Task 15 review finding): the CLI concatenates sessions and each
@@ -514,6 +515,25 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     if (sessionStart && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);
     if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot);
   });
+  // ── urlPattern per key (axis 1 settledness — live finding): "first observed URL wins" let
+  // SESSION ORDERING store a pre-redirect GHOST as a state's urlPattern. An SPA landing can be
+  // captured on its pre-redirect URL (the router hasn't inserted the tenant segment yet):
+  // /v3/report/list vs /v3/1041/report/list — keyOf's conditional base-skip keys BOTH to
+  // /report/list, and whichever session was concatenated first won (observed: ghost 3 votes,
+  // tenant-full 7, ghost first in CLI order → every walk opening the state's URL 404'd).
+  // Rule: a key's urlPattern = its MOST-OBSERVED settled landing URL, never an alias-SOURCE URL
+  // (a URL whose own raw key was aliased away is a pre-redirect ghost by definition; skipped
+  // unless the key has nothing else); ties → longest pathname (the tenant-full variant), then
+  // first observed (Map insertion order + stable sort).
+  const urlByKey = new Map<string, string>();
+  const pathLen = (u: string): number => { try { return new URL(u).pathname.length; } catch { return u.length; } };
+  for (const [k, votes] of urlVotes) {
+    const entries = [...votes.entries()];
+    const settled = entries.filter(([u]) => !alias.has(model.keyOf(u)));
+    const pool = settled.length ? settled : entries;
+    pool.sort((a, b) => b[1] - a[1] || pathLen(b[0]) - pathLen(a[0]));
+    urlByKey.set(k, pool[0][0]);
+  }
 
   // ── SHELL (axis 3), computed PRE-MERGE from the distinct pages' first-landing faces ──
   // The shared chrome = tokens on ≥80% of DISTINCT pages (extractShell; ≥4-page gate). One face

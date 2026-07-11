@@ -134,3 +134,61 @@ and `matchState` on the settled page is unique.
   (`isLoadingRender`).
 - `src/explorer/fingerprint.ts` — `matchState` ignores empty fingerprints.
 - `tests/explorer/draft.test.ts` — render-skew repro test.
+
+---
+
+# Review follow-ups (same branch, second commit)
+
+## Important 1 — fail-on-revert test for the empty-fp matchState guard
+
+Added to `tests/explorer/fingerprint.test.ts`: a `fingerprint: []` state (`_shell`)
+never appears in matched/ambiguous — alongside a real match it stays uniquely
+`matched`; alone it is `none`. **Fail-on-revert verified**: with `main`'s
+`fingerprint.ts` restored the test fails (`ambiguous` / `matched-on-nothing`);
+with the guard it passes.
+
+## Important 2 — urlPattern rebuild bug (session-ordering ghost URL)
+
+### Ordering diagnosis (real data)
+
+`urlByKey` kept the **FIRST observed URL** per key (`if (!urlByKey.has(k))
+urlByKey.set(k, url)`). Both `/v3/1041/report/list` (settled) and `/v3/report/list`
+(pre-redirect SPA ghost, captured before the router inserted the tenant segment)
+key to `/report/list` — `inferUrlModel.keyOf`'s conditional base-skip folds them.
+No alias entry is involved (these SPA navigations carry `requestedUrl: null`).
+In the CLI's session order (`listSessions()` → approved:
+`dashboard-viewer, dashboard-download-lists, report-builder, sidebar-nav,
+reports-list`), the first ready landing for the key is effect #79
+(`dashboard-download-lists`, seq 51) with the **ghost** URL. Vote tally across all
+ready landings: **tenant-full 7×, ghost 3×** — most-observed picks the right one
+regardless of concatenation order.
+
+### Fix (upstream, in `draftFromEffects` urlPattern selection)
+
+Replaced first-wins with per-key **URL votes** (each READY landing votes for its
+full URL), resolved after the scan: a key's urlPattern = its **most-observed
+settled landing URL**, never an **alias-source** URL (a URL whose own raw key was
+aliased away is a pre-redirect ghost by definition; skipped unless the key has
+nothing else); ties → **longest pathname** (the tenant-full variant), then first
+observed (Map insertion order + stable sort).
+
+### TDD
+
+New test `urlPattern = most-observed settled landing URL, not the first-observed
+ghost`: ghost URL lands FIRST, tenant-full observed 2×. Fails pre-fix
+(`expected 'https://x.test/v3/report/list' to be 'https://x.test/v3/1041/report/list'`),
+passes post-fix.
+
+### Clean rebuild + walk (NO hand edits)
+
+`node-clear` → `graph-analyse --host progneo.analytics.mn --draft` → `graph-edit`
+→ `graph-show`: all 8 states carry tenant-full URLs; `report-list` stored as
+`https://progneo.analytics.mn/v3/1041/report/list` **unaided**. Live walk
+(ONE fresh headless session, `--profile default`):
+`walk --start progneo.analytics.mn:report-list --goal progneo.analytics.mn:report`
+→ `{"status":"done"}`, `playwright_calls: 4`, zero escalations, no
+Admin/Switch-to-Classic, no walls. Session reaped; `sessions list` → empty.
+
+### Suite
+
+`tsc --noEmit` clean; full suite **867 passed, 7 skipped, 0 failed**.
