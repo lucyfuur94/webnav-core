@@ -2,6 +2,22 @@
 
 **Updated:** 2026-07-11 · **Branch:** `structure-inference` (merging to `main`) · **Tests:** 673 unit pass + 7 skip (live e2e) · **Build:** green
 
+> **2026-07-11 (later) — profile auth status + SSO-wall handling shipped.**
+> `dev profile-status --profile P --site H`: one polite headless load, the map's own fingerprints
+> are the login oracle → `valid`/`needs-login`/`unknown` + loginUrl (engine `src/router/auth-status.ts`,
+> reused everywhere). Walks now detect an SSO wall mid-route, retry ONCE in a fresh session with the
+> same profile (the observed CF-Access pattern: first load passes; retry target = the edge's canonical
+> addressableUrl, not the bounced challenge URL), then fail fast with structured `needs-auth`
+> {profile, site, loginUrl} — never a mid-walk surprise, never evasion. `use navigate` reports
+> `authWall: true` on walled landings (recordings stay judgment-free). Dashboard Profiles tab:
+> per-site auth chips + Check-now (`POST /api/profiles/:name/status`, busy-guarded), Open-to-log-in
+> only when needed and re-enabled on MANUAL window close (OS-level child-process detection), no
+> recording styling on login windows, Reset-profile with typed confirm (per-origin cookie clearing
+> ruled out: playwright-cli cookie-clear is process-wide). Spec `2026-07-11-profile-status-design.md`;
+> next engine increment spec'd: `2026-07-11-subtree-templates-design.md` (the last scale of the
+> repetition principle — merges personalized dashboards/grids/cards under one general mechanism).
+> Suite 704 pass / 7 skip.
+
 > **2026-07-11 — STRUCTURE INFERENCE shipped: recording→graph is now observation-based, zero site-tuned heuristics.**
 > Full redesign per `2026-07-10-structure-inference-design.md` + plan `2026-07-10-structure-inference.md`.
 > The draft engine infers structure from five site-agnostic evidence axes (settledness/aliases ·
