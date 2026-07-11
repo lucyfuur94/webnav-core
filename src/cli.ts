@@ -1043,6 +1043,11 @@ async function main() {
       } catch { /* liveness probe failed → leave flags as-is */ }
     };
     await reconcileStale();
+    // Per-(profile,site) auth-status cache — checks are on-demand only (no background
+    // polling, per the design doc's non-goals), so this is just last-result memory for
+    // the chip; key is 'profile\x00site' (both are already validated [\w.-]+ elsewhere,
+    // but the separator is NUL to rule out any collision regardless).
+    const statusCache = new Map<string, { auth: 'valid' | 'needs-login' | 'unknown'; loginUrl?: string; checkedAt: string }>();
     let busy: string | null = null;
     let activeAdapter: InstanceType<typeof PlaywrightAdapter> | null = null;   // for instant overlay updates
     // realtime push hub: SSE subscribers get 'sessions' | 'step' | 'replay' | 'log' pings
@@ -1290,7 +1295,8 @@ async function main() {
             for (const sid of sessions) {
               const u = recordStore.startUrl(sid); if (u) { try { site = new URL(u).host; break; } catch { /* */ } }
             }
-            return { name, site, sessions: sessions.length, sizeMb: dirSizeMb(dir), lastUsed, open: busy === 'relogin-' + name };
+            const status = site ? statusCache.get(name + '\x00' + site) : undefined;
+            return { name, site, sessions: sessions.length, sizeMb: dirSizeMb(dir), lastUsed, open: busy === 'relogin-' + name, ...(status ? { status } : {}) };
           }).sort((a, b) => b.lastUsed - a.lastUsed);
       },
       profileNew: (name: string) => {
@@ -1346,6 +1352,57 @@ async function main() {
         if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false };
         try { rmSync(profileDir(name), { recursive: true, force: true }); dlog('profile deleted (logged out): ' + name); emit('sessions'); return { ok: true }; }
         catch { return { ok: false }; }
+      },
+      // Status chip engine (Task C item 1) — the SAME flow as `dev profile-status`
+      // (Task A), reused rather than duplicated: one polite headless load of the
+      // site's map homeUrl, settle, classifyAuthLanding against the site's own
+      // fingerprints. Cached per (profile,site) so the tab can show a last-checked
+      // time without re-checking on every render.
+      profileStatus: async (name: string, site: string) => {
+        if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false as const, error: 'bad profile name' };
+        const node = store.getNode(site);
+        const url = node?.homeUrl;
+        if (!url) return { ok: false as const, error: 'no map for site "' + site + '" yet (no homeUrl)' };
+        const dir = profileDir(name);
+        try { mkdirSync(dir, { recursive: true }); } catch { /* */ }
+        prepProfile(dir);
+        const winId = 'pchk-' + name;
+        busy = winId;
+        const session = 'pchk-' + Math.random().toString(36).slice(2, 6);
+        const { settleSnapshot } = await import('./router/browse.js');
+        const { classifyAuthLanding } = await import('./router/auth-status.js');
+        const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: false, persistent: true, profile: dir });
+        try {
+          await adapter.open(url);
+          const landedUrl = await adapter.currentUrl();
+          const snapshot = await settleSnapshot(() => adapter.snapshot());
+          const states = store.statesForNode(site);
+          const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, site, states);
+          const checkedAt = new Date().toISOString();
+          statusCache.set(name + '\x00' + site, { auth, ...(loginUrl ? { loginUrl } : {}), checkedAt });
+          emit('sessions');
+          return { ok: true as const, auth, ...(loginUrl ? { loginUrl } : {}), checkedAt };
+        } catch (e) { return { ok: false as const, error: String(e) }; }
+        finally { await adapter.close().catch(() => {}); busy = null; }
+      },
+      // Reset profile (Task C item 4): per-origin cookie clearing was investigated —
+      // playwright-cli's cookie-clear/cookie-delete are process-wide (no --domain
+      // filter, unlike cookie-list's read-only filter), so deleting a same-named
+      // cookie risks wiping an unrelated site sharing this profile. Not cleanly
+      // reachable → recreate the profile dir in place instead (same name, empty):
+      // honest "log in with a different account", logs out every site in it.
+      profileReset: (name: string) => {
+        if (!/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { ok: false as const, error: 'bad profile name' };
+        const dir = profileDir(name);
+        if (busy === 'relogin-' + name) return { ok: false as const, error: 'close the login window first' };
+        try {
+          rmSync(dir, { recursive: true, force: true });
+          mkdirSync(dir, { recursive: true });
+          for (const key of statusCache.keys()) { if (key.startsWith(name + '\x00')) statusCache.delete(key); }
+          dlog('profile reset (logged out of all sites): ' + name); emit('sessions');
+          return { ok: true as const };
+        } catch (e) { return { ok: false as const, error: String(e) }; }
       },
       replay: async (id: string) => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };

@@ -45,11 +45,13 @@ export interface RecordingsDeps {
   reviewReport(id: string): { report: string; at: number; verdict?: { approved: boolean; gaps: number; reason?: string } | null } | null; // review.md + mtime + stored verdict (null = none yet)
   reviewRunning(): string | null;                                   // session id of an in-flight review
   reviewConfig(): { model: string; instructions: string };          // last-used (or default) audit config
-  profiles(): { name: string; site: string | null; sessions: number; sizeMb: number; lastUsed: number; open: boolean }[];
+  profiles(): { name: string; site: string | null; sessions: number; sizeMb: number; lastUsed: number; open: boolean; status?: { auth: 'valid' | 'needs-login' | 'unknown'; loginUrl?: string; checkedAt: string } }[];
   profileNew(name: string): { ok: boolean; error?: string };        // create an empty named profile
   profileOpen(name: string): Promise<{ ok: true } | { ok: false; error: string }>;      // headed re-login window
   profileRename(from: string, to: string): { ok: boolean; error?: string };
   profileDelete(name: string): { ok: boolean };                     // remove the saved login (logs out, frees disk)
+  profileStatus(name: string, site: string): Promise<{ ok: true; auth: 'valid' | 'needs-login' | 'unknown'; loginUrl?: string; checkedAt: string } | { ok: false; error: string }>;  // one headless load + classifyAuthLanding (Task A engine), cached
+  profileReset(name: string): { ok: boolean; error?: string };      // recreate the profile dir in place — logs out ALL sites under it
   reviewFramePath(session: string, file: string): string | null;   // sanitized frame path for /review-media
 }
 
@@ -213,6 +215,19 @@ export function startDashboard(
         if (profM && method === 'DELETE') {
           const r = rec.profileDelete(decodeURIComponent(profM[1]));
           return sendJson(r.ok ? 200 : 404, r);
+        }
+        const profStatusM = path.match(/^\/api\/profiles\/([^/]+)\/status$/);
+        if (profStatusM && method === 'POST') {
+          let body: { site?: string } = {};
+          try { body = JSON.parse((await readBody(req)) || '{}'); } catch { /* */ }
+          if (!body.site) return sendJson(400, { ok: false, error: 'site required' });
+          const r = await rec.profileStatus(decodeURIComponent(profStatusM[1]), body.site);
+          return sendJson(r.ok ? 200 : 409, r);
+        }
+        const profResetM = path.match(/^\/api\/profiles\/([^/]+)\/reset$/);
+        if (profResetM && method === 'POST') {
+          const r = rec.profileReset(decodeURIComponent(profResetM[1]));
+          return sendJson(r.ok ? 200 : 409, r);
         }
         const revM = path.match(/^\/api\/recordings\/([^/]+)\/review$/);
         if (revM && method === 'POST') {

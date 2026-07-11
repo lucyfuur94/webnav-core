@@ -138,6 +138,35 @@ it('Profiles tab: named profiles with new/rename/open/delete', () => {
   expect(SHELL_HTML).toContain('Open to log in');
   expect(SHELL_HTML).toContain('/rename');
 });
+
+it('Profiles tab: status chips (Valid/Needs login/Unknown) + Check button', () => {
+  expect(SHELL_HTML).toContain('function statusChip');
+  expect(SHELL_HTML).toContain('Valid');
+  expect(SHELL_HTML).toContain('Needs login');
+  expect(SHELL_HTML).toContain('no site associated');
+  expect(SHELL_HTML).toContain('>Check<');
+  expect(SHELL_HTML).toContain('/status');
+});
+
+it('Profiles tab: "Open to log in" disabled when a window is open OR auth is already valid', () => {
+  const fn = SHELL_HTML.slice(SHELL_HTML.indexOf('profs.forEach(pf =>'), SHELL_HTML.indexOf('renB.onclick'));
+  expect(fn).toContain("const authValid = pf.status && pf.status.auth === 'valid'");
+  expect(fn).toContain('openB.disabled = pf.open || !!authValid');
+});
+
+it('Profiles tab: login windows are NOT styled as recording (no --rec color, no pulse)', () => {
+  const renderProfiles = SHELL_HTML.slice(SHELL_HTML.indexOf('async function renderProfiles'), SHELL_HTML.indexOf('function timeAgo'));
+  expect(renderProfiles).not.toContain('var(--rec)');
+  expect(renderProfiles).not.toContain('class="pulse"');
+  expect(renderProfiles).toContain('window open');
+});
+
+it('Profiles tab: Reset profile with a typed "reset <name>" confirm (logout)', () => {
+  expect(SHELL_HTML).toContain('Reset profile');
+  expect(SHELL_HTML).toContain("'reset '+pf.name");
+  expect(SHELL_HTML).toContain('logs out ALL sites in it');
+  expect(SHELL_HTML).toContain('/reset');
+});
 it('new session defaults to the "default" profile; reopen forwards it', () => {
   expect(SHELL_HTML).toContain("profIn.value = 'default'");
   expect(SHELL_HTML).toContain("profile: r.profile || 'default'");   // reopen reuses the session's profile
