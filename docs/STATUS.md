@@ -24,8 +24,13 @@
 >   lose pages (containment clustering); grid columns reach the shadow.
 > - **automationexercise**: two product pages merge into ONE `product-details` template state,
 >   cross-instance confirmed, no product names anywhere.
-> **Open items:** (1) the analytics SPA dashboard confirm-visit blocked by Cloudflare SSO mid-session —
-> needs a user re-login, then `dashboard` confirms and its needsFix clears; (2) GATED: the human
+> **Open items:** (1) ~~dashboard confirm-visit~~ DONE 2026-07-11: both dashboards recorded
+> (8001 + 8002; CF Access steps up on repeated headless loads — one fresh load per session
+> passes). Outcome: the two dashboard instances honestly stay SEPARATE provisional states —
+> user-configured widget sets dominate their faces (the design's stated personalization
+> boundary; no wrong-merge, no data in confirmed states). More visits per dashboard would
+> refine each core; a cross-instance viewer-template merge needs a stronger shared-control
+> signal (future); (2) GATED: the human
 > recorder (`live-record.ts`) still lacks declared-href `requestedUrl` capture (same fix as the
 > agent paths; capture-engine edits await explicit user OK); (3) `ingest.ts` extension path
 > (deprecated) unpatched; (4) follow-up nits from the final
