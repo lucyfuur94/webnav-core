@@ -164,6 +164,16 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     example: 'webnav creds set www.saucedemo.com username=standard_user password=secret_sauce',
   },
   {
+    name: 'test', group: 'navigate',
+    summary: 'Run a RELEASE SUITE against a site: "is everything still good?" as one command. A suite (*.suite.json) is a list of declarative walk cases; each case walks a route on AUTOPILOT and asserts checkpoints. The zero-answer philosophy: the runner answers NOTHING — a case that escalates (needs-navigation on drift, or needs-classification at a commit point) FAILS, because a release check has no judge and must never place an order or guess a fork. So the assertions are structural, not behavioral. Suite format: {site, profile?, cases:[{name, start, goal, observe?:[state], expect?:{status?, maxInteractions?, checkpoint?:{<state>:{repertoireContains?:[label], kinds?:{label:kind}, snapshotContains?:[substr]}}}}]}. `start`/`goal`/`observe` are state ids or bare semanticNames (from `dev graph-show --node <site>`). Execution: auth pre-flight ONCE (profile-status against the site\'s map — needs-login fails the WHOLE run fast with the login hint), then each case SERIALLY in a FRESH headless browser (reaped between). maxInteractions defaults 0 (pure autopilot); ANY needs-* beyond it fails the case with the pause payload as diagnostics. Output: {status:"ok"|"failed", passed, failed, cases:[{name, verdict, elapsedMs, failure?:{at, payload}}]}. Exit 0 all-pass · 3 any-fail · 2 bad suite/config. Progress → stderr. A worked example suite ships under packs/suites/.',
+    args: [],
+    flags: [
+      { name: '--suite', takesValue: true, description: 'Path to a *.suite.json file (the release cases).' },
+      { name: '--headless', takesValue: false, description: 'Run without a visible window (recommended — a suite opens a fresh browser per case).' },
+    ],
+    example: 'webnav test --suite packs/suites/mysite.suite.json --headless',
+  },
+  {
     name: 'navigate', group: 'navigate',
     summary: 'Open a URL in a session browser; records a landing observation if the session is recording. If the settled landing classifies as an SSO/login wall (foreign-host bounce, interstitial, or a password field — checked against the target site\'s own map), the JSON output adds `authWall: true, loginUrl`. NEVER auto-retried here (a recording captures what actually happened, judgment-free) — that\'s `walk`\'s job.',
     args: [{ name: 'url', required: true, description: 'URL to open.' }],
