@@ -31,6 +31,21 @@
 > not just widget-shape?) for the next increment to pick up.
 > Suite: 717 pass / 7 skip (up from 673), `tsc --noEmit` clean.
 
+> **2026-07-12 — X1 bundle shipped: the matrix's only wrong-map gap is closed.**
+> Overlay-by-BEHAVIOR: a role-less portal (AntD/Bootstrap div-soup) is recognized by what an
+> interaction ADDED — detection set (interactive, churn/fold/straggler-excluded, `option` counts
+> as a detection signal but is never STORED) is strict; the transient attribution set stays
+> maximal (probe-proven: table-shaped role-less portals cannot re-open the value-pollution hole).
+> Grammar mismatches fixed + flipped to positive tests: reveal-by-added-subtree (children may be
+> `[]`), `menuitemcheckbox`/`menuitemradio` as reveal children, `columnheader[aria-sort]` sort
+> affordances (plain headers stay shadow DATA — declared-evidence-gated after real data disproved
+> the count assumption). One review loop caught a real regression (re-renders/tooltips flipping
+> mutate→reveal) — acceptance now asserts affordance KINDS, not just presence. X3 main-landmark
+> identity scoping landed (OQ1 rail-leak class fixed; ZERO identity change on all three real
+> corpora — and the the analytics SPA dashboards honestly STAY separate: evidence showed their config
+> editor lives INSIDE `main`). Human recorder now records clicked links' declared hrefs as
+> `requestedUrl` (guard-parity with the agent path; DOM-resolved). Suite 783 pass / 7 skip.
+
 > **2026-07-11 (later) — profile auth status + SSO-wall handling shipped.**
 > `dev profile-status --profile P --site H`: one polite headless load, the map's own fingerprints
 > are the login oracle → `valid`/`needs-login`/`unknown` + loginUrl (engine `src/router/auth-status.ts`,
