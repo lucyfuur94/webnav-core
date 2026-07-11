@@ -239,6 +239,161 @@ describe('walkRoute (interactive multi-step walk)', () => {
   });
 });
 
+// CHECKPOINT CALLBACK (opt-in — walk stays zero-token autopilot by default). Own
+// fixture: a simple 3-state linear chain a->b->c, no gates, so the mechanics under
+// test (fire-once, dynamic test, --continue, goal enrichment) aren't entangled with
+// the checkout fixture's affordance gates.
+describe('walkRoute — checkpoint callback', () => {
+  function cpStore(bDynamic: boolean) {
+    const store = new MapStore(':memory:');
+    store.upsertState(makeState({ id: 'c:a', nodeId: 'c', semanticName: 'c:a', urlPattern: '', role: 'detail', fingerprint: ['link:go-b'] }));
+    store.upsertState(makeState({ id: 'c:b', nodeId: 'c', semanticName: 'c:b', urlPattern: '', role: 'detail',
+      fingerprint: ['link:go-c'],
+      provisional: bDynamic ? 'seen once' : null,
+      affordances: [makeAffordance({ id: 'aff_row', label: 'a table row', kind: 'mutate', scope: 'row' })] }));
+    store.upsertState(makeState({ id: 'c:c', nodeId: 'c', semanticName: 'c:c', urlPattern: '', role: 'detail', fingerprint: ['heading:C'] }));
+    store.upsertEdge(makeEdge({ fromState: 'c:a', toState: 'c:b', semanticStep: 'click "go-b"', kind: 'safe-reversible' }));
+    store.upsertEdge(makeEdge({ fromState: 'c:b', toState: 'c:c', semanticStep: 'click "go-c"', kind: 'safe-reversible' }));
+    return store;
+  }
+  const SNAP: Record<string, string> = {
+    'c:a': '- link "go-b" [ref=e1]',
+    'c:b': '- link "go-c" [ref=e2]',
+    'c:c': '- heading "C" [ref=e3]',
+  };
+  function cpBrowser(stateSeq: string[]) {
+    let i = 0;
+    const browser: WalkBrowser & { advance: () => void } = {
+      snapshot: async () => SNAP[stateSeq[Math.min(i, stateSeq.length - 1)]],
+      act: async () => { i = Math.min(i + 1, stateSeq.length - 1); },
+      callCount: () => 0,
+      advance: () => { i = Math.min(i + 1, stateSeq.length - 1); },
+    };
+    return browser;
+  }
+
+  it('(a) --observe named state: checkpoint with snapshot+repertoire, resume --continue completes', async () => {
+    const store = cpStore(false);
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observe: ['c:b'],
+    });
+    expect(r.status).toBe('checkpoint');
+    if (r.status !== 'checkpoint') throw new Error('expected checkpoint');
+    expect(r.state).toBe('c:b');
+    expect(r.snapshot).toBe(SNAP['c:b']);
+    expect(r.repertoire).toEqual(store.getState('c:b')!.affordances);
+
+    // Resume with --continue (kind:'continue') from c:b, carrying the observed set
+    // forward so the checkpoint doesn't re-fire.
+    const r2 = await walkRoute({
+      goalName: 'g', startStateId: 'c:b', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observe: ['c:b'], observed: ['c:b'], answer: { kind: 'continue' },
+    });
+    expect(r2.status).toBe('done');
+  });
+
+  it('(b) --observe-dynamic pauses on a provisional state, not on a confirmed static one', async () => {
+    const store = cpStore(true);   // c:b is provisional (dynamic)
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observeDynamic: true,
+    });
+    expect(r.status).toBe('checkpoint');
+    if (r.status === 'checkpoint') expect(r.state).toBe('c:b');
+  });
+
+  it('(b2) --observe-dynamic does NOT pause on a confirmed static (non-provisional, no row/widget scope) state', async () => {
+    const store = cpStore(false);  // c:b is plain/static — no provisional, no scope on its own affordances beyond none dynamic
+    // Strip the scope:'row' affordance to make c:b genuinely static for this check.
+    const bState = store.getState('c:b')!;
+    store.upsertState({ ...bState, affordances: [] });
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observeDynamic: true,
+    });
+    expect(r.status).toBe('done');   // no dynamic state on the route -> zero checkpoints
+  });
+
+  it('(c) fires once per state per walk — a second pass through an already-observed state does not re-pause', async () => {
+    // a->b->c->b is not a valid route on our linear fixture, so instead verify
+    // fire-once ACROSS a resume: after checkpointing at c:b once, resuming with
+    // c:b already in `observed` must not re-checkpoint even though `current` starts
+    // back at c:b (the resume's start state).
+    const store = cpStore(false);
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r1 = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observe: ['c:b'],
+    });
+    expect(r1.status).toBe('checkpoint');
+    const r2 = await walkRoute({
+      goalName: 'g', startStateId: 'c:b', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observe: ['c:b'], observed: ['c:b'], answer: { kind: 'continue' },
+    });
+    expect(r2.status).toBe('done');   // no second checkpoint — fired once
+  });
+
+  it('(d) --continue on a needs-navigation-shaped situation is the CLI\'s job to reject; walkRoute itself just treats an unmatched continue as a no-op step retry', async () => {
+    // This case is enforced at the CLI layer (walk-resume validates the answer kind
+    // against the stored pause kind); walkRoute has no notion of "the wrong resume
+    // kind" — it only knows kinds ref/classify/continue. Covered here: passing
+    // `continue` when the edge is a normal step (no checkpoint pending) just falls
+    // through to ordinary step resolution — i.e. walkRoute doesn't invent a bogus
+    // "answered" action, honest fallthrough behavior.
+    const store = cpStore(false);
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      answer: { kind: 'continue' },
+    });
+    expect(r.status).toBe('done');
+  });
+
+  it('(e) dynamic goal: done carries snapshot+repertoire when the GOAL state is dynamic', async () => {
+    const store = cpStore(false);
+    // Make the GOAL (c:c) dynamic instead of c:b — and strip c:b's own scope:'row'
+    // affordance so ONLY the goal qualifies (isolates the goal-enrichment path).
+    const bState = store.getState('c:b')!;
+    store.upsertState({ ...bState, affordances: [] });
+    const cState = store.getState('c:c')!;
+    store.upsertState({ ...cState, provisional: 'seen once' });
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+      observeDynamic: true,
+    });
+    expect(r.status).toBe('done');
+    if (r.status === 'done') {
+      expect(r.evidence.snapshot).toBe(SNAP['c:c']);
+      expect(r.evidence.repertoire).toEqual(store.getState('c:c')!.affordances);
+    }
+  });
+
+  it('(f) default walk (no observe flags) -> zero checkpoints, full autopilot to done', async () => {
+    const store = cpStore(true);   // c:b IS dynamic, but no flags requested observation
+    const seq = ['c:a', 'c:b', 'c:c'];
+    const browser = cpBrowser(seq);
+    const r = await walkRoute({
+      goalName: 'g', startStateId: 'c:a', goalStateId: 'c:c', store, states: store.allStates(), browser,
+    });
+    expect(r.status).toBe('done');
+    if (r.status === 'done') {
+      expect(r.evidence.snapshot).toBeUndefined();
+      expect(r.evidence.repertoire).toBeUndefined();
+    }
+  });
+});
+
 // SSO-wall handling (profile-status design item 2): a navigate-edge step that lands
 // somewhere unexpected is checked against classifyAuthLanding BEFORE being reported
 // as generic drift. A wall retried once in a "fresh session" (same profile); a wall

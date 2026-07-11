@@ -1,4 +1,4 @@
-import type { State, Edge } from '../mapstore/types.js';
+import type { State, Edge, Affordance } from '../mapstore/types.js';
 import type { MapStore } from '../mapstore/store.js';
 import type { RecallResponse } from '../protocol.js';
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
@@ -120,7 +120,8 @@ export interface WalkBrowser {
 
 export type WalkAnswer =
   | { kind: 'ref'; ref: string }
-  | { kind: 'classify'; verdict: 'safe' | 'commit' };
+  | { kind: 'classify'; verdict: 'safe' | 'commit' }
+  | { kind: 'continue' };      // answers a checkpoint pause — no action, just proceed
 
 export interface WalkArgs {
   goalName: string;
@@ -136,6 +137,38 @@ export interface WalkArgs {
   // NAME to browser.act(). The LIVE browser closure owns the inputs map and resolves
   // the slot -> value when filling fields. Keeps the walk runtime-value-free.
   profile?: string;            // named profile the browser is running under (reported on needs-auth)
+  // CHECKPOINT CALLBACK (opt-in — walk stays zero-token autopilot by default):
+  observe?: string[];          // state ids to pause on ARRIVAL (resolved by the caller, like start/goal)
+  observeDynamic?: boolean;    // pause on arrival at any state the MAP marks dynamic (see isDynamicState)
+  observed?: string[];         // state ids whose checkpoint already fired this walk (persisted across resumes)
+}
+
+// A state is "dynamic" (per the checkpoint design) when its identity may not be
+// stable structure — either it's `provisional` (seen only once) or it has an
+// in-page affordance folded from repeated siblings (`scope: 'row'|'widget'`,
+// e.g. a table row or a repeated card). Judgment-free: a fixed structural test,
+// not a guess about what's "interesting".
+function isDynamicState(state: State): boolean {
+  if (state.provisional) return true;
+  return state.affordances.some((a) => hasDynamicScope(a));
+}
+function hasDynamicScope(a: Affordance): boolean {
+  if (a.scope === 'row' || a.scope === 'widget') return true;
+  return (a.children ?? []).some(hasDynamicScope);
+}
+
+// Build the checkpoint response for a CONFIRMED arrival at `state`, or null if no
+// checkpoint should fire (not requested, or already fired once this walk).
+async function checkForCheckpoint(
+  args: WalkArgs, observedSoFar: Set<string>, at: number, state: State, browser: WalkBrowser,
+): Promise<RecallResponse | null> {
+  if (observedSoFar.has(state.id)) return null;
+  const wantsNamed = (args.observe ?? []).includes(state.id);
+  const wantsDynamic = !!args.observeDynamic && isDynamicState(state);
+  if (!wantsNamed && !wantsDynamic) return null;
+  observedSoFar.add(state.id);
+  const snapshot = await browser.snapshot();
+  return { status: 'checkpoint', at, state: state.id, snapshot, repertoire: state.affordances };
 }
 
 /**
@@ -155,11 +188,25 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
   // Fresh-session wall retry: at most ONCE per walk call (design item 2 — a wall
   // surviving the retry is persistent, never loop).
   const authRetried = { done: false };
+  // Checkpoint fired-once tracking (persisted across resumes via args.observed).
+  const observedSoFar = new Set(args.observed ?? []);
 
   // Halt as soon as we've arrived: this check at the TOP means when goalStateId is
   // a state the route passes THROUGH (e.g. sd:checkout-overview), the walk stops
   // there and never attempts the next edge (the Finish commit point).
   while (current !== goalStateId) {
+    // CHECKPOINT: `current` is always a CONFIRMED arrival at the top of this loop
+    // (the start state, or set only after prediction-vs-observation matched) — the
+    // right place to trigger, per the design (a checkpointed state must be a
+    // confirmed arrival). Skipped when we're about to consume a resume answer for
+    // THIS state (the agent already saw it via the pause that led here).
+    if (!(firstStep && args.answer)) {
+      const here = store.getState(current);
+      if (here) {
+        const cp = await checkForCheckpoint(args, observedSoFar, at, here, browser);
+        if (cp) return cp;
+      }
+    }
     const edges = store.edgesFrom(current);
     if (edges.length === 0) {
       return { status: 'failed', reason: 'no edge from ' + current };
@@ -219,7 +266,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         }
         current = edge.toState; at++;
         continue;
-      } else {
+      } else if (ans.kind === 'ref') {
         // 'ref': act on the agent-chosen element, skip replayStep for THIS step.
         // SELF-HEAL: recover a DURABLE element fingerprint for the chosen node from
         // the current page (the raw ref `e42` is ephemeral — reassigned per snapshot —
@@ -240,6 +287,9 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         current = edge.toState; at++;
         continue;
       }
+      // ans.kind === 'continue': a checkpoint answer — no action to consume. Fall
+      // through to the normal step logic below for the CURRENT state (the checkpoint
+      // already skipped itself via observedSoFar, so it won't re-fire).
     }
     firstStep = false;
 
@@ -368,6 +418,15 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
 
   // Reached the goal. Goal-state evidence is minimal for W1 (YAGNI) — the focus of
   // this increment is the WALK + escalation; a later increment enriches evidence.
+  // CHECKPOINT goal-state enrichment: done is done (no pause) — but if the goal
+  // qualifies by the same dynamic test (or was named via --observe), attach the
+  // live snapshot + repertoire so the agent doesn't have to snapshot manually.
+  const goalStateRec = store.getState(goalStateId);
+  const wantsGoal = !!goalStateRec
+    && ((args.observe ?? []).includes(goalStateId) || (!!args.observeDynamic && isDynamicState(goalStateRec)));
+  const goalExtra = wantsGoal
+    ? { snapshot: await browser.snapshot(), repertoire: goalStateRec!.affordances }
+    : {};
   return {
     status: 'done',
     evidence: {
@@ -378,6 +437,7 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
         playwright_calls: browser.callCount(),
         savings: { raw_snapshot_tokens: 0, bundle_tokens: 0, tokens_saved: 0, chars_per_token: 4 },
       },
+      ...goalExtra,
     },
   };
 }

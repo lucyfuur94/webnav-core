@@ -7,27 +7,38 @@ describe('parseArgs — walk verbs', () => {
       '--input', 'username=u', '--input', 'password=p'])).toEqual({
       cmd: 'walk', start: 'sd:login', goal: 'sd:checkout-overview',
       inputs: { username: 'u', password: 'p' }, browser: { headed: true }, hosted: false,
+      observe: [], observeDynamic: false,
     });
   });
   it('parses walk --hosted', () => {
     const a = parseArgs(['walk', '--start', 'a', '--goal', 'b', '--hosted']) as any;
     expect(a.hosted).toBe(true);
   });
+  it('parses walk with repeated --observe and --observe-dynamic', () => {
+    const a = parseArgs(['walk', '--start', 'a', '--goal', 'b',
+      '--observe', 'inventory', '--observe', 'cart', '--observe-dynamic']) as any;
+    expect(a.observe).toEqual(['inventory', 'cart']);
+    expect(a.observeDynamic).toBe(true);
+  });
   it('parses login <key>', () => {
     expect(parseArgs(['login', 'wn_live_abc'])).toEqual({ cmd: 'login', key: 'wn_live_abc' });
   });
   it('parses walk-resume with --ref', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--ref', 'e42']))
-      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: 'e42', classify: undefined, inputs: {} });
+      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: 'e42', classify: undefined, continue: false, inputs: {} });
   });
   it('parses walk-resume with --classify', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--classify', 'safe']))
-      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe', inputs: {} });
+      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe', continue: false, inputs: {} });
+  });
+  it('parses walk-resume with --continue', () => {
+    expect(parseArgs(['walk-resume', 'walk-7', '--continue']))
+      .toEqual({ cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: undefined, continue: true, inputs: {} });
   });
   it('parses walk-resume with repeated --input (one-off inputs survive a pause)', () => {
     expect(parseArgs(['walk-resume', 'walk-7', '--classify', 'safe',
       '--input', 'firstName=Ada', '--input', 'zip=560001'])).toEqual({
-      cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe',
+      cmd: 'walk-resume', session: 'walk-7', ref: undefined, classify: 'safe', continue: false,
       inputs: { firstName: 'Ada', zip: '560001' },
     });
   });
