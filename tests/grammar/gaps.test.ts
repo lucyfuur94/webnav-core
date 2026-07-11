@@ -13,13 +13,15 @@ const AUTH = ['- heading "Login" [ref=e1]', '- textbox "Username" [ref=e2]', '- 
   '- button "Login" [ref=e4]', '- paragraph "Sign in" [ref=e5]', '- link "Forgot" [ref=e6]:\n    - /url: https://gap.test/auth/forgot',
   '- paragraph "Co" [ref=e7]', '- paragraph "v1" [ref=e8]'].join('\n');
 
-// ── gx-undeclared-portal (row 26 — GAP, the #1-ranked cross-cutting gap X1) ─────────────────
+// ── gx-undeclared-portal (row 26 — X1 FIXED: containment attribution) ───────────────────────
 // A role-less portal div (AntD-Popover/Bootstrap-dropdown style: no dialog/menu/listbox ARIA
 // role at all) holds option-like children. insideOverlay() only recognizes ANCESTOR nodes whose
-// role is in OVERLAY_ROLES — a role-less `generic` ancestor never satisfies that, so a click
-// inside it is NOT gated as an overlay click. This is the TOP-RANKED gap (X1): in-overlay value
-// clicks attribute to the page body — a data-pollution class, not merely an omission.
-describe('grammar: 26 undeclared (role-less) portal overlay — GAP, pollution reproduced today', () => {
+// role is in OVERLAY_ROLES — a role-less `generic` ancestor never satisfies that. X1 closes the
+// gap by TRANSIENT-SUBTREE tracking: the opener's diff-added tokens join a per-page transient set,
+// so a LATER recorded click whose role:name is in that set is gated as overlay content — the
+// effect-diff's added subtree IS the overlay, declared or not. In-overlay value clicks no longer
+// attribute to the page body (the the analytics SPA pollution class, closed everywhere at once).
+describe('grammar: 26 undeclared (role-less) portal overlay — X1 FIXED, containment attribution', () => {
   const PAGE = [
     '- heading "Analytics" [ref=e1]',
     '- button "Publisher" [ref=e2]',    // opens a role-less popover (no dialog/menu role at all)
@@ -49,42 +51,39 @@ describe('grammar: 26 undeclared (role-less) portal overlay — GAP, pollution r
     action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
     toUrl: `${B}/report/9`, toSnapshot: PAGE, navigated: true, diff: { added: [], removed: [] } as any };
 
-  // MATRIX-MISMATCH is not the right label here — this IS the matrix's own documented GAP (row
-  // 26 verdict: GAP, "none today"). We assert the FAILURE honestly, matching the matrix's own
-  // framing ("today asserts the pollution failure honestly, after X1 asserts containment").
-  it('reproduces the pollution: a value click inside a role-less portal DOES leak as a page affordance', () => {
+  // X1 FIXED: the value click inside the role-less portal is now GATED (transient-set OR-arm) —
+  // "United States" no longer leaks as a page affordance. This is the matrix's own framing:
+  // "after X1 asserts containment" (the the analytics SPA pollution class closed).
+  it('containment: a value click inside a role-less portal does NOT leak as a page affordance (X1)', () => {
     const g = draftFromEffects([enter, openPopover, clickValue] as never);
     const s = g.states.find((x) => x.label === 'report')!;
-    // insideOverlay finds no OVERLAY_ROLES ancestor (the wrapper is a bare `generic`) → the click
-    // is NOT gated → "United States" leaks as an ordinary page-level affordance (the the analytics SPA bug).
-    expect(s.affordances.some((a) => a.label === 'United States')).toBe(true);
+    // openPopover added checkbox:United States… to the page's transient set; clickValue's role:name
+    // is in that set → gated exactly like clickedInOverlay, even with no OVERLAY_ROLES ancestor.
+    expect(s.affordances.some((a) => a.label === 'United States')).toBe(false);
   });
 
-  it('the opener\'s children exclude the un-gated value options (enumeratedNames folds them, unlike X1\'s containment gap)', () => {
+  it('the opener is a reveal (its diff added a named subtree) whose children exclude the value options', () => {
     const g = draftFromEffects([enter, openPopover] as never);
     const s = g.states.find((x) => x.label === 'report')!;
     const opener = s.affordances.find((a) => a.label === 'Publisher')!;
-    // enumeratedNames DOES catch this (>=3 same-role/depth siblings under the added subtree) —
-    // so the checkbox VALUES are folded out of the opener's children by the flat depth-based
-    // value-domain filter (a different, narrower mechanism than X1's proposed containment fix).
-    // With zero surviving named children, the opener falls through to 'mutate' rather than
-    // 'reveal' (the same reveal-collapse-to-mutate behavior probed in pickers.test.ts row 17).
+    // reveal-by-behavior: the opener's diff ADDED named nodes → reveal. enumeratedNames folds the
+    // >=3 same-role/depth checkbox VALUES out of its children (value domain), so children is empty —
+    // a reveal with `children: []`, never a mutate (the option-only-portal shape, cf. pickers row 17).
     const childLabels = (opener.children ?? []).map((c) => c.label);
     expect(childLabels).not.toContain('United States');
-    expect(opener.kind).toBe('mutate');
+    expect(opener.kind).toBe('reveal');
+    expect((opener.children ?? []).length).toBe(0);
   });
 
-  it('MATRIX-MISMATCH probe: because enumeratedNames already runs on diff.added regardless of role, the reveal-children half is NOT polluted — only the SEPARATE recorded click (clickValue) leaks', () => {
-    // this narrows the matrix's row-26 claim: attribution during the OPENING click is fine
-    // (enumeratedNames is role-agnostic, unlike insideOverlay's role-keyed gate). The actual
-    // pollution vector is specifically a LATER recorded action whose fromSnapshot has the value
-    // already open — clickedInOverlay's insideOverlay ancestor-role check is what's missing.
+  it('neither the reveal children NOR a separate recorded click leak the value — attribution is contained everywhere (X1)', () => {
+    // both pollution vectors are closed: the OPENING click's reveal children are folded (role-
+    // agnostic enumeratedNames), and the LATER recorded click is gated by the transient-set OR-arm.
     const g = draftFromEffects([enter, openPopover, clickValue] as never);
     const s = g.states.find((x) => x.label === 'report')!;
     const opener = s.affordances.find((a) => a.label === 'Publisher')!;
     expect((opener.children ?? []).some((c) => c.label === 'United States')).toBe(false);
-    // yet the SAME name shows up as a stand-alone page affordance from the separate clickValue effect.
-    expect(s.affordances.some((a) => a.label === 'United States' && a.kind !== 'reveal')).toBe(true);
+    // and it does NOT show up as a stand-alone page affordance either (the gap the transient set closes).
+    expect(s.affordances.some((a) => a.label === 'United States')).toBe(false);
   });
 });
 

@@ -1153,6 +1153,60 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
   });
 });
 
+// ── X1: transient-overlay set lifecycle — dismiss (diff.removed) shrinks it.
+// The role-less-portal CONTAINMENT is covered by tests/grammar/gaps.test.ts; this pins the
+// maintenance edge the grammar suite doesn't isolate: a value re-clicked AFTER its overlay closed
+// must NOT stay gated, else a real page control that happened to share a former overlay token would
+// be silently dropped forever. Decoy pages keep the URL-base inference stable (grammar idiom).
+describe('draftFromEffects — X1 transient-overlay set lifecycle (dismiss re-opens attribution)', () => {
+  const TB = 'https://trn.test';
+  const AUTH = ['- heading "Login" [ref=e1]', '- textbox "Username" [ref=e2]', '- textbox "Password" [ref=e3]',
+    '- button "Login" [ref=e4]', '- paragraph "Sign in" [ref=e5]', '- link "Forgot" [ref=e6]:\n    - /url: https://trn.test/auth/forgot',
+    '- paragraph "Co" [ref=e7]', '- paragraph "v1" [ref=e8]'].join('\n');
+  const PAGE = ['- heading "Board" [ref=e1]', '- button "Filter" [ref=e2]', '- button "Refresh" [ref=e3]',
+    '- paragraph "Body" [ref=e4]', '- paragraph "Draft" [ref=e5]', '- listitem "Row 1" [ref=e6]',
+    '- listitem "Row 2" [ref=e7]', '- listitem "Row 3" [ref=e8]'].join('\n');
+  // a role-less popover holding ONE named control "Active" (below the ≥3 value-domain fold, so if it
+  // ever leaked as a page affordance we'd see it — the honest probe).
+  const POPEN = [PAGE, '- generic [ref=e9]:', '  - button "Active" [ref=e10]'].join('\n');
+  const POP = parseSnapshot('- button "Active" [ref=e10]').map((n) => ({ ...n, depth: 1 }));
+  // decoy pages with distinct first segments so base inference keeps `/board/9` a real state.
+  const dec = (seg: string, h: string): StoredActionEffect => ({ seq: 4, capturedAt: 0, fromUrl: `${TB}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'link', name: seg, ref: 'e9', elementFp: { role: 'link', name: seg, near: null } },
+    toUrl: `${TB}/${seg}/x`, toSnapshot: [`- heading "${h}" [ref=e1]`, `- textbox "Q ${h}" [ref=e2]`, `- button "Go ${h}" [ref=e3]`,
+      `- paragraph "A ${h}" [ref=e4]`, `- paragraph "B ${h}" [ref=e5]`, `- paragraph "C ${h}" [ref=e6]`,
+      `- paragraph "D ${h}" [ref=e7]`, `- paragraph "E ${h}" [ref=e8]`].join('\n'), navigated: true, diff: { added: [], removed: [] } as any });
+  const enter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${TB}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${TB}/board/9`, toSnapshot: PAGE, navigated: true, diff: { added: [], removed: [] } as any };
+  const openPop: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${TB}/board/9`, fromSnapshot: PAGE,
+    action: { role: 'button', name: 'Filter', ref: 'e2', elementFp: { role: 'button', name: 'Filter', near: null } },
+    toUrl: `${TB}/board/9`, toSnapshot: POPEN, navigated: false, diff: { added: POP, removed: [] } as any };
+  const boardOf = (g: ReturnType<typeof draftFromEffects>) => g.states.find((x) => x.urlPattern.includes('/board/'))!;
+
+  it('a click on a value inside a role-less popover is gated (transient OR-arm)', () => {
+    // FROM has "Active" under a bare `generic` (insideOverlay misses it) — only the transient set gates it.
+    const clickActive: StoredActionEffect = { seq: 2, capturedAt: 0, fromUrl: `${TB}/board/9`, fromSnapshot: POPEN,
+      action: { role: 'button', name: 'Active', ref: 'e10', elementFp: { role: 'button', name: 'Active', near: null } },
+      toUrl: `${TB}/board/9`, toSnapshot: POPEN, navigated: false, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([enter, openPop, clickActive, dec('rep', 'Reports'), dec('ppl', 'People')] as never);
+    expect(boardOf(g).affordances.some((a) => a.label === 'Active')).toBe(false);
+  });
+
+  it('after the popover is DISMISSED (diff.removed), a same-named control is no longer gated', () => {
+    // the opener toggles the popover shut: its diff.removed drops "Active" from the transient set.
+    const dismiss: StoredActionEffect = { seq: 2, capturedAt: 0, fromUrl: `${TB}/board/9`, fromSnapshot: POPEN,
+      action: { role: 'button', name: 'Filter', ref: 'e2', elementFp: { role: 'button', name: 'Filter', near: null } },
+      toUrl: `${TB}/board/9`, toSnapshot: PAGE, navigated: false, diff: { added: [], removed: POP } as any };
+    // now a REAL page-level "Active" button is clicked (its FROM is the plain page, no overlay).
+    const clickPageActive: StoredActionEffect = { seq: 3, capturedAt: 0, fromUrl: `${TB}/board/9`, fromSnapshot: PAGE,
+      action: { role: 'button', name: 'Active', ref: 'e2b', elementFp: { role: 'button', name: 'Active', near: null } },
+      toUrl: `${TB}/board/9`, toSnapshot: PAGE, navigated: false, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([enter, openPop, dismiss, clickPageActive, dec('rep', 'Reports'), dec('ppl', 'People')] as never);
+    expect(boardOf(g).affordances.some((a) => a.label === 'Active' && a.kind === 'mutate')).toBe(true);
+  });
+});
+
 // ── Task 15: offline-acceptance findings, each reproduced synthetically (the real the analytics SPA data
 // surfaced these; here they are isolated so the producing-stage fix is pinned without the DB).
 describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', () => {

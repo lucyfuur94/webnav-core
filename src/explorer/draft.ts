@@ -29,7 +29,10 @@ export interface DraftAffordance {
 // Roles that count as a real, resolvable child of a revealed overlay (ARIA role + name only;
 // NEVER an inferred purpose — review-bounded #5a). A revealed node outside this set is dropped,
 // not guessed.
-const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'link', 'tab', 'checkbox', 'combobox', 'textbox']);
+// menuitemcheckbox/menuitemradio: stateful menu controls carry a real accessible name and are
+// durable repertoire (a walk can resolve+fire them) — kept. `option` is DELIBERATELY absent:
+// options are value domain (read live at walk time), never stored as children (rules 2+3, X1).
+const REVEAL_CHILD_ROLES = new Set(['button', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'link', 'tab', 'checkbox', 'combobox', 'textbox']);
 // Conservative commit-word match on a DECLARED label — surfaces a CANDIDATE for the agent to
 // classify; it is a string match, not a judgment (commit is never auto-set true, #2/#5a).
 // (live finding 2026-07-07: a human recording fired saucedemo's "Finish" — the order-placing
@@ -712,11 +715,22 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     return list;
   };
   let affSeq = 0;
+  // TRANSIENT-OVERLAY TRACKING (X1, rule 1): the DECLARED-overlay gate (clickedInOverlay) misses
+  // an UNDECLARED role-less portal (AntD Popover/Bootstrap dropdown appended at document end with
+  // no dialog/menu/listbox ancestor) — but the effect-diff SAW that subtree get added when the
+  // opener was clicked. So per PAGE, in session order, we track the tokens an opener ADDED and
+  // haven't been REMOVED: a later click whose role:name is in that set targeted the overlay, and
+  // is gated exactly like clickedInOverlay (it's the OR-arm; declared containers stay the stronger
+  // signal). Cleared on navigation AWAY (the overlay context is gone). Simple per-page Set.
+  const transientByPage = new Map<string, Set<string>>();
+  const transientOf = (k: string) => transientByPage.get(k) ?? transientByPage.set(k, new Set()).get(k)!;
   effects.forEach((e, i) => {
     if (!e.fromSnapshot) return;
-    const fromLabel = labelOf(fromPageKey(e.fromUrl));
+    const fromKey = fromPageKey(e.fromUrl);
+    const fromLabel = labelOf(fromKey);
     if (!fromLabel) return;
     const fromNodes = parseSnapshot(e.fromSnapshot);
+    const transient = transientOf(fromKey);
     // SHELL GATE (axis 3): a recorded action ON a shell node (a click on `Dark Mode`/`Close
     // sidebar`/`O Overview Merged Change`, a nav via `Help Center`/`Announcements`) is a SHELL
     // affordance — it lives ONCE on `_shell` (synthesized below), NOT duplicated onto whatever
@@ -731,7 +745,22 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // duplicate every picked value (a chosen dimension, a typed search term) as page structure —
       // exactly the DATA-VALUE leak this task removes. Test on the FROM snapshot (the page as it
       // was when clicked), parsed above — never landings.
-      if (clickedInOverlay(fromNodes, e.action)) return;
+      // X1 OR-arm: OR the action's role:name is in the page's TRANSIENT-overlay set (a subtree a
+      // prior opener added and nothing has removed) — catches role-less portals insideOverlay misses.
+      const actionTok = e.action.name ? `${e.action.role}:${e.action.name}` : null;
+      if (clickedInOverlay(fromNodes, e.action) || (actionTok && transient.has(actionTok))) {
+        // even when gated, this click's OWN diff may open a nested overlay / dismiss the current one —
+        // keep the transient set current so the following clicks gate correctly.
+        for (const n of e.diff?.removed ?? []) if (n.name) transient.delete(`${n.role}:${n.name}`);
+        for (const n of e.diff?.added ?? []) if (n.name && n.name.trim()) transient.add(`${n.role}:${n.name}`);
+        return;
+      }
+      // NON-gated opener/mutate: it stays a page affordance (below), but its diff SUBTREE joins the
+      // transient set so the value clicks that FOLLOW it gate as overlay content (X1). Removed tokens
+      // (a dismissed overlay) leave the set. Done here (post-gate, pre-processing) so an opener never
+      // gates ITSELF — its added children only affect the SUBSEQUENT effects.
+      for (const n of e.diff?.removed ?? []) if (n.name) transient.delete(`${n.role}:${n.name}`);
+      for (const n of e.diff?.added ?? []) if (n.name && n.name.trim()) transient.add(`${n.role}:${n.name}`);
       // a `use type` on a textbox → an input affordance (login or any field).
       if (e.action.role === 'textbox' && e.action.name) {
         pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',
@@ -757,7 +786,13 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
             kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
             ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
-        const aff: DraftAffordance = children.length
+        // CLASSIFY BY BEHAVIOR (rule 2): an opener whose diff ADDED ≥1 named node opened an overlay
+        // → it is a `reveal` even when NO child survives the child-role filter + value-domain folds
+        // (an option-only portal: every added node is a value, children legitimately `[]`). Keying on
+        // `children.length` (the old ternary) misclassified those as `mutate`. Fall back to `mutate`
+        // only when the diff added nothing named (a true in-place change — sort/filter/search).
+        const openedOverlay = addedNodes.some((n) => n.name && n.name.trim());
+        const aff: DraftAffordance = openedOverlay
           ? { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'reveal', elementFp: fp, children }
           : { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'mutate', elementFp: fp };
         if (COMMIT_WORDS.test(e.action.name)) aff.needsClassification = true;
@@ -767,6 +802,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     }
     // a navigation → a navigate affordance to the landing page.
     if (e.navigated) {
+      transient.clear();   // X1: navigating AWAY from the from-page discards its overlay context.
       const toLabel = labelOf(pageKeyForEffectLanding.get(i) ?? '');
       if (!toLabel) return;
       let fp: ElementFingerprint | null = e.action?.elementFp ?? null;
@@ -852,7 +888,14 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       if (!n.name || !n.name.trim()) continue;
       if (foldedNames.has(n.name)) continue;                       // a folded member value → not its own affordance
       if (n.role === 'link' || n.role === 'heading') continue;     // links → mesh; headings → fingerprint
-      if (!INPUT_ROLES.has(n.role) && n.role !== 'button') continue; // only declared interactive controls
+      // declared interactive controls: fillable fields → input, button → mutate, AND a SORTABLE
+      // `columnheader` — one bearing `aria-sort` IS the declared sort control (matrix row 44); it's
+      // mutate (childKind: not an INPUT_ROLE). Declared-evidence-gated: a PLAIN columnheader (no
+      // aria-sort) is a STATIC table header (row 43) whose name is column DATA — it belongs to the
+      // shadow (collections.columns), NEVER an affordance (else a report's selected metrics leak
+      // as page controls — the data-value pollution class the structure-inference design refuses).
+      const isSortableHeader = n.role === 'columnheader' && /\[aria-sort/.test(n.raw);
+      if (!INPUT_ROLES.has(n.role) && n.role !== 'button' && !isSortableHeader) continue;
       const have = affById.get(p.label) ?? [];
       if (have.some((a) => a.label === n.name && (a.kind === 'input' || a.kind === 'mutate' || a.kind === 'reveal'))) continue;
       const fp: ElementFingerprint = { role: n.role, name: n.name, near: null };

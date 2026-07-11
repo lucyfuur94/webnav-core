@@ -154,22 +154,16 @@ describe('grammar: 27/28 action menu + submenu + persistent menubar — item kin
     expect(childLabels).toContain('Duplicate');
   });
 
-  // MATRIX-MISMATCH: row 27 says "check/radio items mutate" (i.e. menuitemcheckbox/menuitemradio
-  // should be captured just like a plain menuitem). REVEAL_CHILD_ROLES (draft.ts:32) only lists
-  // 'button','menuitem','link','tab','checkbox','combobox','textbox' — NOT 'menuitemcheckbox' or
-  // 'menuitemradio'. Those two ARIA roles are silently dropped from a revealed menu's children,
-  // even though they carry real accessible names and would resolve fine via resolveByFingerprint.
-  it.fails('menuitemcheckbox/menuitemradio items are captured as reveal children too — MATRIX-MISMATCH: REVEAL_CHILD_ROLES omits both roles, so "Track changes"/"View: Edit" are silently dropped', () => {
+  // Matrix row 27: "check/radio items mutate" — menuitemcheckbox/menuitemradio are captured just
+  // like a plain menuitem (both now in REVEAL_CHILD_ROLES). They carry real accessible names and
+  // resolve via resolveByFingerprint; childKind gives them `mutate` (not an INPUT_ROLE).
+  it('menuitemcheckbox/menuitemradio items are captured as reveal children too (row 27: check/radio items mutate)', () => {
     const opener = s.affordances.find((a) => a.label === 'Actions')!;
     const childLabels = (opener.children ?? []).map((c) => c.label);
     expect(childLabels).toEqual(expect.arrayContaining(['Duplicate', 'Track changes', 'View: Edit']));
-  });
-
-  it('current (mismatched) behavior: menuitemcheckbox/menuitemradio children are absent from the repertoire', () => {
-    const opener = s.affordances.find((a) => a.label === 'Actions')!;
-    const childLabels = (opener.children ?? []).map((c) => c.label);
-    expect(childLabels).not.toContain('Track changes');
-    expect(childLabels).not.toContain('View: Edit');
+    for (const label of ['Track changes', 'View: Edit']) {
+      expect((opener.children ?? []).find((c) => c.label === label)!.kind).toBe('mutate');
+    }
   });
 
   it('a submenu nests as its own reveal child (menu-within-menu), not flattened', () => {
