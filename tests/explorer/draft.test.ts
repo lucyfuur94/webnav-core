@@ -1861,6 +1861,99 @@ describe('draftFromEffects — unknowns report', () => {
     expect((g.unknowns ?? []).length).toBeLessThanOrEqual(20);
     expect(g.unknownsTruncated).toBeGreaterThan(0);
   });
+
+  // review F1 — the cap must be KIND-FAIR: a broad pack tripping on 20+ pages must not crowd out
+  // every real (a)-(d) unknown via a flat slice. 25 tripwire + 3 degenerate-landing candidates →
+  // all 3 real ones survive the cap.
+  it('cap is KIND-FAIR: 25 pack-tripwire entries cannot crowd out the real unknowns', () => {
+    const KB = 'https://kindfair.test';
+    const HOME_KF = ['- heading "Home" [ref=e1]', '- paragraph "hw1" [ref=e2]', '- paragraph "hw2" [ref=e3]',
+      '- paragraph "hw3" [ref=e4]', '- paragraph "hw4" [ref=e5]', '- paragraph "hw5" [ref=e6]',
+      '- paragraph "hw6" [ref=e7]', '- paragraph "hw7" [ref=e8]'].join('\n');
+    const navKF = (toUrl: string, toSnapshot: string, seq: number): StoredActionEffect => ({
+      seq, capturedAt: 0, fromUrl: `${KB}/home`, fromSnapshot: HOME_KF,
+      action: { role: 'link', name: 'x', ref: 'e9', elementFp: { role: 'link', name: 'x', near: null } },
+      toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] } as any,
+    });
+    const effs: StoredActionEffect[] = [];
+    // 25 distinct pages each carrying a button → the rootless broad pack excises 100% of their
+    // names → trips on every one (25 pack-tripwire candidates).
+    for (let i = 0; i < 25; i++) {
+      const snap = [`- heading "Page ${i}" [ref=e1]`, `- button "Do ${i}" [ref=e2]`,
+        `- paragraph "fill ${i} a" [ref=e3]`, `- paragraph "fill ${i} b" [ref=e4]`, `- paragraph "fill ${i} c" [ref=e5]`,
+        `- paragraph "fill ${i} d" [ref=e6]`, `- paragraph "fill ${i} e" [ref=e7]`, `- paragraph "fill ${i} f" [ref=e8]`].join('\n');
+      effs.push(navKF(`${KB}/sec${i}/page`, snap, i));
+    }
+    // 3 REAL unknowns: error-page landings (degenerate-landing). Button-free so the pack never
+    // trips on them.
+    for (const [j, w] of ['aaa', 'bbb', 'ccc'].entries()) {
+      // per-page-distinct filler so the three error pages don't jaccard-merge into ONE state.
+      const snap = [`- heading "Not Found ${w}" [ref=e1]`, `- paragraph "err ${w} one" [ref=e2]`,
+        `- paragraph "err ${w} two" [ref=e3]`, `- paragraph "err ${w} three" [ref=e4]`, `- paragraph "err ${w} four" [ref=e5]`,
+        `- paragraph "err ${w} five" [ref=e6]`, `- paragraph "err ${w} six" [ref=e7]`, `- paragraph "err ${w} seven" [ref=e8]`].join('\n');
+      effs.push(navKF(`${KB}/err${w}/x`, snap, 25 + j));
+    }
+    const broad: PatternPack = {
+      name: 'broad-landing-pack', version: 1, type: 'value-domain', evidence: 'test fixture (over-broad)',
+      trigger: { context: 'landing', contains: [{ role: 'button' }] },
+      fixture: { snapshot: '- button "Q" [ref=e1]', expect: 'matched' },
+    };
+    const g = draftFromEffects(effs, [broad]);
+    const kinds = (g.unknowns ?? []).map((u) => u.kind);
+    expect(kinds.filter((k) => k === 'pack-tripwire').length).toBeGreaterThan(10);   // the noisy kind is still represented
+    expect(kinds.filter((k) => k === 'degenerate-landing').length).toBe(3);          // ALL real ones survive
+    expect((g.unknowns ?? []).length).toBe(20);
+    expect(g.unknownsTruncated).toBeGreaterThan(0);
+  });
+
+  // review F2 — a data-grid REPAINT (sort/refresh re-renders rows) must NOT surface as an
+  // undetected-overlay candidate: the mutate classification was CORRECT and suggesting an
+  // overlay-open pack there is actively wrong. Excluded when the named added nodes are dominated
+  // (>50%) by collection roles {row, gridcell, columnheader, cell}.
+  it('(a-guard) a collection-dominated added diff (grid repaint) is NOT reported as undetected-overlay', () => {
+    const LIST = ['- heading "Grid" [ref=e1]', '- button "Refresh list" [ref=e2]', '- paragraph "row a" [ref=e3]',
+      '- paragraph "row b" [ref=e4]', '- paragraph "row c" [ref=e5]', '- paragraph "row d" [ref=e6]',
+      '- paragraph "row e" [ref=e7]', '- paragraph "row f" [ref=e8]'].join('\n');
+    // 6 named added nodes, 5 of them collection roles (83% > 50%) — a grid repaint fingerprint.
+    const added = [
+      { role: 'columnheader', name: 'Name', ref: 'c1', url: null, raw: '', depth: 2 },
+      { role: 'columnheader', name: 'Status', ref: 'c2', url: null, raw: '', depth: 2 },
+      { role: 'gridcell', name: 'Alpha Report', ref: 'g1', url: null, raw: '', depth: 3 },
+      { role: 'gridcell', name: 'Active', ref: 'g2', url: null, raw: '', depth: 3 },
+      { role: 'row', name: 'Alpha Report Active', ref: 'r1', url: null, raw: '', depth: 2 },
+      { role: 'paragraph', name: 'Showing 1-10', ref: 'p1', url: null, raw: '', depth: 1 },
+    ];
+    const g = draftFromEffects([
+      { seq: 0, capturedAt: 0, fromUrl: 'https://gridpaint.test/list', fromSnapshot: LIST,
+        action: { role: 'button', name: 'Refresh list', ref: 'e2', elementFp: { role: 'button', name: 'Refresh list', near: null } },
+        toUrl: 'https://gridpaint.test/list', toSnapshot: LIST, navigated: false, diff: { added, removed: [] } },
+    ] as any);
+    const refresh = g.states.find((s) => s.label === 'home')!.affordances.find((a) => a.label === 'Refresh list')!;
+    expect(refresh.kind).toBe('mutate');   // classification stays correct
+    expect((g.unknowns ?? []).some((u) => u.kind === 'undetected-overlay')).toBe(false);   // and is NOT second-guessed
+  });
+
+  // review F2 flip side — a DATE-PICKER's day-cell grid is gridcell-dominated but carries NO
+  // row/columnheader structure (verified on the real progneo picker: 31 gridcell + 17 button +
+  // 7 generic, zero rows/headers). A data-grid REPAINT always announces its rows/column headers;
+  // the picker doesn't — so the picker must STILL be reported as an undetected-overlay candidate.
+  it('(a-guard) a gridcell-dominated but rowless added diff (date-picker shape) IS still reported', () => {
+    const PAGE = ['- heading "Builder" [ref=e1]', '- button "Date range" [ref=e2]', '- paragraph "viz a" [ref=e3]',
+      '- paragraph "viz b" [ref=e4]', '- paragraph "viz c" [ref=e5]', '- paragraph "viz d" [ref=e6]',
+      '- paragraph "viz e" [ref=e7]', '- paragraph "viz f" [ref=e8]'].join('\n');
+    // 7 named added: 5 gridcell day-cells (71% > 50% dominance) + 2 named generics — NO row/columnheader.
+    const added = [
+      ...Array.from({ length: 5 }, (_, i) => ({ role: 'gridcell', name: `${i + 1}`, ref: `d${i}`, url: null, raw: '', depth: 3 })),
+      { role: 'generic', name: 'July 2026', ref: 'g1', url: null, raw: '', depth: 2 },
+      { role: 'generic', name: 'Custom range', ref: 'g2', url: null, raw: '', depth: 2 },
+    ];
+    const g = draftFromEffects([
+      { seq: 0, capturedAt: 0, fromUrl: 'https://datepick.test/builder', fromSnapshot: PAGE,
+        action: { role: 'button', name: 'Date range', ref: 'e2', elementFp: { role: 'button', name: 'Date range', near: null } },
+        toUrl: 'https://datepick.test/builder', toSnapshot: PAGE, navigated: false, diff: { added, removed: [] } },
+    ] as any);
+    expect((g.unknowns ?? []).some((u) => u.kind === 'undetected-overlay')).toBe(true);
+  });
 });
 
 // ── husk tripwire (reviewer-mandated addition to Task 2): before applying a value-domain pack's

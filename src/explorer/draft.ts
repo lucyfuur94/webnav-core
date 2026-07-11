@@ -74,6 +74,10 @@ export interface Unknown {
 }
 const MAX_UNKNOWN_EVIDENCE = 1500;    // a report entry must stay pasteable into a pack fixture
 const MAX_UNKNOWNS = 20;              // total report cap — the loop looks at a handful at a time
+// Collection roles whose dominance (>COLLECTION_DOMINANCE of named added nodes) marks an added
+// subtree as a data-grid REPAINT, not an overlay candidate (review F2). Documented tunable.
+const COLLECTION_ROLES = new Set(['row', 'gridcell', 'columnheader', 'cell']);
+const COLLECTION_DOMINANCE = 0.5;
 // Evidence = the first ~25 named lines of the given nodes (their raw snapshot text), joined and
 // capped to MAX_UNKNOWN_EVIDENCE chars. Never the whole page — just the relevant subtree/cluster.
 const evidenceOf = (nodes: SnapNode[]): string => {
@@ -945,8 +949,24 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         // is the honest "detection declined" gap `dev pattern-propose` (Task 3) turns into a new
         // `overlay-open` pack entry. addedNodes.length gate (not just named-count) keeps this to
         // real substantial subtrees, matching the plan's "≥N-node named added-diffs" language.
+        // COLLECTION-REPAINT exclusion (review F2): a data-grid repaint (sort/refresh/filter-tab
+        // re-renders rows) adds a large named subtree that is NOT an overlay — its named nodes are
+        // dominated by collection roles (row/gridcell/columnheader/cell). Reporting it would
+        // actively suggest an overlay-open pack where NONE is needed (the mutate classification
+        // was CORRECT) — the same collection-data reasoning as the detection guard's fold
+        // exclusions above. >50% dominance = documented tunable. REFINEMENT (evidence-gated, real
+        // data): dominance alone also caught the genuine date-picker (its day-cell calendar is 31
+        // gridcells = 56% of its subtree), which the review's own test contract says must STAY
+        // reported. The discriminator is declared structure: a data-grid repaint announces its
+        // `row`/`columnheader` nodes (measured: 72-74% collection WITH rows+headers), a picker's
+        // day-cell grid does not (zero rows/headers) — so repaint = dominance AND row/columnheader
+        // presence. Site-agnostic ARIA structure, no product tokens.
         const namedAdded = addedNodes.filter((n) => n.name && n.name.trim());
-        if (!openedOverlay && namedAdded.length >= 5) {
+        const collectionNamed = namedAdded.filter((n) => COLLECTION_ROLES.has(n.role)).length;
+        const hasGridStructure = namedAdded.some((n) => n.role === 'row' || n.role === 'columnheader');
+        const gridRepaint = namedAdded.length > 0 && hasGridStructure
+          && collectionNamed / namedAdded.length > COLLECTION_DOMINANCE;
+        if (!openedOverlay && namedAdded.length >= 5 && !gridRepaint) {
           unknowns.push({
             kind: 'undetected-overlay', evidence: evidenceOf(addedNodes),
             context: `${fromLabel}: clicking "${e.action.name}" added ${namedAdded.length} named nodes but neither the built-in overlay detection nor any pattern pack recognized it as an overlay — stayed 'mutate'`,
@@ -1250,8 +1270,23 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   }
   // cap the report (source e's pack-tripwire entries were pushed earlier, inline with the pack
   // application) — pasteable, not a full dump. Truncation is COUNTED, never silent.
-  const unknownsTruncated = Math.max(0, unknowns.length - MAX_UNKNOWNS);
-  const cappedUnknowns = unknowns.slice(0, MAX_UNKNOWNS);
+  // KIND-FAIR cap (review F1): a flat slice let one noisy kind (a broad pack tripping on 20+
+  // pages, pushed first) crowd out every other kind's entries. Round-robin one entry per kind per
+  // pass (kinds in first-appearance order, pipeline order within a kind) until the cap.
+  const byKind = new Map<Unknown['kind'], Unknown[]>();
+  for (const u of unknowns) (byKind.get(u.kind) ?? byKind.set(u.kind, []).get(u.kind)!).push(u);
+  const queues = [...byKind.values()];
+  const cappedUnknowns: Unknown[] = [];
+  for (let round = 0; cappedUnknowns.length < MAX_UNKNOWNS; round++) {
+    let took = false;
+    for (const q of queues) {
+      if (round >= q.length) continue;
+      cappedUnknowns.push(q[round]); took = true;
+      if (cappedUnknowns.length >= MAX_UNKNOWNS) break;
+    }
+    if (!took) break;   // every kind exhausted
+  }
+  const unknownsTruncated = unknowns.length - cappedUnknowns.length;
 
   // entry / walkExample / receipt.states see ONLY page states — `_shell` is site chrome, not a
   // navigable page in the tree.
