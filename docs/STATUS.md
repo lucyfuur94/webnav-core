@@ -31,6 +31,15 @@
 > not just widget-shape?) for the next increment to pick up.
 > Suite: 717 pass / 7 skip (up from 673), `tsc --noEmit` clean.
 
+> **2026-07-12 (evening) — progneo deliverables shipped: verification report, Remotion walkthrough, release suite.**
+> Verification found + fixed two walk-blockers (render-skew SPA sibling merge — report/report-flat were
+> ONE report in two render phases; urlPattern now = most-observed settled landing URL, never a ghost);
+> live walk report-list→report completes with ZERO escalations on a clean unaided rebuild. `walkthrough/`:
+> Remotion project rendering a 92s product video whose every word derives from the map (re-render on map
+> change = living docs). `webnav test --suite packs/suites/progneo.suite.json`: zero-answer release runner
+> (never answers escalations, commit-points always fail, session closed on every path, auth pre-flight)
+> — LIVE 7/7 pass on progneo, assertions proven load-bearing. Suite 880 pass / 7 skip.
+
 > **2026-07-12 (later) — Phase 2 extension loop shipped: webnav is now agent-extensible without core edits.**
 > Pattern packs: declarative JSON (`packs/patterns/{core,proposed}/`) mapping structural triggers
 > (roles/containment/attrs ONLY — lint rejects hostnames/URLs/text; 64-role/15-attr allow-lists)
