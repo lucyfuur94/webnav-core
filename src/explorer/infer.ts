@@ -120,6 +120,26 @@ export function nodeIndexByName(nodes: SnapNode[], name: string): number {
   return nodes.findIndex((n) => n.name === name);
 }
 
+/** IDENTITY SCOPING (X3, OQ1): when a landing DECLARES a `main` landmark, a state's identity is
+ *  what's inside `main` — ancillary `complementary` rails / secondary nav that sit OUTSIDE `main`
+ *  are chrome, not identity, and must not pollute the face (a per-page-varying rail is neither
+ *  shell nor page-distinguishing). Same nearest-lower-depth containment idiom as `insideOverlay`:
+ *  keep a node iff its ancestor chain passes through a `main` (or it IS the `main`). NO `main`
+ *  declared → return nodes unchanged (declared-evidence-gated, never inferred). */
+export function mainScope(nodes: SnapNode[]): SnapNode[] {
+  if (!nodes.some((n) => n.role === 'main')) return nodes;
+  const out: SnapNode[] = [];
+  for (let idx = 0; idx < nodes.length; idx++) {
+    if (nodes[idx].role === 'main') { out.push(nodes[idx]); continue; }
+    let cur = nodes[idx].depth, inMain = false;
+    for (let i = idx - 1; i >= 0 && !inMain; i--) {
+      if (nodes[i].depth < cur) { if (nodes[i].role === 'main') inMain = true; cur = nodes[i].depth; }
+    }
+    if (inMain) out.push(nodes[idx]);
+  }
+  return out;
+}
+
 /** Shell = tokens present on ≥minFrac of DISTINCT pages. Needs ≥4 pages to claim anything —
  *  on tiny evidence a "shell" would just be coincidence. */
 export function extractShell(faces: Face[], minFrac = 0.8): Face {
