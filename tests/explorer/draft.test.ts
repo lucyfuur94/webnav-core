@@ -1624,6 +1624,60 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(g.states.some((s) => /\/q\//.test(s.urlPattern))).toBe(true);   // other section stays split
   });
 
+  it('render-skew: mid-query + settled landings of ONE report merge (no subset-fp walk-ambiguous pair)', () => {
+    // LIVE the analytics SPA defect (2026-07-12): /report/7001/{c8c6…} was captured MID-QUERY (sparse,
+    // "Running query" Cancel button, metric chips still UNFOLDED) and /report/7001/{13fe…}
+    // SETTLED (full folded data grid). Both are the SAME report 7001 → one `/report/{param}`
+    // state. But the dispose's opaque-param control arm ran on normFace'd faces: normFace folds
+    // the settled grid's chips into ONE widget sig while the mid-query chips stay distinct
+    // controls → control containment collapsed 0.92→0.50 → NO merge → two states whose fps were a
+    // subset pair (`report`=Table,Charts,New Report,View All,Cancel ⊂ `report-flat`'s live page)
+    // → matchState returned `ambiguous` forever on the live walk. Fix: the control arm compares
+    // the RAW (pre-normFace) control skeleton — stable across render depth. Merged → the
+    // partial-render exclusion drops the mid-query husk → ONE clean settled state.
+    // mid-query: metric chips rendered FLAT (each a bare button, no repeated wrapper yet), plus the
+    // transient "Running query" Cancel — the sparse pre-settle face.
+    const FLAT_CHIPS = ['- button "OS Remove" [ref=e20]', '- button "Device Remove" [ref=e21]',
+      '- button "Revenue Remove" [ref=e22]', '- button "eCPM Remove" [ref=e23]', '- button "Win Rate Remove" [ref=e24]'];
+    const MIDQUERY = shell('Sales Report', ['- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]',
+      '- button "New Report" [ref=e9]', '- button "View All" [ref=e10]', '- button "Cancel" [ref=e11]',
+      '- status "Running query, this may take a moment." [ref=e12]', ...FLAT_CHIPS]);
+    // settled: the SAME chips now rendered as repeated 2-node WIDGET cards (label + remove button) —
+    // a unitSize≥2 fold normFace collapses to ONE widget sig, dropping every chip control. THIS is
+    // the render-depth skew: normFace keeps 5 chip controls on the mid-query face, 0 on the settled
+    // face → their control faces diverge (the real 0.92→0.50 containment collapse). The dispose's
+    // opaque-param control arm must read the RAW control skeleton to see they're the same template.
+    const chipCard = (n: string, i: number) => [`- listitem "${n} chip" [ref=e${30 + i}]`,
+      `    - paragraph "${n}" [ref=e${50 + i}]`, `    - button "${n} Remove" [ref=e${70 + i}]`].join('\n');
+    const CARD_CHIPS = ['OS', 'Device', 'Revenue', 'eCPM', 'Win Rate'].map(chipCard);
+    const rows = Array.from({ length: 12 }, (_, i) => `- button "Expand drilldown" [ref=e${90 + i}]`);
+    const SETTLED = shell('Sales Report', ['- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]',
+      '- tab "Flat" [ref=e13]', '- button "New Report" [ref=e9]', '- button "View All" [ref=e10]',
+      '- button "Download as formatted CSV" [ref=e14]', '- button "Full screen" [ref=e15]',
+      '- textbox "Search" [ref=e16]', '- button "Next Page" [ref=e17]', ...CARD_CHIPS, ...rows]);
+    const g = draftFromEffects([
+      nav(`${XB}/report/7001/c8c6c374dd0f529fa815516679436fef`, MIDQUERY),
+      nav(`${XB}/report/7001/13fe32057e11e4069fecf2e727a2d7d9`, SETTLED),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const reportStates = g.states.filter((s) => /\/report\/7001\//.test(s.urlPattern));
+    expect(reportStates.length, 'the mid-query + settled renders are ONE report state').toBe(1);
+    const rep = reportStates[0];
+    // the surviving state is built from the SETTLED identity — its fingerprint never anchors on the
+    // transient loading Cancel button, and its repertoire is the settled affordances (not the
+    // sparse mid-query husk that lost tab:Flat + the real controls).
+    expect(rep.fingerprint.join()).not.toMatch(/Cancel/);
+    expect(rep.affordances.some((a) => a.label === 'Download as formatted CSV')).toBe(true);   // settled control
+    expect(rep.affordances.some((a) => a.label === 'Cancel')).toBe(false);                      // transient dropped
+    // THE WALK FIX: no subset-fp pair survives, so matchState on the fully-settled report page is
+    // UNIQUE (before the fix `report` ⊂ `report-flat` made this `ambiguous` forever).
+    const goodStubs = g.states.filter((s) => s.fingerprint.length).map((s) =>
+      makeState({ id: s.label, nodeId: 'n', semanticName: s.label, urlPattern: s.urlPattern, role: 'detail', fingerprint: s.fingerprint }));
+    const m = matchState(parseSnapshot(SETTLED), goodStubs);
+    expect(m.status).toBe('matched');
+  });
+
   it('needsFix carries no duplicate (label, reason) entries', () => {
     // two genuinely-different HEADING-LESS faces at one key (low jaccard AND low containment):
     // still split, neither nameable → both clusters report the same (label, reason) → ONE entry.
