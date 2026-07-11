@@ -57,4 +57,45 @@ describe.skipIf(!existsSync(DB))('progneo offline acceptance', () => {
     // single-landing pages reported as provisional record-next asks
     expect(g.receipt.requests.length).toBeGreaterThan(0);
   });
+
+  // ── Task 3 (subtree-templates): identity-face normalization + subtree-fold acceptance across
+  // the real ae / ohrm / progneo recordings (all in this DB). Normalization (dispose + SPA-split
+  // predicates only) folds a page's repeated widget/row subtrees to a `widget:<sig>` presence
+  // token so two instances of one template read as one face. These assertions pin the invariants
+  // that hold on the real data; a failure is a producing-stage finding, never a relaxation.
+  it('Task 3: report intact, Expand-drilldown folded once, ae one product-details, ohrm columns kept', () => {
+    const store = new RecordStore(DB);
+
+    // ── progneo: report unchanged (12/12 ground truth is over the two report views; page-level
+    // ≤30) and the ×25 'Expand drilldown' row folds to AT MOST ONE affordance/child anywhere. ──
+    const prog = draftFromEffects(SESSIONS.flatMap((s) => store.actionEffects(s)));
+    const builder = prog.states.find((s) => s.urlPattern.includes('/report/16116/bd5a'))!;
+    const builderPageLevel = builder.affordances.filter((a) => !a.scope);
+    expect(builderPageLevel.length).toBeLessThanOrEqual(30);
+    const builderNames = new Set(builder.affordances.flatMap((a) => [a.label, ...(a.children ?? []).map((c) => c.label)]));
+    const groundTruth = ['Share', 'Save As / Schedule', 'Add dimensions', 'Add metrics', 'Download as formatted CSV', 'Save Visualization'];
+    expect(groundTruth.filter((n) => builderNames.has(n)).length).toBeGreaterThanOrEqual(4);
+    let expandDrilldown = 0;
+    for (const s of prog.states) for (const a of s.affordances) {
+      if (a.label === 'Expand drilldown') expandDrilldown++;
+      for (const c of a.children ?? []) if (c.label === 'Expand drilldown') expandDrilldown++;
+    }
+    expect(expandDrilldown, "'Expand drilldown' folds to at most one").toBeLessThanOrEqual(1);
+    // no fingerprint anchors on the logged-in user's name (instance data — #5).
+    expect(prog.states.every((s) => !s.fingerprint.join().includes('Testuser'))).toBe(true);
+
+    // ── ae: /product_details/1 + /product_details/3 merge to EXACTLY ONE product-details (the
+    // control-arm merge; normalization leaves it untouched — controls are shared, not folded). ──
+    const ae = draftFromEffects(store.actionEffects('ae-validate'));
+    const productDetails = ae.states.filter((s) => /product_details/.test(s.urlPattern) || s.label.includes('product-details'));
+    expect(productDetails.length, 'ae: exactly one product-details').toBe(1);
+
+    // ── ohrm: the PIM grid's declared columns survive in the shadow (the row-fold of the grid
+    // rows does not strip the columnheader structure). ──
+    const ohrm = draftFromEffects(store.actionEffects('ohrm-validate'));
+    const pim = ohrm.states.find((s) => /pim/.test(s.label))!;
+    const cols = pim.declaredShadow?.collections?.[0]?.columns ?? [];
+    expect(cols).toContain('Job Title');
+    expect(cols.length).toBeGreaterThanOrEqual(5);
+  });
 });
