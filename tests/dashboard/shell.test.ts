@@ -208,3 +208,10 @@ it('key-actions +N more is a real toggle, not a dead chip', () => {
   expect(SHELL_HTML).toContain('morebtn');
   expect(SHELL_HTML).not.toMatch(/\+\d+ more<\/span>/);
 });
+
+it('widget-scoped affordances get a "widget" chip, mirroring the row-scoped "per row" chip', () => {
+  expect(SHELL_HTML).toContain("a.scope === 'row'");
+  expect(SHELL_HTML).toContain("a.scope === 'widget'");
+  expect(SHELL_HTML).toContain('per row');
+  expect(SHELL_HTML).toContain('widgetScoped(st, x)');
+});
