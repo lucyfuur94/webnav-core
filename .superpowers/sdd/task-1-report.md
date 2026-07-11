@@ -85,3 +85,58 @@ One line at the top of the affordance `effects.forEach`: the same seq-reset sign
 - The 3 flipped grammar tests + gaps X1 containment: still green under the new guard.
 - Full suite: 775 passed / 7 skipped, 0 failed. `npx tsc --noEmit` clean.
 - Real-data acceptance (progneo incl. new kind locks + ohrm + ae): green.
+
+---
+
+## Addendum (2026-07-12) — final-review fix: gridRepaint guard shared with the pack overlay-open hook
+
+**Finding (final whole-branch review, verified on real progneo data):** `packDetectsOverlay` was
+consulted on ANY added diff when built-in detection declined, but the F2 `gridRepaint` guard
+(collection-role dominance AND ≥1 named row/columnheader) only gated the UNKNOWNS report. The shipped
+date-picker pack's overlay-open trigger (`generic` root, `gridcell` min:20) structurally matches a
+data-grid REPAINT (Refresh-list re-render: 24 gridcells + rows + columnheaders), so real repaint
+clicks flipped mutate→reveal — the exact shape the core's own detection rejects. Falsified the
+"packs never flip kinds wrongly" half of the safety claim.
+
+**Fix (upstream, one site, `src/explorer/draft.ts`):** the `gridRepaint` computation moved ABOVE the
+`openedOverlay` classification; the pack consult is now
+`|| (!gridRepaint && packDetectsOverlay(packsFor(fromLabel), addedNodes))`. The guard is thereby
+SHARED by the unknowns report and the pack hook — a collection-repaint diff never reaches pack
+overlay-open evaluation. The date-picker's own shape (gridcell-dominant, ZERO rows/headers →
+`gridRepaint` false) still passes: the X10 grammar fixture (`tests/grammar/pickers.test.ts`,
+"WITH the shipped core pack: the opener classifies reveal") stays green.
+
+**Real progneo numbers (185 effects, 5 sessions), shipped pack loaded:**
+
+| state | pack-less baseline | before fix (with pack) | after fix (with pack) |
+|---|---|---|---|
+| report-list | 15 affs, Refresh list = mutate | 15 affs, Refresh list = **reveal** (wrong) | 15 affs, mutate (== baseline) |
+| dashboard-list | 11 affs, Refresh list = mutate | **12** affs (grew) | 11 affs, mutate (== baseline) |
+
+Full id-stripped draft diff after the fix: ONLY the two intended states differ from the pack-less
+baseline — report-flat and dashboard-category's date-range openers flip mutate→reveal (the pack's
+purpose), children empty (day values gated). All other states identical.
+
+**Tests added (`tests/explorer/patterns.test.ts`, now 33):**
+1. The "pack ONLY ever SHRINKS" invariant test gained a grid-repaint arm: repaint diff + an
+   overlay-open pack that WOULD match it structurally → kinds and counts STRICTLY equal the pack-less
+   baseline (not ≤ — the pack path is never consulted).
+2. Real-shape regression: repaint diff (gridcells+rows+headers) + the SHIPPED core pack loaded from
+   `packs/patterns/core` → Refresh-list-style opener stays mutate; in the same run the genuine
+   date-picker portal still flips to reveal.
+Both tests verified LOAD-BEARING: with the guard reverted they fail (2 failed), with it they pass.
+
+**Docs:** STATUS Phase-2 entry corrected — "never wrong kinds" wording now cites this fix; one line
+added noting the gridRepaint guard is shared by core unknowns AND pack hooks.
+
+**Verification:** `npm test` 863 passed / 7 skipped (incl. the site-free guard test — the new comment
+was reworded after it caught a site name), `npx tsc --noEmit` clean, grammar suite 59/59.
+
+**Observed while verifying (pre-existing, NOT this fix, flagged for the coordinator):** on
+report-flat, the value-domain entry (overlay context) also excises the `Table` reveal's stored
+children (Page Size/Search/Flat/Functions/Nested) because they nest inside the same `generic`
+subtree as the re-rendered grid's 20+ gridcells. Shrink-only (safety invariant holds; no kind/edge
+change) and shipped with Task 3's pack — but it loses real overlay repertoire; the per-page husk
+tripwire doesn't see overlay children. If unwanted, the same gridRepaint reasoning could gate
+`packValueNames` on the overlay context — deliberately NOT done here (out of the reviewed finding's
+scope; would change the shipped pack's Task-3-reviewed behavior).

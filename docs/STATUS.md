@@ -36,8 +36,14 @@
 > (roles/containment/attrs ONLY — lint rejects hostnames/URLs/text; 64-role/15-attr allow-lists)
 > onto the core's closed effect set (overlay-open detection, value-domain exclusion). Safety:
 > packs can only make storage MORE conservative (adversarially verified: worst hostile pack =
-> thinner map, never wrong edges/kinds); per-page husk TRIPWIRE disables a pack excising >50%
-> of a page's affordances (loud unknown). `graph-analyse` now reports `unknowns` (kind-fair
+> thinner map, never wrong edges/kinds — the "never wrong kinds" half required the final-review
+> fix below); per-page husk TRIPWIRE disables a pack excising >50%
+> of a page's affordances (loud unknown). The collection-repaint (gridRepaint) guard is SHARED
+> by the core unknowns report AND the pack overlay-open hook: a grid-repaint diff (collection-
+> dominant + declared rows/headers) never reaches pack evaluation — final whole-branch review
+> found the pack path bypassing it (real Refresh-list repaints flipped mutate→reveal); fixed at
+> the one shared site, real-corpus list pages re-verified equal to the pack-less baseline.
+> `graph-analyse` now reports `unknowns` (kind-fair
 > 20-cap, collection-repaint noise excluded, evidence-capped) — the map ASKS for extensions.
 > `dev pattern-propose --from-unknown <json>#<i> --name <slug>` scaffolds entry+fixture+checklist
 > (+ `--lint` re-check); `docs/EXTENDING.md` = the agent process; PR-gated for core inclusion.
