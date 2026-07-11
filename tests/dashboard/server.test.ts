@@ -178,6 +178,8 @@ describe('recordings API', () => {
     profileOpen: async () => ({ ok: true as const }),
     profileRename: () => ({ ok: true }),
     profileDelete: () => ({ ok: true }),
+    profileStatus: async (name: string, site: string) => { calls.push('status:' + name + ':' + site); return { ok: true as const, auth: 'valid' as const, checkedAt: '2026-07-11T00:00:00.000Z' }; },
+    profileReset: (name: string) => { calls.push('reset:' + name); return { ok: true }; },
   };
   beforeAll(async () => {
     tmp2 = mkdtempSync(join(tmpdir(), 'webnav-dash-rec-'));
@@ -202,6 +204,23 @@ describe('recordings API', () => {
     expect((await fetch(base + '/api/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'work' }) })).status).toBe(200);
     expect((await fetch(base + '/api/profiles/default/rename', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: 'work' }) })).status).toBe(200);
     expect((await fetch(base + '/api/profiles/default', { method: 'DELETE' })).status).toBe(200);
+  });
+  it('POST /api/profiles/:name/status runs the auth-status engine and returns {auth,checkedAt}', async () => {
+    const r = await fetch(base + '/api/profiles/default/status', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ site: 's.test' }) });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.auth).toBe('valid');
+    expect(body.checkedAt).toBeTruthy();
+    expect(calls).toContain('status:default:s.test');
+  });
+  it('POST /api/profiles/:name/status without a site → 400', async () => {
+    const r = await fetch(base + '/api/profiles/default/status', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    expect(r.status).toBe(400);
+  });
+  it('POST /api/profiles/:name/reset recreates the profile dir', async () => {
+    const r = await fetch(base + '/api/profiles/default/reset', { method: 'POST' });
+    expect(r.status).toBe(200);
+    expect(calls).toContain('reset:default');
   });
   it('busy replay → 409; missing shot → 404; open validates body', async () => {
     expect((await fetch(base + '/api/recordings/r1/replay', { method: 'POST' })).status).toBe(409);

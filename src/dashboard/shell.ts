@@ -544,13 +544,23 @@ async function renderProfiles() {
   };
   wrap.append(newBar);
   if (!profs.length) { wrap.append(el('<div class="empty">no profiles yet — create one and log in once, or just start a session (it uses "default")</div>')); main.append(wrap); startEvents(); return; }
-  const tbl = el('<table><thead><tr><th>Profile</th><th>Site</th><th>Sessions</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
+  const tbl = el('<table><thead><tr><th>Profile</th><th>Site</th><th>Status</th><th>Sessions</th><th>Size</th><th>Last used</th><th></th></tr></thead><tbody></tbody></table>');
   const tb = tbl.querySelector('tbody');
   profs.forEach(pf => {
-    const tr = el('<tr><td><code>'+esc(pf.name)+'</code>'+(pf.open?' <span class="pulse" style="color:var(--rec)">● open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td class="muted">'+pf.sessions+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
-    const act = tr.children[5];
+    // Presence (window open) is plain — NOT styled like the Sessions-tab recording
+    // pulse (no --rec color, no pulse animation): a login window is not a recording.
+    const tr = el('<tr><td><code>'+esc(pf.name)+'</code>'+(pf.open?' <span class="muted">🪟 window open</span>':'')+'</td><td class="muted">'+esc(pf.site||'—')+'</td><td></td><td class="muted">'+pf.sessions+'</td><td class="muted">'+pf.sizeMb+' MB</td><td class="muted" style="font-size:12px">'+(pf.lastUsed?new Date(pf.lastUsed).toLocaleString():'—')+'</td><td style="text-align:right"></td></tr>');
+    tr.children[2].append(statusChip(pf));
+    const act = tr.children[6];
+    const authValid = pf.status && pf.status.auth === 'valid';
     const openB = el('<button class="btn">Open to log in</button>');
-    openB.disabled = pf.open;
+    // Open to log in is valid ONLY when needs-login/unknown (or no check yet) AND no
+    // window is already live — never while a check shows the profile is already ✓
+    // Valid (the exact live-use complaint: a still-enabled button after "I'm already
+    // logged in").
+    openB.disabled = pf.open || !!authValid;
+    if (pf.open) openB.title = 'a login window is already open for this profile';
+    else if (authValid) openB.title = 'already ✓ Valid — no need to log in again';
     openB.onclick = async () => {
       openB.disabled = true; openB.textContent = 'opening…';
       const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/open', { method:'POST' });
@@ -565,18 +575,64 @@ async function renderProfiles() {
       if (!res.ok) toast((await res.json()).error);
       renderProfiles();
     };
+    const resetB = el('<button class="btn danger" style="margin-left:6px" title="logs out ALL sites in this profile — use to log in with a different account">Reset profile</button>');
+    resetB.onclick = async () => {
+      if (prompt('Reset profile "'+pf.name+'"? This logs out ALL sites in it — use to log in with a different account. Type "reset '+pf.name+'" to confirm:') !== 'reset '+pf.name) return;
+      const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/reset', { method:'POST' });
+      if (!res.ok) toast((await res.json()).error);
+      renderProfiles();
+    };
     const delB = el('<button class="btn danger" style="margin-left:6px">Delete</button>');
     delB.onclick = async () => {
       if (!confirm('Delete profile '+pf.name+'? This logs it out — sessions using it hit the login wall next time.')) return;
       await fetch('/api/profiles/'+encodeURIComponent(pf.name), { method:'DELETE' });
       renderProfiles();
     };
-    act.append(openB, renB, delB);
+    act.append(openB, renB, resetB, delB);
     tb.append(tr);
   });
   wrap.append(tbl);
   main.append(wrap);
   startEvents();   // 'sessions' events (profile open/close/rename/delete) refresh this tab
+}
+
+// Coarse relative time (minutes/hours/days) — just enough for a "checked Ns ago" label.
+function timeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.round(h / 24) + 'd ago';
+}
+
+// Status chip (✓ Valid / ⚠ Needs login / – Unknown) + last-checked + a per-row "Check"
+// button that runs the SAME classifyAuthLanding engine as the dev profile-status verb (server
+// caches the result; this just triggers a fresh check and re-renders on completion).
+function statusChip(pf) {
+  const box = el('<span style="display:inline-flex;align-items:center;gap:6px"></span>');
+  if (!pf.site) {
+    box.append(el('<span class="badge unrev" title="no site associated — check via a session or set on first login">– Unknown</span>'));
+    return box;
+  }
+  const s = pf.status;
+  const chip = !s ? el('<span class="badge unrev" title="not checked yet">– Unknown</span>')
+    : s.auth === 'valid' ? el('<span class="badge ok" title="landed on a known logged-in state">&#10003; Valid</span>')
+    : s.auth === 'needs-login' ? el('<span class="badge warn" title="'+esc(s.loginUrl||'login required')+'">&#9888; Needs login</span>')
+    : el('<span class="badge unrev" title="no map yet / ambiguous landing">– Unknown</span>');
+  box.append(chip);
+  if (s) box.append(el('<span class="muted" style="font-size:11px">'+timeAgo(s.checkedAt)+'</span>'));
+  const checkB = el('<button class="btn" style="padding:1px 8px;font-size:11px">Check</button>');
+  checkB.onclick = async (e) => {
+    e.stopPropagation();
+    checkB.disabled = true; checkB.textContent = 'checking…';
+    const res = await fetch('/api/profiles/'+encodeURIComponent(pf.name)+'/status', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ site: pf.site }) });
+    if (!res.ok) toast((await res.json()).error || 'check failed');
+    renderProfiles();
+  };
+  box.append(checkB);
+  return box;
 }
 
 // ---------- CREDENTIALS ----------
