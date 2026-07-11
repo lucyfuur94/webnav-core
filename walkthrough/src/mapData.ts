@@ -32,15 +32,34 @@ export const STATES: Record<string, MapState> = Object.fromEntries(
 // lean on here since this map's declaredShadow doesn't cover dashboard-list/help-center/report.
 const looksLikeDataValue = (label: string) => /\d{4}|IST|UTC/.test(label);
 
+// Global shell chrome must not appear in a page chapter's key actions — it belongs to the
+// Global-navigation chapter. A page affordance is shell chrome if its label is one of
+// _shell's, or it's a reveal whose menu contains ONLY _shell labels (e.g. report-list's
+// "Open sidebar" / "Light Mode" toggles — their children are all shell items).
+const shellLabels = new Set(STATES['_shell'].affordances.map((a) => a.label));
+const isShellChrome = (a: Affordance) =>
+	shellLabels.has(a.label) ||
+	(a.kind === 'reveal' &&
+		!!a.children?.length &&
+		a.children.every((c) => shellLabels.has(c.label)));
+
+// ponytail: grid/pagination widget chrome (AG-grid a11y labels, pager buttons) crowds out
+// real actions in a 6-slot list; simple label patterns, revisit if the map grows a scope for it.
+const isWidgetChrome = (label: string) =>
+	/^(First|Previous|Next|Last) Page$|^Page( Size)?$|Press Space|Column with Header Selection/.test(
+		label
+	);
+
 export const keyActions = (stateName: string, limit = 6): string[] => {
 	const state = STATES[stateName];
 	if (!state) return [];
 	const seen = new Set<string>();
 	const out: string[] = [];
 	for (const a of state.affordances) {
-		if (a.kind === 'input') continue; // inputs are preconditions, not actions to show
 		if (looksLikeDataValue(a.label)) continue;
 		if (a.label === stateName) continue; // e.g. report-list's own tab self-loop, not a distinct action
+		if (isShellChrome(a)) continue;
+		if (isWidgetChrome(a.label)) continue;
 		if (seen.has(a.label)) continue;
 		seen.add(a.label);
 		const mark = a.kind === 'reveal' ? '▸ ' : a.scope === 'row' ? '×row ' : '';
