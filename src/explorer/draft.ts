@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, subtreeFolds, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -445,7 +445,11 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // normFace (not faceOf): the dispose comparison runs on identity-normalized faces so two
   // instances of one template (personalized dashboards) merge on their widget SIGS, not split on
   // per-widget instance titles. Shell subtraction still applies on top.
-  const firstFace = (k: string): Face => minusShell(normFace(landingsByKey.get(k)![0]));
+  // X3 (OQ1): scope the IDENTITY face to the declared `main` subtree before normFace — an ancillary
+  // complementary rail OUTSIDE `main` (per-page-varying, so not shell) must not pollute identity.
+  // No `main` declared → mainScope is a no-op (whole-face behavior unchanged). Shell subtraction
+  // still applies on top. Identity ONLY: stored faces / core / shadow / affordances read the union.
+  const firstFace = (k: string): Face => minusShell(normFace(mainScope(landingsByKey.get(k)![0])));
   const canonical = new Map<string, string>();         // member key → its merged template key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
@@ -565,7 +569,9 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const pred = opaqueTemplates.has(k)
       ? (a: Face, b: Face) => sameFace(a, b) || sameControls(a, b)
       : sameFace;
-    const clusters = clusterFaces(landings.map((l) => minusShell(normFace(l))), pred);
+    // X3 (OQ1): same main-scoping as the dispose face — the SPA-split runs on the identity face,
+    // so a rail outside `main` must not force (or suppress) a split. No-op when no `main` declared.
+    const clusters = clusterFaces(landings.map((l) => minusShell(normFace(mainScope(l)))), pred);
     // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
     // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
     // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404
@@ -655,8 +661,13 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // card's instance title) is value-bound DATA — it must never anchor identity (else `report`'s
     // fp rests on `OS Remove`/`eCPM Remove`, the specific metrics of one instance). Drop the folded
     // names from the fp candidates. templateFolds subsumes the Task-15 foldRepeats exclusion.
-    const fpFolded = templateFolds(p.coreNodes).gatedNames;
-    const fpNodes = fpFolded.size ? p.coreNodes.filter((n) => !(n.name && fpFolded.has(n.name))) : p.coreNodes;
+    // X3 (OQ1): the fingerprint candidate POOL scopes to the declared `main` subtree — a rail
+    // token outside `main` can't anchor identity when `main` exists (it would fingerprint the page
+    // on chrome). No `main` declared → mainScope is a no-op (whole coreNodes, unchanged). Scopes
+    // ONLY the fp pool here; p.coreNodes itself (shadow, other reads) is untouched.
+    const fpPool = mainScope(p.coreNodes);
+    const fpFolded = templateFolds(fpPool).gatedNames;
+    const fpNodes = fpFolded.size ? fpPool.filter((n) => !(n.name && fpFolded.has(n.name))) : fpPool;
     const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
     // content is shared shell chrome (a blank/empty landing) — has no distinctive identity. Held

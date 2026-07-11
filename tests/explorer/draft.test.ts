@@ -490,6 +490,75 @@ describe('draftFromEffects — observation-based identity', () => {
   });
 });
 
+// ── X3 (2026-07-12): main-landmark identity scoping. When a landing DECLARES `main`, the IDENTITY
+// faces (dispose + SPA-split) and the fingerprint candidate pool scope to the `main` subtree, so an
+// ancillary `complementary` rail OUTSIDE `main` can't pollute identity. No `main` → unchanged.
+// (templateCore / stored faces / shadow / affordance synthesis are DELIBERATELY untouched — only
+// identity is scoped; verified by the affordance still surviving below.)
+describe('draftFromEffects — X3 main-landmark identity scoping', () => {
+  const MB = 'https://mainscope.test';
+  // content in `main`; a per-visit-varying rail in a `complementary` OUTSIDE main.
+  const withMain = (rail: string[], body: string[]): string =>
+    ['- banner [ref=e0]',
+     '- complementary [ref=e8]:\n' + rail.map((t, i) => `    - button "${t}" [ref=e${20 + i}]`).join('\n'),
+     '- main [ref=e1]:', ...body.map((b) => '    ' + b)].join('\n');
+  // no landmark at all — the SAME rail + body, flat.
+  const noMain = (rail: string[], body: string[]): string =>
+    ['- banner [ref=e0]', ...rail.map((t, i) => `- button "${t}" [ref=e${20 + i}]`), ...body].join('\n');
+  const BODY = ['- heading "Sales View" [ref=e10]', '- button "Export" [ref=e11]',
+                '- button "Refresh" [ref=e12]', '- textbox "Filter" [ref=e13]',
+                '- paragraph "Sales content here" [ref=e14]'];
+  const RAIL_A = ['Alpha 1', 'Alpha 2', 'Alpha 3', 'Alpha 4', 'Alpha 5'];
+  const RAIL_B = ['Beta 9', 'Beta 8', 'Beta 7', 'Beta 6', 'Beta 5'];
+  const navTo = (url: string, snap: string, seq: number): StoredActionEffect =>
+    ({ seq, capturedAt: 0, fromUrl: url, fromSnapshot: snap,
+       action: { role: 'link', name: 'x', ref: 'e2', elementFp: { role: 'link', name: 'x', near: null } },
+       toUrl: url, toSnapshot: snap, navigated: true, diff: { added: [], removed: [] } as any });
+
+  it('same-`main` landings differing ONLY in the rail MERGE to one state (today they would split)', () => {
+    const U = `${MB}/dash/view`;
+    const g = draftFromEffects([
+      navTo(U, withMain(RAIL_A, BODY), 0),
+      navTo(U, withMain(RAIL_B, BODY), 1),
+    ] as never);
+    const pages = g.states.filter((s) => s.label !== '_shell');
+    expect(pages.length).toBe(1);
+    expect(pages[0].fingerprint).toContain('heading:Sales View');
+    // no rail token anchored identity
+    expect(pages[0].fingerprint.some((t) => /Alpha|Beta/.test(t))).toBe(false);
+    // affordance synthesis is UNCHANGED — the rail buttons still surface as page affordances.
+    expect(pages[0].affordances.some((a) => /Alpha 1/.test(a.label))).toBe(true);
+  });
+
+  it('fingerprint candidates come from `main`: a rail token cannot anchor identity when `main` exists', () => {
+    // a page whose ONLY distinctive token vs a sibling is its rail. In `main` both share the same
+    // heading/controls; the discriminator would be the rail — which main-scoping refuses.
+    const g = draftFromEffects([
+      navTo(`${MB}/a`, withMain(['Rail X only'], ['- heading "Shared" [ref=e10]', '- button "Go" [ref=e11]', '- paragraph "same body" [ref=e12]']), 0),
+      navTo(`${MB}/b`, withMain(['Rail Y only'], ['- heading "Shared" [ref=e10]', '- button "Go" [ref=e11]', '- paragraph "same body" [ref=e12]']), 1),
+    ] as never);
+    // neither page's fingerprint rests on a rail token; the two share a `main`, so they are
+    // honestly indistinguishable by identity (both go to needsFix, never a rail-anchored fp).
+    const all = [...g.states, ...(g.needsFix ?? [])];
+    expect(all.every((s) => !('fingerprint' in s) || !(s as any).fingerprint.some((t: string) => /Rail [XY]/.test(t)))).toBe(true);
+  });
+
+  it('NO `main` declared → behavior unchanged (the rail is ordinary page content)', () => {
+    // identical construction WITHOUT a `main` landmark: the same differing rail DOES split (the
+    // pre-X3 whole-face behavior), proving the fix is strictly gated on a declared `main`.
+    const U = `${MB}/nomain`;
+    const g = draftFromEffects([
+      navTo(U, noMain(RAIL_A, BODY), 0),
+      navTo(U, noMain(RAIL_B, BODY), 1),
+    ] as never);
+    // no main → the rail is in-face → the two landings differ → SPA-split with no distinguishing
+    // heading → held to needsFix (the honest documented degradation when main is absent).
+    const pages = g.states.filter((s) => s.label !== '_shell');
+    expect(pages.length).toBe(0);
+    expect((g.needsFix ?? []).some((n) => /same-url state with no distinguishing heading/.test(n.reason))).toBe(true);
+  });
+});
+
 // ── Task 10: fingerprints + shadow from the template CORE; requests carry the notes.
 // The core (templateCore over the landing faces, minus shell) is the durable structure; a token
 // that varies across landings is DATA and must never anchor identity. These pin: (1) a big
