@@ -896,10 +896,28 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         const addedNodes = e.diff?.added ?? [];
         const { emit: addedFolds, gatedNames: foldedNames } = templateFolds(addedNodes);
         const valueDomain = enumeratedNames(addedNodes);
+        // COLLECTION-REPAINT guard (review F2 + final-review fixes): a data-grid repaint (sort/
+        // refresh/filter-tab re-renders rows) adds a large named subtree that is NOT an overlay —
+        // its named nodes are dominated by collection roles (row/gridcell/columnheader/cell) AND it
+        // announces declared grid structure (`row`/`columnheader`; measured on real data: repaints
+        // are 72-74% collection WITH rows+headers, a date-picker's day-cell grid has ZERO rows/
+        // headers). >50% dominance = documented tunable. This guard is SHARED by ALL diff-based
+        // pack evaluation AND the unknowns report: a repaint diff never reaches a pack — the core's
+        // own detection rejected exactly this shape (fold/straggler exclusions). Letting packs see
+        // repaints flipped real Refresh-list clicks mutate→reveal (overlay-open hook) and excised a
+        // genuine reveal's stored children when its overlay happened to re-render a grid alongside
+        // its controls (value-domain hook) — both final whole-branch review findings.
+        const namedAdded = addedNodes.filter((n) => n.name && n.name.trim());
+        const collectionNamed = namedAdded.filter((n) => COLLECTION_ROLES.has(n.role)).length;
+        const hasGridStructure = namedAdded.some((n) => n.role === 'row' || n.role === 'columnheader');
+        const gridRepaint = namedAdded.length > 0 && hasGridStructure
+          && collectionNamed / namedAdded.length > COLLECTION_DOMINANCE;
         // HOOK 2a (value-domain pack, `overlay` context): nodes inside a firing value-domain trigger
         // over the overlay's added subtree are value data — excluded from reveal children exactly
-        // like the built-in value folds. Extends the excluded set; never adds children.
-        const packValues = packValueNames(packsFor(fromLabel), addedNodes);
+        // like the built-in value folds. Extends the excluded set; never adds children. Repaint
+        // diffs are gated by the SHARED guard above: a grid re-rendering inside a genuine reveal
+        // (rows+headers alongside the overlay's controls) must not excise those controls.
+        const packValues = gridRepaint ? new Set<string>() : packValueNames(packsFor(fromLabel), addedNodes);
         const children: DraftAffordance[] = addedNodes
           .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name) && !packValues.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
@@ -933,22 +951,6 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
           }
           return false;
         };
-        // COLLECTION-REPAINT guard (review F2 + final-review fix): a data-grid repaint (sort/
-        // refresh/filter-tab re-renders rows) adds a large named subtree that is NOT an overlay —
-        // its named nodes are dominated by collection roles (row/gridcell/columnheader/cell) AND it
-        // announces declared grid structure (`row`/`columnheader`; measured on real data: repaints
-        // are 72-74% collection WITH rows+headers, a date-picker's day-cell grid has ZERO rows/
-        // headers). >50% dominance = documented tunable. This guard is SHARED by the unknowns
-        // report below AND the pack overlay-open hook: a repaint diff never reaches pack
-        // evaluation — the core's own detection rejected exactly this shape (fold/straggler
-        // exclusions), and letting a pack's structural trigger (e.g. gridcell min:20) see it flipped
-        // real Refresh-list repaints mutate→reveal on the real recorded list pages (final
-        // whole-branch review finding).
-        const namedAdded = addedNodes.filter((n) => n.name && n.name.trim());
-        const collectionNamed = namedAdded.filter((n) => COLLECTION_ROLES.has(n.role)).length;
-        const hasGridStructure = namedAdded.some((n) => n.role === 'row' || n.role === 'columnheader');
-        const gridRepaint = namedAdded.length > 0 && hasGridStructure
-          && collectionNamed / namedAdded.length > COLLECTION_DOMINANCE;
         // HOOK 1 (overlay-open pack): the built-in detection above is the strict 4-exclusion scan.
         // ONLY when it DECLINES — and the diff is NOT a collection repaint — do packs get a say: a
         // matching `overlay-open` entry flips detection true for an UNDECLARED role-less portal the
