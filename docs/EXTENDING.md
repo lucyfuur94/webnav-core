@@ -74,3 +74,5 @@ NO file. That is the correct outcome, not a failure to route around:
 - Worked example: `packs/patterns/core/date-picker-divsoup.json` (a real the analytics SPA div-soup date
   picker: a role-less grid of 28-31 same-shape `gridcell` day cells the core's own value-domain
   fold doesn't reach on every calendar shape) + `tests/grammar/pickers.test.ts`'s "X10" block.
+
+> **Test authors:** under vitest, `defaultPackDirs()` returns `[]` — packs are INVISIBLE to tests unless injected explicitly (`draftFromEffects(effects, loadPatternPacks([CORE_PACKS_DIR]))`). This keeps ~90 engine tests decoupled from shipped packs; any test asserting pack behavior must inject.
