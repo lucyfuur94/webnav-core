@@ -56,10 +56,38 @@ export interface DraftState {
 // the good states' fingerprints nor blocks the whole map — the agent decides what to do with
 // each (re-record without the dead route, or accept it's genuinely broken). #5a "your move".
 export interface DegenerateState { label: string; urlPattern: string; reason: string; affordances: number; }
+
+// The extension-loop report (2026-07-12-extension-loop.md, Task 2): what the core's structural
+// inference could NOT resolve, structured so an agent (or a human) can turn each entry into a
+// declarative pattern-pack proposal (`dev pattern-propose`, Task 3) instead of hand-patching core
+// code. Four inference-declined sources (undetected-overlay / degenerate-landing /
+// unresolved-affordance / ambiguous-cluster) + the pack husk-tripwire (pack-tripwire, reviewer-
+// mandated — a pack that would gut a page's own repertoire gets disabled for that page, loudly).
+// `evidence` is a CAPPED snapshot fragment (the relevant nodes only) so the report stays pasteable
+// straight into a pack fixture; `context` names the page + what the core tried; `extensionPoint`
+// says which pack TYPE (or `core-design` when no pack schema field could express a fix) resolves it.
+export interface Unknown {
+  kind: 'undetected-overlay' | 'ambiguous-cluster' | 'unresolved-affordance' | 'degenerate-landing' | 'pack-tripwire';
+  evidence: string;
+  context: string;
+  extensionPoint: 'overlay-open' | 'value-domain' | 'core-design';
+}
+const MAX_UNKNOWN_EVIDENCE = 1500;    // a report entry must stay pasteable into a pack fixture
+const MAX_UNKNOWNS = 20;              // total report cap — the loop looks at a handful at a time
+// Evidence = the first ~25 named lines of the given nodes (their raw snapshot text), joined and
+// capped to MAX_UNKNOWN_EVIDENCE chars. Never the whole page — just the relevant subtree/cluster.
+const evidenceOf = (nodes: SnapNode[]): string => {
+  const lines = nodes.filter((n) => n.name && n.name.trim()).slice(0, 25).map((n) => n.raw || `${n.role} "${n.name}"`);
+  const joined = lines.join('\n');
+  return joined.length > MAX_UNKNOWN_EVIDENCE ? joined.slice(0, MAX_UNKNOWN_EVIDENCE) : joined;
+};
+
 export interface DraftGraph {
   node?: { capabilities?: string[]; topics?: string[] };
   states: DraftState[]; edges: never[];
   needsFix?: DegenerateState[];   // landings held out (404 / no distinctive fingerprint)
+  unknowns?: Unknown[];           // extension-loop report — capped, see MAX_UNKNOWNS
+  unknownsTruncated?: number;     // count of candidates dropped past the MAX_UNKNOWNS cap
   receipt: { entry: string | null; states: string[]; walkExample: string | null; requests: string[] };
 }
 
@@ -210,6 +238,36 @@ function templateFolds(nodes: SnapNode[]): { emit: SubtreeFold[]; gatedNames: Se
   const gatedNames = new Set<string>();
   for (const f of kept) for (const i of f.memberIndices) { const nm = nodes[i].name; if (nm && nm.trim()) gatedNames.add(nm); }
   return { emit: kept, gatedNames };
+}
+
+// HUSK TRIPWIRE (reviewer-mandated addition to Task 2, extension-loop plan): a pack can only ever
+// SHRINK what's stored (packs' whole safety contract), but an over-broad value-domain trigger can
+// shrink a page down to nothing — excising the page's OWN real repertoire, not just genuine value
+// data (the "husk" failure the built-in overlay-shape guard already fixed once for the CORE
+// detection; packs are agent-authored data and need the same backstop). Before applying a pack's
+// exclusions to a page, check what fraction of the page's OWN would-be affordance names (its core
+// nodes — the same universe interior-synthesis reads) the pack would excise; a pack trying to take
+// >50% (documented tunable) is DISABLED for that page — loudly (an unknowns 'pack-tripwire' entry),
+// never silently. A pack that trips on every page it matches is effectively quarantined page-by-
+// page, which is exactly the visible, non-silent failure mode this exists to guarantee.
+const TRIPWIRE_FRACTION = 0.5;
+export interface TrippedPack { pack: PatternPack; excised: number; total: number; }
+/** Split `packs` into [safe, tripped] for ONE page, given the page's own would-be affordance-name
+ *  universe (its NAMED core nodes — the same universe interior-synthesis reads). A value-domain
+ *  pack whose own excised-name fraction of that universe exceeds TRIPWIRE_FRACTION is tripped;
+ *  every other pack (incl. overlay-open — it never excises names) is always safe. Pure; called
+ *  once per page and the result reused across that page's hook call sites. */
+function splitTrippedPacks(packs: PatternPack[], pageNodes: SnapNode[]): { safe: PatternPack[]; tripped: TrippedPack[] } {
+  const total = new Set(pageNodes.filter((n) => n.name && n.name.trim()).map((n) => n.name)).size;
+  const safe: PatternPack[] = [];
+  const tripped: TrippedPack[] = [];
+  for (const pack of packs) {
+    if (pack.type !== 'value-domain' || total === 0) { safe.push(pack); continue; }
+    const excised = packValueNames([pack], pageNodes).size;
+    if (excised / total > TRIPWIRE_FRACTION) tripped.push({ pack, excised, total });
+    else safe.push(pack);
+  }
+  return { safe, tripped };
 }
 
 // IDENTITY-FACE NORMALIZATION (subtree-templates §Global Constraints — dispose predicate + SPA
@@ -656,6 +714,29 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   const stubs: State[] = pageList.map((p) => makeState({
     id: 'd:' + p.label, nodeId: 'd', semanticName: p.label, urlPattern: p.url, role: 'detail', fingerprint: [],
   }));
+
+  // ── unknowns (extension-loop report, Task 2): collected inline as the pipeline runs, assembled
+  // + capped at the end. Source (a) + (e) below; sources (b)-(d) assembled after their producing
+  // stage runs (needsFix, self-verify).
+  const unknowns: Unknown[] = [];
+  // HUSK TRIPWIRE (source e): per-page safe-pack list, computed ONCE per page from its own core
+  // nodes (the would-be affordance-name universe) and reused at every hook call site for that page
+  // (fp pool / overlay-added clicks / interior synthesis) — one decision per (page, pack), not one
+  // per hook call, so a pack is never safe at one call site and tripped at another on the SAME page.
+  const packsByPage = new Map<string, PatternPack[]>();
+  for (const p of pageList) {
+    const { safe, tripped } = splitTrippedPacks(packs, p.coreNodes);
+    packsByPage.set(p.label, safe);
+    for (const t of tripped) {
+      unknowns.push({
+        kind: 'pack-tripwire', evidence: evidenceOf(p.coreNodes),
+        context: `${t.pack.name} would excise ${t.excised}/${t.total} affordance names on ${p.label} — disabled for this page`,
+        extensionPoint: 'core-design',
+      });
+    }
+  }
+  const packsFor = (label: string): PatternPack[] => packsByPage.get(label) ?? packs;
+
   for (let pi = 0; pi < pageList.length; pi++) {
     if (degenerate.has(pi)) continue;                 // error pages: no fingerprint attempt
     const p = pageList[pi];
@@ -674,7 +755,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // HOOK 2c (value-domain pack, `landing` context): pack-marked value names also can't anchor
     // identity — join the folded-name exclusion for the fingerprint candidate pool (same discipline
     // as the interior-synthesis exclusion; only ever shrinks the pool).
-    const fpFolded = new Set([...templateFolds(fpPool).gatedNames, ...packValueNames(packs, fpPool)]);
+    const fpFolded = new Set([...templateFolds(fpPool).gatedNames, ...packValueNames(packsFor(p.label), fpPool)]);
     const fpNodes = fpFolded.size ? fpPool.filter((n) => !(n.name && fpFolded.has(n.name))) : fpPool;
     const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
@@ -814,7 +895,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         // HOOK 2a (value-domain pack, `overlay` context): nodes inside a firing value-domain trigger
         // over the overlay's added subtree are value data — excluded from reveal children exactly
         // like the built-in value folds. Extends the excluded set; never adds children.
-        const packValues = packValueNames(packs, addedNodes);
+        const packValues = packValueNames(packsFor(fromLabel), addedNodes);
         const children: DraftAffordance[] = addedNodes
           .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name) && !packValues.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
@@ -858,7 +939,20 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         const openedOverlay = addedNodes.some((n, idx) => n.name && n.name.trim()
           && overlayControl(n.role) && !removedToks.has(`${n.role}:${n.name}`) && !foldedNames.has(n.name)
           && !(foldRootRoles.size > 0 && underFoldRootRole(idx)))
-          || packDetectsOverlay(packs, addedNodes);
+          || packDetectsOverlay(packsFor(fromLabel), addedNodes);
+        // UNKNOWNS source (a) — undetected-overlay: BOTH the built-in scan AND every loaded pack
+        // declined, yet the diff added a substantial (≥5) named subtree that stayed `mutate`. This
+        // is the honest "detection declined" gap `dev pattern-propose` (Task 3) turns into a new
+        // `overlay-open` pack entry. addedNodes.length gate (not just named-count) keeps this to
+        // real substantial subtrees, matching the plan's "≥N-node named added-diffs" language.
+        const namedAdded = addedNodes.filter((n) => n.name && n.name.trim());
+        if (!openedOverlay && namedAdded.length >= 5) {
+          unknowns.push({
+            kind: 'undetected-overlay', evidence: evidenceOf(addedNodes),
+            context: `${fromLabel}: clicking "${e.action.name}" added ${namedAdded.length} named nodes but neither the built-in overlay detection nor any pattern pack recognized it as an overlay — stayed 'mutate'`,
+            extensionPoint: 'overlay-open',
+          });
+        }
         const aff: DraftAffordance = openedOverlay
           ? { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'reveal', elementFp: fp, children }
           : { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'mutate', elementFp: fp };
@@ -943,7 +1037,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // nodes marks its matched subtree as value data — those names join the excluded set so they
     // never synthesize as an interior affordance / never anchor identity (same gate as templateFolds'
     // folded members). Only ever SHRINKS what's stored.
-    const foldedNames = new Set([...baseFolded, ...packValueNames(packs, p.coreNodes)]);
+    const foldedNames = new Set([...baseFolded, ...packValueNames(packsFor(p.label), p.coreNodes)]);
     for (const fold of emit) {
       const controlRole = dominantControlRole(p.coreNodes, fold);
       if (!controlRole) continue;                                  // widget whose only content is links → no affordance (mesh owns the links)
@@ -1126,6 +1220,39 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // `_shell` is never provisional (no `provisional` field) so it's naturally excluded.
   const requests = pageStates.filter((s) => s.provisional).map((s) => `${s.label}: ${s.provisional}`);
 
+  // UNKNOWNS source (b) + (d): every needsFix row also surfaces as an unknowns entry (one place
+  // for the extension loop to look), EXCEPT it is NOT double-kinded — a same-URL SPA cluster with
+  // no distinguishing heading is the more SPECIFIC `ambiguous-cluster` kind (never the generic
+  // `degenerate-landing`), extensionPoint `core-design` either way (a pack cannot mint a heading
+  // or reroute identity — this is a core-design gap, not a value-domain/overlay-open one).
+  const AMBIGUOUS_REASON = 'same-url state with no distinguishing heading';
+  const degenByLabel = new Map(pageList.map((p, i) => [p.label, p] as const));
+  for (const nf of needsFix) {
+    const p = degenByLabel.get(nf.label);   // a real held-out PageInfo carries its landing for evidence
+    unknowns.push({
+      kind: nf.reason === AMBIGUOUS_REASON ? 'ambiguous-cluster' : 'degenerate-landing',
+      evidence: p ? evidenceOf(p.landings[0]) : '',
+      context: `${nf.label} (${nf.urlPattern}): ${nf.reason}`,
+      extensionPoint: 'core-design',
+    });
+  }
+  // UNKNOWNS source (c) — unresolved-affordance: a state whose self-verify _warning flagged a
+  // non-unique fingerprint or an affordance that won't resolve. Evidence = the page's own core
+  // nodes (the same view self-verify checked against).
+  for (const st of states) {
+    if (!st._warning) continue;
+    const pi = pageList.findIndex((p) => p.label === st.label);
+    unknowns.push({
+      kind: 'unresolved-affordance', evidence: pi >= 0 ? evidenceOf(pageList[pi].coreNodes) : '',
+      context: `${st.label}: ${st._warning}`,
+      extensionPoint: 'core-design',
+    });
+  }
+  // cap the report (source e's pack-tripwire entries were pushed earlier, inline with the pack
+  // application) — pasteable, not a full dump. Truncation is COUNTED, never silent.
+  const unknownsTruncated = Math.max(0, unknowns.length - MAX_UNKNOWNS);
+  const cappedUnknowns = unknowns.slice(0, MAX_UNKNOWNS);
+
   // entry / walkExample / receipt.states see ONLY page states — `_shell` is site chrome, not a
   // navigable page in the tree.
   const entry = pageStates.length ? pageStates[0].label : null;
@@ -1133,6 +1260,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   return {
     node, states, edges: [],
     ...(needsFix.length ? { needsFix } : {}),
+    ...(cappedUnknowns.length ? { unknowns: cappedUnknowns } : {}),
+    ...(unknownsTruncated > 0 ? { unknownsTruncated } : {}),
     receipt: {
       entry,
       states: pageStates.map((s) => s.label),

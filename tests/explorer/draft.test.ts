@@ -5,6 +5,7 @@ import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import { matchState } from '../../src/explorer/fingerprint.js';
 import { resolveByFingerprint } from '../../src/playwright/fingerprint.js';
 import { makeState } from '../../src/mapstore/types.js';
+import type { PatternPack } from '../../src/explorer/patterns.js';
 
 // Snapshots shaped like the real OrangeHRM captures. Each landing carries ≥8 named nodes +
 // a content node so classifyReadiness='ready' (the identity gate); padding is page-specific
@@ -1725,5 +1726,211 @@ describe('draftFromEffects — identity-face normalization (subtree widgets)', (
     const grids = g.states.filter((s) => /\/grid\//.test(s.urlPattern));
     expect(grids.length, 'row-sig list and widget-sig viewer must NOT merge').toBe(2);
     expect(g.states.some((s) => s.template === '/grid/{param}'), 'no false /grid/{param} merge').toBe(false);
+  });
+});
+
+// ── Task 2 (2026-07-12-extension-loop.md): the `unknowns` report. DraftGraph.unknowns surfaces
+// what the core couldn't infer as a structured, PASTEABLE (evidence-capped) list — the input to
+// `dev pattern-propose` (Task 3). Four sources (a-d) + the reviewer-mandated pack husk-tripwire (e).
+// Each entry: { kind, evidence (capped snapshot fragment), context, extensionPoint }.
+describe('draftFromEffects — unknowns report', () => {
+  const UB = 'https://unk.test';
+  // a READY entry page so the URL model has a real base + the shell can register (padding filler
+  // pages below give the ≥4-page shell gate; kept minimal here, more added per-test as needed).
+  const filler = (path: string, heading: string) => ({
+    seq: 0, capturedAt: 0, fromUrl: `${UB}/home`, fromSnapshot: HOME_UNK,
+    action: { role: 'link', name: heading, ref: 'e9', elementFp: { role: 'link', name: heading, near: null } },
+    toUrl: `${UB}${path}`, toSnapshot: [
+      `- heading "${heading}" [ref=e1]`, '- paragraph "content one" [ref=e2]', '- paragraph "content two" [ref=e3]',
+      '- paragraph "content three" [ref=e4]', '- paragraph "content four" [ref=e5]', '- paragraph "content five" [ref=e6]',
+      '- paragraph "content six" [ref=e7]', '- paragraph "content seven" [ref=e8]',
+    ].join('\n'), navigated: true, diff: { added: [], removed: [] } as any,
+  });
+  const HOME_UNK = ['- heading "Home" [ref=e1]', '- paragraph "welcome" [ref=e2]', '- paragraph "p2" [ref=e3]',
+    '- paragraph "p3" [ref=e4]', '- paragraph "p4" [ref=e5]', '- paragraph "p5" [ref=e6]',
+    '- paragraph "p6" [ref=e7]', '- paragraph "p7" [ref=e8]'].join('\n');
+
+  // (a) undetected-overlay: a non-navigated click whose diff adds ≥5 NAMED nodes, none of which
+  // are an interactive/attr-bearing role the built-in scan (or any pack) recognizes as an overlay
+  // opener — pure text paragraphs, e.g. a div-soup tooltip/expando the core honestly can't see.
+  it('(a) an opener whose ≥5-node named diff stayed mutate (detection declined) surfaces as undetected-overlay', () => {
+    const LIST = ['- heading "List" [ref=e1]', '- button "Expand" [ref=e2]', '- paragraph "row a" [ref=e3]',
+      '- paragraph "row b" [ref=e4]', '- paragraph "row c" [ref=e5]', '- paragraph "row d" [ref=e6]',
+      '- paragraph "row e" [ref=e7]', '- paragraph "row f" [ref=e8]'].join('\n');
+    const added = Array.from({ length: 5 }, (_, i) => ({ role: 'paragraph', name: `Detail ${i}`, ref: `e${20 + i}`, url: null, raw: '', depth: 2 }));
+    const effs: StoredActionEffect[] = [
+      { seq: 0, capturedAt: 0, fromUrl: `${UB}/list`, fromSnapshot: LIST,
+        action: { role: 'button', name: 'Expand', ref: 'e2', elementFp: { role: 'button', name: 'Expand', near: null } },
+        toUrl: `${UB}/list`, toSnapshot: LIST, navigated: false, diff: { added, removed: [] } as any },
+    ];
+    const g = draftFromEffects(effs);
+    const list = g.states.find((s) => s.label === 'home')!;
+    const expand = list.affordances.find((a) => a.label === 'Expand')!;
+    expect(expand.kind).toBe('mutate');   // built-in + packs both declined — the honest gap
+    const u = (g.unknowns ?? []).find((x) => x.kind === 'undetected-overlay');
+    expect(u).toBeTruthy();
+    expect(u!.extensionPoint).toBe('overlay-open');
+    expect(u!.context).toContain('home');
+    expect(u!.context).toContain('Expand');
+    expect(u!.evidence.length).toBeLessThanOrEqual(1500);
+    expect(u!.evidence).toContain('Detail 0');
+  });
+
+  // (b) needsFix (degenerate-landing): a held-out 404/no-distinctive-content landing passes through
+  // as an unknowns entry too, carrying the SAME reason, so the loop has one place to look.
+  it('(b) a needsFix degenerate landing surfaces as a degenerate-landing unknown carrying its reason', () => {
+    const g = draftFromEffects([
+      filler('/reports', 'Reports'), filler('/agent', 'Not Found'),
+      filler('/settings', 'Settings'), filler('/help', 'Help'),
+    ].map((e, i) => ({ ...e, seq: i })) as any);
+    // "Not Found" heading trips isErrorLanding → degenerate → needsFix.
+    const nf = (g.needsFix ?? []).find((n) => /error page/i.test(n.reason));
+    expect(nf).toBeTruthy();
+    const u = (g.unknowns ?? []).find((x) => x.kind === 'degenerate-landing' && x.context.includes(nf!.label));
+    expect(u).toBeTruthy();
+    expect(u!.extensionPoint).toBe('core-design');
+    expect(u!.context).toContain(nf!.reason);
+  });
+
+  // (c) self-verify _warnings: a state whose fingerprint or an affordance's resolution came back
+  // shaky surfaces as unresolved-affordance, carrying the state's _warning text. Forced honestly:
+  // a recorded click's captured elementFp names a control that ISN'T actually on the landing (a
+  // stale/ghost fp — synthesis takes a supplied elementFp on trust; self-verify catches the drift).
+  it('(c) a state carrying a self-verify _warning surfaces as unresolved-affordance', () => {
+    const HOME2 = ['- heading "Home" [ref=e1]', '- paragraph "p2" [ref=e2]', '- paragraph "p3" [ref=e3]',
+      '- paragraph "p4" [ref=e4]', '- paragraph "p5" [ref=e5]', '- paragraph "p6" [ref=e6]',
+      '- paragraph "p7" [ref=e7]', '- paragraph "p8" [ref=e8]'].join('\n');
+    const g = draftFromEffects([
+      { seq: 0, capturedAt: 0, fromUrl: 'https://w2.test/home', fromSnapshot: HOME2,
+        action: { role: 'link', name: 'Ghost Link', ref: 'e9', elementFp: { role: 'link', name: 'Ghost Link', near: null } },
+        toUrl: 'https://w2.test/home', toSnapshot: HOME2, navigated: true, diff: { added: [], removed: [] } },
+    ] as any);
+    const home = g.states.find((s) => s.label === 'home')!;
+    expect(home._warning).toMatch(/Ghost Link.*won't resolve/);   // confirms the fixture forces a real warning
+    const u = (g.unknowns ?? []).find((x) => x.kind === 'unresolved-affordance' && x.context.includes('home'));
+    expect(u).toBeTruthy();
+    expect(u!.extensionPoint).toBe('core-design');
+    expect(u!.context).toContain(home._warning);
+  });
+
+  // (d) SPA-split no-distinguishing-heading clusters: reported with kind ambiguous-cluster
+  // (NOT the generic degenerate-landing kind), extensionPoint core-design.
+  it('(d) a same-URL SPA cluster with no distinguishing heading surfaces as ambiguous-cluster', () => {
+    const items = (prefix: string) => Array.from({ length: 8 }, (_, i) => `- listitem "${prefix} ${i}" [ref=e${i + 2}]`);
+    const A = ['- heading "Reports" [ref=e1]', ...items('Alpha')].join('\n');
+    const B = ['- heading "Reports" [ref=e1]', ...items('Beta')].join('\n');
+    const nav = (toUrl: string, toSnapshot: string, seq: number): StoredActionEffect => ({
+      seq, capturedAt: 0, fromUrl: `${UB}/home`, fromSnapshot: HOME_UNK,
+      action: { role: 'link', name: 'x', ref: 'e9', elementFp: { role: 'link', name: 'x', near: null } },
+      toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] } as any,
+    });
+    const g = draftFromEffects([
+      nav(`${UB}/report/list`, A, 0),
+      nav(`${UB}/report/list`, B, 1),
+    ] as never);
+    const nf = (g.needsFix ?? []).find((n) => /no distinguishing heading/i.test(n.reason));
+    expect(nf).toBeTruthy();
+    const u = (g.unknowns ?? []).find((x) => x.kind === 'ambiguous-cluster');
+    expect(u).toBeTruthy();
+    expect(u!.extensionPoint).toBe('core-design');
+    // must NOT also double-count as the generic degenerate-landing kind for the same needsFix row.
+    expect((g.unknowns ?? []).filter((x) => x.kind === 'degenerate-landing' && x.context.includes(nf!.label)).length).toBe(0);
+  });
+
+  // Evidence + total caps: unknowns report stays pasteable.
+  it('caps total unknowns at 20 and notes the truncation count', () => {
+    // force >20 degenerate-landing unknowns: 25 error pages under DISTINCT top-level sections
+    // (so no /{param} template merges them) each with a per-page-unique "Not Found N" heading
+    // (so each independently trips isErrorLanding rather than colliding into one state).
+    const home = { seq: 0, capturedAt: 0, fromUrl: `${UB}/home2`, fromSnapshot: HOME_UNK,
+      action: { role: 'link', name: 'x', ref: 'e9', elementFp: { role: 'link', name: 'x', near: null } },
+      toUrl: `${UB}/home2`, toSnapshot: HOME_UNK, navigated: true, diff: { added: [], removed: [] } as any };
+    const blanks: StoredActionEffect[] = [];
+    for (let i = 0; i < 25; i++) {
+      const url = `${UB}/sec${i}/notfound`;
+      const snap = [`- heading "Not Found ${i}" [ref=e1]`, '- paragraph "generic chrome a" [ref=e2]',
+        '- paragraph "generic chrome b" [ref=e3]', '- paragraph "generic chrome c" [ref=e4]',
+        '- paragraph "generic chrome d" [ref=e5]', '- paragraph "generic chrome e" [ref=e6]',
+        '- paragraph "generic chrome f" [ref=e7]', '- paragraph "generic chrome g" [ref=e8]'].join('\n');
+      blanks.push({ seq: i + 1, capturedAt: 0, fromUrl: `${UB}/home2`, fromSnapshot: HOME_UNK,
+        action: { role: 'link', name: `Blank${i}`, ref: `eB${i}`, elementFp: { role: 'link', name: `Blank${i}`, near: null } },
+        toUrl: url, toSnapshot: snap, navigated: true, diff: { added: [], removed: [] } as any });
+    }
+    const g = draftFromEffects([home, ...blanks] as any);
+    expect((g.needsFix ?? []).length).toBeGreaterThan(20);   // confirms the fixture forces >20 candidates
+    expect((g.unknowns ?? []).length).toBeLessThanOrEqual(20);
+    expect(g.unknownsTruncated).toBeGreaterThan(0);
+  });
+});
+
+// ── husk tripwire (reviewer-mandated addition to Task 2): before applying a value-domain pack's
+// exclusions to a page, if the pack would excise >50% of the page's would-be affordance names,
+// SKIP it for that page — the affordances stay intact and an unknowns entry (kind: pack-tripwire)
+// documents the skip, loud not silent. A NARROW pack applies normally, no tripwire.
+describe('draftFromEffects — pattern-pack husk tripwire', () => {
+  // Apply/Cancel/Close are three DIFFERENT roles at depth 1 (never grouped by the built-in
+  // enumeratedNames/subtreeFolds — those only fold ≥3 SAME-role/depth or same-shape siblings), so
+  // they are honestly the page's own repertoire, not a data value list. "Metric A" is a single
+  // checkbox wrapped in its OWN `generic` container (eV) — a realistic div-soup value cell.
+  const overlayAdded = [
+    { role: 'button', name: 'Apply', ref: 'e1', url: null, raw: '- button "Apply" [ref=e1]', depth: 1 },
+    { role: 'link', name: 'Cancel', ref: 'e2', url: null, raw: '- link "Cancel" [ref=e2]', depth: 1 },
+    { role: 'tab', name: 'Close', ref: 'e3', url: null, raw: '- tab "Close" [ref=e3]', depth: 1 },
+    { role: 'generic', name: null, ref: 'eV', url: null, raw: '- generic [ref=eV]:', depth: 1 },
+    { role: 'checkbox', name: 'Metric A', ref: 'e4', url: null, raw: '- checkbox "Metric A" [ref=e4]', depth: 2 },
+  ];
+  const mk = (host: string, pack: PatternPack | null): StoredActionEffect[] => {
+    const pageSnap = ['- heading "Page" [ref=e1]', '- button "Open picker" [ref=e0]',
+      '- paragraph "alpha content" [ref=e3]', '- paragraph "beta content" [ref=e4]', '- paragraph "gamma content" [ref=e5]',
+      '- paragraph "delta content" [ref=e6]', '- paragraph "epsilon content" [ref=e7]', '- paragraph "zeta content" [ref=e8x]'].join('\n');
+    const entry: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${host}/home`, fromSnapshot:
+      ['- heading "Home" [ref=e1]', `- link "Go" [ref=e2]:\n    - /url: ${host}/page`,
+       '- paragraph "welcome text" [ref=e3]', '- paragraph "news text" [ref=e4]', '- paragraph "footer text" [ref=e5]',
+       '- paragraph "sidebar text" [ref=e6]', '- paragraph "banner text" [ref=e7]', '- paragraph "misc text" [ref=e8]'].join('\n'),
+      action: { role: 'link', name: 'Go', ref: 'e2', elementFp: { role: 'link', name: 'Go', near: null } },
+      toUrl: `${host}/page`, toSnapshot: pageSnap, navigated: true, diff: { added: [], removed: [] } as any };
+    const opener: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${host}/page`, fromSnapshot: pageSnap,
+      action: { role: 'button', name: 'Open picker', ref: 'e0', elementFp: { role: 'button', name: 'Open picker', near: null } },
+      toUrl: `${host}/page`, toSnapshot: pageSnap, navigated: false, diff: { added: overlayAdded, removed: [] } as any };
+    return [entry, opener];
+  };
+
+  // matches ONLY the inner "eV" generic wrapping the checkbox — excises 1 of 4 named nodes (25%).
+  const narrowPack: PatternPack = {
+    name: 'narrow-metric-pack', version: 1, type: 'value-domain', evidence: 'test fixture',
+    trigger: { context: 'overlay', root: { role: 'generic' }, contains: [{ role: 'checkbox' }] },
+    fixture: { snapshot: '- generic [ref=e1]:\n    - checkbox "X" [ref=e2]', expect: 'matched' },
+  };
+  // rootless → matches over the WHOLE added list — excises all 4 named nodes (100% > 50%).
+  const broadPack: PatternPack = {
+    name: 'broad-everything-pack', version: 1, type: 'value-domain', evidence: 'test fixture (over-broad)',
+    trigger: { context: 'overlay', contains: [{ role: 'button' }] },
+    fixture: { snapshot: '- button "Q" [ref=e1]', expect: 'matched' },
+  };
+
+  it('a NARROW pack (excises ≤50%) applies normally — no tripwire', () => {
+    const g = draftFromEffects(mk('https://tripwire-narrow.test', narrowPack), [narrowPack]);
+    const page = g.states.find((s) => s.label === 'page')!;
+    const reveal = page.affordances.find((a) => a.kind === 'reveal')!;
+    const childLabels = (reveal.children ?? []).map((c) => c.label);
+    expect(childLabels).toEqual(expect.arrayContaining(['Apply', 'Cancel', 'Close']));
+    expect(childLabels).not.toContain('Metric A');   // the pack's own job still did its job
+    expect((g.unknowns ?? []).some((u) => u.kind === 'pack-tripwire')).toBe(false);
+  });
+
+  it('a BROAD pack (excises >50%) is SKIPPED for that page — affordances stay intact, tripwire fires', () => {
+    const g = draftFromEffects(mk('https://tripwire-broad.test', broadPack), [broadPack]);
+    const page = g.states.find((s) => s.label === 'page')!;
+    expect(page, 'the page must still form a real state — the pack must not husk it').toBeTruthy();
+    const reveal = page.affordances.find((a) => a.kind === 'reveal')!;
+    const childLabels = (reveal.children ?? []).map((c) => c.label);
+    // the pack was disabled for this page, so its exclusion did NOT happen — the real repertoire
+    // (Apply/Cancel/Close) survives intact.
+    expect(childLabels).toEqual(expect.arrayContaining(['Apply', 'Cancel', 'Close']));
+    const tw = (g.unknowns ?? []).find((u) => u.kind === 'pack-tripwire');
+    expect(tw).toBeTruthy();
+    expect(tw!.extensionPoint).toBe('core-design');
+    expect(tw!.context).toContain('broad-everything-pack');
+    expect(tw!.context).toContain('page');
   });
 });
