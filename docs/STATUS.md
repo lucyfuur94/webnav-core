@@ -31,6 +31,22 @@
 > not just widget-shape?) for the next increment to pick up.
 > Suite: 717 pass / 7 skip (up from 673), `tsc --noEmit` clean.
 
+> **2026-07-12 (later) — Phase 2 extension loop shipped: webnav is now agent-extensible without core edits.**
+> Pattern packs: declarative JSON (`packs/patterns/{core,proposed}/`) mapping structural triggers
+> (roles/containment/attrs ONLY — lint rejects hostnames/URLs/text; 64-role/15-attr allow-lists)
+> onto the core's closed effect set (overlay-open detection, value-domain exclusion). Safety:
+> packs can only make storage MORE conservative (adversarially verified: worst hostile pack =
+> thinner map, never wrong edges/kinds); per-page husk TRIPWIRE disables a pack excising >50%
+> of a page's affordances (loud unknown). `graph-analyse` now reports `unknowns` (kind-fair
+> 20-cap, collection-repaint noise excluded, evidence-capped) — the map ASKS for extensions.
+> `dev pattern-propose --from-unknown <json>#<i> --name <slug>` scaffolds entry+fixture+checklist
+> (+ `--lint` re-check); `docs/EXTENDING.md` = the agent process; PR-gated for core inclusion.
+> First real pack shipped (`date-picker-divsoup`, derived FROM progneo's own unknowns; resolved
+> its date-picker entries on re-analyse — full circle). NOTE: unknowns counts on the real corpus
+> vary with session-set selection (17 on the full 8-session progneo set at ship time); the pack's
+> EFFECT is pinned by the grammar fixture (injected pack, values-never-stored), the count is not
+> a regression test. Suite 862 pass / 7 skip.
+
 > **2026-07-12 — X1 bundle shipped: the matrix's only wrong-map gap is closed.**
 > Overlay-by-BEHAVIOR: a role-less portal (AntD/Bootstrap div-soup) is recognized by what an
 > interaction ADDED — detection set (interactive, churn/fold/straggler-excluded, `option` counts
