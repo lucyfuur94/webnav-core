@@ -1,0 +1,32 @@
+[
+  {
+    "name": "date-picker-divsoup-overlay",
+    "version": 1,
+    "type": "overlay-open",
+    "trigger": {
+      "context": "diff.added",
+      "root": { "role": "generic" },
+      "contains": [{ "role": "gridcell", "min": 20 }]
+    },
+    "fixture": {
+      "snapshot": "- dialog [ref=e1]:\n  - generic [ref=e2]:\n    - generic [ref=e3]:\n      - gridcell \"July 1, 2026\" [ref=e10]\n      - gridcell \"July 2, 2026\" [ref=e11]\n      - gridcell \"July 3, 2026\" [ref=e12]\n      - gridcell \"July 4, 2026\" [ref=e13]\n      - gridcell \"July 5, 2026\" [ref=e14]\n      - gridcell \"July 6, 2026\" [ref=e15]\n      - gridcell \"July 7, 2026\" [ref=e16]\n      - gridcell \"July 8, 2026\" [ref=e17]\n      - gridcell \"July 9, 2026\" [ref=e18]\n      - gridcell \"July 10, 2026\" [ref=e19]\n      - gridcell \"July 11, 2026\" [ref=e20]\n      - gridcell \"July 12, 2026\" [ref=e21]\n      - gridcell \"July 13, 2026\" [ref=e22]\n      - gridcell \"July 14, 2026\" [ref=e23]\n      - gridcell \"July 15, 2026\" [ref=e24]\n      - gridcell \"July 16, 2026\" [ref=e25]\n      - gridcell \"July 17, 2026\" [ref=e26]\n      - gridcell \"July 18, 2026\" [ref=e27]\n      - gridcell \"July 19, 2026\" [ref=e28]\n      - gridcell \"July 20, 2026\" [ref=e29]\n      - gridcell \"July 21, 2026\" [ref=e30]",
+      "expect": "matched"
+    },
+    "evidence": "the analytics SPA report-flat/dashboard-category: clicking the date-range summary button (e.g. \"Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC\") adds a 55-105-node subtree (a dialog root of nested role-less `generic` wrappers around 31 `gridcell` day cells, 7 role-less weekday-header `generic`s, and a quick-range button rail) that stays classified 'mutate' — every named quick-range button already folds away as core enumeratedNames value-domain (>=3 same-role/depth siblings), leaving nothing in the strict overlayControl scan to flip detection. Sourced from graph-analyse --draft on the real 5-session the analytics SPA recording (unknowns[13]/[16], kind=undetected-overlay)."
+  },
+  {
+    "name": "date-picker-divsoup-values",
+    "version": 1,
+    "type": "value-domain",
+    "trigger": {
+      "context": "overlay",
+      "root": { "role": "generic" },
+      "contains": [{ "role": "gridcell", "min": 20 }]
+    },
+    "fixture": {
+      "snapshot": "- generic [ref=e1]:\n  - gridcell \"1\" [ref=e2]\n  - gridcell \"2\" [ref=e3]\n  - gridcell \"3\" [ref=e4]\n  - gridcell \"4\" [ref=e5]\n  - gridcell \"5\" [ref=e6]\n  - gridcell \"6\" [ref=e7]\n  - gridcell \"7\" [ref=e8]\n  - gridcell \"8\" [ref=e9]\n  - gridcell \"9\" [ref=e10]\n  - gridcell \"10\" [ref=e11]\n  - gridcell \"11\" [ref=e12]\n  - gridcell \"12\" [ref=e13]\n  - gridcell \"13\" [ref=e14]\n  - gridcell \"14\" [ref=e15]\n  - gridcell \"15\" [ref=e16]\n  - gridcell \"16\" [ref=e17]\n  - gridcell \"17\" [ref=e18]\n  - gridcell \"18\" [ref=e19]\n  - gridcell \"19\" [ref=e20]\n  - gridcell \"20\" [ref=e21]",
+      "expect": "matched"
+    },
+    "evidence": "same the analytics SPA date-picker as date-picker-divsoup-overlay (unknowns[13]/[16]): each of the 28-31 gridcell day names ('July N, 2026') is value data, never structure — this excludes them from a reveal's stored children/fingerprint pool even where the core's own enumeratedNames fold wouldn't reach (a differently-shaped calendar without the >=3-same-depth coincidence)."
+  }
+]

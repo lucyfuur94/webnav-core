@@ -4,9 +4,14 @@
 // parseSnapshot, >=8 named nodes per landing (classifyReadiness='ready'), distinct first-segment
 // URLs, driven through the REAL draftFromEffects pipeline with recorded action-effects.
 import { describe, it, expect } from 'vitest';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { draftFromEffects } from '../../src/explorer/draft.js';
 import type { StoredActionEffect } from '../../src/mapstore/record.js';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
+import { loadPatternPacks } from '../../src/explorer/patterns.js';
+
+const CORE_PACKS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../packs/patterns/core');
 
 const B = 'https://fx.test';
 
@@ -121,5 +126,105 @@ describe('grammar: 18 multi-select — PARTIAL (tags-in-trigger nested value dom
     expect(s.affordances.some((a) => a.label === 'urgent')).toBe(true);
     // per matrix OQ2: this is the honest degradation — per-selection values ARE stored as
     // ordinary affordances because no container-scoped fold exists to catch a 2-item trigger.
+  });
+});
+
+// ── X10 worked example — the real the analytics SPA div-soup date-picker (extension-loop plan Task 3) ──
+// Sourced from `graph-analyse --draft` on the real 5-session the analytics SPA recording: clicking the
+// date-range summary button ("Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC") adds a subtree
+// whose calendar grid is nested `generic` wrappers around 31 `gridcell` day cells — no dialog/
+// menu/listbox NAMED-control signal survives the core's own enumeratedNames value-fold (every
+// quick-range button is a >=3 same-role/depth sibling group, so the strict overlayControl scan
+// has nothing left to flip). That gap is `packs/patterns/core/date-picker-divsoup.json` (the
+// shipped core pack this test loads for real, not a synthetic stand-in). Proves: the opener
+// classifies `reveal` ONLY once the pack is loaded (core alone declines → mutate), and no day
+// cell ever becomes a stored affordance/child either way (the no-values rule holds independent
+// of detection).
+describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — core pack flips opener to reveal, days never stored', () => {
+  const REPORT = [
+    '- heading "Report" [ref=e1]',
+    '- button "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC" [ref=e2]',
+    '- button "Add filter" [ref=e3]',
+    '- button "Share" [ref=e4]',
+    '- paragraph "Sales Report" [ref=e5]',
+    '- paragraph "Table" [ref=e6]',
+    '- paragraph "Flat" [ref=e7]',
+    '- paragraph "Draft" [ref=e8]',
+  ].join('\n');
+  // The real shape (from the actual the analytics SPA capture): a dialog root of nested role-less `generic`
+  // wrappers; the calendar body is WEEK-ROW `generic` wrappers each holding ~7 `gridcell` day
+  // cells — identical wrapper shape across rows is a genuine repeated SUBTREE the core's own
+  // subtreeFolds/templateFolds already catches (STRAGGLER-UNIT exclusion), which is what actually
+  // gates the whole calendar (including leaf quick-range buttons that share no fold of their own)
+  // in the real data. Reproduced faithfully here rather than a flat single-parent grid.
+  const weekdayHeaders = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    .map((d, i) => `        - generic "${d}" [ref=e${100 + i}]`);
+  const dayCells = Array.from({ length: 31 }, (_, i) => i + 1);
+  const weekRows: string[] = [];
+  for (let d = 0; d < dayCells.length; d += 7) {
+    weekRows.push('      - generic [ref=e' + (500 + d) + ']:');
+    for (const day of dayCells.slice(d, d + 7))
+      weekRows.push(`        - gridcell "July ${day}, 2026" [ref=e${200 + day}]`);
+  }
+  const quickRanges = ['Custom', 'Yesterday', 'Last Month', 'MTD (Last Available Date)', 'YTD (Last Available Date)', 'This Year (CD)']
+    .map((n, i) => `      - button "${n}" [ref=e${300 + i}]`);
+  const PICKER_ADDED_SNAPSHOT = [
+    '- dialog [ref=e50]:',
+    '  - generic [ref=e51]:',
+    ...quickRanges,
+    '    - generic [ref=e60]:',
+    '      - generic [ref=e61]:',
+    ...weekdayHeaders,
+    ...weekRows,
+  ].join('\n');
+  const REPORT_WITH_PICKER = [REPORT, PICKER_ADDED_SNAPSHOT].join('\n');
+
+  const enterReport = (): StoredActionEffect => ({
+    seq: 0, capturedAt: 0, fromUrl: `${B}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${B}/report/7001`, toSnapshot: REPORT, navigated: true, diff: { added: [], removed: [] } as any,
+  });
+  const openPicker: StoredActionEffect = {
+    seq: 1, capturedAt: 0, fromUrl: `${B}/report/7001`, fromSnapshot: REPORT,
+    action: { role: 'button', name: 'Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC', ref: 'e2',
+      elementFp: { role: 'button', name: 'Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC', near: null } },
+    toUrl: `${B}/report/7001`, toSnapshot: REPORT_WITH_PICKER, navigated: false,
+    diff: { added: parseSnapshot(PICKER_ADDED_SNAPSHOT), removed: [] } as any,
+  };
+  const effs = [enterReport(), openPicker] as never;
+
+  it('WITHOUT the pack (core alone): the picker stays undetected — opener classifies mutate', () => {
+    const g = draftFromEffects(effs, []);
+    const s = g.states.find((x) => x.label === 'report')!;
+    const opener = s.affordances.find((a) => a.label.startsWith('Last 7 Days'))!;
+    expect(opener).toBeTruthy();
+    expect(opener.kind).toBe('mutate');
+  });
+
+  it('WITH the shipped core pack: the opener classifies reveal', () => {
+    const packs = loadPatternPacks([CORE_PACKS_DIR]);
+    expect(packs.some((p) => p.name === 'date-picker-divsoup-overlay')).toBe(true);
+    const g = draftFromEffects(effs, packs);
+    const s = g.states.find((x) => x.label === 'report')!;
+    const opener = s.affordances.find((a) => a.label.startsWith('Last 7 Days'))!;
+    expect(opener.kind).toBe('reveal');
+  });
+
+  it('day values are NEVER stored as affordances or reveal children (with or without the pack)', () => {
+    for (const packs of [[], loadPatternPacks([CORE_PACKS_DIR])]) {
+      const g = draftFromEffects(effs, packs as never);
+      const all = g.states.flatMap((s) => s.affordances.flatMap((a) => [a, ...(a.children ?? [])]));
+      for (const day of ['July 1, 2026', 'July 15, 2026', 'July 31, 2026'])
+        expect(all.some((a) => a.label === day), day).toBe(false);
+      for (const wd of ['Sunday', 'Wednesday', 'Saturday'])
+        expect(all.some((a) => a.label === wd), wd).toBe(false);
+    }
+  });
+
+  it('page-level durable actions (Add filter, Share) survive alongside the picker', () => {
+    const g = draftFromEffects(effs, loadPatternPacks([CORE_PACKS_DIR]));
+    const s = g.states.find((x) => x.label === 'report')!;
+    expect(s.affordances.some((a) => a.label === 'Add filter')).toBe(true);
+    expect(s.affordances.some((a) => a.label === 'Share')).toBe(true);
   });
 });

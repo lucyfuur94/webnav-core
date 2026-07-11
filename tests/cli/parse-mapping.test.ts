@@ -62,4 +62,16 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses profile-status with missing flags as empty strings', () => {
     expect(parseArgs(['dev', 'profile-status'])).toEqual({ cmd: 'profile-status', profile: '', site: '', url: undefined });
   });
+
+  it('parses pattern-propose --from-unknown/--name', () => {
+    expect(parseArgs(['dev', 'pattern-propose', '--from-unknown', 'draft.json#3', '--name', 'date-picker-divsoup']))
+      .toEqual({ cmd: 'pattern-propose', fromUnknown: 'draft.json#3', name: 'date-picker-divsoup', lint: undefined });
+  });
+  it('parses pattern-propose --lint (re-check path)', () => {
+    expect(parseArgs(['dev', 'pattern-propose', '--lint', 'packs/patterns/proposed/x.json']))
+      .toEqual({ cmd: 'pattern-propose', fromUnknown: '', name: '', lint: 'packs/patterns/proposed/x.json' });
+  });
+  it('parses pattern-propose with no flags as empty strings', () => {
+    expect(parseArgs(['dev', 'pattern-propose'])).toEqual({ cmd: 'pattern-propose', fromUnknown: '', name: '', lint: undefined });
+  });
 });
