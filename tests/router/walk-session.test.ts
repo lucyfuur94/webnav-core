@@ -69,4 +69,47 @@ describe('WalkSessionStore', () => {
     expect(w.sessionId).toBe(id);
     expect(w.browserSession).toBe('w-new');
   });
+
+  // CHECKPOINT CALLBACK: --observe/--observe-dynamic must survive a resume (a
+  // multi-checkpoint walk needs its full observe list on EVERY resume call, not
+  // just the first), and a fresh session starts with an empty fire-once set.
+  it('persists observe/observeDynamic from the original walk and loads them back', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'c', path: ['a', 'b', 'c'], browserSession: 'w',
+      observe: ['b'], observeDynamic: true, nowMs: 1 });
+    const w = s.load(id)!;
+    expect(w.observe).toEqual(['b']);
+    expect(w.observeDynamic).toBe(true);
+    expect(w.observed).toEqual([]);
+    expect(w.pauseKind).toBeUndefined();
+  });
+
+  it('a session with no observe flags loads back with empty/false defaults', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'b', path: ['a', 'b'], browserSession: 'w', nowMs: 1 });
+    const w = s.load(id)!;
+    expect(w.observe).toEqual([]);
+    expect(w.observeDynamic).toBe(false);
+  });
+
+  // setPause is how the CLI records (a) which state's checkpoint just fired (fire-once
+  // tracking survives a resume) and (b) which RecallResponse status this call paused
+  // ON (so walk-resume can reject `--continue` against a non-checkpoint pause).
+  it('setPause persists the observed set and pause kind, loaded back on the next resume', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'c', path: ['a', 'b', 'c'], browserSession: 'w', observe: ['b'], nowMs: 1 });
+    s.setPause(id, ['b'], 'checkpoint');
+    const w = s.load(id)!;
+    expect(w.observed).toEqual(['b']);
+    expect(w.pauseKind).toBe('checkpoint');
+  });
+
+  it('setPause with a non-checkpoint pause kind records an empty observed set', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'c', path: ['a', 'b', 'c'], browserSession: 'w', nowMs: 1 });
+    s.setPause(id, [], 'needs-navigation');
+    const w = s.load(id)!;
+    expect(w.observed).toEqual([]);
+    expect(w.pauseKind).toBe('needs-navigation');
+  });
 });

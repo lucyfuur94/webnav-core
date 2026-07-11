@@ -2,6 +2,7 @@ import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
 import type { BrowserOpts } from './playwright/adapter.js';
 import type { RecordingsDeps } from './dashboard/server.js';
+import type { State } from './mapstore/types.js';
 import { dbPath } from './paths.js';
 
 export type ParsedArgs =
@@ -35,8 +36,8 @@ export type ParsedArgs =
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
   | { cmd: 'type'; ref: string; text: string; session: string }
-  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts; hosted: boolean }
-  | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string; inputs: Record<string, string> }
+  | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts; hosted: boolean; observe: string[]; observeDynamic: boolean }
+  | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string; continue: boolean; inputs: Record<string, string> }
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
   | { cmd: 'effects'; session: string }
@@ -218,11 +219,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
-      inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted') };
+      inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted'),
+      observe: flagValues(rest, '--observe'), observeDynamic: rest.includes('--observe-dynamic') };
   }
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
       ref: flagValue(rest, '--ref'), classify: flagValue(rest, '--classify'),
+      continue: rest.includes('--continue'),
       inputs: inputFlags(rest) };
   }
   if (cmd === 'login') {
@@ -1481,6 +1484,26 @@ async function main() {
     if (!store.getState(args.goal)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.goal }, null, 2)); process.exitCode = 2; return; }
     const path = findPath(store, args.start, args.goal);
     if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
+    const startState = store.getState(args.start)!;
+    const states = store.statesForNode(startState.nodeId ?? '');
+    // --observe <label>: resolved against the goal's node like --start/--goal (a
+    // state id, or its bare semanticName) — same scope, so `--observe inventory`
+    // finds `www.saucedemo.com:inventory` without repeating the site prefix. A
+    // label that resolves to nothing errors HERE, loudly, BEFORE any browser
+    // opens — a silent drop would return a normal done with zero checkpoints and
+    // no signal that the typo'd observe never armed (same posture as a bad
+    // --start/--goal).
+    const observe: string[] = [];
+    for (const label of args.observe) {
+      const id = resolveObserveLabel(states, label);
+      if (!id) {
+        console.log(JSON.stringify({ status: 'error',
+          hint: 'unknown --observe state "' + label + '" — known states for ' + (startState.nodeId ?? args.start)
+            + ': ' + states.map((s) => s.semanticName).join(', ') }, null, 2));
+        process.exitCode = 2; return;
+      }
+      observe.push(id);
+    }
     const browserSession = 'w-' + Date.now();
     // Live-session CEILING (prevents the browser-count explosion). First frees orphans +
     // abandoned paused-walk browsers older than 1h (the real leak — a needs-* pause leaves a
@@ -1501,7 +1524,6 @@ async function main() {
       bopts.profile = resolveProfile(bopts.profile, join(homedir(), '.webnav', 'profiles'));
     }
     const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, bopts);
-    const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
     // (flags win). Lets `walk` run without re-typing credentials each time, while
@@ -1514,8 +1536,7 @@ async function main() {
     // session under the SAME profile (design item 2) — omitted (no retry
     // capability) when the walk isn't running under a named profile.
     const browser = makeLiveWalkBrowser(adapter, inputs, bopts, browserSession);
-    const states = store.statesForNode(startState.nodeId ?? '');
-    const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path, profile: args.browser.profile });
+    const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path, profile: args.browser.profile, observe, observeDynamic: args.observeDynamic });
     // needs-auth: the wall persisted through the fresh-session retry (or no retry was
     // possible). Fail-fast, NOT a resumable pause — a stale login can't be fixed by
     // replaying the same route, so leaving a paused walk-session + a live daemon
@@ -1527,16 +1548,21 @@ async function main() {
       process.exitCode = 2;
       return;
     }
-    if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
+    if (res.status === 'needs-navigation' || res.status === 'needs-classification' || res.status === 'checkpoint') {
       const sessions = new WalkSessionStore();
       // A wall retry may have rotated to a brand-new browser session — read it
       // back from the browser (not the original `browserSession` var) so a paused
       // session id the agent resumes against actually points at the live browser.
       const liveSession = browser.sessionId?.() || browserSession;
-      const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession: liveSession, profile: bopts.profile });
+      const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession: liveSession, profile: bopts.profile, observe, observeDynamic: args.observeDynamic });
       // pos points at the state the walk paused ON, so resume restarts there.
       const pausedAt = (res as any).at;
       if (typeof pausedAt === 'number') sessions.advance(id, pausedAt);
+      // Fire-once tracking: a checkpoint pause adds its OWN state to `observed` so a
+      // resume doesn't re-fire it; pauseKind gates walk-resume's `--continue` to only
+      // ever answer a checkpoint (never a needs-navigation/needs-classification pause).
+      const observedNow = res.status === 'checkpoint' ? [res.state] : [];
+      sessions.setPause(id, observedNow, res.status);
       // Expose browserSession so the agent can act on the LIVE paused browser
       // (e.g. fire an in-page affordance) via `use <verb> --session <browserSession>`
       // before calling walk-resume.
@@ -1559,10 +1585,20 @@ async function main() {
     const sessions = new WalkSessionStore();
     const w = sessions.load(args.session);
     if (!w) { console.log(JSON.stringify({ status: 'failed', reason: 'no active walk-session ' + args.session }, null, 2)); process.exitCode = 2; return; }
-    const answer = args.ref ? { kind: 'ref' as const, ref: args.ref }
+    // --continue only ever answers a checkpoint pause — --ref/--classify answer the
+    // OTHER pause kinds. Reject early with a hint rather than silently misapplying it
+    // (walkRoute would otherwise just fall through to a normal step, masking the mistake).
+    if (args.continue && w.pauseKind !== 'checkpoint') {
+      console.log(JSON.stringify({ status: 'failed',
+        reason: '--continue answers a checkpoint pause, but this session paused on ' + (w.pauseKind ?? 'unknown')
+          + ' — use --ref (needs-navigation) or --classify (needs-classification) instead' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const answer = args.continue ? { kind: 'continue' as const }
+      : args.ref ? { kind: 'ref' as const, ref: args.ref }
       : args.classify ? { kind: 'classify' as const, verdict: args.classify as 'safe' | 'commit' }
       : undefined;
-    if (!answer) { console.log(JSON.stringify({ status: 'failed', reason: 'supply --ref or --classify' }, null, 2)); process.exitCode = 2; return; }
+    if (!answer) { console.log(JSON.stringify({ status: 'failed', reason: 'supply --ref, --classify, or --continue' }, null, 2)); process.exitCode = 2; return; }
     const resumeFrom = w.path[w.pos] ?? w.startState;
     const adapter = new PlaywrightAdapter(w.browserSession);   // reattach the live browser
     const startState = store.getState(resumeFrom) ?? store.getState(w.startState)!;
@@ -1583,13 +1619,14 @@ async function main() {
     const rbopts = w.profile ? { profile: w.profile } : undefined;
     const browser = makeLiveWalkBrowser(adapter, inputs, rbopts, w.browserSession);
     const states = store.statesForNode(startState.nodeId ?? '');
-    const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer, profile: w.profile });
+    const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer, profile: w.profile,
+      observe: w.observe, observeDynamic: w.observeDynamic, observed: w.observed });
     if (res.status === 'needs-auth') {
       sessions.close(args.session);
       await (browser.close ? browser.close() : adapter.close()).catch(() => {});
       console.log(JSON.stringify(res, null, 2));
       process.exitCode = 2;
-    } else if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
+    } else if (res.status === 'needs-navigation' || res.status === 'needs-classification' || res.status === 'checkpoint') {
       // walkRoute's `at` is RELATIVE to resumeFrom (it starts each call at 0), but
       // the session `pos` is ABSOLUTE over the full path. resumeFrom sits at w.pos,
       // so absolute = w.pos + at. A single resume can traverse several states before
@@ -1603,6 +1640,10 @@ async function main() {
       // to the live daemon instead of the one that was just closed.
       const liveSession = browser.sessionId?.() || w.browserSession;
       if (liveSession !== w.browserSession) sessions.rebrowser(args.session, liveSession);
+      // Fire-once tracking carries forward: append this checkpoint's state (if any)
+      // to the ALREADY-observed set from the original walk / prior resumes.
+      const observedNow = res.status === 'checkpoint' ? [...w.observed, res.state] : w.observed;
+      sessions.setPause(args.session, observedNow, res.status);
       console.log(JSON.stringify({ ...res, session: args.session, browserSession: liveSession }, null, 2));
     } else {
       sessions.close(args.session);
@@ -1730,6 +1771,19 @@ async function main() {
     }
     return;
   }
+}
+
+// --observe <label>: resolved the same way --start/--goal already are — a full
+// state id, or its bare semanticName within the node's states (so `--observe
+// inventory` finds `www.saucedemo.com:inventory` without repeating the prefix).
+// null = unknown label; the walk handler errors on it (exit 2 + a hint listing
+// the node's known states) BEFORE opening a browser — same loud posture as a
+// bad --start/--goal, so a typo never silently disarms the checkpoint.
+export function resolveObserveLabel(states: State[], label: string): string | null {
+  const byId = states.find((s) => s.id === label);
+  if (byId) return byId.id;
+  const byName = states.find((s) => s.semanticName === label);
+  return byName ? byName.id : null;
 }
 
 // A result that "ran fine but found nothing/blocked/failed" → exit code 3.
