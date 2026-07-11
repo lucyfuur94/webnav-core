@@ -139,6 +139,20 @@ function isErrorLanding(nodes: SnapNode[]): boolean {
   return nodes.some((n) => n.role === 'heading' && n.name != null && ERROR_HEADING.test(n.name));
 }
 
+// A NON-SETTLED render (axis 1 settledness): a WAI-ARIA live-region role (`status`/`alert`/
+// `progressbar`) announcing an in-flight load ("Running query…", "Loading", "Please wait"). Such
+// a landing was captured before its data arrived — its face is missing the settled repertoire AND
+// carries transient loading chrome (a `status` region + its Cancel button) that the settled face
+// lacks, so plain containment can't see it as a partial render (live finding: a mid-query report
+// landing's face was only 0.88-contained in its settled sibling because of exactly these transient
+// tokens → it polluted the merged state's core, dropping the settled tab identity). Site-agnostic
+// (loading PHRASES, like ERROR_HEADING / the interstitial patterns).
+const LOADING_LIVE_REGION = /\b(running|loading|fetching|processing|please wait|this may take a moment|in progress)\b/i;
+function isLoadingRender(nodes: SnapNode[]): boolean {
+  return nodes.some((n) => (n.role === 'status' || n.role === 'alert' || n.role === 'progressbar')
+    && n.name != null && LOADING_LIVE_REGION.test(n.name));
+}
+
 // map an interactive ARIA role to its in-page affordance kind (strict, no layout inference):
 // fillable fields → input; everything else interactive → mutate. (link-to-known-state is handled
 // by the cross-link mesh, not here.)
@@ -356,31 +370,39 @@ function distinguishingHeading(core: Face, others: Face[]): string | null {
 // non-shell tokens). 8 matches classifyReadiness's minNodes. All thresholds documented tunables.
 const sameFace = (a: Face, b: Face): boolean =>
   jaccard(a, b) >= 0.5 || (Math.min(a.size, b.size) >= 8 && containment(a, b) >= 0.9);
-// DISPOSE-ONLY control arm (live finding): two INSTANCES of one template share their CONTROL
-// skeleton even when instance data (product names, prices, related items) drags full-face
-// jaccard under the 0.5 bar (measured: full faces 0.45-0.49, control faces IDENTICAL). Gate:
-// the smaller control face must carry ≥4 tokens — sparser controls can't claim template
-// identity (a list page and a viewer sharing one Search button must not merge). NOT used by
-// the SPA-split: same-URL views legitimately differ by their controls. Thresholds are
-// documented tunables.
-const sameControls = (a: Face, b: Face): boolean => {
-  const ca = controlFace(a), cb = controlFace(b);
-  return Math.min(ca.size, cb.size) >= 4 && (jaccard(ca, cb) >= 0.6 || containment(ca, cb) >= 0.9);
-};
+// CONTROL arm (live finding): two INSTANCES of one opaque-id template share their CONTROL skeleton
+// even when instance data (product names, prices, related items) drags full-face jaccard under the
+// 0.5 bar (measured: full faces 0.45-0.49, control faces IDENTICAL). Two control faces are "the
+// same template's skeleton" under the min-4 gate + jaccard/containment bars — the smaller must
+// carry ≥4 tokens (a list page and a viewer sharing one Search button must not merge).
+// Callers pass the RAW (pre-normFace) control face: normFace folds a rendered data-grid's per-row
+// controls into ONE `widget:*` sig, so a SETTLED landing (grid folded → 0 chip controls) and a
+// MID-QUERY landing of the SAME instance (grid not yet rendered → chips still flat controls) had
+// DIVERGENT control faces (live finding: raw control containment 0.92 vs normFace'd 0.50 → the
+// dispose wrongly SPLIT one report instance into a subset-fp pair of states that made the walk
+// `ambiguous` forever). The control skeleton is a template's render-depth-STABLE identity, so
+// compare it on raw faces. Used by BOTH the dispose (cross-key merge) and the opaque-template
+// SPA-split (which must not re-split a merged instance's mid-query + settled landings).
+const sameControlFaces = (ca: Face, cb: Face): boolean =>
+  Math.min(ca.size, cb.size) >= 4 && (jaccard(ca, cb) >= 0.6 || containment(ca, cb) >= 0.9);
 const unionOf = (fs: Face[]): Face => { const u: Face = new Set(); for (const f of fs) for (const t of f) u.add(t); return u; };
 // Single-link clustering of faces under a same-page predicate (union-find). Returns clusters as
 // index groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at
 // one URL); same-structure repeat visits — and partial renders of one page — stay in one cluster.
 // The predicate defaults to `sameFace`; a template-merged key passes the SAME predicate its
 // dispose used (incl. the control arm), else the split instantly undoes the dispose's merge.
-function clusterFaces(faces: Face[], same: (a: Face, b: Face) => boolean = sameFace): number[][] {
-  const parent = faces.map((_, i) => i);
+// Union-find over indices 0..n-1 under a pairwise `same(i,j)` predicate. Index-based (not
+// face-based) so an opaque-template split can consult BOTH a landing's normFace'd identity face
+// AND its RAW control face by position (the render-depth-stable control skeleton — see the SPA
+// split for why normFace'd controls re-split a mid-query + settled pair).
+function clusterFacesByIndex(n: number, same: (a: number, b: number) => boolean): number[][] {
+  const parent = Array.from({ length: n }, (_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-  for (let i = 0; i < faces.length; i++) for (let j = i + 1; j < faces.length; j++) {
-    if (same(faces[i], faces[j])) parent[find(i)] = find(j);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (same(i, j)) parent[find(i)] = find(j);
   }
   const groups = new Map<number, number[]>();
-  faces.forEach((_, i) => (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i));
+  for (let i = 0; i < n; i++) (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i);
   return [...groups.values()];
 }
 
@@ -517,11 +539,16 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // No `main` declared → mainScope is a no-op (whole-face behavior unchanged). Shell subtraction
   // still applies on top. Identity ONLY: stored faces / core / shadow / affordances read the union.
   const firstFace = (k: string): Face => minusShell(normFace(mainScope(landingsByKey.get(k)![0])));
+  // The RAW (pre-normFace) control skeleton of a key's first landing — render-depth-stable, so the
+  // dispose's opaque-param control arm compares this (not controlFace(faceFor), whose grid-folding
+  // diverges between a settled and a mid-query landing of the SAME instance). See sameControlFaces.
+  const firstControlFace = (k: string): Face => controlFace(minusShell(faceOf(mainScope(landingsByKey.get(k)![0]))));
   const canonical = new Map<string, string>();         // member key → its merged template key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
   const faceFor = new Map<string, Face>();             // key (original OR template) → anchor face
-  for (const k of observedKeys) faceFor.set(k, firstFace(k));
+  const ctlFor = new Map<string, Face>();              // key (original OR template) → RAW control face
+  for (const k of observedKeys) { faceFor.set(k, firstFace(k)); ctlFor.set(k, firstControlFace(k)); }
   for (const g of proposeTemplates(observedKeys)) {
     const members = g.keys.filter((k) => landingsByKey.has(k) && !canonical.has(k));
     if (members.length < 2) continue;
@@ -531,8 +558,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // data-grid controls, and control-merging them fused three different sections into one
     // false /{param}/list state (live finding).
     const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
-    const anchor = faceFor.get(members[0])!;
-    const merged = members.filter((k) => { const f = faceFor.get(k)!; return sameFace(f, anchor) || (opaqueParams && sameControls(f, anchor)); });
+    const anchor = faceFor.get(members[0])!, anchorCtl = ctlFor.get(members[0])!;
+    const merged = members.filter((k) => sameFace(faceFor.get(k)!, anchor) || (opaqueParams && sameControlFaces(ctlFor.get(k)!, anchorCtl)));
     if (merged.length < 2) continue;                   // dispose: not structurally one page
     for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
     // a template's face = the UNION of its members' faces (the template's whole OBSERVED
@@ -541,6 +568,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // 0.07 even though each template had a member view nearly identical to the other's (0.81).
     // The union lets the fixpoint's containment arms see that shared member evidence.
     faceFor.set(g.template, unionOf(merged.map((m) => faceFor.get(m)!)));
+    ctlFor.set(g.template, unionOf(merged.map((m) => ctlFor.get(m)!)));
     if (opaqueParams) opaqueTemplates.add(g.template);
   }
   // ── 3b. FIXPOINT over canonicalized keys (Finding 8): single-position proposal cannot merge
@@ -570,11 +598,13 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       if (!ok || diff < 0) continue;
       const bothOpaque = isOpaqueSeg(sa[diff]) && isOpaqueSeg(sb[diff]);
       const fa = faceFor.get(a)!, fb = faceFor.get(b)!;
-      if (!(sameFace(fa, fb) || (bothOpaque && sameControls(fa, fb)))) continue;
+      const ca = ctlFor.get(a) ?? controlFace(fa), cb = ctlFor.get(b) ?? controlFace(fb);
+      if (!(sameFace(fa, fb) || (bothOpaque && sameControlFaces(ca, cb)))) continue;
       const t = '/' + sa.map((s, x) => (x === diff || s === '{param}' || sb[x] === '{param}') ? '{param}' : s).join('/');
       if (t !== a) canonical.set(a, t);                            // never a self-loop
       if (t !== b) canonical.set(b, t);
       faceFor.set(t, unionOf([faceFor.get(t) ?? new Set<string>(), fa, fb]));   // union repertoire
+      ctlFor.set(t, unionOf([ctlFor.get(t) ?? new Set<string>(), ca, cb]));     // raw control skeleton
       templateForKey.set(t, t);
       if (bothOpaque || opaqueTemplates.has(a) || opaqueTemplates.has(b)) opaqueTemplates.add(t);
       mergedAny = true;
@@ -609,7 +639,13 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // only one full landing remains, templateCore's seen-once rule marks the state provisional:
     // honest (we truly saw the full page once).
     const isPartial = (i: number) => faces.some((g, j) => j !== i && faces[i].size < g.size && containment(faces[i], g) >= 0.95);
-    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i));
+    // A LOADING render (a "Running query…" live region) is non-settled — exclude it from CORE when
+    // a SETTLED (non-loading) sibling landing exists (else its transient chrome + missing data
+    // intersects the core down, losing the settled identity). If EVERY landing is loading, keep
+    // them all (honest: we only ever saw the page mid-load — templateCore then marks it provisional).
+    const loadingIdx = landings.map((l, i) => [l, i] as const).filter(([l]) => isLoadingRender(l)).map(([, i]) => i);
+    const settledExists = loadingIdx.length < landings.length;
+    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i) && !(settledExists && loadingIdx.includes(i)));
     // rule 5: durable face = templateCore(full faces) minus shell — the site chrome lives on
     // `_shell`, not on each page's core (else every state carries the whole sidebar).
     const { tokens, provisional } = templateCore(coreIdx.map((i) => faces[i]));
@@ -633,12 +669,18 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // template clusters with the dispose's OWN predicate (control arm included): its landings are
     // different INSTANCES whose full faces differ by data — re-clustering them with the stricter
     // same-URL predicate would instantly undo the merge and name states by instance headings.
-    const pred = opaqueTemplates.has(k)
-      ? (a: Face, b: Face) => sameFace(a, b) || sameControls(a, b)
-      : sameFace;
     // X3 (OQ1): same main-scoping as the dispose face — the SPA-split runs on the identity face,
     // so a rail outside `main` must not force (or suppress) a split. No-op when no `main` declared.
-    const clusters = clusterFaces(landings.map((l) => minusShell(normFace(mainScope(l)))), pred);
+    const identFaces = landings.map((l) => minusShell(normFace(mainScope(l))));
+    // For an opaque-id template, the control arm must read the RAW control face of each landing
+    // (same render-depth-stability fix as the dispose): a mid-query + a settled landing of one
+    // instance would otherwise re-split on their normFace'd (grid-folded) controls, undoing the
+    // dispose merge. Index into the raw control faces by cluster position.
+    const rawCtl = landings.map((l) => controlFace(minusShell(faceOf(mainScope(l)))));
+    const pred = opaqueTemplates.has(k)
+      ? (ia: number, ib: number) => sameFace(identFaces[ia], identFaces[ib]) || sameControlFaces(rawCtl[ia], rawCtl[ib])
+      : (ia: number, ib: number) => sameFace(identFaces[ia], identFaces[ib]);
+    const clusters = clusterFacesByIndex(identFaces.length, pred);
     // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
     // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
     // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404
