@@ -4,7 +4,7 @@ import { COMMANDS, VERSION } from '../src/cli-spec.js';
 describe('COMMANDS registry', () => {
   it('has all the registered verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'capture-loop', 'click', 'close', 'creds', 'dashboard', 'edge-add', 'effects', 'eval', 'export-map', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'import-map', 'ingest', 'list', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'node-clear', 'node-rm', 'outline', 'read', 'record-live', 'record-rename', 'record-start', 'record-stop', 'reload', 'review', 'search', 'session', 'sessions', 'snapshot', 'type', 'verify', 'walk', 'walk-resume']);
+    expect(names).toEqual(['capture', 'capture-loop', 'click', 'close', 'creds', 'dashboard', 'edge-add', 'effects', 'eval', 'export-map', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'import-map', 'ingest', 'list', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'node-clear', 'node-rm', 'outline', 'profile-status', 'read', 'record-live', 'record-rename', 'record-start', 'record-stop', 'reload', 'review', 'search', 'session', 'sessions', 'snapshot', 'type', 'verify', 'walk', 'walk-resume']);
   });
 
   it('outline has a summary and an example', () => {
@@ -65,5 +65,16 @@ describe('COMMANDS registry', () => {
     const g = COMMANDS.find((c) => c.name === 'graph-edit')!;
     expect(g.summary).toContain('provisional');
     expect(g.summary).toContain('scope');
+  });
+
+  it('profile-status help teaches homeUrl-from-map, matchState-as-oracle, reap, and the exit-0 needs-login choice', () => {
+    const p = COMMANDS.find((c) => c.name === 'profile-status')!;
+    expect(p.summary).toContain('homeUrl');
+    expect(p.summary).toContain('matchState');
+    expect(p.summary).toContain('reaped');
+    expect(p.summary).toContain('Exit 0');
+    expect(p.flags.find((f) => f.name === '--profile')?.takesValue).toBe(true);
+    expect(p.flags.find((f) => f.name === '--site')?.takesValue).toBe(true);
+    expect(p.flags.find((f) => f.name === '--url')?.takesValue).toBe(true);
   });
 });
