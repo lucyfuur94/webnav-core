@@ -148,6 +148,30 @@ describe('assembleEffect', () => {
   });
 });
 
+describe('requestedUrl (Task 3 — human-recorder redirect evidence, mirrors browse.ts runActionRecorded)', () => {
+  it('a redirecting link click → requestedUrl = the declared href, absolutized against fromUrl', () => {
+    const e = ev({ tagName: 'a', leafText: 'Login', href: 'https://s.test/redirect-login' });
+    const fx = assembleEffect(e, 'e3', tLogin, tInv)!;
+    expect(fx.navigated).toBe(true);
+    expect(fx.requestedUrl).toBe('https://s.test/redirect-login');
+  });
+  it('href points back to the SAME page as fromUrl (query-only diff) → requestedUrl absent (no cross-page destination declared)', () => {
+    const e = ev({ tagName: 'a', leafText: 'Login', href: tLogin.url + '?ref=nav' });
+    const fx = assembleEffect(e, 'e3', tLogin, tInv)!;
+    expect(fx.requestedUrl).toBeUndefined();
+  });
+  it('fragment-only href (#) never yields a requestedUrl', () => {
+    const e = ev({ tagName: 'a', leafText: 'Login', href: 'https://s.test/#' });
+    const fx = assembleEffect(e, 'e3', tLogin, tInv)!;
+    expect(fx.requestedUrl).toBeUndefined();
+  });
+  it('non-link click (no href) never yields a requestedUrl', () => {
+    const e = ev({ tagName: 'button', leafText: 'Login' });
+    const fx = assembleEffect(e, 'e3', tLogin, tInv)!;
+    expect(fx.requestedUrl).toBeUndefined();
+  });
+});
+
 describe('field clicks never navigate (live finding: "nav: First Name")', () => {
   it('a click on a textbox paired with a landing tick stays navigated:false', () => {
     const e = ev({ kind: 'click', tagName: 'input', inputType: 'text', placeholder: 'First Name' });
