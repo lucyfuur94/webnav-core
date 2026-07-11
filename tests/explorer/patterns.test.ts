@@ -235,6 +235,60 @@ describe('draftFromEffects — pack hook integration', () => {
     expect(kindsOf(rPack)).toEqual(kindsOf(rBase));
   });
 
+  it('REAL-SHAPE regression: a genuine reveal whose overlay re-renders a grid KEEPS its control children', () => {
+    // Table-style reveal (the real report-builder viz-switch): the added diff carries the
+    // overlay's own controls AND a re-rendered data grid (rows + columnheaders + 24 gridcells) in
+    // ONE generic subtree. The shipped value-domain trigger (generic root, gridcell min:20)
+    // matches it structurally — but the diff IS a gridRepaint (collection-dominant + rows/headers),
+    // so the shared guard must keep it from value-domain pack evaluation: the controls stay
+    // stored as reveal children (they were excised to [] before the fix).
+    const tableAdded = [
+      { role: 'generic', name: null, ref: 'e60', url: null, raw: 'generic [ref=e60]', depth: 3 },
+      { role: 'textbox', name: 'Search', ref: 'e61', url: null, raw: 'textbox "Search"', depth: 4 },
+      { role: 'combobox', name: 'Page Size', ref: 'e62', url: null, raw: 'combobox "Page Size"', depth: 4 },
+      { role: 'button', name: 'Flat', ref: 'e63', url: null, raw: 'button "Flat"', depth: 4 },
+      { role: 'button', name: 'Functions', ref: 'e64', url: null, raw: 'button "Functions"', depth: 4 },
+      ...Array.from({ length: 4 }, (_, i) => ({ role: 'columnheader', name: `Col ${i}`, ref: `e${70 + i}`, url: null, raw: `columnheader "Col ${i}"`, depth: 4 })),
+      ...Array.from({ length: 6 }, (_, r) => [
+        { role: 'row', name: `Row ${r} data`, ref: `e${80 + r * 5}`, url: null, raw: `row "Row ${r} data"`, depth: 4 },
+        ...Array.from({ length: 4 }, (_, c) => ({ role: 'gridcell', name: `t${r}-${c}`, ref: `e${81 + r * 5 + c}`, url: null, raw: `gridcell "t${r}-${c}"`, depth: 5 })),
+      ]).flat(),
+    ];
+    const tableClick = {
+      seq: 1, capturedAt: 0, fromUrl: `${B}/book`, fromSnapshot: PAGE,
+      action: { role: 'button', name: 'Table', ref: 'e10', elementFp: { role: 'button', name: 'Table', near: null } },
+      toUrl: `${B}/book`, toSnapshot: PAGE, navigated: false, diff: { added: tableAdded, removed: [] } as any,
+    };
+    const coreDir = fileURLToPath(new URL('../../packs/patterns/core', import.meta.url));
+    const shipped = loadPatternPacks([coreDir]);
+    const draft = draftFromEffects([ENTRY, tableClick] as any, shipped);
+    const table = draft.states.find((s) => s.label === 'book')!.affordances.find((a) => a.label === 'Table')!;
+    expect(table.kind).toBe('reveal');   // genuine overlay (its controls fire built-in detection)
+    const childLabels = (table.children ?? []).map((c) => c.label).sort();
+    expect(childLabels).toEqual(['Flat', 'Functions', 'Page Size', 'Search']);   // controls NOT excised
+    // …and the genuine date-picker value exclusion still bites: a picker diff (NO rows/headers →
+    // not a repaint) whose day-part buttons sit inside the matched gridcell subtree is excised
+    // WITH the pack, kept without — value-domain still works where it should.
+    const pickerAdded = [
+      { role: 'generic', name: null, ref: 'e90', url: null, raw: 'generic [ref=e90]', depth: 3 },
+      { role: 'button', name: 'Prev month', ref: 'e91', url: null, raw: 'button "Prev month"', depth: 4 },
+      { role: 'button', name: 'Next month', ref: 'e92', url: null, raw: 'button "Next month"', depth: 4 },
+      ...Array.from({ length: 24 }, (_, i) => ({ role: 'gridcell', name: `d${i + 1}`, ref: `e${100 + i}`, url: null, raw: `gridcell "d${i + 1}"`, depth: 4 })),
+    ];
+    const pickerClick = {
+      seq: 1, capturedAt: 0, fromUrl: `${B}/book`, fromSnapshot: PAGE,
+      action: { role: 'button', name: 'Pick date', ref: 'e2', elementFp: { role: 'button', name: 'Pick date', near: null } },
+      toUrl: `${B}/book`, toSnapshot: PAGE, navigated: false, diff: { added: pickerAdded, removed: [] } as any,
+    };
+    const kids = (packs: PatternPack[]) => {
+      const g = draftFromEffects([ENTRY, pickerClick] as any, packs);
+      const a = g.states.find((s) => s.label === 'book')!.affordances.find((x) => x.label === 'Pick date')!;
+      return (a.children ?? []).map((c) => c.label).sort();
+    };
+    expect(kids([])).toEqual(['Next month', 'Prev month']);   // no pack → month buttons stored
+    expect(kids(shipped)).toEqual([]);                         // pack → whole picker subtree is value data
+  });
+
   it('REAL-SHAPE regression: repaint diff + the SHIPPED core pack → Refresh-list opener stays mutate', () => {
     const coreDir = fileURLToPath(new URL('../../packs/patterns/core', import.meta.url));
     const shipped = loadPatternPacks([coreDir]);

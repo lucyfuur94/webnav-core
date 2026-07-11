@@ -140,3 +140,49 @@ change) and shipped with Task 3's pack — but it loses real overlay repertoire;
 tripwire doesn't see overlay children. If unwanted, the same gridRepaint reasoning could gate
 `packValueNames` on the overlay context — deliberately NOT done here (out of the reviewed finding's
 scope; would change the shipped pack's Task-3-reviewed behavior).
+
+---
+
+## Addendum 2 (2026-07-12) — should-fix: gridRepaint guard extended to the value-domain overlay-children hook
+
+**Finding (final reviewer, READY-gated should-fix):** the observation flagged in Addendum 1 was
+confirmed as a defect — the `Table` reveal's genuine children (Search, Flat, Nested, Functions,
+Page Size) were excised to `[]` by the shipped value-domain entry. The Table click's diff carries
+rows+columnheaders (it re-renders the grid inside the overlay), i.e. it IS a `gridRepaint` — but the
+previous fix only guarded the overlay-open consult, not `packValueNames` at Hook 2a.
+
+**Fix (same reasoning, one line):** the `gridRepaint` computation hoisted above Hook 2a (it only
+depends on `addedNodes`); the hook is now
+`const packValues = gridRepaint ? new Set<string>() : packValueNames(packsFor(fromLabel), addedNodes)`.
+A collection-repaint diff's nodes never reach value-domain pack evaluation for reveal-children. The
+guard block is now stated once, shared by ALL diff-based pack evaluation (overlay-open + value-domain)
+AND the unknowns report. Hooks 2b/2c (`landing` context over core nodes) are untouched — gridRepaint
+is a property of a DIFF, not of a page's core.
+
+**Real progneo verification (185 effects, shipped pack):** report-flat's `Table` reveal children
+RESTORED — `[Search, Flat, Nested, Functions, Page Size]`, identical to the pack-less baseline
+(previously `[]` with the pack). Full id-stripped draft diff vs baseline now shows ONLY the two
+intended date-opener reveals (report-flat `Last 7 Days (CD)…`, dashboard-category `09 Jul 2026 –
+10 Jul 2026 UTC`).
+
+**Test added (`tests/explorer/patterns.test.ts`, now 34):** real-shape regression — a Table-style
+genuine reveal (diff = controls + rows + headers + 24 gridcells in one `generic` subtree) with the
+SHIPPED core pack → `kind: reveal` with children exactly `[Flat, Functions, Page Size, Search]`; and
+the genuine date-picker exclusion still bites (a no-rows/headers picker diff: month buttons stored
+as children WITHOUT the pack, excised WITH it). Verified load-bearing: reverting the Hook 2a guard
+fails the test.
+
+**Logged (no code, per reviewer):**
+- **(a) Dedup wart:** a kind-flipped opener appears TWICE in a state's repertoire — the recorded
+  session may push the same label as `mutate` in one effect and `reveal` in another, and `pushAff`
+  dedups by `kind+label+to`, so both rows survive (visible on report-flat/dashboard-category: the
+  pack adds a `reveal` row while the baseline `mutate` row remains). Fix later: label-level dedup
+  with reveal-wins (a reveal is strictly more information than a mutate of the same control).
+- **(b) `trigger.context` is linted but not ENFORCED at hook dispatch:** `packDetectsOverlay`/
+  `packValueNames` evaluate every pack of the matching TYPE regardless of its declared `context`
+  (`diff.added` vs `overlay` vs `landing`). Today this is benign (the shipped pack's two entries are
+  each only reachable at their intended hooks' shapes), but the field is currently documentation,
+  not dispatch — a core-design note: either enforce context at each call site or drop the field from
+  the schema.
+
+**Verification:** `npm test` 864 passed / 7 skipped, `npx tsc --noEmit` clean.
