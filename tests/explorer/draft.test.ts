@@ -1008,6 +1008,42 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
     expect(s.affordances.some((a) => a.label === 'Metric filter')).toBe(true);
   });
 
+  // REGRESSION-LOCK (Task 2 review Minor): the isTemplateFold role-fallback branch. A page toolbar
+  // of ≥3 SAME-ROLE, DISTINCT-PURPOSE buttons (Search / Filter / Sort — no shared trailing word)
+  // is NOT a repeated template — it is three real, distinct controls. subtreeFolds abstracted-folds
+  // them by pure L2 shape (all `button()`), but commonTrailingWords yields '' (no shared suffix) so
+  // the fold label falls back to the member role `button`; isTemplateFold's LAST line
+  // (`!memberRoles.has(fold.label)`) rejects it as a plain toolbar. All three must survive UNFOLDED
+  // as their own affordances. PINNED so DELETING that guard line refolds them away and this fails.
+  it('REGRESSION: a toolbar of 3 same-role distinct-purpose buttons (Search/Filter/Sort) survives unfolded', () => {
+    const TOOLBAR = (extra: string[]) => [
+      '- heading "Metric Report" [ref=e1]',
+      '- button "Search" [ref=e2]',
+      '- button "Filter" [ref=e3]',
+      '- button "Sort" [ref=e4]',
+      '- paragraph "Report body" [ref=e5]',
+      '- listitem "Row static" [ref=e6]',
+      '- textbox "Metric filter" [ref=e9]',   // padding to ≥8 named nodes (classifyReadiness gate)
+      '- paragraph "Report footer" [ref=e10]',
+      ...extra,
+    ].join('\n');
+    const A = TOOLBAR(['- listitem "Line A" [ref=e7]']);
+    const B2 = TOOLBAR(['- listitem "Line B" [ref=e7]']);
+    const authEnter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${RB}/auth/login`, fromSnapshot: AUTH,
+      action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+      toUrl: `${RB}/metric/7`, toSnapshot: A, navigated: true, diff: { added: [], removed: [] } as any };
+    const revisit: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/metric/7`, fromSnapshot: A,
+      action: null, toUrl: `${RB}/metric/7`, toSnapshot: B2, navigated: true, diff: { added: [], removed: [] } as any };
+    const g = draftFromEffects([authEnter, revisit] as never);
+    const s = g.states.find((x) => x.label === 'metric')!;
+    // no fold swallowed them: all three toolbar buttons are present as their own affordances.
+    for (const btn of ['Search', 'Filter', 'Sort']) {
+      expect(s.affordances.some((a) => a.label === btn && !a.scope), btn).toBe(true);
+    }
+    // and NO fold-scoped (row/widget) affordance appeared for this toolbar.
+    expect(s.affordances.some((a) => a.scope)).toBe(false);
+  });
+
   it('overlay gate matches ROLE+NAME: a page-level heading "Search" cannot shadow the dialog textbox "Search"', () => {
     // review fix: nodeIndexByName(first match) read the page heading (not in overlay) → gate false
     // → the picker's search box leaked as a page input. Role+name matching finds the textbox.
@@ -1492,5 +1528,79 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     ] as never);
     expect(g.states.every((s) => !s.fingerprint.join().includes('Demo User'))).toBe(true);
     expect((g.needsFix ?? []).some((n) => /instance data/i.test(n.reason) && n.urlPattern.includes('/dashboard/8001'))).toBe(true);
+  });
+});
+
+// ── Task 3: identity-face normalization (dispose predicate + SPA-split clustering ONLY). Two
+// personalized dashboards are ONE template: their per-widget instance controls are DATA that
+// drags full-face AND control-face jaccard apart, while the repeated widget SHAPE (fold sig) is
+// the identity. normFace drops folded-member tokens + adds ONE `widget:<sig>` presence token, so
+// same-sig pages MERGE and different-sig pages (list rows vs viewer widgets) STILL SPLIT. Both
+// tests are MUTATION-PINNED (stub normFace → faceOf and they invert), verified in the Task-3 report.
+describe('draftFromEffects — identity-face normalization (subtree widgets)', () => {
+  const NB = 'https://n.test/v3/9999';
+  const bar = (h: string, extra: string[] = []): string => [
+    `- heading "${h}" [ref=e1]`,
+    '- link "Home" [ref=e2]:\n    - /url: https://n.test/v3/9999/home',
+    '- link "Reports" [ref=e3]:\n    - /url: https://n.test/v3/9999/report/list',
+    '- link "Dashboards" [ref=e4]:\n    - /url: https://n.test/v3/9999/dashboard/list',
+    '- link "Announcements" [ref=e5]:\n    - /url: https://n.test/v3/9999/announcements',
+    '- link "Help Center" [ref=e6]:\n    - /url: https://n.test/v3/9999/help-center',
+    ...extra,
+  ].join('\n');
+  const nnav = (url: string, snap: string): StoredActionEffect => ({ seq: 0, capturedAt: 0,
+    fromUrl: `${NB}/home`, fromSnapshot: bar('Home'),
+    action: { role: 'link', name: 'x', ref: 'e9b', elementFp: { role: 'link', name: 'x', near: null } },
+    toUrl: url, toSnapshot: snap, navigated: true, diff: { added: [], removed: [] } as any });
+  // a ≥2-node WIDGET whose title AND per-widget controls are per-INSTANCE data (they carry the
+  // widget's own name) — so both the full face AND the control face differ dashboard-to-dashboard,
+  // yet every widget has the SAME 4-node shape → the SAME abstracted fold sig.
+  const widget = (t: string) => [
+    '  - generic [ref=e]:', `    - heading "${t}" [ref=e]`,
+    `    - button "${t} Remove" [ref=e]`, `    - button "${t} Configure" [ref=e]`];
+  // dashboard = ONE shared page-level control (the structural id the merged fp rests on — too
+  // sparse alone (size 1 < 4) to trip the sameControls arm, so normalization is the ONLY merge
+  // path) + 3 per-instance widgets.
+  const dashboard = (a: string, b: string, c: string) =>
+    bar('Dashboard', ['- button "Add widget" [ref=e9]', '- generic [ref=e10]:', ...widget(a), ...widget(b), ...widget(c)]);
+
+  it('MERGE: two /dashboard/{id} instances differing only by widget instances fold to ONE state', () => {
+    const g = draftFromEffects([
+      nnav(`${NB}/dashboard/8001`, dashboard('Sales', 'Traffic', 'Signups')),
+      nnav(`${NB}/dashboard/8002`, dashboard('Revenue', 'Users', 'Churn')),
+      // filler pages so a shell forms (≥4 pages) and the widget controls don't read as chrome.
+      nnav(`${NB}/announcements`, bar('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nnav(`${NB}/help-center`, bar('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const dash = g.states.filter((s) => /\/dashboard\/(12\d\d|\{param\})/.test(s.urlPattern));
+    expect(dash.length, 'the two dashboards merge into ONE state').toBe(1);
+    expect(dash[0].template).toBe('/dashboard/{param}');
+    expect(dash[0].provisional ?? null, 'two instances → confirmed, NOT provisional').toBeNull();
+    // identity is the shared structural control — never a per-instance widget name.
+    expect(dash[0].fingerprint).toContain('button:Add widget');
+    const fpj = dash[0].fingerprint.join();
+    for (const nm of ['Sales', 'Traffic', 'Signups', 'Revenue', 'Users', 'Churn'])
+      expect(fpj, nm).not.toContain(nm);
+  });
+
+  it('SPLIT: a list page (row-sig folds) and a viewer page (widget-sig folds) at same-shape URLs STAY split', () => {
+    // both opaque-id params (so proposeTemplates proposes /grid/{param} and the sameControls arm
+    // is active) — a real list page vs a real viewer: DISTINCT controls AND a DIFFERENT fold sig
+    // (leaf rows `Expand drilldown` ×5 → row-sig vs ≥2-node widgets → widget-sig). They must NOT
+    // collapse into one /grid/{param} template: the row-sig and widget-sig `widget:*` tokens differ,
+    // so the normalized faces stay apart (a count-based or sig-blind normalization would merge them).
+    const rowList = bar('Grid List', ['- button "New view" [ref=e7]', '- textbox "Search views" [ref=e8]',
+      '- generic [ref=e10]:', ...Array.from({ length: 5 }, (_, i) => `  - button "Expand drilldown" [ref=e${20 + i}]`)]);
+    const widgetViewer = bar('Grid Viewer', ['- button "Full screen" [ref=e7]', '- combobox "Auto refresh" [ref=e8]',
+      '- generic [ref=e10]:', ...widget('Alpha'), ...widget('Beta'), ...widget('Gamma')]);
+    const g = draftFromEffects([
+      nnav(`${NB}/grid/9001`, rowList),
+      nnav(`${NB}/grid/9002`, widgetViewer),
+      nnav(`${NB}/announcements`, bar('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nnav(`${NB}/help-center`, bar('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const grids = g.states.filter((s) => /\/grid\//.test(s.urlPattern));
+    expect(grids.length, 'row-sig list and widget-sig viewer must NOT merge').toBe(2);
+    expect(g.states.some((s) => s.template === '/grid/{param}'), 'no false /grid/{param} merge').toBe(false);
   });
 });

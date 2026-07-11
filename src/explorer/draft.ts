@@ -132,6 +132,11 @@ function host(url: string): string | null { try { return new URL(url).host; } ca
 // catches them and is SAFE ONLY inside an overlay — a PAGE toolbar legitimately carries many
 // distinct same-depth buttons, so page interior synthesis must NEVER use this (it uses subtreeFolds).
 // Kept minimal + overlay-scoped exactly as before.
+// ponytail: this exists — FOLLOW-UP to delete it: give subtreeFolds a CONTAINER-SCOPE grouping pass
+// that folds a value domain split across heterogeneous per-category wrappers (each value one level
+// down under its own category heading) by matching the shared LEAF signature across DIFFERENT
+// parents within one container. When that lands, this flat depth-based fallback is subsumed and
+// enumeratedNames can be deleted (the last remaining non-subtreeFolds fold path).
 function enumeratedNames(added: SnapNode[]): Set<string> {
   const groups = new Map<string, Set<string>>();
   for (const n of added) {
@@ -201,6 +206,29 @@ function templateFolds(nodes: SnapNode[]): { emit: SubtreeFold[]; gatedNames: Se
   const gatedNames = new Set<string>();
   for (const f of kept) for (const i of f.memberIndices) { const nm = nodes[i].name; if (nm && nm.trim()) gatedNames.add(nm); }
   return { emit: kept, gatedNames };
+}
+
+// IDENTITY-FACE NORMALIZATION (subtree-templates §Global Constraints — dispose predicate + SPA
+// split ONLY, never templateCore/stored faces/fingerprints). Two personalized dashboards are ONE
+// template: their per-widget instance titles (`heading:Demo User`, `heading:Sales Dashboard`)
+// are DATA that drags full-face jaccard apart, while the repeated widget SHAPE is the identity.
+// So for identity comparison we: (a) DROP every token a folded TEMPLATE member node contributed
+// (the instance titles/per-row values that differ dashboard-to-dashboard), and (b) add ONE
+// `widget:<sig>` presence token per DISTINCT kept-fold sig — presence not count, so a 3-widget
+// and a 5-widget dashboard of the same template don't split on count. Two pages sharing the same
+// widget SIGS then read as the same face; a list page (row-sig folds) vs a viewer page (widget-sig
+// folds) carry DIFFERENT `widget:*` tokens → still split. `widget:*` is never fingerprint material
+// (candidateTokens only emits real ARIA role:name), so this cannot leak into a stored face.
+function normFace(nodes: SnapNode[]): Face {
+  const { emit } = templateFolds(nodes);
+  if (!emit.length) return faceOf(nodes);
+  const dropped = new Set<number>();
+  const sigs = new Set<string>();
+  for (const f of emit) { sigs.add(f.sig); for (const i of f.memberIndices) dropped.add(i); }
+  const out: Face = new Set();
+  nodes.forEach((n, i) => { if (!dropped.has(i) && n.name && n.name.trim()) out.add(`${n.role}:${n.name}`); });
+  for (const sig of sigs) out.add(`widget:${sig}`);
+  return out;
 }
 
 // A control whose accessible NAME is nothing but a bare data literal — a date (`09 Jul 2026`,
@@ -411,7 +439,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // WITH SHELL SUBTRACTED, is structurally close (jaccard≥0.5) to the group's first member. On
   // shell-subtracted faces so shared chrome can't inflate the similarity (the over-merge fix).
   // Merged members map to a single canonical key (the template); non-merged keys keep their key.
-  const firstFace = (k: string): Face => minusShell(faceOf(landingsByKey.get(k)![0]));
+  // normFace (not faceOf): the dispose comparison runs on identity-normalized faces so two
+  // instances of one template (personalized dashboards) merge on their widget SIGS, not split on
+  // per-widget instance titles. Shell subtraction still applies on top.
+  const firstFace = (k: string): Face => minusShell(normFace(landingsByKey.get(k)![0]));
   const canonical = new Map<string, string>();         // member key → its merged template key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
@@ -531,7 +562,7 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     const pred = opaqueTemplates.has(k)
       ? (a: Face, b: Face) => sameFace(a, b) || sameControls(a, b)
       : sameFace;
-    const clusters = clusterFaces(landings.map((l) => minusShell(faceOf(l))), pred);
+    const clusters = clusterFaces(landings.map((l) => minusShell(normFace(l))), pred);
     // A cluster whose landings are ALL error pages is a transient / pre-redirect capture, NOT a
     // real second state at this key (axis 1: a non-settled URL is an alias, never a state). On old
     // data with no `requestedUrl`, the pre-redirect ghost was snapshotted as its own 'ready' 404
