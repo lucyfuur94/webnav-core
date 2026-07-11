@@ -11,7 +11,7 @@ export interface EditAffordanceObj {
   id?: string;                // stable id; auto-generated from the label if omitted
   label: string;
   kind?: AffordanceKind;      // default 'mutate'
-  scope?: 'row';              // a folded per-row repeat (informational; elementFp stays null)
+  scope?: 'row' | 'widget';   // a folded repeated sibling subtree (informational; elementFp stays null)
   to?: string;                // navigate/reveal destination STATE LABEL (→ node:label)
   commit?: boolean;
   needs?: string[];           // precondition affordance ids

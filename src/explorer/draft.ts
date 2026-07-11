@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, foldRepeats, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, subtreeFolds, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
@@ -20,8 +20,10 @@ export interface DraftAffordance {
   to?: string; elementFp?: ElementFingerprint | null; acceptsInput?: string; needs?: string[]; core?: boolean;
   children?: DraftAffordance[];     // reveal: the ARIA-named affordances the overlay exposed
   needsClassification?: boolean;    // label matched a commit-word → agent classifies (commit stays false, #2/#5a)
-  scope?: 'row';                    // a folded per-row repeat (≥3 "<X> Remove" chips → one Remove);
-                                    // informational repertoire, elementFp:null (mutates never route, #affordance model)
+  scope?: 'row' | 'widget';         // a folded repeated sibling subtree: 'row' = leaf/single-node unit
+                                    // (≥3 "<X> Remove" chips → one Remove), 'widget' = a ≥2-node unit
+                                    // (repeated chart cards). Informational repertoire, elementFp:null
+                                    // (mutates never route, #affordance model)
 }
 
 // Roles that count as a real, resolvable child of a revealed overlay (ARIA role + name only;
@@ -118,13 +120,18 @@ function clickedInOverlay(nodes: SnapNode[], action: { role: string; name: strin
   return nodes.some((n, i) => n.role === action.role && n.name === action.name && insideOverlay(nodes, i));
 }
 
-// Enumerated VALUE DOMAIN among an overlay's added nodes (axis 2): ≥3 same-role SAME-DEPTH nodes
-// with DISTINCT names are the overlay's choice list (a picker's dimension checkboxes) — data to
-// read live at walk time, never persisted. foldRepeats generalized past the shared-trailing-word
-// requirement, but scoped to REVEAL CHILDREN only: a page toolbar legitimately carries many
-// distinct same-depth buttons, so interior synthesis must never apply this.
-// ponytail: a revealed panel's own toolbar of ≥3 distinct buttons at one depth also folds — an
-// acceptable loss (children are informational; the walk re-reads the overlay live at the pause).
+function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
+
+// Enumerated VALUE DOMAIN among an OVERLAY's added nodes (axis 2): ≥3 same-role SAME-DEPTH nodes
+// with DISTINCT names are the overlay's choice list (a picker's dimension/metric checkboxes) — data
+// to read live at walk time, never persisted. RETAINED (deviation from plan Task 2(b), see report):
+// subtreeFolds is PARENT-scoped and signature-matched, so it does NOT subsume this when a picker
+// groups its values under HETEROGENEOUS per-category wrappers (each value one level down, under a
+// category heading) — no ≥3 uniform siblings share a parent, so subtreeFolds leaves the whole value
+// domain leaking as reveal children (a bare-data-value regression). The flat depth-based fold
+// catches them and is SAFE ONLY inside an overlay — a PAGE toolbar legitimately carries many
+// distinct same-depth buttons, so page interior synthesis must NEVER use this (it uses subtreeFolds).
+// Kept minimal + overlay-scoped exactly as before.
 function enumeratedNames(added: SnapNode[]): Set<string> {
   const groups = new Map<string, Set<string>>();
   for (const n of added) {
@@ -136,7 +143,65 @@ function enumeratedNames(added: SnapNode[]): Set<string> {
   for (const names of groups.values()) if (names.size >= 3) for (const nm of names) out.add(nm);
   return out;
 }
-function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
+
+// The DOMINANT control role among a fold's member nodes (most-frequent CONTROL_ROLES role), for
+// childKind. null → the fold carries no control node (pure link/heading/text fold).
+function dominantControlRole(nodes: SnapNode[], fold: SubtreeFold): string | null {
+  const counts = new Map<string, number>();
+  for (const i of fold.memberIndices) {
+    const r = nodes[i].role;
+    if (CONTROL_ROLES.has(r)) counts.set(r, (counts.get(r) ?? 0) + 1);
+  }
+  let best: string | null = null, n = 0;
+  for (const [r, c] of counts) if (c > n) { best = r; n = c; }
+  return best;
+}
+// First control-role node WITH a name inside a fold's members (doc order) — the emission-site
+// label fallback when a fold's own label is a bare role (e.g. 'generic'), per the reviewer guard.
+function firstControlNameInFold(nodes: SnapNode[], fold: SubtreeFold): string | null {
+  for (const i of fold.memberIndices) {
+    const nm = nodes[i].name;
+    if (CONTROL_ROLES.has(nodes[i].role) && nm && nm.trim()) return nm.trim();
+  }
+  return null;
+}
+
+// Which subtreeFolds outputs draft.ts treats as real TEMPLATES to gate/emit on — the emission-site
+// discipline that keeps subtreeFolds' broad structural folding from stripping genuinely-distinct
+// affordances (the reviewer guard: never fold routing/real controls away):
+//  • WIDGET (unitSize ≥ 2) — repeated cards/rows; their instance titles are data (gate always,
+//    even a pure-link widget: its titles mustn't anchor identity, its links stay mesh edges).
+//  • LEAF fold — must carry a CONTROL. subtreeFolds folds ANY same-role leaf siblings, including
+//    three plain section HEADINGS or a run of nav LINKS (their non-control names abstract to the
+//    bare role, so they share a signature). Those are a page's own identity/routing, NOT a repeated
+//    control template — folding them would strip an identifying heading (state lost) or a real link.
+//    So a leaf fold is a template only when its units are CONTROLS (button/field/tab). AND among
+//    control leaves, an ABSTRACTED fold groups by pure L2 shape, which also catches an ordinary
+//    toolbar of distinct-purpose buttons (Search/Filter/Sort → all `button()`) — not a template.
+//    The param-slot signal that marks a real value family ("OS Remove"/"Revenue Remove", "<X>
+//    dimension") is a shared TRAILING WORD → a real-word label; a role-fallback label (no shared
+//    word, label === a member role) is a plain toolbar → NOT a template. A NAMED control fold
+//    (IDENTICAL labels: Expand drilldown ×25) is always a genuine per-row/chip repeat.
+const isTemplateFold = (fold: SubtreeFold, nodes: SnapNode[]): boolean => {
+  if (fold.unitSize >= 2) return true;
+  if (dominantControlRole(nodes, fold) === null) return false;   // leaf headings/links → not a control template
+  if (fold.level === 'named') return true;                       // identical control labels = genuine repeat
+  const memberRoles = new Set(fold.memberIndices.map((i) => nodes[i].role));
+  return !memberRoles.has(fold.label);   // abstracted: real shared-word label = template; role fallback = plain toolbar
+};
+
+// The names + folds contributed by a node list's TEMPLATE folds: `gatedNames` (de-valued residue
+// that must not anchor identity or synthesize as its own affordance — a picker's enumerated choice
+// list, per-row chips, per-card instance titles) and `emit` (the folds that yield ONE informational
+// affordance each). Subsumes the old foldRepeats.foldedNames + enumeratedNames. Keyed by NAME
+// because callers filter node lists by name.
+function templateFolds(nodes: SnapNode[]): { emit: SubtreeFold[]; gatedNames: Set<string> } {
+  const { folds } = subtreeFolds(nodes);
+  const kept = folds.filter((f) => isTemplateFold(f, nodes));
+  const gatedNames = new Set<string>();
+  for (const f of kept) for (const i of f.memberIndices) { const nm = nodes[i].name; if (nm && nm.trim()) gatedNames.add(nm); }
+  return { emit: kept, gatedNames };
+}
 
 // A control whose accessible NAME is nothing but a bare data literal — a date (`09 Jul 2026`,
 // `2026-07-09`) or a lone number/currency — is per-instance DATA, never durable structure (the
@@ -552,10 +617,11 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // param = a formed {param} template OR a lone opaque-id-tail key (the sanctioned URL-shape
     // prior) — either way the big heading is "probably instance data", handled provisionally below.
     const isParam = (!!p.template && p.template.includes('{param}')) || looksParameterizedKey(p.key);
-    // A FOLDED per-row/per-chip name (axis 5: `<X> Remove` metric chips, row `Delete`s) is value-
-    // bound DATA — it must never anchor identity (else `report`'s fp rests on `OS Remove`/`eCPM
-    // Remove`, the specific metrics of one instance). Drop the folded names from the fp candidates.
-    const { foldedNames: fpFolded } = foldRepeats(p.coreNodes);
+    // A FOLDED member's name (axis 5: `<X> Remove` metric chips, row `Delete`s, a repeated widget
+    // card's instance title) is value-bound DATA — it must never anchor identity (else `report`'s
+    // fp rests on `OS Remove`/`eCPM Remove`, the specific metrics of one instance). Drop the folded
+    // names from the fp candidates. templateFolds subsumes the Task-15 foldRepeats exclusion.
+    const fpFolded = templateFolds(p.coreNodes).gatedNames;
     const fpNodes = fpFolded.size ? p.coreNodes.filter((n) => !(n.name && fpFolded.has(n.name))) : p.coreNodes;
     const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
@@ -645,16 +711,15 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // else MUTATE (an in-place change — sort/filter/search). Carries the recovered elementFp.
       if (e.action.name) {
         const fp: ElementFingerprint = e.action.elementFp ?? { role: e.action.role, name: e.action.name, near: null };
-        // reveal children are DE-VALUED (rule 2), two folds:
-        //  • foldRepeats — names sharing a trailing word (`<X> Remove` chips);
-        //  • enumeratedNames — ≥3 same-role SAME-DEPTH children with distinct names are the
-        //    overlay's enumerated VALUE DOMAIN (a picker's 17 dimension checkboxes: Publisher,
-        //    Country, Month…) — data read LIVE at walk time, never persisted (axis 2). The
-        //    overlay's own controls (Apply/Cancel/Close/Search/tabs) never repeat ≥3-distinct
-        //    at one role+depth, so they survive. Safe ONLY inside an overlay — a PAGE toolbar
-        //    legitimately has many distinct buttons (interior synthesis must not use this).
+        // reveal children are DE-VALUED (rule 2), two overlay-scoped folds:
+        //  • templateFolds(addedNodes) — repeated sibling SUBTREES (category widgets, `<X> Remove`
+        //    chips) whose instance content is data;
+        //  • enumeratedNames — the flat ≥3 same-role/depth value domain subtreeFolds can't reach
+        //    because it's split across heterogeneous per-category wrappers (see helper note).
+        // Together they drop the picker's dimension/metric choice list; the overlay's own controls
+        // (Apply/Cancel/Close/Search/tabs) don't repeat, so they survive.
         const addedNodes = e.diff?.added ?? [];
-        const { foldedNames } = foldRepeats(addedNodes);
+        const foldedNames = templateFolds(addedNodes).gatedNames;
         const valueDomain = enumeratedNames(addedNodes);
         const children: DraftAffordance[] = addedNodes
           .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name))
@@ -729,20 +794,32 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // appeared in one visit but is not in the durable core (a per-row datum, a one-off chip) must
   // never synthesize as structure (the union leaked exactly these). resolveByFingerprint is still
   // checked against the same coreNodes so an ambiguous control (11 identical icon glyphs) is dropped.
-  // FOLD FIRST (rule 4): ≥3 same-role/depth core nodes sharing a trailing word are one row-scoped
-  // repeat — emit ONE informational scope:'row' affordance (label = the shared suffix, elementFp
-  // null: mutates never route, so no resolution is needed) and skip the folded names below.
+  // FOLD FIRST (subtree induction): repeated sibling SUBTREES in the core fold into typed templates
+  // (≥3 "<X> Remove" chips, ≥2 identical chart-widget cards). Emit ONE informational affordance per
+  // fold whose units carry CONTROLS (buttons/fields — the material a walk might act on): label =
+  // the fold's label (falling back to the unit's first control name when it's a bare role), scope =
+  // 'widget' for a ≥2-node unit else 'row', elementFp null (a folded template has no single durable
+  // coordinate; mutates never route, so no resolution is needed). A PURE link/heading fold (nav
+  // cards, headings) emits NOTHING — its links already live as mesh edges (distinct destinations =
+  // real routes, NEVER a repeated template to fold away) and its headings are fingerprint material.
+  // The folded member nodes are skipped in the per-node loop below either way (by name).
   for (const p of pageList) {
-    const { folds, foldedNames } = foldRepeats(p.coreNodes);
-    for (const fold of folds) {
-      const aff: DraftAffordance = { id: `aff_${affSeq++}_${slug(fold.suffix)}`, label: fold.suffix,
-        kind: childKind(fold.role), scope: 'row', elementFp: null };
-      if (COMMIT_WORDS.test(fold.suffix)) aff.needsClassification = true;   // "Remove"/"Delete" → agent classifies (#2/#5a)
+    const { emit, gatedNames: foldedNames } = templateFolds(p.coreNodes);
+    for (const fold of emit) {
+      const controlRole = dominantControlRole(p.coreNodes, fold);
+      if (!controlRole) continue;                                  // widget whose only content is links → no affordance (mesh owns the links)
+      // label fallback: when the fold's own label is a bare ROLE token (no control name / no shared
+      // word — e.g. 'generic'/'heading'/'button'), prefer the unit's first control NAME if any.
+      const roleFallback = new Set(fold.memberIndices.map((i) => p.coreNodes[i].role)).has(fold.label);
+      const label = roleFallback ? (firstControlNameInFold(p.coreNodes, fold) ?? fold.label) : fold.label;
+      const aff: DraftAffordance = { id: `aff_${affSeq++}_${slug(label)}`, label,
+        kind: childKind(controlRole), scope: fold.unitSize >= 2 ? 'widget' : 'row', elementFp: null };
+      if (COMMIT_WORDS.test(label)) aff.needsClassification = true;   // "Remove"/"Delete" → agent classifies (#2/#5a)
       pushAff(p.label, aff);
     }
     for (const n of p.coreNodes) {
       if (!n.name || !n.name.trim()) continue;
-      if (foldedNames.has(n.name)) continue;                       // a folded per-row value → not its own affordance
+      if (foldedNames.has(n.name)) continue;                       // a folded member value → not its own affordance
       if (n.role === 'link' || n.role === 'heading') continue;     // links → mesh; headings → fingerprint
       if (!INPUT_ROLES.has(n.role) && n.role !== 'button') continue; // only declared interactive controls
       const have = affById.get(p.label) ?? [];
@@ -774,10 +851,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // a walk can't deterministically re-find `combobox` (no name) among many, and in practice
       // these are the personalized chart widgets the recorder couldn't pin (a dashboard's `Country`
       // dimension, `Bar Chart Vz`, `Toggle Right Panel` — all null-name fps = per-instance data).
-      // Exempt: navigate (target in union/shell, verified separately), row folds (elementFp:null by
-      // design), and a REVEAL that exposed named children (its opener may be unnamed but the overlay
-      // it opened IS real declared structure).
-      .filter((a) => a.kind === 'navigate' || a.scope === 'row' || !a.elementFp
+      // Exempt: navigate (target in union/shell, verified separately), row/widget folds (elementFp:
+      // null by design), and a REVEAL that exposed named children (its opener may be unnamed but the
+      // overlay it opened IS real declared structure).
+      .filter((a) => a.kind === 'navigate' || !!a.scope || !a.elementFp
         || (a.kind === 'reveal' && !!a.children?.length)
         || (!!a.elementFp.name && a.elementFp.name.trim() !== ''))
       // DATA-LITERAL GATE: a control named purely by a date/number is instance data (#5 refuses

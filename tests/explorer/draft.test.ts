@@ -869,12 +869,12 @@ describe('draftFromEffects — dispose + SPA split run on SHELL-SUBTRACTED faces
 // ── Task 9 (structure-inference): affordance synthesis stops storing DATA VALUES. Five rules:
 //  1. a recorded click on a node INSIDE an overlay (its FROM snapshot has it under a dialog/menu)
 //     emits NO page affordance — its structure already lives as the opener's children.
-//  2. reveal children drop foldRepeats(addedNodes).foldedNames (the enumerated value list) while
-//     keeping unique overlay controls (Search/Apply/Cancel).
+//  2. reveal children drop the overlay's enumerated value domain (subtreeFolds + the retained
+//     overlay-scoped enumeratedNames) while keeping unique overlay controls (Search/Apply/Cancel).
 //  3. interior synthesis reads a page's CORE nodes only (not the union of every landing) and skips
-//     foldedNames — a value seen in one landing does not synthesize.
-//  4. ≥3 row-scoped repeats sharing a trailing word collapse to ONE scope:'row' affordance
-//     labeled by the suffix, elementFp:null (informational; mutates never route).
+//     subtree-folded member names — a value seen in one landing does not synthesize.
+//  4. ≥3 same-shape varying-name leaf controls fold (subtreeFolds abstracted level) to ONE
+//     scope:'row' affordance labeled by the common trailing word, elementFp:null (informational).
 //  5. a recorded `use type` on a textbox INSIDE an overlay (a picker search box) emits NO page
 //     input affordance either.
 describe('draftFromEffects — Task 9 overlay gate + folded row templates + core-only interior', () => {
@@ -968,16 +968,19 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
     expect(s.affordances.some((a) => a.kind === 'input' && a.label === 'Search')).toBe(false);
   });
 
-  it('RULE 4: ≥3 "<X> Remove" chips in a page core synthesize ONE scope:row affordance labeled Remove', () => {
+  it('RULE 4: ≥3 "<X> Remove" leaf chips in a page core fold to ONE scope:row affordance labeled Remove', () => {
     // a report page whose CORE carries the row-scoped remove chips (seen on BOTH landings so they
-    // survive templateCore) — they must fold to one scope:'row' affordance, not four value chips.
+    // survive templateCore) — subtreeFolds folds these same-shape (L2 `button()`), varying-name
+    // (distinct L1) leaf siblings at the ABSTRACTED level, label = their common trailing word
+    // 'Remove', unitSize 1 → scope:'row'. A genuinely DIFFERENT-shaped control (a textbox — a
+    // distinct L2 sig) does NOT fold with them and still synthesizes as its own affordance.
     const CORE_REPORT = (extra: string[]) => [
       '- heading "Metric Report" [ref=e1]',
       '- button "OS Remove" [ref=e2]',
       '- button "Revenue Remove" [ref=e3]',
       '- button "Win Rate Remove" [ref=e4]',
       '- button "eCPM Remove" [ref=e5]',
-      '- button "Add metric" [ref=e6]',
+      '- textbox "Metric filter" [ref=e6]',
       '- paragraph "Report body" [ref=e7]',
       ...extra,
     ].join('\n');
@@ -987,7 +990,7 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
       action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
       toUrl: `${RB}/metric/7`, toSnapshot: A, navigated: true, diff: { added: [], removed: [] } as any };
     const revisit: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${RB}/metric/7`, fromSnapshot: A,
-      action: { role: 'button', name: 'Add metric', ref: 'e6', elementFp: { role: 'button', name: 'Add metric', near: null } },
+      action: { role: 'textbox', name: 'Metric filter', ref: 'e6', elementFp: { role: 'textbox', name: 'Metric filter', near: null } },
       toUrl: `${RB}/metric/7`, toSnapshot: B2, navigated: true, diff: { added: [], removed: [] } as any };
     const g = draftFromEffects([authEnter, revisit] as never);
     const s = g.states.find((x) => x.label === 'metric')!;   // /metric/7 → opaque id dropped → `metric`
@@ -1001,8 +1004,8 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
     expect(rows[0].label).toBe('Remove');
     expect(rows[0].kind).toBe('mutate');
     expect(rows[0].elementFp ?? null).toBeNull();
-    // the genuinely-unique control still synthesizes.
-    expect(s.affordances.some((a) => a.label === 'Add metric')).toBe(true);
+    // the genuinely-unique (different-shaped) control still synthesizes.
+    expect(s.affordances.some((a) => a.label === 'Metric filter')).toBe(true);
   });
 
   it('overlay gate matches ROLE+NAME: a page-level heading "Search" cannot shadow the dialog textbox "Search"', () => {
@@ -1084,6 +1087,34 @@ describe('draftFromEffects — Task 9 overlay gate + folded row templates + core
     expect(s.affordances.some((a) => a.label === 'Sold: SKU-001')).toBe(false);
     expect(s.affordances.some((a) => a.label === 'Sold: SKU-999')).toBe(false);
   });
+
+  // GUARD (reviewer, binding): NEVER fold routing away. Repeated same-shape CARD subtrees fold as
+  // widgets (their instance titles are data), but a link INSIDE a folded card has a DISTINCT
+  // destination — a real route, not repeated template. The cross-link mesh must still emit each
+  // card link's navigate edge, completely UNAFFECTED by the fold.
+  it('GUARD: a link inside a folded card subtree still yields its navigate edge (mesh unaffected)', () => {
+    // a catalog page whose 3 product cards each = { link → a distinct product page, heading }.
+    // The cards fold (widget-scoped, unitSize ≥ 2) but the 3 links route to 3 KNOWN pages.
+    const catalog = (a: string, b: string, c: string) => shell('Catalog', [
+      '- generic [ref=e10]:',
+      `  - link "${a}" [ref=e11]:\n      - /url: ${XB}/alpha/view`, '    - heading "Card A" [ref=e12]',
+      `  - link "${b}" [ref=e13]:\n      - /url: ${XB}/beta/view`, '    - heading "Card B" [ref=e14]',
+      `  - link "${c}" [ref=e15]:\n      - /url: ${XB}/gamma/view`, '    - heading "Card C" [ref=e16]',
+    ]);
+    const g = draftFromEffects([
+      // two visits so the card links stay in the durable core; instance titles differ per visit.
+      nav(`${XB}/catalog/list`, catalog('Alpha widget', 'Beta widget', 'Gamma widget')),
+      nav(`${XB}/catalog/list`, catalog('Alpha widget', 'Beta widget', 'Gamma widget')),
+      // distinct (non-param-groupable) destination pages so each keeps its own label.
+      nav(`${XB}/alpha/view`, shell('Alpha', ['- button "Buy alpha" [ref=e7]', '- paragraph "alpha details" [ref=e8]'])),
+      nav(`${XB}/beta/view`, shell('Beta', ['- textbox "Beta search" [ref=e7]', '- listitem "beta row" [ref=e8]'])),
+      nav(`${XB}/gamma/view`, shell('Gamma', ['- button "Gamma go" [ref=e7]', '- heading "Gamma panel" [ref=e8]'])),
+    ] as never);
+    const cat = g.states.find((s) => s.label === 'catalog-list')!;
+    // all three routes survive the fold — the mesh emits a navigate per distinct destination.
+    const navTos = cat.affordances.filter((a) => a.kind === 'navigate').map((a) => a.to).sort();
+    expect(navTos).toEqual(expect.arrayContaining(['alpha-view', 'beta-view', 'gamma-view']));
+  });
 });
 
 // ── Task 15: offline-acceptance findings, each reproduced synthetically (the real the analytics SPA data
@@ -1157,8 +1188,8 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
       '- button "OS Remove" [ref=e10]', '- button "Revenue Remove" [ref=e11]',
       '- button "eCPM Remove" [ref=e12]', '- button "Win Rate Remove" [ref=e13]', ...extra]);
     const g = draftFromEffects([
-      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- button "Export" [ref=e14]'])),
-      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- button "Export" [ref=e14]'])),   // 2 landings → confirmed core
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- textbox "Search rows" [ref=e14]'])),
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaa`, core(['- textbox "Search rows" [ref=e14]'])),   // 2 landings → confirmed core
       nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
       nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
     ] as never);

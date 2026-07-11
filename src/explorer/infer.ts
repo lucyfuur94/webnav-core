@@ -131,37 +131,13 @@ export function extractShell(faces: Face[], minFrac = 0.8): Face {
   return shell;
 }
 
-export interface FoldedRepeat { role: string; suffix: string; count: number }
-
-/** ≥3 same-role, same-depth nodes whose names share a common trailing word (with DISTINCT
- *  varying prefixes) are one value-bound affordance repeated per row/chip — fold to a single
- *  scope:'row' template. Evidence-only: repetition IS the signal, no meaning guessed. */
-export function foldRepeats(nodes: SnapNode[]): { folds: FoldedRepeat[]; foldedNames: Set<string> } {
-  const groups = new Map<string, string[]>();   // role|depth|lastWord → full names
-  for (const n of nodes) {
-    if (!n.name || !n.name.trim()) continue;
-    const words = n.name.trim().split(/\s+/);
-    if (words.length < 2) continue;             // need a prefix + suffix
-    const key = `${n.role}|${n.depth}|${words[words.length - 1]}`;
-    (groups.get(key) ?? groups.set(key, []).get(key)!).push(n.name);
-  }
-  const folds: FoldedRepeat[] = [];
-  const foldedNames = new Set<string>();
-  for (const [key, names] of groups) {
-    const distinct = new Set(names);
-    if (distinct.size < 3) continue;
-    const [role, , suffix] = key.split('|');
-    folds.push({ role, suffix, count: distinct.size });
-    for (const nm of distinct) foldedNames.add(nm);
-  }
-  return { folds, foldedNames };
-}
-
 // ── Subtree-template induction (2026-07-11, subtree-templates design) ──────────────────────────
 // The repetition principle at its last scale: repeated sibling SUBTREES are instances of one
 // sub-template; the varying residue is data. Pure tree fold over the parsed snapshot, zero site
-// knowledge (#5a). Subsumes foldRepeats (a one-level subtree = the named-sibling case) and the
-// draft-side enumeratedNames children fold — both die in Task 2 once consumers re-point here.
+// knowledge (#5a). This is the ONE general fold pass: it subsumed the old foldRepeats (a one-level
+// subtree = the named/abstracted sibling case) and the draft-side enumeratedNames children fold —
+// both deleted 2026-07-11; every consumer (interior synthesis, reveal children, fingerprints) reads
+// foldedIndices here.
 
 export interface SubtreeFold {
   sig: string;                 // 8-char stable hash of the firing level's structural signature
@@ -180,9 +156,8 @@ function sigHash(s: string): string {
   return h.toString(16).padStart(8, '0');
 }
 
-// Longest common trailing word across names (ported from foldRepeats' suffix idea, generalized to
-// N shared trailing words). Returns '' when the names share no trailing word. Copy, not call —
-// foldRepeats dies in Task 2. Anchors an abstracted fold's label ('OS Remove'/'Revenue Remove' → 'Remove').
+// Longest common trailing word(s) across names. Returns '' when the names share no trailing word.
+// Anchors an abstracted fold's label ('OS Remove'/'Revenue Remove' → 'Remove').
 function commonTrailingWords(names: string[]): string {
   const wordLists = names.map((n) => n.trim().split(/\s+/));
   const out: string[] = [];
