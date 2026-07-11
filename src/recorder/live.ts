@@ -385,11 +385,25 @@ export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to
   if (!action && !navigated) {
     return null;   // unresolved same-page click → honest drop
   }
+  // requestedUrl = the URL the clicked link's DECLARED href asked for (observed
+  // evidence, judgment-free) — may differ from the settled to.url on a redirect.
+  // Same semantics as runActionRecorded (src/router/browse.ts): absolutize against
+  // fromUrl, cross-page http(s) only — a '#'/javascript: href declares no real
+  // destination, and recording one would alias the FROM page onto the TO page
+  // (state-merge poison).
+  let requestedUrl: string | undefined;
+  if (navigated && ev.href) {
+    try {
+      const abs = new URL(ev.href, ev.url);
+      if (/^https?:$/.test(abs.protocol) && didNavigate(ev.url, abs.href)) requestedUrl = abs.href;
+    } catch { /* unparseable href → no requested url */ }
+  }
   return {
     fromUrl: ev.url, fromSnapshot: from.snapshot,
     action,
     toUrl: to.url, toSnapshot: to.snapshot,
     navigated,
     diff: diffSnapshots(parseSnapshot(from.snapshot), parseSnapshot(to.snapshot)),
+    requestedUrl,
   };
 }
