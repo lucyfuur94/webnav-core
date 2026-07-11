@@ -38,6 +38,7 @@ export type ParsedArgs =
   | { cmd: 'click'; ref: string; session: string }
   | { cmd: 'type'; ref: string; text: string; session: string }
   | { cmd: 'walk'; start: string; goal: string; inputs: Record<string, string>; browser: BrowserOpts; hosted: boolean; observe: string[]; observeDynamic: boolean }
+  | { cmd: 'test'; suite: string; browser: BrowserOpts }
   | { cmd: 'walk-resume'; session: string; ref?: string; classify?: string; continue: boolean; inputs: Record<string, string> }
   | { cmd: 'login'; key: string }
   | { cmd: 'creds'; sub: string; site?: string; key?: string; values: Record<string, string> }
@@ -225,6 +226,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted'),
       observe: flagValues(rest, '--observe'), observeDynamic: rest.includes('--observe-dynamic') };
+  }
+  if (cmd === 'test') {
+    return { cmd, suite: flagValue(rest, '--suite') ?? rest.find((a) => !a.startsWith('--')) ?? '', browser: browserOpts(rest) };
   }
   if (cmd === 'walk-resume') {
     return { cmd, session: rest.find((a) => !a.startsWith('--')) ?? '',
@@ -1540,6 +1544,78 @@ async function main() {
     if (!args.key) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav login <api-key>' }, null, 2)); process.exitCode = 2; return; }
     saveConfig({ apiKey: args.key });
     console.log(JSON.stringify({ status: 'ok', saved: configPath(), note: 'hosted route enabled — use `webnav walk --hosted ...`' }, null, 2));
+    return;
+  }
+  if (args.cmd === 'test') {
+    const { readFileSync } = await import('node:fs');
+    const { MapStore } = await import('./mapstore/store.js');
+    const { parseSuite, runSuite, SuiteConfigError } = await import('./router/suite.js');
+    const { makeLiveWalkBrowser } = await import('./router/walk-live.js');
+    const { PlaywrightAdapter, resolveProfile } = await import('./playwright/adapter.js');
+    const { ensureCanOpen } = await import('./playwright/sessions.js');
+    const { settleSnapshot } = await import('./router/browse.js');
+    const { classifyAuthLanding } = await import('./router/auth-status.js');
+    const { CredStore } = await import('./creds.js');
+    const { homedir } = await import('node:os');
+    const { join } = await import('node:path');
+    if (!args.suite) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav test --suite <file.suite.json> [--headless]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    let suite;
+    try {
+      suite = parseSuite(JSON.parse(readFileSync(args.suite, 'utf8')));
+    } catch (e) {
+      const hint = e instanceof SuiteConfigError ? e.message : 'could not read/parse suite: ' + String((e as Error).message);
+      console.log(JSON.stringify({ status: 'error', hint }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const store = new MapStore(dbPath());
+    const node = store.getNode(suite.site);
+    if (!node) {
+      console.log(JSON.stringify({ status: 'error', hint: `no map for site '${suite.site}' — map it first (dev record-start) then re-run` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const states = store.statesForNode(suite.site);
+    // A suite always runs headless (a release check should never pop windows; the
+    // suite opens a fresh browser per case). --headless is documented as the
+    // recommended flag but the runner enforces headless regardless of the default.
+    const profilesRoot = join(homedir(), '.webnav', 'profiles');
+    const profileDir = suite.profile ? resolveProfile(suite.profile, profilesRoot) : undefined;
+    const bopts: BrowserOpts = { headed: false, ...(profileDir ? { persistent: true, profile: profileDir } : {}) };
+    const siteCreds = new CredStore().get(suite.site);
+    const progress: string[] = [];
+    const shortId = () => 'tst-' + Math.random().toString(36).slice(2, 6);
+    const res = await runSuite(suite, {
+      store, states,
+      onProgress: (l) => { progress.push(l); process.stderr.write(l + '\n'); },
+      // AUTH PRE-FLIGHT (once, before case 1): the SAME check as `dev profile-status`
+      // — one headless load of the site homeUrl, settle, classify against the map's
+      // own fingerprints (the oracle). needs-login fails the whole run fast.
+      preflight: async () => {
+        const session = shortId();
+        const adapter = new PlaywrightAdapter(session, undefined, undefined, bopts);
+        try {
+          await adapter.open(node.homeUrl ?? 'about:blank');
+          const landedUrl = await adapter.currentUrl();
+          const snapshot = await settleSnapshot(() => adapter.snapshot());
+          const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, suite.site, states);
+          return { auth, loginUrl };
+        } finally { await adapter.close().catch(() => {}); }
+      },
+      // A FRESH browser session per case (the CF first-load pattern), reaped after.
+      openCase: async (startUrl: string) => {
+        const session = shortId();
+        const gate = await ensureCanOpen(session, []);
+        if (!gate.ok) throw new Error(gate.reason);
+        const adapter = new PlaywrightAdapter(session, undefined, undefined, bopts);
+        await adapter.open(startUrl);
+        const browser = makeLiveWalkBrowser(adapter, { ...siteCreds }, bopts, session);
+        return { browser, close: async () => { await adapter.close().catch(() => {}); } };
+      },
+    });
+    console.log(JSON.stringify(res, null, 2));
+    process.exitCode = res.status === 'ok' ? 0 : 3;
     return;
   }
   if (args.cmd === 'walk') {
