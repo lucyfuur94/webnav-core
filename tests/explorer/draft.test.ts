@@ -1678,6 +1678,26 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(m.status).toBe('matched');
   });
 
+  it('urlPattern = most-observed settled landing URL, not the first-observed ghost (session ordering)', () => {
+    // LIVE finding: an SPA landing can be captured on its PRE-REDIRECT URL (the router hasn't
+    // inserted the tenant segment yet): /v3/report/list vs /v3/9999/report/list — inferUrlModel's
+    // conditional base-skip keys BOTH to /report/list. The old "first observed URL wins" rule let
+    // session ordering store the ghost as the state's urlPattern (observed: tenant-less 3× vs
+    // tenant-full 7×, ghost first in CLI order) → every walk opening the start state 404'd.
+    // Rule: most-observed settled landing URL; ties → longest pathname, then first observed.
+    const LIST = shell('Reports', ['- button "New report" [ref=e7]', '- textbox "Search reports" [ref=e8]']);
+    const g = draftFromEffects([
+      nav('https://x.test/v3/report/list', LIST),   // ghost FIRST (pre-redirect, tenant-less)
+      nav(`${XB}/report/list`, LIST),               // settled tenant-full, observed more often
+      nav(`${XB}/report/list`, LIST),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
+    ] as never);
+    const rl = g.states.find((s) => s.label === 'report-list')!;
+    expect(rl.urlPattern).toBe(`${XB}/report/list`);   // tenant-full wins, ghost-first order notwithstanding
+  });
+
   it('needsFix carries no duplicate (label, reason) entries', () => {
     // two genuinely-different HEADING-LESS faces at one key (low jaccard AND low containment):
     // still split, neither nameable → both clusters report the same (label, reason) → ONE entry.
