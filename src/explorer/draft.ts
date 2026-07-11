@@ -6,6 +6,7 @@ import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js
 import { extractShadow } from './shadow.js';
 import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
+import { loadPatternPacks, packDetectsOverlay, packValueNames, type PatternPack } from './patterns.js';
 
 // draftFromEffects: fold a recorded walk-through (action-effects: fromUrl/toUrl/toSnapshot/
 // action.elementFp) into a ready-to-edit graph-edit spec — absolute URLs, uniqueness-driven
@@ -360,7 +361,11 @@ interface PageInfo {
  * Then (unchanged, some re-pointed in Tasks 8–10): uniqueness fingerprint, affordance synthesis,
  * hierarchy, self-verify, needsFix assembly.
  */
-export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
+// Pattern packs extend structure coverage as DATA (2026-07-12-extension-loop.md): they can only
+// make the engine MORE conservative about what it stores (gate an overlay's values / detect an
+// undeclared overlay), never mint an affordance/edge. Loaded ONCE per draft run. `packs` is
+// injectable so tests stay pure (no fs); default = the two shipped dirs via loadPatternPacks.
+export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPack[] = loadPatternPacks()): DraftGraph {
   // The map's HOST = where the recording started (the operator's site). A landing that SETTLED
   // on another host is a blocked door (SSO wall, CDN interstitial) — Finding 7 / doors posture:
   // detect + escalate (needsFix), never a state of THIS site's map, never a site rule.
@@ -666,7 +671,10 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
     // on chrome). No `main` declared → mainScope is a no-op (whole coreNodes, unchanged). Scopes
     // ONLY the fp pool here; p.coreNodes itself (shadow, other reads) is untouched.
     const fpPool = mainScope(p.coreNodes);
-    const fpFolded = templateFolds(fpPool).gatedNames;
+    // HOOK 2c (value-domain pack, `landing` context): pack-marked value names also can't anchor
+    // identity — join the folded-name exclusion for the fingerprint candidate pool (same discipline
+    // as the interior-synthesis exclusion; only ever shrinks the pool).
+    const fpFolded = new Set([...templateFolds(fpPool).gatedNames, ...packValueNames(packs, fpPool)]);
     const fpNodes = fpFolded.size ? fpPool.filter((n) => !(n.name && fpFolded.has(n.name))) : fpPool;
     const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
@@ -803,8 +811,12 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
         const addedNodes = e.diff?.added ?? [];
         const { emit: addedFolds, gatedNames: foldedNames } = templateFolds(addedNodes);
         const valueDomain = enumeratedNames(addedNodes);
+        // HOOK 2a (value-domain pack, `overlay` context): nodes inside a firing value-domain trigger
+        // over the overlay's added subtree are value data — excluded from reveal children exactly
+        // like the built-in value folds. Extends the excluded set; never adds children.
+        const packValues = packValueNames(packs, addedNodes);
         const children: DraftAffordance[] = addedNodes
-          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name))
+          .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name) && !packValues.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
             kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
             ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
@@ -836,9 +848,17 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
           }
           return false;
         };
+        // HOOK 1 (overlay-open pack): the built-in detection above is the strict 4-exclusion scan.
+        // ONLY when it DECLINES do packs get a say — a matching `overlay-open` entry flips detection
+        // true for an UNDECLARED role-less portal the strict scan can't see (a div-soup overlay whose
+        // added subtree carries no interactive/attr signal). Detection only: the transient
+        // attribution set stays maximal (built above, NOT pack-influenced), so gated value clicks are
+        // unaffected. Evaluated on diff.added (the pack's `diff.added` context) — the subtree the
+        // opener revealed.
         const openedOverlay = addedNodes.some((n, idx) => n.name && n.name.trim()
           && overlayControl(n.role) && !removedToks.has(`${n.role}:${n.name}`) && !foldedNames.has(n.name)
-          && !(foldRootRoles.size > 0 && underFoldRootRole(idx)));
+          && !(foldRootRoles.size > 0 && underFoldRootRole(idx)))
+          || packDetectsOverlay(packs, addedNodes);
         const aff: DraftAffordance = openedOverlay
           ? { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'reveal', elementFp: fp, children }
           : { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'mutate', elementFp: fp };
@@ -918,7 +938,12 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   // real routes, NEVER a repeated template to fold away) and its headings are fingerprint material.
   // The folded member nodes are skipped in the per-node loop below either way (by name).
   for (const p of pageList) {
-    const { emit, gatedNames: foldedNames } = templateFolds(p.coreNodes);
+    const { emit, gatedNames: baseFolded } = templateFolds(p.coreNodes);
+    // HOOK 2b (value-domain pack, `landing` context): a value-domain trigger over the page's core
+    // nodes marks its matched subtree as value data — those names join the excluded set so they
+    // never synthesize as an interior affordance / never anchor identity (same gate as templateFolds'
+    // folded members). Only ever SHRINKS what's stored.
+    const foldedNames = new Set([...baseFolded, ...packValueNames(packs, p.coreNodes)]);
     for (const fold of emit) {
       const controlRole = dominantControlRole(p.coreNodes, fold);
       if (!controlRole) continue;                                  // widget whose only content is links → no affordance (mesh owns the links)
