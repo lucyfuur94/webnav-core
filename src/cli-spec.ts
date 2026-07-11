@@ -124,16 +124,18 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'walk', group: 'navigate',
-    summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent). Response protocol: {status:"done",evidence} reached the goal · {status:"needs-navigation",...} real drift, agent supplies a ref · {status:"needs-classification",...} a possibly-destructive action, agent classifies safe|commit · {status:"needs-auth",profile,site,loginUrl,at} a settled landing classified as an SSO/login wall THAT SURVIVED a fresh-session retry under the same --profile (a stale-login pattern, not evasion) — this is a FAIL, not a resumable pause: log in by hand in that profile, then re-run `walk` · {status:"failed",reason}.',
+    summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent). Response protocol: {status:"done",evidence} reached the goal (evidence carries `snapshot`+`repertoire` too when the GOAL state is dynamic — see --observe-dynamic) · {status:"needs-navigation",...} real drift, agent supplies a ref · {status:"needs-classification",...} a possibly-destructive action, agent classifies safe|commit · {status:"needs-auth",profile,site,loginUrl,at} a settled landing classified as an SSO/login wall THAT SURVIVED a fresh-session retry under the same --profile (a stale-login pattern, not evasion) — this is a FAIL, not a resumable pause: log in by hand in that profile, then re-run `walk` · {status:"checkpoint",at,state,snapshot,repertoire} a CONFIRMED arrival at a state you asked to observe — the live page + that state\'s stored affordance repertoire, so you don\'t have to snapshot manually; resume with `walk-resume <session> --continue` (fires at most once per state per walk; you may also fire `use` actions on the session before continuing — that\'s the designed pattern) · {status:"failed",reason}.',
     args: [],
     flags: [
       { name: '--start', takesValue: true, description: 'Start state id (from `dev graph-show`).' },
       { name: '--goal', takesValue: true, description: 'Goal state id to reach.' },
       { name: '--input', takesValue: true, description: 'Runtime input slot=value (repeatable; never stored). Stored creds are used if set.' },
       { name: '--hosted', takesValue: false, description: 'Use the HOSTED shared map: fetch this site\'s map live from the webnav service (needs `webnav login <key>`) instead of the local map. Credentials still stay local.' },
+      { name: '--observe', takesValue: true, description: 'Pause with a checkpoint on ARRIVAL at this state (id or semanticName; repeatable). Opt-in — walk stays a zero-token autopilot unless you ask to observe something.' },
+      { name: '--observe-dynamic', takesValue: false, description: 'Pause with a checkpoint on arrival at ANY state the map marks dynamic (provisional, or carrying a row/widget-scoped affordance) — for content that changes between visits.' },
       ...BROWSER_FLAGS,
     ],
-    example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --headed',
+    example: 'webnav walk --start www.saucedemo.com:login --goal www.saucedemo.com:checkout-overview --headed --observe-dynamic',
   },
   {
     name: 'login', group: 'navigate',
@@ -149,6 +151,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
     flags: [
       { name: '--ref', takesValue: true, description: 'Element ref (answers needs-navigation; from the snapshot).' },
       { name: '--classify', takesValue: true, description: 'safe | commit (answers needs-classification; commit halts).' },
+      { name: '--continue', takesValue: false, description: 'Answers a checkpoint pause (--observe/--observe-dynamic) — proceed with no action. You may fire `use` actions on the session\'s browser first (the designed pattern); errors with a hint if the session actually paused on a different kind (needs-navigation/needs-classification instead).' },
       { name: '--input', takesValue: true, description: 'Re-supply a one-off slot=value from the original `walk` (repeatable; runtime-only, never stored — stored creds are rebuilt automatically).' },
     ],
     example: 'webnav walk-resume walk-w-123 --ref e42',
