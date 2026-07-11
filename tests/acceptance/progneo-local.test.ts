@@ -51,6 +51,17 @@ describe.skipIf(!existsSync(DB))('progneo offline acceptance', () => {
     const groundTruth = ['Share', 'Save As / Schedule', 'Add dimensions', 'Add metrics', 'Download as formatted CSV', 'Save Visualization'];
     expect(groundTruth.filter((n) => builderNames.has(n)).length).toBeGreaterThanOrEqual(4);
 
+    // KIND regression lock (the reveal-by-behavior shape-guard class shipped 2026-07-11 because
+    // acceptance asserted presence/counts only): a filter-tab click that RE-RENDERS the grid and a
+    // click-shows-tooltip are MUTATE; genuine overlay openers are REVEAL. Presence alone let a
+    // mutate→reveal drift sail through — pin the kinds of known recorded actions.
+    const kindsByLabel = new Map<string, string>();
+    for (const s of g.states) for (const a of s.affordances) if (!kindsByLabel.has(a.label)) kindsByLabel.set(a.label, a.kind);
+    expect(kindsByLabel.get('Owned/Shared'), 'Owned/Shared (grid re-render)').toBe('mutate');
+    expect(kindsByLabel.get('Standard'), 'Standard (grid re-render)').toBe('mutate');
+    expect(kindsByLabel.get('Save As / Schedule'), 'Save As / Schedule (menu opener)').toBe('reveal');
+    expect(kindsByLabel.get('Add dimensions'), 'Add dimensions (dialog opener)').toBe('reveal');
+
     // no fingerprint anchored on instance data (the logged-in user's name)
     expect(g.states.every((s) => !s.fingerprint.join().includes('Testuser'))).toBe(true);
 

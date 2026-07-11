@@ -46,3 +46,42 @@ progneo/ohrm/ae real-data acceptance (env-gated, DB present at `~/.webnav/webnav
 ## Concerns
 1. **columnheader deviation from the plan's stated fold mechanism** (documented above): the plan expected columnheaders to fold via the existing pass; they don't. The aria-sort gate is a stricter, more principled upstream fix (matrix's own row-43-vs-44 distinction) and is what keeps progneo acceptance green — but it's narrower than "all sortable headers": a grid that declares sort via a nested `button` inside the `columnheader` rather than the `aria-sort` attribute would synthesize that button (fine) while the header itself stays shadow. No regression; flag for awareness.
 2. The `enumeratedNames` overlay value-domain fold (draft.ts) still carries its pre-existing `ponytail:` FOLLOW-UP note (unrelated to this task) — left as-is.
+
+---
+
+## Follow-up (review fix, 2026-07-11): overlay-shape guard + session-boundary clear + kind locks
+
+The task reviewer confirmed a base→head REGRESSION from Rule 2: `openedOverlay = addedNodes.some(named)` had no shape guard, so on real progneo data a filter-tab click that re-renders the grid (`Owned/Shared`, `Standard`) and a click-shows-tooltip (`Download as formatted CSV`) flipped mutate→reveal.
+
+### Fix 1 — overlay-shape guard (src/explorer/draft.ts)
+An effect OPENS an overlay iff `diff.added` contains ≥1 named INTERACTIVE node (role ∈ REVEAL_CHILD_ROLES ∪ CONTROL_ROLES ∪ `option`) that is genuinely NEW:
+- **churn exclusion** — role:name also in `diff.removed` = a re-paint of existing controls (sort re-render), not overlay content;
+- **fold exclusion** (extension beyond the reviewer's stated rule, forced by evidence) — the real tab-switch re-render swaps in DIFFERENT rows (new `link:<report name>` tokens, NOT exact-token churn), but they arrive as ≥2 same-shape row subtrees already caught by `templateFolds` — re-rendered collection DATA, excluded from detection;
+- **straggler-unit exclusion** (second live finding) — one real row (`OS and Device Report_clone`) had per-row shape variance (extra cell) and MISSED the fold its 14 siblings formed; its interior link alone flipped the classification. When the added diff folded repeated units (unitSize ≥2), a control nested under another node of the same unit-root role (`row`) is collection data too (nearest-lower-depth ancestor walk, the insideOverlay idiom).
+- **DETECTION set ≠ STORAGE set** (documented in a comment): `option` counts for DETECTION (an added option-list is definitely an overlay opening) but options are never STORED as children. `enumeratedNames` value domains are NOT excluded from detection (an added value list IS an overlay signal — the row-17 option-only portal and the gaps role-less checkbox popover both depend on this).
+
+The churn exclusion is also applied to the transient-set ADDS (same seam): a re-render's churned tokens must not enter the transient-overlay set, else later clicks on re-rendered page content would be wrongly gated.
+
+### Fix 2 — session-boundary transient clear (Minor I2)
+One line at the top of the affordance `effects.forEach`: the same seq-reset signal the landing pass reads (`e.seq <= effects[i-1].seq`) clears `transientByPage` — a new session is a fresh browser; no overlay survives it.
+
+### Fix 3 — kind assertions (the gap that let the regression ship)
+- `tests/acceptance/progneo-local.test.ts`: pins kinds of known recorded actions — `Owned/Shared` + `Standard` = mutate (grid re-render), `Save As / Schedule` + `Add dimensions` = reveal (genuine openers).
+- `tests/grammar/collections.test.ts` (row 44): new fixture — a recorded sort click whose diff re-renders the rows (same tokens in added+removed) classifies mutate. RED-verified: fails under the regressed any-named-node guard, passes under the fix.
+
+### progneo kinds, base vs regressed vs fixed
+
+| Action | base (pre-Task-1) | regressed (8735c96) | fixed |
+|---|---|---|---|
+| Owned/Shared (report-list) | mutate | reveal (children=0) | **mutate** |
+| Standard (report-list) | mutate | reveal (children=0) | **mutate** |
+| Download as formatted CSV (report-flat) | mutate | reveal (children=0) | **mutate** |
+| Save As / Schedule (report-flat) | reveal (4 children) | reveal (4) | **reveal (4)** |
+| Add dimensions (report-flat) | reveal (1 child) | reveal (1) | **reveal (1)** |
+
+(base kinds per the reviewer's revert-diff; regressed + fixed verified empirically against ~/.webnav/webnav.db.)
+
+### Verification
+- The 3 flipped grammar tests + gaps X1 containment: still green under the new guard.
+- Full suite: 775 passed / 7 skipped, 0 failed. `npx tsc --noEmit` clean.
+- Real-data acceptance (progneo incl. new kind locks + ohrm + ae): green.
