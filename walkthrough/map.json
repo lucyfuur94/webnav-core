@@ -1,0 +1,3090 @@
+{
+  "node": "progneo.analytics.mn",
+  "states": [
+    {
+      "id": "progneo.analytics.mn:_shell",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "_shell",
+      "urlPattern": "https://progneo.analytics.mn",
+      "role": "shell",
+      "availableSignals": [],
+      "fingerprint": [],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Logo Logo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Logo Logo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_231_report-list",
+          "label": "Logo Logo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Close sidebar",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Close sidebar",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_232_close-sidebar",
+          "label": "Close sidebar",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "O Overview Merged Change",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "O Overview Merged Change",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_233_o-overview-merged-change",
+          "label": "O Overview Merged Change",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Reports",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Reports",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_234_report-list",
+          "label": "Reports",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:dashboard-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dashboards",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Dashboards",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_235_dashboard-list",
+          "label": "Dashboards",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:download-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Downloads",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Downloads",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_236_download-list",
+          "label": "Downloads",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:help-center",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Help Center",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Help Center",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_237_help-center",
+          "label": "Help Center",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:announcements",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Announcements",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Announcements",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_238_announcements",
+          "label": "Announcements",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Switch to Classic",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Switch to Classic",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_239_switch-to-classic",
+          "label": "Switch to Classic",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Dark Mode",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Dark Mode",
+            "near": null
+          },
+          "cost": 0,
+          "id": "sh_240_dark-mode",
+          "label": "Dark Mode",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": null,
+      "parentState": null,
+      "provisional": null
+    },
+    {
+      "id": "progneo.analytics.mn:announcements",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "announcements",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/announcements",
+      "role": "section",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Announcements"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search announcements...",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search announcements...",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_228_search-announcements",
+          "label": "Search announcements...",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Feature release",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Feature release",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_229_feature-release",
+          "label": "Feature release",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Update",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Update",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_230_update",
+          "label": "Update",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search announcements...",
+            "control": "text"
+          }
+        ]
+      },
+      "parentState": null,
+      "provisional": "seen once — record another visit to separate structure from data"
+    },
+    {
+      "id": "progneo.analytics.mn:dashboard-category",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "dashboard-category",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/dashboard/1210",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "tab:Setup"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Legend",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "list",
+            "name": "Legend",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_1_legend",
+          "label": "Legend",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Ad Impressions, Legend item 1 of 2",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "switch",
+            "name": "Ad Impressions, Legend item 1 of 2",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_2_ad-impressions-legend-item-1-of-2",
+          "label": "Ad Impressions, Legend item 1 of 2",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "09 Jul 2026 - 10 Jul 2026 UTC",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "09 Jul 2026 - 10 Jul 2026 UTC",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_7_09-jul-2026-10-jul-2026-utc",
+          "label": "09 Jul 2026 - 10 Jul 2026 UTC",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "09 Jul 2026 - 10 Jul 2026 UTC",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "09 Jul 2026 - 10 Jul 2026 UTC",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_8_09-jul-2026-10-jul-2026-utc",
+          "label": "09 Jul 2026 - 10 Jul 2026 UTC",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Customize",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Customize",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_9_customize",
+          "label": "Customize",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:dashboard-category",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "dashboard-category",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_14_dashboard-category",
+          "label": "dashboard-category",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Close",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Close",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_18_close",
+              "label": "Close",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search or add team member by name, id",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search or add team member by name, id",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_19_search-or-add-team-member-by-name-id",
+              "label": "Search or add team member by name, id",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Share as Public (View access only)",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "checkbox",
+                "name": "Share as Public (View access only)",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_20_share-as-public-view-access-only",
+              "label": "Share as Public (View access only)",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Share",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Share",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_21_share",
+              "label": "Share",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Cancel",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Cancel",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_22_cancel",
+              "label": "Cancel",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Copy Link",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Copy Link",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_23_copy-link",
+              "label": "Copy Link",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Share",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_24_share",
+          "label": "Share",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:download-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Downloads",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Downloads",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_57_download-list",
+          "label": "Downloads",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "CATEGORY",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "CATEGORY",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_189_category",
+          "label": "CATEGORY",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "SERIES",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "SERIES",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_190_series",
+          "label": "SERIES",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Move Ad Impressions to secondary axis",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Move Ad Impressions to secondary axis",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_191_move-ad-impressions-to-secondary-axis",
+          "label": "Move Ad Impressions to secondary axis",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Remove Ad Impressions",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Remove Ad Impressions",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_192_remove-ad-impressions",
+          "label": "Remove Ad Impressions",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Move Revenue to secondary axis",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Move Revenue to secondary axis",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_193_move-revenue-to-secondary-axis",
+          "label": "Move Revenue to secondary axis",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Remove Revenue",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Remove Revenue",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_194_remove-revenue",
+          "label": "Remove Revenue",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": null,
+      "parentState": "progneo.analytics.mn:dashboard-list",
+      "provisional": "seen once — record another visit to separate structure from data"
+    },
+    {
+      "id": "progneo.analytics.mn:dashboard-list",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "dashboard-list",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/dashboard/list",
+      "role": "section",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Dashboards"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search",
+            "near": null
+          },
+          "cost": 0,
+          "id": "inp_search",
+          "label": "Search",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Test_demo - Jul 8, 2026 12:20 IST devbrat.r",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "row",
+            "name": "Test_demo - Jul 8, 2026 12:20 IST devbrat.r",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_30_test-demo-jul-8-2026-12-20-ist-devbrat-r",
+          "label": "Test_demo - Jul 8, 2026 12:20 IST devbrat.r",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Testuser - Jan 13, 2026 19:31 IST devbrat.r",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "row",
+            "name": "Testuser - Jan 13, 2026 19:31 IST devbrat.r",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_31_testuser-jan-13-2026-19-31-ist-devbrat-r",
+          "label": "Testuser - Jan 13, 2026 19:31 IST devbrat.r",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "New Dashboard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "New Dashboard",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_35_new-dashboard",
+          "label": "New Dashboard",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Refresh list",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Refresh list",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_36_refresh-list",
+          "label": "Refresh list",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page Size",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "combobox",
+            "name": "Page Size",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_39_page-size",
+          "label": "Page Size",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:dashboard-category",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [
+            "inp_search"
+          ],
+          "acceptsInput": "credentials",
+          "core": false,
+          "semanticStep": "Testuser",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Testuser",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_40_dashboard-category",
+          "label": "Testuser",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "First Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "First Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_195_first-page",
+          "label": "First Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Previous Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Previous Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_196_previous-page",
+          "label": "Previous Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Next Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Next Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_197_next-page",
+          "label": "Next Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Last Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Last Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_198_last-page",
+          "label": "Last Page",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search",
+            "control": "text"
+          },
+          {
+            "field": "Page Size",
+            "control": "select"
+          }
+        ]
+      },
+      "parentState": null,
+      "provisional": "seen once — record another visit to separate structure from data"
+    },
+    {
+      "id": "progneo.analytics.mn:download-list",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "download-list",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/download/list",
+      "role": "section",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Downloads"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Close",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Close",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_62_close",
+              "label": "Close",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search or add team member by name, id",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search or add team member by name, id",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_63_search-or-add-team-member-by-name-id",
+              "label": "Search or add team member by name, id",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Share",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Share",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_64_share",
+              "label": "Share",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Cancel",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Cancel",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_65_cancel",
+              "label": "Cancel",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Copy Link",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Copy Link",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_66_copy-link",
+              "label": "Copy Link",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Share",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_67_share",
+          "label": "Share",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Dismiss toast",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Dismiss toast",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_78_dismiss-toast",
+              "label": "Dismiss toast",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Copy",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_79_copy",
+          "label": "Copy",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "report-list",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_82_report-list",
+          "label": "report-list",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Press Space to toggle row selection (unchecked)",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_199_press-space-to-toggle-row-selection-unch",
+          "label": "Press Space to toggle row selection (unchecked)",
+          "kind": "input",
+          "scope": "widget"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_200_page",
+          "label": "Page",
+          "kind": "mutate",
+          "scope": "row"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_201_search",
+          "label": "Search",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Refresh list",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Refresh list",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_202_refresh-list",
+          "label": "Refresh list",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Column with Header Selection",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "checkbox",
+            "name": "Column with Header Selection",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_203_column-with-header-selection",
+          "label": "Column with Header Selection",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page Size",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "combobox",
+            "name": "Page Size",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_204_page-size",
+          "label": "Page Size",
+          "kind": "input"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search",
+            "control": "text"
+          },
+          {
+            "field": "Column with Header Selection",
+            "control": "checkbox"
+          },
+          {
+            "field": "Press Space to toggle row selection (unchecked)",
+            "control": "checkbox"
+          },
+          {
+            "field": "Page Size",
+            "control": "select"
+          }
+        ]
+      },
+      "parentState": null,
+      "provisional": "seen once — record another visit to separate structure from data"
+    },
+    {
+      "id": "progneo.analytics.mn:help-center",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "help-center",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/help-center",
+      "role": "section",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Help Center"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Interface User Guide",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_219_interface-user-guide",
+          "label": "Interface User Guide",
+          "kind": "mutate",
+          "scope": "widget"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search help...",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search help...",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_220_search-help",
+          "label": "Search help...",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Overview",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Overview",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_221_overview",
+          "label": "Overview",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Working with Reports",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Working with Reports",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_222_working-with-reports",
+          "label": "Working with Reports",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Downloading Data",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Downloading Data",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_223_downloading-data",
+          "label": "Downloading Data",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Viewing Dashboards",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Viewing Dashboards",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_224_viewing-dashboards",
+          "label": "Viewing Dashboards",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "FAQs",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "FAQs",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_225_faqs",
+          "label": "FAQs",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Help Center",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Help Center",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_226_help-center",
+          "label": "Help Center",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Accessing the Interface",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Accessing the Interface",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_227_accessing-the-interface",
+          "label": "Accessing the Interface",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search help...",
+            "control": "text"
+          }
+        ]
+      },
+      "parentState": null,
+      "provisional": null
+    },
+    {
+      "id": "progneo.analytics.mn:report",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "report",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/report/16116/bd5a1a4a6352048e18d747c7e95ce3a0",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "tab:Table"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Remove",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Remove",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_88_remove",
+          "label": "Remove",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "View All",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "View All",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_95_view-all",
+          "label": "View All",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "",
+            "name": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_96_last-7-days-cd-02-jul-2026-08-jul-2026ut",
+          "label": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Download as formatted CSV",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Download as formatted CSV",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_98_download-as-formatted-csv",
+          "label": "Download as formatted CSV",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Save Visualization",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Save Visualization",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_99_save-visualization",
+          "label": "Save Visualization",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Charts",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Charts",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_106_charts",
+          "label": "Charts",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_107_search",
+              "label": "Search",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Flat",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "tab",
+                "name": "Flat",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_108_flat",
+              "label": "Flat",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Nested",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "tab",
+                "name": "Nested",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_109_nested",
+              "label": "Nested",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Functions",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Functions",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_110_functions",
+              "label": "Functions",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Page Size",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "combobox",
+                "name": "Page Size",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_111_page-size",
+              "label": "Page Size",
+              "kind": "input"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Table",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Table",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_112_table",
+          "label": "Table",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_125_search",
+              "label": "Search",
+              "kind": "input"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Add dimensions",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": "Device Category Remove"
+          },
+          "cost": 0,
+          "id": "aff_126_add-dimensions",
+          "label": "Add dimensions",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_127_search",
+              "label": "Search",
+              "kind": "input"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Add metrics",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": "Ad Impressions Remove"
+          },
+          "cost": 0,
+          "id": "aff_128_add-metrics",
+          "label": "Add metrics",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Search",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Search",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_130_search",
+              "label": "Search",
+              "kind": "input"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Add filter",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_131_add-filter",
+          "label": "Add filter",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "",
+            "name": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_132_last-7-days-cd-02-jul-2026-08-jul-2026ut",
+          "label": "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Dismiss toast",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Dismiss toast",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_133_dismiss-toast",
+              "label": "Dismiss toast",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Share",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_134_share",
+          "label": "Share",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Report details",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Report details",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_137_report-details",
+              "label": "Report details",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Enter report name",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Enter report name",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_138_enter-report-name",
+              "label": "Enter report name",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Enter report description",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "textbox",
+                "name": "Enter report description",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_139_enter-report-description",
+              "label": "Enter report description",
+              "kind": "input"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Schedule",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Schedule",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_140_schedule",
+              "label": "Schedule",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Save As / Schedule",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": null,
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_141_save-as-schedule",
+          "label": "Save As / Schedule",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Nested",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Nested",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_143_report",
+          "label": "Nested",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Flat",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Flat",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_144_report",
+          "label": "Flat",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Logo Logo",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "Logo Logo",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_145_report-list",
+          "label": "Logo Logo",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Expand drilldown",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_208_expand-drilldown",
+          "label": "Expand drilldown",
+          "kind": "mutate",
+          "scope": "widget"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "New Report",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "New Report",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_209_new-report",
+          "label": "New Report",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_210_search",
+          "label": "Search",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Functions",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Functions",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_211_functions",
+          "label": "Functions",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Columns",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Columns",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_212_columns",
+          "label": "Columns",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Full screen",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Full screen",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_213_full-screen",
+          "label": "Full screen",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page Size",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "combobox",
+            "name": "Page Size",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_214_page-size",
+          "label": "Page Size",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "First Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "First Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_215_first-page",
+          "label": "First Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Previous Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Previous Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_216_previous-page",
+          "label": "Previous Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Next Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Next Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_217_next-page",
+          "label": "Next Page",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Last Page",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Last Page",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_218_last-page",
+          "label": "Last Page",
+          "kind": "mutate"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search",
+            "control": "text"
+          },
+          {
+            "field": "Page Size",
+            "control": "select"
+          }
+        ]
+      },
+      "parentState": "progneo.analytics.mn:report-list",
+      "provisional": null
+    },
+    {
+      "id": "progneo.analytics.mn:report-list",
+      "nodeId": "progneo.analytics.mn",
+      "semanticName": "report-list",
+      "urlPattern": "https://progneo.analytics.mn/v3/1041/report/list",
+      "role": "detail",
+      "availableSignals": [],
+      "fingerprint": [
+        "heading:Reports"
+      ],
+      "affordances": [
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report-list",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "report-list",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_83_report-list",
+          "label": "report-list",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Close sidebar",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Close sidebar",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_146_close-sidebar",
+              "label": "Close sidebar",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "O Overview Merged Change",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "O Overview Merged Change",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_147_o-overview-merged-change",
+              "label": "O Overview Merged Change",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Switch to Classic",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Switch to Classic",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_148_switch-to-classic",
+              "label": "Switch to Classic",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Dark Mode",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Dark Mode",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_149_dark-mode",
+              "label": "Dark Mode",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Open sidebar",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Open sidebar",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_150_open-sidebar",
+          "label": "Open sidebar",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Logo Logo",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "link",
+                "name": "Logo Logo",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_151_logo-logo",
+              "label": "Logo Logo",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Dark Mode",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Dark Mode",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_152_dark-mode",
+              "label": "Dark Mode",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Light Mode",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Light Mode",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_153_light-mode",
+          "label": "Light Mode",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Search",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "textbox",
+            "name": "Search",
+            "near": null
+          },
+          "cost": 0,
+          "id": "inp_search",
+          "label": "Search",
+          "kind": "input"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Refresh list",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "Refresh list",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_164_refresh-list",
+          "label": "Refresh list",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Owned/Shared",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Owned/Shared",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_165_owned-shared",
+          "label": "Owned/Shared",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Favourites",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Favourites",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_167_favourites",
+          "label": "Favourites",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Standard",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "tab",
+            "name": "Standard",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_168_standard",
+          "label": "Standard",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Duplicate",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Duplicate",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_171_duplicate",
+              "label": "Duplicate",
+              "kind": "mutate"
+            },
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Deselect All",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "button",
+                "name": "Deselect All",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_172_deselect-all",
+              "label": "Deselect All",
+              "kind": "mutate"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Column with Header Selection",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "checkbox",
+            "name": "Column with Header Selection",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_173_column-with-header-selection",
+          "label": "Column with Header Selection",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": [
+            {
+              "commit": false,
+              "toState": null,
+              "addressableUrl": null,
+              "children": null,
+              "needs": [],
+              "acceptsInput": null,
+              "core": false,
+              "semanticStep": "Press Space to toggle row selection (checked)",
+              "selectorCache": null,
+              "elementFp": {
+                "role": "checkbox",
+                "name": "Press Space to toggle row selection (checked)",
+                "near": null
+              },
+              "cost": 0,
+              "id": "aff_175_press-space-to-toggle-row-selection-chec",
+              "label": "Press Space to toggle row selection (checked)",
+              "kind": "input"
+            }
+          ],
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Press Space to toggle row selection (unchecked)",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "checkbox",
+            "name": "Press Space to toggle row selection (unchecked)",
+            "near": "Jun 2, 2026 19:27 IST"
+          },
+          "cost": 0,
+          "id": "aff_176_press-space-to-toggle-row-selection-unch",
+          "label": "Press Space to toggle row selection (unchecked)",
+          "kind": "reveal"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page Size",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "combobox",
+            "name": "Page Size",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_181_page-size",
+          "label": "Page Size",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "New Report",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "button",
+            "name": "New Report",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_182_new-report",
+          "label": "New Report",
+          "kind": "mutate"
+        },
+        {
+          "commit": false,
+          "toState": "progneo.analytics.mn:report",
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "OS and Device Report",
+          "selectorCache": null,
+          "elementFp": {
+            "role": "link",
+            "name": "OS and Device Report",
+            "near": null
+          },
+          "cost": 0,
+          "id": "aff_185_report",
+          "label": "OS and Device Report",
+          "kind": "navigate"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Press Space to toggle row selection (unchecked)",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_205_press-space-to-toggle-row-selection-unch",
+          "label": "Press Space to toggle row selection (unchecked)",
+          "kind": "input",
+          "scope": "widget"
+        },
+        {
+          "commit": false,
+          "toState": null,
+          "addressableUrl": null,
+          "children": null,
+          "needs": [],
+          "acceptsInput": null,
+          "core": false,
+          "semanticStep": "Page",
+          "selectorCache": null,
+          "elementFp": null,
+          "cost": 0,
+          "id": "aff_206_page",
+          "label": "Page",
+          "kind": "mutate",
+          "scope": "row"
+        }
+      ],
+      "declaredShadow": {
+        "filters": [
+          {
+            "field": "Search",
+            "control": "text"
+          },
+          {
+            "field": "Column with Header Selection",
+            "control": "checkbox"
+          },
+          {
+            "field": "Press Space to toggle row selection (unchecked)",
+            "control": "checkbox"
+          },
+          {
+            "field": "Page Size",
+            "control": "select"
+          }
+        ]
+      },
+      "parentState": "progneo.analytics.mn:download-list",
+      "provisional": null
+    }
+  ],
+  "edges": [
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:announcements",
+      "semanticStep": "Announcements",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Announcements",
+        "near": null
+      },
+      "viaAffordance": "sh_238_announcements"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:dashboard-list",
+      "semanticStep": "Dashboards",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Dashboards",
+        "near": null
+      },
+      "viaAffordance": "sh_235_dashboard-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:download-list",
+      "semanticStep": "Downloads",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Downloads",
+        "near": null
+      },
+      "viaAffordance": "sh_236_download-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:help-center",
+      "semanticStep": "Help Center",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Help Center",
+        "near": null
+      },
+      "viaAffordance": "sh_237_help-center"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:report-list",
+      "semanticStep": "Logo Logo",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Logo Logo",
+        "near": null
+      },
+      "viaAffordance": "sh_231_report-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:_shell",
+      "toState": "progneo.analytics.mn:report-list",
+      "semanticStep": "Reports",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Reports",
+        "near": null
+      },
+      "viaAffordance": "sh_234_report-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:dashboard-category",
+      "toState": "progneo.analytics.mn:dashboard-category",
+      "semanticStep": "dashboard-category",
+      "kind": "navigate",
+      "elementFp": null,
+      "viaAffordance": "aff_14_dashboard-category"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:dashboard-category",
+      "toState": "progneo.analytics.mn:download-list",
+      "semanticStep": "Downloads",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Downloads",
+        "near": null
+      },
+      "viaAffordance": "aff_57_download-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": "credentials",
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:dashboard-list",
+      "toState": "progneo.analytics.mn:dashboard-category",
+      "semanticStep": "Testuser",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Testuser",
+        "near": null
+      },
+      "viaAffordance": "aff_40_dashboard-category"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:download-list",
+      "toState": "progneo.analytics.mn:report-list",
+      "semanticStep": "report-list",
+      "kind": "navigate",
+      "elementFp": null,
+      "viaAffordance": "aff_82_report-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:report",
+      "toState": "progneo.analytics.mn:report",
+      "semanticStep": "Flat",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "tab",
+        "name": "Flat",
+        "near": null
+      },
+      "viaAffordance": "aff_144_report"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:report",
+      "toState": "progneo.analytics.mn:report",
+      "semanticStep": "Nested",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "tab",
+        "name": "Nested",
+        "near": null
+      },
+      "viaAffordance": "aff_143_report"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:report",
+      "toState": "progneo.analytics.mn:report-list",
+      "semanticStep": "Logo Logo",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "Logo Logo",
+        "near": null
+      },
+      "viaAffordance": "aff_145_report-list"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:report-list",
+      "toState": "progneo.analytics.mn:report",
+      "semanticStep": "OS and Device Report",
+      "kind": "navigate",
+      "elementFp": {
+        "role": "link",
+        "name": "OS and Device Report",
+        "near": null
+      },
+      "viaAffordance": "aff_185_report"
+    },
+    {
+      "selectorCache": null,
+      "acceptsInput": null,
+      "addressableUrl": null,
+      "requiresAffordances": [],
+      "core": false,
+      "cost": 0,
+      "fromState": "progneo.analytics.mn:report-list",
+      "toState": "progneo.analytics.mn:report-list",
+      "semanticStep": "report-list",
+      "kind": "navigate",
+      "elementFp": null,
+      "viaAffordance": "aff_83_report-list"
+    }
+  ]
+}

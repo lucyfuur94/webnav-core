@@ -1,0 +1,24 @@
+{
+  "name": "walkthrough",
+  "version": "1.0.0",
+  "description": "Prog Neo product walkthrough video, generated from its webnav map",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts ProgneoWalkthrough out/progneo-walkthrough.mp4"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@remotion/cli": "^4.0.488",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.488"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}
