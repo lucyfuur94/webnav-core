@@ -77,4 +77,18 @@ describe('COMMANDS registry', () => {
     expect(p.flags.find((f) => f.name === '--site')?.takesValue).toBe(true);
     expect(p.flags.find((f) => f.name === '--url')?.takesValue).toBe(true);
   });
+
+  it('walk help documents the needs-auth response (fresh-session-retry-persisted SSO wall)', () => {
+    const w = COMMANDS.find((c) => c.name === 'walk')!;
+    expect(w.summary).toContain('needs-auth');
+    expect(w.summary).toContain('fresh-session retry');
+    expect(w.summary.toLowerCase()).toContain('not evasion');
+  });
+
+  it('navigate help documents the authWall/loginUrl output field', () => {
+    const n = COMMANDS.find((c) => c.name === 'navigate')!;
+    expect(n.summary).toContain('authWall');
+    expect(n.summary).toContain('loginUrl');
+    expect(n.summary).toContain('NEVER auto-retried');
+  });
 });

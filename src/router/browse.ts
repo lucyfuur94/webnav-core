@@ -3,8 +3,10 @@ import { parseSnapshot } from '../playwright/snapshot.js';
 import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js';
 import { diffSnapshots, didNavigate } from '../explorer/diff.js';
 import { classifyReadiness } from './readiness.js';
+import { classifyAuthLanding } from './auth-status.js';
 import type { RecordStore } from '../mapstore/record.js';
 import type { ActionRef } from '../mapstore/record.js';
+import type { State } from '../mapstore/types.js';
 
 // Minimal structural type so these helpers accept either a real PlaywrightAdapter
 // or a fake (for tests). Only the methods we use are required.
@@ -102,10 +104,12 @@ export async function settleSnapshot(snap: () => Promise<string>, first?: string
 /** Capture + record the effect of a standalone `use navigate` (cli.ts routes here
  *  AFTER opening `url` on the adapter — caller owns the browser lifecycle and the
  *  session auto-start). Settles before reading, records requestedUrl = the url the
- *  agent ASKED for (toUrl may differ on a redirect — the draft's alias evidence). */
+ *  agent ASKED for (toUrl may differ on a redirect — the draft's alias evidence).
+ *  Returns toSnapshot too so the caller can classify the landing (e.g. an SSO-wall
+ *  check, design item 2) without an extra playwright call. */
 export async function recordNavigateEffect(
   url: string, sessionId: string, recordStore: RecordStore, adapter: BrowseAdapter,
-): Promise<{ toUrl: string }> {
+): Promise<{ toUrl: string; toSnapshot: string }> {
   const toSnapshot = await settleSnapshot(() => adapter.snapshot!());
   const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
   recordStore.appendActionEffect(sessionId, {
@@ -114,7 +118,23 @@ export async function recordNavigateEffect(
     diff: diffSnapshots([], parseSnapshot(toSnapshot)),
     requestedUrl: url,
   });
-  return { toUrl };
+  return { toUrl, toSnapshot };
+}
+
+export interface NavigateWallCheck { authWall: boolean; loginUrl?: string }
+
+/** Design item 2 (`use navigate` half): classify a settled navigate landing as an
+ *  SSO/login wall — SAME classifyAuthLanding oracle as `walk` and `profile-status`,
+ *  applied to the TARGET url's own host + map states — with NO retry (a recording
+ *  captures what actually happened, judgment-free; that's `walk`'s job). Pure
+ *  composition, so it's unit-testable without a live browser. `requestedUrl` is the
+ *  url the agent ASKED to navigate to (its host names the site whose map states to
+ *  check against); an unparseable url honestly reports no wall (nothing to check). */
+export function classifyNavigateWall(requestedUrl: string, toUrl: string, toSnapshot: string, states: State[]): NavigateWallCheck {
+  let site: string;
+  try { site = new URL(requestedUrl).host; } catch { return { authWall: false }; }
+  const { auth, loginUrl } = classifyAuthLanding(toUrl, toSnapshot, site, states);
+  return auth === 'needs-login' ? { authWall: true, loginUrl } : { authWall: false };
 }
 
 export interface SnapshotRecordedResult { status: 'done' | 'failed'; url: string; recorded: boolean; reason?: string; }

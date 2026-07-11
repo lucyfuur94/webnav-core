@@ -1453,21 +1453,40 @@ async function main() {
     const { CredStore } = await import('./creds.js');
     const siteCreds = startState.nodeId ? new CredStore().get(startState.nodeId) : {};
     const inputs = { ...siteCreds, ...args.inputs };
-    const browser = makeLiveWalkBrowser(adapter, inputs);
+    // Pass bopts through so the walk can retry a detected SSO wall in a FRESH
+    // session under the SAME profile (design item 2) — omitted (no retry
+    // capability) when the walk isn't running under a named profile.
+    const browser = makeLiveWalkBrowser(adapter, inputs, bopts, browserSession);
     const states = store.statesForNode(startState.nodeId ?? '');
-    const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path });
+    const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path, profile: args.browser.profile });
+    // needs-auth: the wall persisted through the fresh-session retry (or no retry was
+    // possible). Fail-fast, NOT a resumable pause — a stale login can't be fixed by
+    // replaying the same route, so leaving a paused walk-session + a live daemon
+    // around would just be a dangling browser nothing resumes. Close it here; the
+    // consumer contract is: the agent tells the user to re-login, then re-runs `walk`.
+    if (res.status === 'needs-auth') {
+      await browser.close?.().catch(() => {});
+      console.log(JSON.stringify(res, null, 2));
+      process.exitCode = 2;
+      return;
+    }
     if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
       const sessions = new WalkSessionStore();
-      const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession });
+      // A wall retry may have rotated to a brand-new browser session — read it
+      // back from the browser (not the original `browserSession` var) so a paused
+      // session id the agent resumes against actually points at the live browser.
+      const liveSession = browser.sessionId?.() || browserSession;
+      const id = sessions.create({ startState: args.start, goalState: args.goal, path, browserSession: liveSession, profile: bopts.profile });
       // pos points at the state the walk paused ON, so resume restarts there.
       const pausedAt = (res as any).at;
       if (typeof pausedAt === 'number') sessions.advance(id, pausedAt);
       // Expose browserSession so the agent can act on the LIVE paused browser
       // (e.g. fire an in-page affordance) via `use <verb> --session <browserSession>`
       // before calling walk-resume.
-      console.log(JSON.stringify({ ...res, session: id, browserSession }, null, 2));
+      console.log(JSON.stringify({ ...res, session: id, browserSession: liveSession }, null, 2));
     } else {
-      await adapter.close().catch(() => {});
+      if (browser.close) await browser.close().catch(() => {});
+      else await adapter.close().catch(() => {});
       console.log(JSON.stringify(res, null, 2));
       if (res.status === 'failed') process.exitCode = 3;
     }
@@ -1501,10 +1520,19 @@ async function main() {
     const { CredStore } = await import('./creds.js');
     const siteCreds = startState.nodeId ? new CredStore().get(startState.nodeId) : {};
     const inputs = { ...siteCreds, ...args.inputs };
-    const browser = makeLiveWalkBrowser(adapter, inputs);
+    // w.profile is the ALREADY-RESOLVED profile dir the original `walk` stored —
+    // reusing it here (walk-resume takes no --profile of its own) is what lets a
+    // wall retry reopen under the SAME profile mid-resume.
+    const rbopts = w.profile ? { profile: w.profile } : undefined;
+    const browser = makeLiveWalkBrowser(adapter, inputs, rbopts, w.browserSession);
     const states = store.statesForNode(startState.nodeId ?? '');
-    const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer });
-    if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
+    const res = await walkRoute({ goalName: 'walk:' + w.goalState, startStateId: resumeFrom, goalStateId: w.goalState, store, states, browser, path: w.path, answer, profile: w.profile });
+    if (res.status === 'needs-auth') {
+      sessions.close(args.session);
+      await (browser.close ? browser.close() : adapter.close()).catch(() => {});
+      console.log(JSON.stringify(res, null, 2));
+      process.exitCode = 2;
+    } else if (res.status === 'needs-navigation' || res.status === 'needs-classification') {
       // walkRoute's `at` is RELATIVE to resumeFrom (it starts each call at 0), but
       // the session `pos` is ABSOLUTE over the full path. resumeFrom sits at w.pos,
       // so absolute = w.pos + at. A single resume can traverse several states before
@@ -1513,10 +1541,15 @@ async function main() {
       const relAt = (res as any).at;
       const absPos = typeof relAt === 'number' ? w.pos + relAt : w.pos + 1;
       sessions.advance(args.session, absPos);
-      console.log(JSON.stringify({ ...res, session: args.session, browserSession: w.browserSession }, null, 2));
+      // A wall retry may have rotated to a brand-new browser session mid-resume;
+      // repoint the (stable) session_id at it so the NEXT walk-resume reattaches
+      // to the live daemon instead of the one that was just closed.
+      const liveSession = browser.sessionId?.() || w.browserSession;
+      if (liveSession !== w.browserSession) sessions.rebrowser(args.session, liveSession);
+      console.log(JSON.stringify({ ...res, session: args.session, browserSession: liveSession }, null, 2));
     } else {
       sessions.close(args.session);
-      await adapter.close().catch(() => {});
+      await (browser.close ? browser.close() : adapter.close()).catch(() => {});
       console.log(JSON.stringify(res, null, 2));
     }
     return;
@@ -1569,9 +1602,22 @@ async function main() {
       // Settle + record via the shared seam (same gate as agent-session/runActionRecorded):
       // a client-side redirect otherwise records a pre-render shell as the page, and the
       // requestedUrl (what the agent ASKED for) is the draft's redirect-alias evidence.
-      const { recordNavigateEffect } = await import('./router/browse.js');
-      const { toUrl } = await recordNavigateEffect(args.url, args.session, rec, adapter);
-      console.log(JSON.stringify({ status: 'done', url: toUrl, recorded: true }, null, 2));
+      const { recordNavigateEffect, classifyNavigateWall } = await import('./router/browse.js');
+      const { toUrl, toSnapshot } = await recordNavigateEffect(args.url, args.session, rec, adapter);
+      // Wall check (design item 2, NO auto-retry here — a recording captures what
+      // actually happened, judgment-free). Classify against the target site's own
+      // map states (the map is the oracle, same as profile-status/walk) and surface
+      // authWall so the driving agent knows immediately instead of guessing from a
+      // bare snapshot.
+      let site: string | null = null;
+      try { site = new URL(args.url).host; } catch { /* unparseable url */ }
+      const { MapStore: MapStoreForWall } = await import('./mapstore/store.js');
+      const wallStates = site ? new MapStoreForWall(dbPath()).statesForNode(site) : [];
+      const wall = classifyNavigateWall(args.url, toUrl, toSnapshot, wallStates);
+      console.log(JSON.stringify({
+        status: 'done', url: toUrl, recorded: true,
+        ...(wall.authWall ? { authWall: true, loginUrl: wall.loginUrl } : {}),
+      }, null, 2));
     } catch (e) {
       console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));
       process.exitCode = 2;

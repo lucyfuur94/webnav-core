@@ -44,4 +44,29 @@ describe('WalkSessionStore', () => {
       expect.not.arrayContaining(['inputs', 'username', 'password']),
     );
   });
+
+  // profile-status design item 2: walk-resume needs the ORIGINAL walk's profile to
+  // rebuild matching BrowserOpts for a fresh-session SSO-wall retry.
+  it('persists the profile and loads it back', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'b', path: ['a', 'b'], browserSession: 'w', profile: '/home/x/.webnav/profiles/acme', nowMs: 1 });
+    expect(s.load(id)!.profile).toBe('/home/x/.webnav/profiles/acme');
+  });
+
+  it('a session with no profile loads back as undefined (no profile ⇒ no wall-retry capability)', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'b', path: ['a', 'b'], browserSession: 'w', nowMs: 1 });
+    expect(s.load(id)!.profile).toBeUndefined();
+  });
+
+  // A wall retry may rotate to a brand-new browser session mid-walk; rebrowser
+  // repoints the STABLE session_id at it so the next walk-resume reattaches right.
+  it('rebrowser repoints a paused session at a new browser session, keeping the same session id', () => {
+    const s = store();
+    const id = s.create({ startState: 'a', goalState: 'c', path: ['a', 'b', 'c'], browserSession: 'w-old', nowMs: 1 });
+    s.rebrowser(id, 'w-new');
+    const w = s.load(id)!;
+    expect(w.sessionId).toBe(id);
+    expect(w.browserSession).toBe('w-new');
+  });
 });

@@ -6,6 +6,7 @@ import { matchState } from '../explorer/fingerprint.js';
 import { replayStep } from './replay.js';
 import { resolveStep } from './resolve.js';
 import { deriveNear } from '../playwright/fingerprint.js';
+import { classifyAuthLanding } from './auth-status.js';
 
 /**
  * SELF-HEAL write-back after an agent picks an element at a fork. Persist a DURABLE
@@ -30,6 +31,47 @@ function healStep(store: MapStore, edge: Edge, beforeNodes: SnapNode[], chosen: 
   if (chosen.name) store.recordSelector(edge.fromState, edge.toState, edge.semanticStep, chosen.name);
 }
 
+/**
+ * SSO-wall handling (design item 2): when a navigate-edge step lands somewhere that
+ * doesn't match the expected toState, check whether the landing IS an auth wall —
+ * classifyAuthLanding against the site's own map states (the map is the oracle, same
+ * as profile-status / Task A). If it's a wall AND the browser can reopen fresh
+ * (`reopenFresh` present — live wiring only), retry ONCE: close this session, open a
+ * brand-new one under the SAME profile (same identity/cookies — equivalent to the
+ * user reopening a tab; NOT evasion), reload the SAME landed url. A fresh session's
+ * first load reliably passes Cloudflare-Access-style step-up (observed live). Never
+ * loops: a wall on the retry is reported honestly as `needs-auth` instead of a
+ * generic drift escalation.
+ *
+ * Returns `null` when there's no wall (caller falls through to its normal drift
+ * escalation), the retried snapshot when the retry cleared the wall (caller
+ * re-runs its own match against this fresh snapshot), or a `needs-auth`
+ * RecallResponse when the wall persists through the retry (or no retry was
+ * possible — a bare foreign-host/interstitial landing is reported the same way,
+ * never silently swallowed as generic drift).
+ */
+async function checkAuthWall(
+  browser: WalkBrowser, states: State[], at: number, retriedRef: { done: boolean },
+  landedUrl: string, landedSnapshot: string, profile: string | undefined,
+): Promise<{ response: RecallResponse } | { retried: string } | null> {
+  const site = states[0]?.nodeId;
+  if (!site) return null;
+  const first = classifyAuthLanding(landedUrl, landedSnapshot, site, states);
+  if (first.auth !== 'needs-login') return null;
+
+  if (retriedRef.done || !browser.reopenFresh) {
+    return { response: { status: 'needs-auth', at, profile: profile ?? 'default', site, loginUrl: first.loginUrl ?? landedUrl } };
+  }
+  retriedRef.done = true;   // once per walk — a wall on the retry is persistent, never loop
+  const afterSnapshot = await browser.reopenFresh(landedUrl);
+  const afterUrl = browser.currentUrl ? await browser.currentUrl() : landedUrl;
+  const retryClass = classifyAuthLanding(afterUrl, afterSnapshot, site, states);
+  if (retryClass.auth === 'needs-login') {
+    return { response: { status: 'needs-auth', at, profile: profile ?? 'default', site, loginUrl: retryClass.loginUrl ?? afterUrl } };
+  }
+  return { retried: afterSnapshot };
+}
+
 // Minimal browser the walk drives. The live adapter implements this; tests fake it.
 // ASYNC so ONE walk loop serves both the scripted unit fake and the real
 // (Promise-returning) PlaywrightAdapter — no duplicated loop.
@@ -48,6 +90,26 @@ export interface WalkBrowser {
   // the unit fake omits it so tests resolve immediately (no waiting / no retry loop).
   waitMs?(ms: number): Promise<void>;
   callCount(): number;
+  // The URL the browser is currently settled on — needed to classify an SSO-wall
+  // landing (classifyAuthLanding wants landedUrl + site host). Optional: the unit
+  // fake omits it, which simply disables the fresh-session wall retry in tests.
+  currentUrl?(): Promise<string>;
+  // Close the current browser session and reopen a FRESH one under the SAME
+  // profile (same identity/cookies — equivalent to the user reopening a tab; NOT
+  // evasion), landing back on `url`. Returns the settled snapshot after reopen.
+  // Optional: only the live wiring supplies this; when absent the wall check is
+  // skipped (no profile to retry under / test fake has no browser to reopen).
+  reopenFresh?(url: string): Promise<string>;
+  // Close whichever browser session is CURRENTLY live. A wall retry may have
+  // rotated to a brand-new session (see reopenFresh); callers that hold their own
+  // adapter reference should close through here instead so they close the right
+  // one. Optional: the unit fake and one-off scripts don't need it.
+  close?(): Promise<void>;
+  // The id of whichever browser session is CURRENTLY live — rotates after a
+  // reopenFresh. Callers that persist a paused-walk's browser session (the CLI's
+  // walk-session store) read this AFTER the walk returns, so a session rotated
+  // mid-walk is the one actually reported/resumed. Optional, live wiring only.
+  sessionId?(): string;
 }
 
 export type WalkAnswer =
@@ -67,6 +129,7 @@ export interface WalkArgs {
   // longer touches runtime values; it only passes each edge's `acceptsInput` slot
   // NAME to browser.act(). The LIVE browser closure owns the inputs map and resolves
   // the slot -> value when filling fields. Keeps the walk runtime-value-free.
+  profile?: string;            // named profile the browser is running under (reported on needs-auth)
 }
 
 /**
@@ -83,6 +146,9 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
   let current = startStateId;
   let at = 0;
   let firstStep = true;
+  // Fresh-session wall retry: at most ONCE per walk call (design item 2 — a wall
+  // surviving the retry is persistent, never loop).
+  const authRetried = { done: false };
 
   // Halt as soon as we've arrived: this check at the TOP means when goalStateId is
   // a state the route passes THROUGH (e.g. sd:checkout-overview), the walk stops
@@ -178,8 +244,17 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     // we still route commit/unclassified through replayStep's guard below.
     if (browser.goto && edge.addressableUrl && edge.kind !== 'commit-point' && edge.kind !== 'unclassified') {
       await browser.goto(edge.addressableUrl, edge.acceptsInput);
-      const afterYaml = await browser.snapshot();
-      const observed = matchState(parseSnapshot(afterYaml), states);
+      let afterYaml = await browser.snapshot();
+      let observed = matchState(parseSnapshot(afterYaml), states);
+      if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+        const landedUrl = browser.currentUrl ? await browser.currentUrl() : edge.addressableUrl;
+        const wall = await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, args.profile);
+        if (wall && 'response' in wall) return wall.response;
+        if (wall && 'retried' in wall) {
+          afterYaml = wall.retried;
+          observed = matchState(parseSnapshot(afterYaml), states);
+        }
+      }
       if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
         return { status: 'needs-navigation', at, semanticStep: edge.semanticStep, snapshot: afterYaml,
           question: 'jumped to ' + edge.addressableUrl + ' but expected ' + edge.toState + ' — observed '
@@ -249,8 +324,19 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
 
     // PREDICTION vs OBSERVATION: compare the edge's expected toState against the
     // live snapshot. Mismatch or ambiguity → escalate, never march on blind.
-    const afterYaml = await browser.snapshot();
-    const observed = matchState(parseSnapshot(afterYaml), states);
+    let afterYaml = await browser.snapshot();
+    let observed = matchState(parseSnapshot(afterYaml), states);
+    if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+      const landedUrl = browser.currentUrl ? await browser.currentUrl() : '';
+      const wall = landedUrl
+        ? await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, args.profile)
+        : null;
+      if (wall && 'response' in wall) return wall.response;
+      if (wall && 'retried' in wall) {
+        afterYaml = wall.retried;
+        observed = matchState(parseSnapshot(afterYaml), states);
+      }
+    }
     if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
       return {
         status: 'needs-navigation',
