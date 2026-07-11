@@ -42,3 +42,27 @@ After this, the principle operates at token < subtree < page < site; there is no
 
 - Signature granularity is the design surface: too-fine (every widget unique) → no fold (today's behavior — safe); too-coarse → over-fold (mitigate: keep interactive-control names in the signature; they're the strongest template evidence). Start fine, loosen with evidence.
 - Deeply nested repetition (widgets containing repeated rows) — the bottom-up fold handles it naturally (inner folds first), but tests must pin it.
+
+## Shipped notes (2026-07-11)
+
+Implemented per the plan (`2026-07-11-subtree-templates.md`, Tasks 1–4). Two deviations from this
+design's original acceptance criteria, both deliberate and documented at the point of decision:
+
+1. **`enumeratedNames` retained, not deleted — overlay-scoped.** The design said subtree folds would
+   "subsume" it entirely. In practice a residual case survives: a flat value-domain split across
+   ≥3 same-role/depth siblings under DIFFERENT heterogeneous per-category wrapper parents (subtree
+   folds only group siblings sharing ONE parent). `enumeratedNames` stays as the narrow fallback for
+   that case; a `ponytail:` comment at its definition (`src/explorer/draft.ts` ~135) names the follow-up
+   that would finish the subsumption — a container-scope grouping pass matching a shared leaf signature
+   across different parents within one container — as a future increment, not invented here.
+2. **progneo dashboards 1210/1215 non-merge accepted as honest, not forced.** Acceptance item 1
+   ("dashboards 1210 + 1215 merge into ONE confirmed viewer state") does NOT hold on the real recordings:
+   1210 was captured with a chart's Setup/Customize config panel open on every landing, 1215 collapsed —
+   a genuine recording-state conflict, so their widget signatures diverge (jaccard 0.094) independent of
+   normalization correctness (proven via mutation check: stubbing normalization off changes nothing about
+   the two dashboards). Per the project's fix-upstream rule, this was NOT force-merged or patched
+   downstream; it surfaces as an open **Phase-1 research question — main-landmark identity scoping**:
+   whether a page's identity face should treat "a landmark region (e.g. a config panel) is open" as its
+   own structural axis, distinct from widget-shape, so that two recordings of the same page in different
+   transient UI states still resolve to one template. Fix in the meantime is procedural (re-record 1210
+   collapsed, or record both dashboards in the same UI state).

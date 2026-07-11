@@ -482,11 +482,14 @@ function graphView(allStates) {
   const panel = wrap.querySelector('.gpanel');
   // affordances scoped 'row' (a folded per-row repeat, e.g. 50 identical row-buttons folded to
   // one) get a "per row" suffix chip so the count isn't misread as 50 distinct page actions.
+  // scope 'widget' (a folded repeated widget/card subtree, e.g. 3 dashboard chart widgets folded
+  // to one template) gets the same treatment with a "widget" suffix chip — no count is stored.
   const rowScoped = (state, label) => (state.affordances||[]).some(a => a.label === label && a.scope === 'row');
+  const widgetScoped = (state, label) => (state.affordances||[]).some(a => a.label === label && a.scope === 'widget');
   const openPanel = (name) => {
     const st = states.find(x => lbl(x) === name); if (!st) { panel.style.display='none'; return; }
     const f = factsBy[name];
-    const actionChip = (x) => '<span class="chip">'+esc(x)+(rowScoped(st, x)?' <span class="muted">per row</span>':'')+'</span>';
+    const actionChip = (x) => '<span class="chip">'+esc(x)+(rowScoped(st, x)?' <span class="muted">per row</span>':'')+(widgetScoped(st, x)?' <span class="muted">widget</span>':'')+'</span>';
     const chips = (items) => items.length ? items.map(x => '<span class="chip">'+esc(x)+'</span>').join('') : '<span class="muted">—</span>';
     const sec = (title, inner) => '<div class="psec"><div class="ptitle">'+title+'</div>'+inner+'</div>';
     let html = '<div class="phead"><strong>'+esc(name)+'</strong> <span class="badge '+(st.role==='detail'?'origin-manual':'ok')+'">'+esc(st.role||'page')+'</span>'

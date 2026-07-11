@@ -61,6 +61,12 @@ describe('COMMANDS registry', () => {
     expect(g.summary.toLowerCase()).toContain('shell');
   });
 
+  it('graph-analyse help teaches widget/row subtree folding and template-identity merging', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph-analyse')!;
+    expect(g.summary).toContain("scope:'widget'|'row'");
+    expect(g.summary.toLowerCase()).toContain('merge');
+  });
+
   it('graph-edit help teaches provisional tri-state and scope passthrough', () => {
     const g = COMMANDS.find((c) => c.name === 'graph-edit')!;
     expect(g.summary).toContain('provisional');

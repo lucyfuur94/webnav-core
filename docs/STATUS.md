@@ -1,6 +1,35 @@
 # webnav — STATUS (live handoff)
 
-**Updated:** 2026-07-11 · **Branch:** `structure-inference` (merging to `main`) · **Tests:** 673 unit pass + 7 skip (live e2e) · **Build:** green
+**Updated:** 2026-07-11 · **Branch:** `worktree-subtree-templates` (merging to `main`) · **Tests:** 717 unit pass + 7 skip (live e2e) · **Build:** green
+
+> **2026-07-11 (latest) — subtree-template induction shipped: repetition principle now covers the LAST scale (subtree).**
+> Per `2026-07-11-subtree-templates-design.md` + plan `2026-07-11-subtree-templates.md`. One new pure pass
+> (`subtreeFolds` in `src/explorer/infer.ts`): bottom-up two-level structural signatures per subtree —
+> L1 (named, control labels kept verbatim) and L2 (abstracted, all names stripped) — fold ≥2 same-L1 or
+> ≥3 same-L2 sibling subtrees under a shared parent into ONE template affordance (`scope:'widget'` for
+> multi-node units, `'row'` for single-node leaf units, same semantics as before). `draftFromEffects`
+> consumes folds at four sites (affordance emission, reveal children, interior-synthesis skip, fingerprint
+> exclusion); identity-face normalization (`normFace`) drops folded-member tokens and adds one presence-only
+> `widget:<sig>` token per distinct fold, wired ONLY into the dispose anchor face and SPA-split clustering
+> (never templateCore/stored faces/fingerprints) — so personalized pages built from the same widget
+> templates merge on template identity instead of splitting per instance.
+> **What merged:** 'Expand drilldown' ×25 now folds to ONE child/affordance (was surviving folding);
+> `report` stays 12/12 ground truth intact; ae stays exactly ONE product-details; ohrm PIM grid columns
+> intact in the shadow, with row folds now present. `foldRepeats` is DELETED (fully subsumed — a one-level
+> subtree fold is exactly the named-sibling case). `enumeratedNames` is RETAINED, narrowed to its
+> overlay/value-domain case the general pass can't yet reach (flat ≥3 same-role/depth siblings split
+> across heterogeneous per-category wrappers) — a `ponytail:` comment names the follow-up (a container-scope
+> grouping pass matching a shared leaf signature across DIFFERENT parents) that would let it be deleted too.
+> **What honestly did NOT merge:** progneo dashboards 1210 + 1215 stay SEPARATE states — proven a
+> *recording-state* conflict, not a normalization defect: 1210 was captured with a chart's Setup/Customize
+> config panel OPEN on every landing, 1215 collapsed, so their widget signatures genuinely differ (jaccard
+> 0.094, both far below the merge thresholds). The mechanism itself is proven correct by a synthetic
+> same-sig-dashboards test (mutation-pinned: stubbing `normFace` back to plain `faceOf` makes it fail).
+> Fix is upstream (re-record 1210 collapsed, or record both dashboards in the same UI state), not a
+> downstream patch — not done here. Named as a **Phase-1 research question: main-landmark identity
+> scoping** (does a page's identity face need to distinguish "landmark region open" as a structural axis,
+> not just widget-shape?) for the next increment to pick up.
+> Suite: 717 pass / 7 skip (up from 673), `tsc --noEmit` clean.
 
 > **2026-07-11 (later) — profile auth status + SSO-wall handling shipped.**
 > `dev profile-status --profile P --site H`: one polite headless load, the map's own fingerprints
