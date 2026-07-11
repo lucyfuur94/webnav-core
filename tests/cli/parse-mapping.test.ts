@@ -51,4 +51,15 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   it('parses dev sessions reap --max-age-hours', () => {
     expect(parseArgs(['dev', 'sessions', 'reap', '--max-age-hours', '4'])).toEqual({ cmd: 'sessions', sub: 'reap', all: false, maxAgeHours: 4 });
   });
+  it('parses profile-status with --profile and --site', () => {
+    expect(parseArgs(['dev', 'profile-status', '--profile', 'work', '--site', 'www.saucedemo.com']))
+      .toEqual({ cmd: 'profile-status', profile: 'work', site: 'www.saucedemo.com', url: undefined });
+  });
+  it('parses profile-status with --url override', () => {
+    expect(parseArgs(['dev', 'profile-status', '--profile', 'work', '--site', 'progneo.analytics.mn', '--url', 'https://progneo.analytics.mn/dashboard']))
+      .toEqual({ cmd: 'profile-status', profile: 'work', site: 'progneo.analytics.mn', url: 'https://progneo.analytics.mn/dashboard' });
+  });
+  it('parses profile-status with missing flags as empty strings', () => {
+    expect(parseArgs(['dev', 'profile-status'])).toEqual({ cmd: 'profile-status', profile: '', site: '', url: undefined });
+  });
 });

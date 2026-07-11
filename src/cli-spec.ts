@@ -386,6 +386,17 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev verify --node www.saucedemo.com --session sd1',
   },
   {
+    name: 'profile-status',
+    summary: 'Evidence-based "is this profile still logged in for this site?" check — call BEFORE walking/recording an authed site instead of guessing. Opens ONE headless session under --profile, loads the site\'s map homeUrl (or --url), settles the landing, and classifies it against the site\'s own map fingerprints (the oracle: matchState) — valid (landed + matched a known state) | needs-login (foreign-host wall, interstitial/bot-wall, or a declared password field — includes loginUrl) | unknown (no map yet / ambiguous landing). The session is always reaped after. Exit 0 in all three cases — needs-login is a normal, useful answer, not a failure.',
+    args: [],
+    flags: [
+      { name: '--profile', takesValue: true, description: 'Named profile to check (shared login dir under ~/.webnav/profiles, or an absolute path).' },
+      { name: '--site', takesValue: true, description: 'Site-node id (host), e.g. www.saucedemo.com — its map supplies homeUrl + the fingerprints matchState checks against.' },
+      { name: '--url', takesValue: true, description: 'Override the entry url instead of the map\'s homeUrl (required if the site has no map yet).' },
+    ],
+    example: 'webnav dev profile-status --profile work --site www.saucedemo.com',
+  },
+  {
     name: 'sessions',
     summary: 'List or reap playwright-cli browser sessions. They are DAEMONIZED (survive the CLI exiting) so `use`/`walk-resume` can reattach — but a paused-and-abandoned walk or a stopped `use` exploration leaks a Chrome forever. `list` shows each session + age + whether its browser is still live; `reap` closes them.',
     args: [{ name: 'sub', required: false, description: 'list (default) | reap' }],

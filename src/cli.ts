@@ -44,6 +44,7 @@ export type ParsedArgs =
   | { cmd: 'review'; session: string; model: string; instructions?: string }
   | { cmd: 'capture-loop'; objective: string; exploreCmd: string; sessionPrefix: string; maxRounds: number; model: string }
   | { cmd: 'verify'; node: string; session: string }
+  | { cmd: 'profile-status'; profile: string; site: string; url?: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number; open: boolean }
@@ -200,6 +201,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'review') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', model: flagValue(rest, '--model') ?? 'sonnet', instructions: flagValue(rest, '--instructions') };
   if (cmd === 'capture-loop') return { cmd, objective: flagValue(rest, '--objective') ?? '', exploreCmd: flagValue(rest, '--explore-cmd') ?? '', sessionPrefix: flagValue(rest, '--session-prefix') ?? 'cl', maxRounds: Number(flagValue(rest, '--max-rounds') ?? 5), model: flagValue(rest, '--model') ?? 'sonnet' };
   if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'profile-status') {
+    return { cmd, profile: flagValue(rest, '--profile') ?? '', site: flagValue(rest, '--site') ?? '', url: flagValue(rest, '--url') };
+  }
   if (cmd === 'sessions') {
     const maxAge = flagValue(rest, '--max-age-hours');
     return { cmd, sub: rest.find((a) => !a.startsWith('--')) ?? 'list',
@@ -796,6 +800,58 @@ async function main() {
     const allUnique = checks.every((c) => c.unique);
     console.log(JSON.stringify({ status: allUnique ? 'done' : 'non-unique', node: args.node, state: state.id, affordances: checks }, null, 2));
     if (!allUnique) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'profile-status') {
+    // "Am I logged in?" checked BEFORE walking/recording an authed site, instead of
+    // guessing and hitting a stale-login wall mid-walk. One polite headless load of
+    // the site's entry url (map homeUrl, or --url override), settled + classified
+    // against the map's own fingerprints (the oracle) — then the session this verb
+    // opened is ALWAYS reaped, success or failure.
+    if (!args.profile || !args.site) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev profile-status --profile <p> --site <host> [--url <u>]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { MapStore } = await import('./mapstore/store.js');
+    const store = new MapStore(dbPath());
+    const node = store.getNode(args.site);
+    const url = args.url ?? node?.homeUrl;
+    if (!url) {
+      console.log(JSON.stringify({ status: 'error', hint: `no map for site '${args.site}' yet (no homeUrl) — pass --url, or map the site first with dev record-start` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { homedir: homedir3 } = await import('node:os');
+    const { join: join3 } = await import('node:path');
+    const { resolveProfile, PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { prepProfile } = await import('./playwright/profile-lock.js');
+    const { settleSnapshot } = await import('./router/browse.js');
+    const { classifyAuthLanding } = await import('./router/auth-status.js');
+    const profilesRoot3 = join3(homedir3(), '.webnav', 'profiles');
+    const profileDir = resolveProfile(args.profile, profilesRoot3);
+    try { (await import('node:fs')).mkdirSync(profileDir, { recursive: true }); } catch { /* */ }
+    prepProfile(profileDir);
+    // SHORT session id: the playwright-cli daemon socket path embeds it and macOS
+    // caps socket paths at ~104 chars (same constraint as capture-loop's session name).
+    const session = 'pchk-' + Math.random().toString(36).slice(2, 6);
+    const adapter = new PlaywrightAdapter(session, undefined, undefined, { headed: false, persistent: true, profile: profileDir });
+    try {
+      await adapter.open(url);
+      const landedUrl = await adapter.currentUrl();
+      const snapshot = await settleSnapshot(() => adapter.snapshot());
+      const states = store.statesForNode(args.site);
+      const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, args.site, states);
+      console.log(JSON.stringify({
+        status: 'ok', auth, site: args.site, profile: args.profile,
+        checkedAt: new Date().toISOString(), ...(loginUrl ? { loginUrl } : {}),
+      }, null, 2));
+      // The verb ran fine even when auth is stale — needs-login is exit 0 (a normal,
+      // useful answer), not exit 3 (ran-but-empty/failed). Documented in cli-spec help.
+    } catch (e) {
+      console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));
+      process.exitCode = 2;
+    } finally {
+      await adapter.close().catch(() => {});
+    }
     return;
   }
   if (args.cmd === 'sessions') {
