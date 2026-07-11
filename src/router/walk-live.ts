@@ -1,4 +1,4 @@
-import { PlaywrightAdapter } from '../playwright/adapter.js';
+import { PlaywrightAdapter, type BrowserOpts } from '../playwright/adapter.js';
 import { MapStore } from '../mapstore/store.js';
 import { parseSnapshot, findByRoleAndName } from '../playwright/snapshot.js';
 import { makeState, makeAffordance } from '../mapstore/types.js';
@@ -81,48 +81,76 @@ export function seedSaucedemoForWalk(store: MapStore): void {
  * Build a live WalkBrowser over a playwright adapter, resolving each edge's input
  * slot from `inputs` at fill time. `inputs` is held only in memory here — never
  * persisted. Shared by runWalkLive and the walk / walk-resume CLI verbs.
+ *
+ * `browserOpts` (the SAME launch opts — incl. `profile` — the caller opened
+ * `adapter` with) enables the fresh-session SSO-wall retry (design item 2):
+ * when supplied, the returned WalkBrowser gets `currentUrl`/`reopenFresh` so
+ * walkRoute can close this session and open a brand-new one under the SAME
+ * profile on a wall. Omit it (as the saucedemo dry-run wiring below does) to
+ * leave those capabilities off — the walk simply never attempts the retry.
  */
 export function makeLiveWalkBrowser(
   adapter: PlaywrightAdapter,
   inputs: Record<string, string>,
+  browserOpts?: BrowserOpts,
+  initialSessionId?: string,
 ): WalkBrowser {
+  let live = adapter;
+  let liveSessionId = initialSessionId ?? '';
   let lastSnapshot = '';
   async function fieldRef(name: string): Promise<string> {
     let nodes = parseSnapshot(lastSnapshot);
     let node = findByRoleAndName(nodes, 'textbox', name);
     if (!node || !node.ref) {
-      lastSnapshot = await adapter.snapshot();
+      lastSnapshot = await live.snapshot();
       nodes = parseSnapshot(lastSnapshot);
       node = findByRoleAndName(nodes, 'textbox', name);
     }
     if (!node || !node.ref) throw new Error('walk: could not resolve textbox "' + name + '"');
     return node.ref;
   }
-  return {
+  const browser: WalkBrowser = {
     snapshot: async () => {
-      lastSnapshot = await adapter.snapshot();
+      lastSnapshot = await live.snapshot();
       return lastSnapshot;
     },
-    callCount: () => adapter.callCount,
-    goto: async (url: string) => { await adapter.goto(url); },
+    callCount: () => live.callCount,
+    goto: async (url: string) => { await live.goto(url); },
     waitMs: (ms: number) => new Promise((r) => setTimeout(r, ms)),
     act: async (ref: string, inputSlot: string | null) => {
       if (inputSlot === 'credentials') {
-        await adapter.fill(await fieldRef('Username'), inputs.username);
-        await adapter.fill(await fieldRef('Password'), inputs.password);
-        await adapter.click(ref);
+        await live.fill(await fieldRef('Username'), inputs.username);
+        await live.fill(await fieldRef('Password'), inputs.password);
+        await live.click(ref);
         return;
       }
       if (inputSlot === 'shipping') {
-        await adapter.fill(await fieldRef('First Name'), inputs.firstName ?? 'A');
-        await adapter.fill(await fieldRef('Last Name'), inputs.lastName ?? 'B');
-        await adapter.fill(await fieldRef('Zip/Postal Code'), inputs.zip);
-        await adapter.click(ref);
+        await live.fill(await fieldRef('First Name'), inputs.firstName ?? 'A');
+        await live.fill(await fieldRef('Last Name'), inputs.lastName ?? 'B');
+        await live.fill(await fieldRef('Zip/Postal Code'), inputs.zip);
+        await live.click(ref);
         return;
       }
-      await adapter.click(ref);
+      await live.click(ref);
     },
   };
+  if (browserOpts) {
+    browser.currentUrl = () => live.currentUrl();
+    browser.close = () => live.close().then(() => undefined);
+    browser.sessionId = () => liveSessionId;
+    // Close the walled session, open a FRESH one under the SAME profile (same
+    // identity/cookies — equivalent to the user reopening a tab; NOT evasion),
+    // land back on `url`. Never throws on the close (best-effort cleanup).
+    browser.reopenFresh = async (url: string) => {
+      await live.close().catch(() => {});
+      liveSessionId = 'w-' + Date.now();
+      live = new PlaywrightAdapter(liveSessionId, undefined, undefined, browserOpts);
+      await live.open(url);
+      lastSnapshot = await live.snapshot();
+      return lastSnapshot;
+    };
+  }
+  return browser;
 }
 
 /**

@@ -21,6 +21,7 @@ export type RecallResponse =
   | { status: 'done'; evidence: EvidenceBundle; halted?: 'commit-point' }
   | { status: 'needs-navigation'; at: number; semanticStep: string; snapshot: string; question: string }
   | { status: 'needs-classification'; action: string; snapshot: string; at?: number }
+  | { status: 'needs-auth'; at: number; profile: string; site: string; loginUrl: string }
   | { status: 'failed'; reason: string };
 
 // --- Place lookup ("where is A?"): return a coordinate WITHOUT traversing. ---

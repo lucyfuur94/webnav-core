@@ -124,7 +124,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'walk', group: 'navigate',
-    summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent).',
+    summary: 'Walk a multi-step route to a non-URL state (pathfinds over the graph; pauses at forks for the agent). Response protocol: {status:"done",evidence} reached the goal · {status:"needs-navigation",...} real drift, agent supplies a ref · {status:"needs-classification",...} a possibly-destructive action, agent classifies safe|commit · {status:"needs-auth",profile,site,loginUrl,at} a settled landing classified as an SSO/login wall THAT SURVIVED a fresh-session retry under the same --profile (a stale-login pattern, not evasion) — this is a FAIL, not a resumable pause: log in by hand in that profile, then re-run `walk` · {status:"failed",reason}.',
     args: [],
     flags: [
       { name: '--start', takesValue: true, description: 'Start state id (from `dev graph-show`).' },
@@ -162,7 +162,7 @@ export const CONSUMER_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'navigate', group: 'navigate',
-    summary: 'Open a URL in a session browser; records a landing observation if the session is recording.',
+    summary: 'Open a URL in a session browser; records a landing observation if the session is recording. If the settled landing classifies as an SSO/login wall (foreign-host bounce, interstitial, or a password field — checked against the target site\'s own map), the JSON output adds `authWall: true, loginUrl`. NEVER auto-retried here (a recording captures what actually happened, judgment-free) — that\'s `walk`\'s job.',
     args: [{ name: 'url', required: true, description: 'URL to open.' }],
     flags: [
       { name: '--session', takesValue: true, description: 'Session id (browser + record buffer; from `dev record-start`).' },

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
-import { runSnapshotRecorded, recordNavigateEffect } from '../../src/router/browse.js';
+import { runSnapshotRecorded, recordNavigateEffect, classifyNavigateWall } from '../../src/router/browse.js';
+import { makeState } from '../../src/mapstore/types.js';
 
 const FAKE_SNAPSHOT = `- heading "requests" [ref=e1]
 - link "Issues" [ref=e2]
@@ -66,5 +67,35 @@ describe('recordNavigateEffect', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// `use navigate`'s authWall surfacing (design item 2, no-retry half): cli.ts feeds
+// recordNavigateEffect's (toUrl, toSnapshot) through this pure classifier so the
+// driving agent learns immediately instead of guessing from a bare snapshot.
+describe('classifyNavigateWall', () => {
+  it('flags authWall + loginUrl on a foreign-host SSO bounce', () => {
+    const r = classifyNavigateWall(
+      'https://intranet.example.com/', 'https://login.okta.com/sso/step-up', '- heading "Sign in"', []);
+    expect(r).toEqual({ authWall: true, loginUrl: 'https://login.okta.com/sso/step-up' });
+  });
+
+  it('flags authWall on a login-shaped page on the right host', () => {
+    const yml = '- textbox "Username" [ref=e1]\n- textbox "Password" [ref=e2]\n- button "Login" [ref=e3]';
+    const r = classifyNavigateWall('https://intranet.example.com/', 'https://intranet.example.com/', yml, []);
+    expect(r.authWall).toBe(true);
+  });
+
+  it('does not flag a normal landing that matches a known map state', () => {
+    const states = [makeState({ id: 'intranet.example.com:home', nodeId: 'intranet.example.com',
+      semanticName: 'home', urlPattern: '', role: 'detail', fingerprint: ['heading:Dashboard'] })];
+    const yml = '- heading "Dashboard" [ref=e1]';
+    const r = classifyNavigateWall('https://intranet.example.com/', 'https://intranet.example.com/', yml, states);
+    expect(r).toEqual({ authWall: false });
+  });
+
+  it('an unparseable requested url honestly reports no wall (nothing to check)', () => {
+    const r = classifyNavigateWall('not-a-url', 'not-a-url', '- heading "x"', []);
+    expect(r).toEqual({ authWall: false });
   });
 });

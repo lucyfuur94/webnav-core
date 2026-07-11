@@ -238,3 +238,95 @@ describe('walkRoute (interactive multi-step walk)', () => {
     expect(r3.status).toBe('done');
   });
 });
+
+// SSO-wall handling (profile-status design item 2): a navigate-edge step that lands
+// somewhere unexpected is checked against classifyAuthLanding BEFORE being reported
+// as generic drift. A wall retried once in a "fresh session" (same profile); a wall
+// that persists (or can't be retried) is a structured needs-auth, never a loop.
+describe('walkRoute — SSO-wall fresh-session retry (design item 2)', () => {
+  function wallStore() {
+    const store = new MapStore(':memory:');
+    store.upsertState(makeState({ id: 'sso:login', nodeId: 'sso.example.com', semanticName: 'sso:login',
+      urlPattern: '', role: 'search-entry', fingerprint: ['button:Go'] }));
+    store.upsertState(makeState({ id: 'sso:home', nodeId: 'sso.example.com', semanticName: 'sso:home',
+      urlPattern: '', role: 'detail', fingerprint: ['heading:Home'] }));
+    store.upsertEdge(makeEdge({ fromState: 'sso:login', toState: 'sso:home',
+      semanticStep: 'click "Go"', kind: 'safe-reversible' }));
+    return store;
+  }
+  const WALL_SNAP = '- heading "Sign in" [ref=e1]\n- textbox "Password" [ref=e2]';
+  const HOME_SNAP = '- heading "Home" [ref=e9]';
+  const LOGIN_SNAP = '- button "Go" [ref=e1]';
+
+  it('a wall that CLEARS on the fresh-session retry lets the walk finish (no needs-auth)', async () => {
+    const store = wallStore();
+    const states = store.allStates();
+    let phase: 'login' | 'walled' | 'home' = 'login';
+    let reopened = 0;
+    const browser: WalkBrowser = {
+      snapshot: async () => (phase === 'login' ? LOGIN_SNAP : phase === 'walled' ? WALL_SNAP : HOME_SNAP),
+      act: async () => { phase = 'walled'; },   // first load after the click bounces to the wall
+      currentUrl: async () => (phase === 'walled' ? 'https://login.okta.com/step-up' : 'https://sso.example.com/'),
+      reopenFresh: async (_url: string) => { reopened++; phase = 'home'; return HOME_SNAP; },   // fresh session passes
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'sso:login', goalStateId: 'sso:home', store, states, browser, profile: 'default' });
+    expect(reopened).toBe(1);
+    expect(r.status).toBe('done');
+  });
+
+  it('a wall that PERSISTS through the retry returns structured needs-auth (never loops)', async () => {
+    const store = wallStore();
+    const states = store.allStates();
+    let phase: 'login' | 'walled' = 'login';
+    let reopened = 0;
+    const browser: WalkBrowser = {
+      snapshot: async () => (phase === 'login' ? LOGIN_SNAP : WALL_SNAP),
+      act: async () => { phase = 'walled'; },
+      currentUrl: async () => 'https://login.okta.com/step-up',
+      reopenFresh: async (_url: string) => { reopened++; return WALL_SNAP; },   // still walled after reopen
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'sso:login', goalStateId: 'sso:home', store, states, browser, profile: 'acme' });
+    expect(reopened).toBe(1);   // retried exactly once, then gave up honestly
+    expect(r.status).toBe('needs-auth');
+    if (r.status === 'needs-auth') {
+      expect(r.profile).toBe('acme');
+      expect(r.site).toBe('sso.example.com');
+      expect(r.loginUrl).toBe('https://login.okta.com/step-up');
+    }
+  });
+
+  it('no reopenFresh capability (e.g. no profile / test fake) → needs-auth immediately, no retry attempted', async () => {
+    const store = wallStore();
+    const states = store.allStates();
+    let phase: 'login' | 'walled' = 'login';
+    const browser: WalkBrowser = {
+      snapshot: async () => (phase === 'login' ? LOGIN_SNAP : WALL_SNAP),
+      act: async () => { phase = 'walled'; },
+      currentUrl: async () => 'https://login.okta.com/step-up',
+      // no reopenFresh — the wall can't be retried at all
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'sso:login', goalStateId: 'sso:home', store, states, browser });
+    expect(r.status).toBe('needs-auth');
+    if (r.status === 'needs-auth') expect(r.profile).toBe('default');   // no profile supplied → honest fallback label
+  });
+
+  it('a mismatch that is NOT an auth wall still falls through to generic needs-navigation drift', async () => {
+    const store = wallStore();
+    const states = store.allStates();
+    // Lands somewhere on the RIGHT host that matches no known state — ordinary
+    // drift, not a wall; the wall check must not swallow this as needs-auth.
+    let phase: 'login' | 'drifted' = 'login';
+    const browser: WalkBrowser = {
+      snapshot: async () => (phase === 'login' ? LOGIN_SNAP : '- paragraph "Something else entirely"'),
+      act: async () => { phase = 'drifted'; },
+      currentUrl: async () => 'https://sso.example.com/other',
+      reopenFresh: async () => { throw new Error('must not be called — no wall detected'); },
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'sso:login', goalStateId: 'sso:home', store, states, browser });
+    expect(r.status).toBe('needs-navigation');
+  });
+});
