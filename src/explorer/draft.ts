@@ -725,6 +725,9 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
   const transientByPage = new Map<string, Set<string>>();
   const transientOf = (k: string) => transientByPage.get(k) ?? transientByPage.set(k, new Set()).get(k)!;
   effects.forEach((e, i) => {
+    // session boundary (the same seq-reset signal the landing pass reads): a NEW session is a fresh
+    // browser — no overlay survives it, so stale transient tokens must not gate the new session.
+    if (i > 0 && e.seq <= effects[i - 1].seq) transientByPage.clear();
     if (!e.fromSnapshot) return;
     const fromKey = fromPageKey(e.fromUrl);
     const fromLabel = labelOf(fromKey);
@@ -747,20 +750,28 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
       // was when clicked), parsed above — never landings.
       // X1 OR-arm: OR the action's role:name is in the page's TRANSIENT-overlay set (a subtree a
       // prior opener added and nothing has removed) — catches role-less portals insideOverlay misses.
+      // CHURN EXCLUSION (shared with the overlay-shape guard below): a token in BOTH removed and
+      // added is a re-render of existing page content (a sort/tab re-paints the same rows), NOT
+      // overlay content — it must neither enter the transient set nor count as an overlay opening.
+      const removedToks = new Set((e.diff?.removed ?? []).map((n) => `${n.role}:${n.name}`));
+      const syncTransient = () => {
+        for (const t of removedToks) transient.delete(t);
+        for (const n of e.diff?.added ?? []) {
+          if (n.name && n.name.trim() && !removedToks.has(`${n.role}:${n.name}`)) transient.add(`${n.role}:${n.name}`);
+        }
+      };
       const actionTok = e.action.name ? `${e.action.role}:${e.action.name}` : null;
       if (clickedInOverlay(fromNodes, e.action) || (actionTok && transient.has(actionTok))) {
         // even when gated, this click's OWN diff may open a nested overlay / dismiss the current one —
         // keep the transient set current so the following clicks gate correctly.
-        for (const n of e.diff?.removed ?? []) if (n.name) transient.delete(`${n.role}:${n.name}`);
-        for (const n of e.diff?.added ?? []) if (n.name && n.name.trim()) transient.add(`${n.role}:${n.name}`);
+        syncTransient();
         return;
       }
       // NON-gated opener/mutate: it stays a page affordance (below), but its diff SUBTREE joins the
       // transient set so the value clicks that FOLLOW it gate as overlay content (X1). Removed tokens
       // (a dismissed overlay) leave the set. Done here (post-gate, pre-processing) so an opener never
       // gates ITSELF — its added children only affect the SUBSEQUENT effects.
-      for (const n of e.diff?.removed ?? []) if (n.name) transient.delete(`${n.role}:${n.name}`);
-      for (const n of e.diff?.added ?? []) if (n.name && n.name.trim()) transient.add(`${n.role}:${n.name}`);
+      syncTransient();
       // a `use type` on a textbox → an input affordance (login or any field).
       if (e.action.role === 'textbox' && e.action.name) {
         pushAff(fromLabel, { id: `inp_${slug(e.action.name)}`, label: e.action.name, kind: 'input',
@@ -779,19 +790,44 @@ export function draftFromEffects(effects: StoredActionEffect[]): DraftGraph {
         // Together they drop the picker's dimension/metric choice list; the overlay's own controls
         // (Apply/Cancel/Close/Search/tabs) don't repeat, so they survive.
         const addedNodes = e.diff?.added ?? [];
-        const foldedNames = templateFolds(addedNodes).gatedNames;
+        const { emit: addedFolds, gatedNames: foldedNames } = templateFolds(addedNodes);
         const valueDomain = enumeratedNames(addedNodes);
         const children: DraftAffordance[] = addedNodes
           .filter((n) => n.role && n.name && REVEAL_CHILD_ROLES.has(n.role) && !foldedNames.has(n.name) && !valueDomain.has(n.name))
           .map((n) => ({ id: `aff_${affSeq++}_${slug(n.name!)}`, label: n.name!,
             kind: childKind(n.role!), elementFp: { role: n.role, name: n.name!, near: null },
             ...(COMMIT_WORDS.test(n.name!) ? { needsClassification: true } : {}) }));
-        // CLASSIFY BY BEHAVIOR (rule 2): an opener whose diff ADDED ≥1 named node opened an overlay
-        // → it is a `reveal` even when NO child survives the child-role filter + value-domain folds
-        // (an option-only portal: every added node is a value, children legitimately `[]`). Keying on
-        // `children.length` (the old ternary) misclassified those as `mutate`. Fall back to `mutate`
-        // only when the diff added nothing named (a true in-place change — sort/filter/search).
-        const openedOverlay = addedNodes.some((n) => n.name && n.name.trim());
+        // CLASSIFY BY BEHAVIOR (rule 2) + OVERLAY-SHAPE GUARD (review fix): an effect OPENED an
+        // overlay iff its diff added ≥1 named INTERACTIVE node that is genuinely NEW — meaning:
+        //  • role ∈ the DETECTION set (REVEAL_CHILD_ROLES ∪ CONTROL_ROLES ∪ `option`),
+        //  • role:name NOT also in diff.removed (churn: a sort re-paints the same controls), and
+        //  • name NOT gated by a repeated-SUBTREE fold (a filter-tab re-render swaps in DIFFERENT
+        //    rows — new link tokens, but they arrive as ≥2 same-shape row subtrees = re-rendered
+        //    collection DATA, not overlay controls; live finding on the tab-switch re-render).
+        // Any-named-node alone misclassified real actions: tab re-render → reveal (wrong, mutate);
+        // click-shows-tooltip (text-only added) → reveal (wrong, mutate). A genuine portal/dialog
+        // adds NEW unfolded controls → reveal, even when every child folds out as value domain
+        // (children legitimately `[]`, the option-only portal — enumeratedNames values still DETECT:
+        // an added value list is definitely an overlay, so valueDomain is NOT excluded here).
+        // DETECTION set ≠ STORAGE set: `option` counts for DETECTION but options are never STORED
+        // as children (REVEAL_CHILD_ROLES excludes them — value domain, read live at walk time).
+        const overlayControl = (role: string) => REVEAL_CHILD_ROLES.has(role) || CONTROL_ROLES.has(role) || role === 'option';
+        // STRAGGLER-UNIT exclusion (live finding): a real grid has per-row shape variance (one row
+        // carries an extra badge cell), so one row can MISS the widget fold that caught its 14
+        // siblings — its interior link then reads as a "new control" and flips the re-render to
+        // reveal. When the added diff DID fold repeated units (unitSize ≥2), a control nested under
+        // another node of the same unit-root role (`row`) is collection data too, fold or no fold.
+        const foldRootRoles = new Set(addedFolds.filter((f) => f.unitSize >= 2).map((f) => addedNodes[f.memberIndices[0]].role));
+        const underFoldRootRole = (idx: number): boolean => {   // nearest-lower-depth ancestor walk (insideOverlay idiom)
+          let cur = addedNodes[idx].depth;
+          for (let j = idx - 1; j >= 0; j--) {
+            if (addedNodes[j].depth < cur) { if (foldRootRoles.has(addedNodes[j].role)) return true; cur = addedNodes[j].depth; }
+          }
+          return false;
+        };
+        const openedOverlay = addedNodes.some((n, idx) => n.name && n.name.trim()
+          && overlayControl(n.role) && !removedToks.has(`${n.role}:${n.name}`) && !foldedNames.has(n.name)
+          && !(foldRootRoles.size > 0 && underFoldRootRole(idx)));
         const aff: DraftAffordance = openedOverlay
           ? { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'reveal', elementFp: fp, children }
           : { id: `aff_${affSeq++}_${slug(e.action.name)}`, label: e.action.name, kind: 'mutate', elementFp: fp };

@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { draftFromEffects } from '../../src/explorer/draft.js';
 import type { StoredActionEffect } from '../../src/mapstore/record.js';
+import { parseSnapshot } from '../../src/playwright/snapshot.js';
 
 const B = 'https://fx.test';
 const AUTH = ['- heading "Login" [ref=e1]', '- textbox "Username" [ref=e2]', '- textbox "Password" [ref=e3]',
@@ -95,6 +96,23 @@ describe('grammar: 44/2/59 data grid — row fold, near, effects, URL-template e
   it('sortable column headers survive as their own affordances (not folded — only 2, below fold threshold)', () => {
     expect(s.affordances.some((a) => a.label === 'Name' && a.kind === 'mutate')).toBe(true);
     expect(s.affordances.some((a) => a.label === 'Status' && a.kind === 'mutate')).toBe(true);
+  });
+
+  // row 44 (overlay-shape guard): a recorded SORT click RE-RENDERS the grid — the same row
+  // controls churn through diff.removed + diff.added. That is an in-place change (mutate),
+  // never an overlay opening (reveal): churned tokens don't count as new interactive content.
+  it('a recorded sort click whose diff re-renders the rows classifies mutate, not reveal (churn ≠ overlay)', () => {
+    const ROWS = parseSnapshot(
+      ([[1, 'Alpha widget'], [2, 'Beta widget'], [3, 'Gamma widget']] as [number, string][])
+        .flatMap(([id, name]) => gridRow(id, name)).join('\n'));
+    const sortClick: StoredActionEffect = { seq: 1, capturedAt: 0, fromUrl: `${B}/items/list`, fromSnapshot: LANDING_A,
+      action: { role: 'columnheader', name: 'Name', ref: 'e3', elementFp: { role: 'columnheader', name: 'Name', near: null } },
+      toUrl: `${B}/items/list`, toSnapshot: LANDING_A, navigated: false, diff: { added: ROWS, removed: ROWS } as any };
+    const g2 = draftFromEffects([enter, sortClick] as never);
+    const s2 = g2.states.find((x) => x.label === 'items-list')!;
+    const sorts = s2.affordances.filter((a) => a.label === 'Name');
+    expect(sorts.length).toBeGreaterThan(0);
+    expect(sorts.every((a) => a.kind === 'mutate')).toBe(true);
   });
 
   it('pagination links (Next/Prev) resolve to the SAME URL-template state, not a separate page', () => {
