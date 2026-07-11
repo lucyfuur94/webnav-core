@@ -933,39 +933,43 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
           }
           return false;
         };
-        // HOOK 1 (overlay-open pack): the built-in detection above is the strict 4-exclusion scan.
-        // ONLY when it DECLINES do packs get a say — a matching `overlay-open` entry flips detection
-        // true for an UNDECLARED role-less portal the strict scan can't see (a div-soup overlay whose
-        // added subtree carries no interactive/attr signal). Detection only: the transient
-        // attribution set stays maximal (built above, NOT pack-influenced), so gated value clicks are
-        // unaffected. Evaluated on diff.added (the pack's `diff.added` context) — the subtree the
-        // opener revealed.
-        const openedOverlay = addedNodes.some((n, idx) => n.name && n.name.trim()
-          && overlayControl(n.role) && !removedToks.has(`${n.role}:${n.name}`) && !foldedNames.has(n.name)
-          && !(foldRootRoles.size > 0 && underFoldRootRole(idx)))
-          || packDetectsOverlay(packsFor(fromLabel), addedNodes);
-        // UNKNOWNS source (a) — undetected-overlay: BOTH the built-in scan AND every loaded pack
-        // declined, yet the diff added a substantial (≥5) named subtree that stayed `mutate`. This
-        // is the honest "detection declined" gap `dev pattern-propose` (Task 3) turns into a new
-        // `overlay-open` pack entry. addedNodes.length gate (not just named-count) keeps this to
-        // real substantial subtrees, matching the plan's "≥N-node named added-diffs" language.
-        // COLLECTION-REPAINT exclusion (review F2): a data-grid repaint (sort/refresh/filter-tab
-        // re-renders rows) adds a large named subtree that is NOT an overlay — its named nodes are
-        // dominated by collection roles (row/gridcell/columnheader/cell). Reporting it would
-        // actively suggest an overlay-open pack where NONE is needed (the mutate classification
-        // was CORRECT) — the same collection-data reasoning as the detection guard's fold
-        // exclusions above. >50% dominance = documented tunable. REFINEMENT (evidence-gated, real
-        // data): dominance alone also caught the genuine date-picker (its day-cell calendar is 31
-        // gridcells = 56% of its subtree), which the review's own test contract says must STAY
-        // reported. The discriminator is declared structure: a data-grid repaint announces its
-        // `row`/`columnheader` nodes (measured: 72-74% collection WITH rows+headers), a picker's
-        // day-cell grid does not (zero rows/headers) — so repaint = dominance AND row/columnheader
-        // presence. Site-agnostic ARIA structure, no product tokens.
+        // COLLECTION-REPAINT guard (review F2 + final-review fix): a data-grid repaint (sort/
+        // refresh/filter-tab re-renders rows) adds a large named subtree that is NOT an overlay —
+        // its named nodes are dominated by collection roles (row/gridcell/columnheader/cell) AND it
+        // announces declared grid structure (`row`/`columnheader`; measured on real data: repaints
+        // are 72-74% collection WITH rows+headers, a date-picker's day-cell grid has ZERO rows/
+        // headers). >50% dominance = documented tunable. This guard is SHARED by the unknowns
+        // report below AND the pack overlay-open hook: a repaint diff never reaches pack
+        // evaluation — the core's own detection rejected exactly this shape (fold/straggler
+        // exclusions), and letting a pack's structural trigger (e.g. gridcell min:20) see it flipped
+        // real Refresh-list repaints mutate→reveal on the real recorded list pages (final
+        // whole-branch review finding).
         const namedAdded = addedNodes.filter((n) => n.name && n.name.trim());
         const collectionNamed = namedAdded.filter((n) => COLLECTION_ROLES.has(n.role)).length;
         const hasGridStructure = namedAdded.some((n) => n.role === 'row' || n.role === 'columnheader');
         const gridRepaint = namedAdded.length > 0 && hasGridStructure
           && collectionNamed / namedAdded.length > COLLECTION_DOMINANCE;
+        // HOOK 1 (overlay-open pack): the built-in detection above is the strict 4-exclusion scan.
+        // ONLY when it DECLINES — and the diff is NOT a collection repaint — do packs get a say: a
+        // matching `overlay-open` entry flips detection true for an UNDECLARED role-less portal the
+        // strict scan can't see (a div-soup overlay whose added subtree carries no interactive/attr
+        // signal). Detection only: the transient attribution set stays maximal (built above, NOT
+        // pack-influenced), so gated value clicks are unaffected. Evaluated on diff.added (the
+        // pack's `diff.added` context) — the subtree the opener revealed.
+        const openedOverlay = addedNodes.some((n, idx) => n.name && n.name.trim()
+          && overlayControl(n.role) && !removedToks.has(`${n.role}:${n.name}`) && !foldedNames.has(n.name)
+          && !(foldRootRoles.size > 0 && underFoldRootRole(idx)))
+          || (!gridRepaint && packDetectsOverlay(packsFor(fromLabel), addedNodes));
+        // UNKNOWNS source (a) — undetected-overlay: BOTH the built-in scan AND every loaded pack
+        // declined, yet the diff added a substantial (≥5) named subtree that stayed `mutate`. This
+        // is the honest "detection declined" gap `dev pattern-propose` (Task 3) turns into a new
+        // `overlay-open` pack entry. addedNodes.length gate (not just named-count) keeps this to
+        // real substantial subtrees, matching the plan's "≥N-node named added-diffs" language.
+        // Repaints are excluded by the SAME gridRepaint guard above: reporting one would actively
+        // suggest an overlay-open pack where NONE is needed (the mutate classification was
+        // CORRECT). REFINEMENT (evidence-gated, real data): dominance alone also caught the genuine
+        // date-picker (its day-cell calendar is 31 gridcells = 56% of its subtree), which the
+        // review's own test contract says must STAY reported — hence the row/columnheader arm.
         if (!openedOverlay && namedAdded.length >= 5 && !gridRepaint) {
           unknowns.push({
             kind: 'undetected-overlay', evidence: evidenceOf(addedNodes),

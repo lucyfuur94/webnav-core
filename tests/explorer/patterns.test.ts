@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import {
   lintPackEntry, evaluateTrigger, loadPatternPacks, packDetectsOverlay, packValueNames,
   ARIA_ROLES, ARIA_ATTRS, PACK_TYPES, TRIGGER_CONTEXTS, type PatternPack,
@@ -187,6 +188,26 @@ describe('draftFromEffects — pack hook integration', () => {
     }
   });
 
+  // A data-GRID REPAINT diff (final-review regression): a "Refresh list" click re-renders the
+  // grid — an unnamed `generic` wrapper whose subtree carries named columnheaders + rows + 24
+  // gridcells. Collection-dominant AND declares grid structure (rows/headers) → the shared
+  // gridRepaint guard must keep it from pack overlay-open evaluation even though the trigger
+  // (generic root, gridcell min:20) matches it structurally. The core's own detection also
+  // declines (no overlayControl roles) — so without the guard, the pack would flip mutate→reveal.
+  const repaintAdded = [
+    { role: 'generic', name: null, ref: 'e40', url: null, raw: 'generic [ref=e40]', depth: 3 },
+    ...Array.from({ length: 4 }, (_, i) => ({ role: 'columnheader', name: `Col ${i}`, ref: `e${41 + i}`, url: null, raw: `columnheader "Col ${i}"`, depth: 4 })),
+    ...Array.from({ length: 6 }, (_, r) => [
+      { role: 'row', name: `Row ${r} data`, ref: `e${50 + r * 5}`, url: null, raw: `row "Row ${r} data"`, depth: 4 },
+      ...Array.from({ length: 4 }, (_, c) => ({ role: 'gridcell', name: `v${r}-${c}`, ref: `e${51 + r * 5 + c}`, url: null, raw: `gridcell "v${r}-${c}"`, depth: 5 })),
+    ]).flat(),
+  ];
+  const refreshClick = {
+    seq: 1, capturedAt: 0, fromUrl: `${B}/book`, fromSnapshot: PAGE,
+    action: { role: 'button', name: 'Refresh list', ref: 'e9', elementFp: { role: 'button', name: 'Refresh list', near: null } },
+    toUrl: `${B}/book`, toSnapshot: PAGE, navigated: false, diff: { added: repaintAdded, removed: [] } as any,
+  };
+
   it('a pack ONLY ever SHRINKS what is stored — it cannot mint an affordance/edge/state', () => {
     const base = draftFromEffects(effs, []);
     for (const packs of [[overlayPack()], [valuePack()], [overlayPack(), valuePack()]] as PatternPack[][]) {
@@ -203,6 +224,30 @@ describe('draftFromEffects — pack hook integration', () => {
         for (const to of edges(s)) expect(edges(b)).toContain(to);
       }
     }
+    // GRID-REPAINT arm (final-review finding): on a repaint diff an overlay-open pack that WOULD
+    // match structurally must change NOTHING — kinds unchanged, counts unchanged (strict equality,
+    // not ≤ — the pack path is never even consulted).
+    const effsRepaint = [ENTRY, refreshClick] as any;
+    const rBase = draftFromEffects(effsRepaint, []);
+    const rPack = draftFromEffects(effsRepaint, [overlayPack()]);
+    const kindsOf = (g: typeof rBase) => g.states.map((s) => ({ label: s.label,
+      affs: s.affordances.map((a) => `${a.kind}|${a.label}|${(a.children ?? []).length}`).sort() }));
+    expect(kindsOf(rPack)).toEqual(kindsOf(rBase));
+  });
+
+  it('REAL-SHAPE regression: repaint diff + the SHIPPED core pack → Refresh-list opener stays mutate', () => {
+    const coreDir = fileURLToPath(new URL('../../packs/patterns/core', import.meta.url));
+    const shipped = loadPatternPacks([coreDir]);
+    expect(shipped.length).toBeGreaterThan(0);   // the date-picker pack must be present
+    const draft = draftFromEffects([ENTRY, refreshClick] as any, shipped);
+    const page = draft.states.find((s) => s.label === 'book')!;
+    const refresh = page.affordances.find((a) => a.label === 'Refresh list')!;
+    expect(refresh.kind).toBe('mutate');   // grid repaint never reaches pack overlay-open evaluation
+    // and the pack still does its real job on the genuine date-picker portal in the same run:
+    const draft2 = draftFromEffects([ENTRY, pickDate, refreshClick] as any, shipped);
+    const page2 = draft2.states.find((s) => s.label === 'book')!;
+    expect(page2.affordances.find((a) => a.label === 'Pick date')!.kind).toBe('reveal');
+    expect(page2.affordances.find((a) => a.label === 'Refresh list')!.kind).toBe('mutate');
   });
 
   it('DETERMINISM: two draft runs with the same packs are byte-identical', () => {
