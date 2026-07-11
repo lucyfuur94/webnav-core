@@ -157,6 +157,148 @@ export function foldRepeats(nodes: SnapNode[]): { folds: FoldedRepeat[]; foldedN
   return { folds, foldedNames };
 }
 
+// ── Subtree-template induction (2026-07-11, subtree-templates design) ──────────────────────────
+// The repetition principle at its last scale: repeated sibling SUBTREES are instances of one
+// sub-template; the varying residue is data. Pure tree fold over the parsed snapshot, zero site
+// knowledge (#5a). Subsumes foldRepeats (a one-level subtree = the named-sibling case) and the
+// draft-side enumeratedNames children fold — both die in Task 2 once consumers re-point here.
+
+export interface SubtreeFold {
+  sig: string;                 // 8-char stable hash of the firing level's structural signature
+  level: 'named' | 'abstracted';
+  count: number;               // number of member subtrees folded into this template
+  memberIndices: number[];     // EVERY node index inside any member subtree (root + descendants)
+  label: string;
+  unitSize: number;            // node count of one member subtree (measured on the first member)
+}
+
+// Tiny deterministic string hash (djb2 → 8 hex). No crypto import — sigs need only be stable
+// across runs and collision-resistant enough to key groups; they are not security material.
+function sigHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(16).padStart(8, '0');
+}
+
+// Longest common trailing word across names (ported from foldRepeats' suffix idea, generalized to
+// N shared trailing words). Returns '' when the names share no trailing word. Copy, not call —
+// foldRepeats dies in Task 2. Anchors an abstracted fold's label ('OS Remove'/'Revenue Remove' → 'Remove').
+function commonTrailingWords(names: string[]): string {
+  const wordLists = names.map((n) => n.trim().split(/\s+/));
+  const out: string[] = [];
+  for (let back = 1; ; back++) {
+    const words = wordLists.map((w) => (w.length >= back ? w[w.length - back] : undefined));
+    if (words.some((w) => w === undefined) || new Set(words).size !== 1) break;
+    out.unshift(words[0]!);
+  }
+  return out.join(' ');
+}
+
+/** Repeated sibling subtrees under a shared parent fold into typed sub-templates. Two signature
+ *  levels, bottom-up:
+ *    L1 (named)      role (+ "name" if role ∈ CONTROL_ROLES — control labels are the strongest
+ *                    template evidence) + '(' + sorted children L1 sigs + ')'.
+ *    L2 (abstracted) same, ALL names dropped — pure shape.
+ *  Fold rules PER PARENT (thresholds evidence-scaled, documented here):
+ *    (a) named ≥2      — ≥2 children sharing an L1 sig (identical repeated units; 'Expand drilldown' ×25).
+ *    (b) abstracted ≥3 — among the still-unfolded children, ≥3 sharing an L2 sig across ≥2 DISTINCT
+ *                        L1 sigs (the varying-name 'OS Remove'/'Revenue Remove' class). Higher bar:
+ *                        an abstract match is weaker evidence than an exact-label repeat.
+ *  A candidate unit must carry SOMETHING (a name or a control role somewhere in its subtree) — pure
+ *  unnamed `generic` wrappers fold to nothing and are skipped. A node already inside a named fold is
+ *  never reconsidered for abstracted folding. Pure + deterministic; no draft changes. */
+export function subtreeFolds(nodes: SnapNode[]): { folds: SubtreeFold[]; foldedIndices: Set<number> } {
+  const n = nodes.length;
+  // Tree via depth stack: parent of node i = nearest preceding node with lower depth (the
+  // containment idiom used everywhere). Root nodes (no lower-depth predecessor) get parent -1.
+  const parent = new Array<number>(n).fill(-1);
+  const children: number[][] = Array.from({ length: n }, () => []);
+  const roots: number[] = [];
+  const stack: number[] = [];
+  for (let i = 0; i < n; i++) {
+    while (stack.length && nodes[stack[stack.length - 1]].depth >= nodes[i].depth) stack.pop();
+    if (stack.length) { parent[i] = stack[stack.length - 1]; children[parent[i]].push(i); }
+    else roots.push(i);
+    stack.push(i);
+  }
+
+  // Bottom-up signatures + subtree size + content flag. Children always follow their parent at
+  // greater depth, so reverse index order is a valid post-order (child computed before parent).
+  const l1 = new Array<string>(n), l2 = new Array<string>(n);
+  const size = new Array<number>(n).fill(1);
+  const hasContent = new Array<boolean>(n).fill(false);
+  for (let i = n - 1; i >= 0; i--) {
+    const isControl = CONTROL_ROLES.has(nodes[i].role);
+    const self = hasContent[i] || (nodes[i].name != null && nodes[i].name!.trim() !== '') || isControl;
+    hasContent[i] = self;
+    const kids = children[i];
+    const k1: string[] = [], k2: string[] = [];
+    for (const c of kids) { k1.push(l1[c]); k2.push(l2[c]); size[i] += size[c]; if (hasContent[c]) hasContent[i] = true; }
+    k1.sort(); k2.sort();
+    const label1 = nodes[i].role + (isControl && nodes[i].name ? '"' + nodes[i].name + '"' : '');
+    l1[i] = label1 + '(' + k1.join(',') + ')';
+    l2[i] = nodes[i].role + '(' + k2.join(',') + ')';
+  }
+
+  // All indices inside a subtree (root + descendants), document order.
+  const subtreeIndices = (root: number): number[] => {
+    const acc: number[] = [];
+    const walk = (i: number) => { acc.push(i); for (const c of children[i]) walk(c); };
+    walk(root);
+    return acc;
+  };
+  // First control-role node WITH a name in a unit's subtree (document order) → its stable label.
+  const firstControlName = (root: number): string | null => {
+    for (const i of subtreeIndices(root)) {
+      if (CONTROL_ROLES.has(nodes[i].role) && nodes[i].name && nodes[i].name!.trim()) return nodes[i].name!.trim();
+    }
+    return null;
+  };
+
+  const folds: SubtreeFold[] = [];
+  const foldedIndices = new Set<number>();
+
+  const foldUnderParent = (kids: number[]) => {
+    const eligible = kids.filter((c) => hasContent[c]);   // skip pure unnamed wrappers
+    // (a) NAMED: group by L1, groups ≥2.
+    const byL1 = new Map<string, number[]>();
+    for (const c of eligible) (byL1.get(l1[c]) ?? byL1.set(l1[c], []).get(l1[c])!).push(c);
+    const claimed = new Set<number>();
+    for (const [sig, members] of byL1) {
+      if (members.length < 2) continue;
+      for (const m of members) claimed.add(m);
+      const mi: number[] = [];
+      for (const m of members) for (const idx of subtreeIndices(m)) { mi.push(idx); foldedIndices.add(idx); }
+      folds.push({
+        sig: sigHash(sig), level: 'named', count: members.length, memberIndices: mi,
+        label: firstControlName(members[0]) ?? nodes[members[0]].role, unitSize: size[members[0]],
+      });
+    }
+    // (b) ABSTRACTED: among children NOT claimed by a named fold, group by L2; groups ≥3 with ≥2
+    //     distinct L1 sigs (varying names are the param slots).
+    const byL2 = new Map<string, number[]>();
+    for (const c of eligible) { if (claimed.has(c)) continue; (byL2.get(l2[c]) ?? byL2.set(l2[c], []).get(l2[c])!).push(c); }
+    for (const [sig, members] of byL2) {
+      if (members.length < 3) continue;
+      if (new Set(members.map((m) => l1[m])).size < 2) continue;   // identical units belong to named, not here
+      const mi: number[] = [];
+      for (const m of members) for (const idx of subtreeIndices(m)) { mi.push(idx); foldedIndices.add(idx); }
+      // Label = longest common trailing word of the members' distinguishing names, else unit role.
+      const names: string[] = [];
+      for (const m of members) { const nm = firstControlName(m) ?? nodes[m].name; if (nm && nm.trim()) names.push(nm.trim()); }
+      const trailing = names.length === members.length ? commonTrailingWords(names) : '';
+      folds.push({
+        sig: sigHash(sig), level: 'abstracted', count: members.length, memberIndices: mi,
+        label: trailing || nodes[members[0]].role, unitSize: size[members[0]],
+      });
+    }
+  };
+
+  foldUnderParent(roots);
+  for (let i = 0; i < n; i++) if (children[i].length) foldUnderParent(children[i]);
+  return { folds, foldedIndices };
+}
+
 export interface CoreResult { tokens: Face; provisional: string | null }
 
 /** A state's durable face = tokens repeating across its settled landings (majority k-of-n,
