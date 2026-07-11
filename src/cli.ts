@@ -1484,6 +1484,26 @@ async function main() {
     if (!store.getState(args.goal)) { console.log(JSON.stringify({ status: 'failed', reason: 'unknown state ' + args.goal }, null, 2)); process.exitCode = 2; return; }
     const path = findPath(store, args.start, args.goal);
     if (!path) { console.log(JSON.stringify({ status: 'failed', reason: 'no route from ' + args.start + ' to ' + args.goal }, null, 2)); process.exitCode = 3; return; }
+    const startState = store.getState(args.start)!;
+    const states = store.statesForNode(startState.nodeId ?? '');
+    // --observe <label>: resolved against the goal's node like --start/--goal (a
+    // state id, or its bare semanticName) — same scope, so `--observe inventory`
+    // finds `www.saucedemo.com:inventory` without repeating the site prefix. A
+    // label that resolves to nothing errors HERE, loudly, BEFORE any browser
+    // opens — a silent drop would return a normal done with zero checkpoints and
+    // no signal that the typo'd observe never armed (same posture as a bad
+    // --start/--goal).
+    const observe: string[] = [];
+    for (const label of args.observe) {
+      const id = resolveObserveLabel(states, label);
+      if (!id) {
+        console.log(JSON.stringify({ status: 'error',
+          hint: 'unknown --observe state "' + label + '" — known states for ' + (startState.nodeId ?? args.start)
+            + ': ' + states.map((s) => s.semanticName).join(', ') }, null, 2));
+        process.exitCode = 2; return;
+      }
+      observe.push(id);
+    }
     const browserSession = 'w-' + Date.now();
     // Live-session CEILING (prevents the browser-count explosion). First frees orphans +
     // abandoned paused-walk browsers older than 1h (the real leak — a needs-* pause leaves a
@@ -1504,7 +1524,6 @@ async function main() {
       bopts.profile = resolveProfile(bopts.profile, join(homedir(), '.webnav', 'profiles'));
     }
     const adapter = new PlaywrightAdapter(browserSession, undefined, undefined, bopts);
-    const startState = store.getState(args.start)!;
     await adapter.open(startState.urlPattern || 'about:blank');
     // Inputs = stored creds for this site (if any) overlaid with any --input flags
     // (flags win). Lets `walk` run without re-typing credentials each time, while
@@ -1517,11 +1536,6 @@ async function main() {
     // session under the SAME profile (design item 2) — omitted (no retry
     // capability) when the walk isn't running under a named profile.
     const browser = makeLiveWalkBrowser(adapter, inputs, bopts, browserSession);
-    const states = store.statesForNode(startState.nodeId ?? '');
-    // --observe <label>: resolved against the goal's node like --start/--goal (a
-    // state id, or its bare semanticName) — same scope, so `--observe inventory`
-    // finds `www.saucedemo.com:inventory` without repeating the site prefix.
-    const observe = args.observe.map((label) => resolveObserveLabel(states, label)).filter((id): id is string => !!id);
     const res = await walkRoute({ goalName: 'walk:' + args.goal, startStateId: args.start, goalStateId: args.goal, store, states, browser, path, profile: args.browser.profile, observe, observeDynamic: args.observeDynamic });
     // needs-auth: the wall persisted through the fresh-session retry (or no retry was
     // possible). Fail-fast, NOT a resumable pause — a stale login can't be fixed by
@@ -1762,10 +1776,10 @@ async function main() {
 // --observe <label>: resolved the same way --start/--goal already are — a full
 // state id, or its bare semanticName within the node's states (so `--observe
 // inventory` finds `www.saucedemo.com:inventory` without repeating the prefix).
-// Unresolvable labels are silently dropped (filtered by the caller) rather than
-// failing the walk — an observe request is opt-in extra visibility, not a route
-// requirement.
-function resolveObserveLabel(states: State[], label: string): string | null {
+// null = unknown label; the walk handler errors on it (exit 2 + a hint listing
+// the node's known states) BEFORE opening a browser — same loud posture as a
+// bad --start/--goal, so a typo never silently disarms the checkpoint.
+export function resolveObserveLabel(states: State[], label: string): string | null {
   const byId = states.find((s) => s.id === label);
   if (byId) return byId.id;
   const byName = states.find((s) => s.semanticName === label);
