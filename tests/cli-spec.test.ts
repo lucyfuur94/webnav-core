@@ -67,6 +67,13 @@ describe('COMMANDS registry', () => {
     expect(g.summary.toLowerCase()).toContain('merge');
   });
 
+  it('graph-analyse help teaches the extension loop: unknowns → pattern-propose → local pack → PR upstream', () => {
+    const g = COMMANDS.find((c) => c.name === 'graph-analyse')!;
+    expect(g.summary).toContain('unknowns');
+    expect(g.summary).toContain('pattern-propose');
+    expect(g.summary.toLowerCase()).toContain('pr upstream');
+  });
+
   it('graph-edit help teaches provisional tri-state and scope passthrough', () => {
     const g = COMMANDS.find((c) => c.name === 'graph-edit')!;
     expect(g.summary).toContain('provisional');
