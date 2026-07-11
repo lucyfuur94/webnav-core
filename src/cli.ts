@@ -29,6 +29,7 @@ export type ParsedArgs =
   | { cmd: 'node-clear'; node: string }
   | { cmd: 'node-rm'; node: string }
   | { cmd: 'import-map'; file: string }
+  | { cmd: 'pattern-propose'; fromUnknown: string; name: string; lint?: string }
   | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
@@ -193,6 +194,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'node-rm') return { cmd, node: flagValue(rest, '--node') ?? '' };
   if (cmd === 'import-map') return { cmd, file: flagValue(rest, '--file') ?? rest[0] ?? '' };
+  if (cmd === 'pattern-propose') {
+    return { cmd, fromUnknown: flagValue(rest, '--from-unknown') ?? '', name: flagValue(rest, '--name') ?? '', lint: flagValue(rest, '--lint') };
+  }
   if (cmd === 'export-map') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
@@ -951,6 +955,90 @@ async function main() {
     importMapPack(store, pack);
     console.log(JSON.stringify({ status: 'done', node: pack.node.id, statesImported: pack.states.length,
       hint: `set login creds with: webnav dev creds set ${pack.node.id} username=… password=…` }, null, 2));
+    return;
+  }
+  if (args.cmd === 'pattern-propose') {
+    const { readFileSync, writeFileSync, existsSync, mkdirSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { lintPackEntry } = await import('./explorer/patterns.js');
+
+    // RE-CHECK PATH (no standalone `pattern-lint` verb — --lint <file> IS the re-check the plan
+    // asks for): re-runs lint on an existing pack file after the agent filled in the TODO trigger.
+    // Independent of --from-unknown/--name — just lints whatever file is named.
+    if (args.lint) {
+      let raw: unknown;
+      try { raw = JSON.parse(readFileSync(args.lint, 'utf8')); }
+      catch (e: any) { console.log(JSON.stringify({ status: 'error', hint: `could not read/parse ${args.lint}: ${e.message}` }, null, 2)); process.exitCode = 2; return; }
+      const entries = Array.isArray(raw) ? raw : [raw];
+      const results = entries.map((e, i) => ({ index: i, reasons: lintPackEntry(e) }));
+      const allClean = results.every((r) => r.reasons.length === 0);
+      console.log(JSON.stringify({
+        status: allClean ? 'done' : 'error', file: args.lint, results,
+        hint: allClean
+          ? `lint clean. Next: re-run graph-analyse --draft on the site that surfaced this gap and confirm the unknown is gone, then add a grammar fixture test, then: gh pr create ...`
+          : `lint failed — fix the reasons above (usually: fill trigger.contains with >=1 { role, min?, attr? } predicate) and re-run --lint`,
+      }, null, 2));
+      if (!allClean) process.exitCode = 2;
+      return;
+    }
+
+    if (!args.fromUnknown || !args.name) {
+      console.log(JSON.stringify({ status: 'error',
+        hint: 'usage: webnav dev pattern-propose --from-unknown <graph-analyse-draft.json>#<index> --name <slug>   (or: --lint <pack-file> to re-check)' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { parseFromUnknownArg, proposeFromUnknown, ghPrCommand } = await import('./explorer/pattern-propose.js');
+    let path: string, index: number;
+    try { ({ path, index } = parseFromUnknownArg(args.fromUnknown)); }
+    catch (e: any) { console.log(JSON.stringify({ status: 'error', hint: e.message }, null, 2)); process.exitCode = 2; return; }
+
+    let draft: any;
+    try { draft = JSON.parse(readFileSync(path, 'utf8')); }
+    catch (e: any) { console.log(JSON.stringify({ status: 'error', hint: `could not read/parse ${path}: ${e.message}` }, null, 2)); process.exitCode = 2; return; }
+    const unknowns = draft?.unknowns;
+    if (!Array.isArray(unknowns) || !unknowns[index]) {
+      console.log(JSON.stringify({ status: 'error',
+        hint: `${path} has no unknowns[${index}] — pass a graph-analyse --draft JSON file (its "unknowns" array) and a valid index (0..${(unknowns?.length ?? 1) - 1})` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const unknown = unknowns[index];
+    const result = proposeFromUnknown(unknown, args.name);
+
+    if (!result.pack) {
+      // core-design boundary: no pack schema field expresses this gap — the honest answer is a
+      // core-design issue with the fixture, never a pack (and never a hand-patch). No file written.
+      console.log(JSON.stringify({ status: 'declined', kind: unknown.kind, extensionPoint: unknown.extensionPoint,
+        reason: result.coreDesignBoundary, evidence: unknown.evidence, context: unknown.context }, null, 2));
+      process.exitCode = 3; return;
+    }
+
+    const outPath = join('packs', 'patterns', 'proposed', `${args.name}.json`);
+    if (existsSync(outPath)) {
+      console.log(JSON.stringify({ status: 'error', hint: `${outPath} already exists — pick a different --name or edit it directly` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, JSON.stringify(result.pack, null, 2) + '\n');
+
+    // lint is EXPECTED to fail here — the trigger is a deliberate TODO (empty `contains`). Printing
+    // the failure IS the agent's next step, per the plan ("prints the failure as the agent's next step").
+    console.log(JSON.stringify({
+      status: 'scaffolded',
+      file: outPath,
+      pack: result.pack,
+      lint: result.lintReasons.length ? { clean: false, reasons: result.lintReasons } : { clean: true },
+      checklist: [
+        `1. Fill trigger.contains in ${outPath} with >=1 { role, min?, attr? } predicate derived from the evidence above (role/attr names only — hostnames/URLs/text are rejected by lint).`,
+        `2. Re-check: webnav dev pattern-propose --lint ${outPath}`,
+        `3. Re-run graph-analyse --draft on the site that surfaced this gap — this unknown should now be GONE from the report.`,
+        `4. Add a grammar fixture test proving the resolved shape (tests/grammar/*.test.ts — see pickers.test.ts for the idiom).`,
+        `5. Once green: ${ghPrCommand(result.pack, unknown)}`,
+        `   (moves ${outPath} to packs/patterns/core/ for upstream review — NO auto-PR; this command is printed, never run for you.)`,
+      ],
+    }, null, 2));
+    // exit 0: the SCAFFOLD succeeded (file written) — the TODO trigger's expected lint failure is
+    // reported IN the JSON body (lint.clean:false + reasons), not as a process failure, so an agent
+    // scripting this loop doesn't misread "scaffolded, here's your next step" as an error.
     return;
   }
   if (args.cmd === 'outline' || args.cmd === 'mermaid') {

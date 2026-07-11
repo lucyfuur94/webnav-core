@@ -241,7 +241,19 @@ export function evaluateTrigger(trigger: Trigger, nodes: SnapNode[]): boolean {
 // The shipped pack dirs, resolved relative to THIS module so they work from src (tsx) and dist.
 // src/explorer/patterns.ts → ../../packs/patterns/{core,proposed}; dist/explorer → same relative
 // (packs is not compiled, it ships as data). readdir tolerates a missing dir (returns []).
+//
+// TEST-HYGIENE GUARD (Task-1 review flag, Task 3): draftFromEffects's default param is
+// `loadPatternPacks()` — every one of the ~100 existing draftFromEffects call-sites across the test
+// suite that doesn't pass packs explicitly hits this default. Once a real core pack exists
+// (date-picker-divsoup below), that default would silently start loading it into every unrelated
+// fixture test, coupling them to core-pack content they were never written against. Fix centrally,
+// here, not per call-site: under vitest (`process.env.VITEST`, set by the runner itself — no config
+// needed) the default resolves to NO dirs (packs = []), so a test gets real packs ONLY when it asks
+// for them (loadPatternPacks(dirs) with an explicit dir, or draftFromEffects(effects, packs) with an
+// explicit pack array — both bypass this default entirely). Production (webnav CLI / MCP) is never
+// running under vitest, so it always sees the real shipped dirs.
 function defaultPackDirs(): string[] {
+  if (process.env.VITEST) return [];
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, '..', '..');   // repo root from src/explorer OR dist/explorer
   return [join(root, 'packs', 'patterns', 'core'), join(root, 'packs', 'patterns', 'proposed')];
