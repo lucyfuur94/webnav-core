@@ -1,0 +1,84 @@
+{
+  "site": "progneo.analytics.mn",
+  "profile": "default",
+  "cases": [
+    {
+      "name": "reports list reachable and functional",
+      "start": "report-list",
+      "goal": "report-list",
+      "observe": ["report-list"],
+      "expect": {
+        "status": "done",
+        "maxInteractions": 0,
+        "checkpoint": {
+          "report-list": {
+            "repertoireContains": ["Search", "New Report", "Owned/Shared"],
+            "kinds": { "New Report": "mutate" }
+          }
+        }
+      }
+    },
+    {
+      "name": "report builder reachable via its addressable URL",
+      "start": "report",
+      "goal": "report",
+      "expect": { "status": "done", "maxInteractions": 0 }
+    },
+    {
+      "name": "dashboards list reachable with New Dashboard",
+      "start": "report-list",
+      "goal": "dashboard-list",
+      "observe": ["dashboard-list"],
+      "expect": {
+        "status": "done",
+        "maxInteractions": 0,
+        "checkpoint": {
+          "dashboard-list": {
+            "repertoireContains": ["Search", "New Dashboard"],
+            "kinds": { "New Dashboard": "mutate" }
+          }
+        }
+      }
+    },
+    {
+      "name": "downloads list reachable and functional",
+      "start": "report-list",
+      "goal": "download-list",
+      "observe": ["download-list"],
+      "expect": {
+        "status": "done",
+        "maxInteractions": 0,
+        "checkpoint": {
+          "download-list": {
+            "repertoireContains": ["Search", "Refresh list"]
+          }
+        }
+      }
+    },
+    {
+      "name": "help center reachable",
+      "start": "report-list",
+      "goal": "help-center",
+      "observe": ["help-center"],
+      "expect": {
+        "status": "done",
+        "maxInteractions": 0,
+        "checkpoint": {
+          "help-center": { "repertoireContains": ["Search help..."] }
+        }
+      }
+    },
+    {
+      "name": "announcements reachable",
+      "start": "report-list",
+      "goal": "announcements",
+      "expect": { "status": "done", "maxInteractions": 0 }
+    },
+    {
+      "name": "shell navigation: report-list to dashboard-list (from-anywhere edge)",
+      "start": "report-list",
+      "goal": "dashboard-list",
+      "expect": { "status": "done", "maxInteractions": 0 }
+    }
+  ]
+}
