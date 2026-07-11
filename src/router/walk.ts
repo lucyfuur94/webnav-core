@@ -38,10 +38,16 @@ function healStep(store: MapStore, edge: Edge, beforeNodes: SnapNode[], chosen: 
  * as profile-status / Task A). If it's a wall AND the browser can reopen fresh
  * (`reopenFresh` present — live wiring only), retry ONCE: close this session, open a
  * brand-new one under the SAME profile (same identity/cookies — equivalent to the
- * user reopening a tab; NOT evasion), reload the SAME landed url. A fresh session's
- * first load reliably passes Cloudflare-Access-style step-up (observed live). Never
+ * user reopening a tab; NOT evasion), reload `retryUrl`. A fresh session's first
+ * load reliably passes Cloudflare-Access-style step-up (observed live). Never
  * loops: a wall on the retry is reported honestly as `needs-auth` instead of a
  * generic drift escalation.
+ *
+ * `retryUrl` vs `landedUrl`: classification always uses the LANDED url (that IS the
+ * wall, and it's what needs-auth reports as loginUrl), but the RELOAD target should
+ * be a known-good coordinate when one exists — challenge urls often carry one-time
+ * nonces that error on reload. The addressableUrl call site passes the edge's
+ * canonical url so the redirect chain re-runs from a clean start.
  *
  * Returns `null` when there's no wall (caller falls through to its normal drift
  * escalation), the retried snapshot when the retry cleared the wall (caller
@@ -52,7 +58,7 @@ function healStep(store: MapStore, edge: Edge, beforeNodes: SnapNode[], chosen: 
  */
 async function checkAuthWall(
   browser: WalkBrowser, states: State[], at: number, retriedRef: { done: boolean },
-  landedUrl: string, landedSnapshot: string, profile: string | undefined,
+  landedUrl: string, landedSnapshot: string, retryUrl: string, profile: string | undefined,
 ): Promise<{ response: RecallResponse } | { retried: string } | null> {
   const site = states[0]?.nodeId;
   if (!site) return null;
@@ -63,8 +69,8 @@ async function checkAuthWall(
     return { response: { status: 'needs-auth', at, profile: profile ?? 'default', site, loginUrl: first.loginUrl ?? landedUrl } };
   }
   retriedRef.done = true;   // once per walk — a wall on the retry is persistent, never loop
-  const afterSnapshot = await browser.reopenFresh(landedUrl);
-  const afterUrl = browser.currentUrl ? await browser.currentUrl() : landedUrl;
+  const afterSnapshot = await browser.reopenFresh(retryUrl);
+  const afterUrl = browser.currentUrl ? await browser.currentUrl() : retryUrl;
   const retryClass = classifyAuthLanding(afterUrl, afterSnapshot, site, states);
   if (retryClass.auth === 'needs-login') {
     return { response: { status: 'needs-auth', at, profile: profile ?? 'default', site, loginUrl: retryClass.loginUrl ?? afterUrl } };
@@ -247,8 +253,12 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
       let afterYaml = await browser.snapshot();
       let observed = matchState(parseSnapshot(afterYaml), states);
       if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
+        // Retry target = the edge's canonical addressableUrl (a known-good
+        // deterministic coordinate), NOT the landed wall url — challenge urls often
+        // carry one-time nonces that error on reload; reloading the canonical url
+        // fresh lets the redirect chain re-run.
         const landedUrl = browser.currentUrl ? await browser.currentUrl() : edge.addressableUrl;
-        const wall = await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, args.profile);
+        const wall = await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, edge.addressableUrl, args.profile);
         if (wall && 'response' in wall) return wall.response;
         if (wall && 'retried' in wall) {
           afterYaml = wall.retried;
@@ -328,8 +338,11 @@ export async function walkRoute(args: WalkArgs): Promise<RecallResponse> {
     let observed = matchState(parseSnapshot(afterYaml), states);
     if (observed.status !== 'matched' || observed.state.id !== edge.toState) {
       const landedUrl = browser.currentUrl ? await browser.currentUrl() : '';
+      // Retry target is the landed url itself — a click has no known-good target
+      // URL to reload (State.urlPattern is a wildcard, not a concrete coordinate),
+      // so "reopen the tab you landed on" is the best available retry here.
       const wall = landedUrl
-        ? await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, args.profile)
+        ? await checkAuthWall(browser, states, at, authRetried, landedUrl, afterYaml, landedUrl, args.profile)
         : null;
       if (wall && 'response' in wall) return wall.response;
       if (wall && 'retried' in wall) {

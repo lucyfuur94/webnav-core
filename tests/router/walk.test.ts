@@ -262,16 +262,43 @@ describe('walkRoute — SSO-wall fresh-session retry (design item 2)', () => {
     const store = wallStore();
     const states = store.allStates();
     let phase: 'login' | 'walled' | 'home' = 'login';
-    let reopened = 0;
+    const reopenedWith: string[] = [];
     const browser: WalkBrowser = {
       snapshot: async () => (phase === 'login' ? LOGIN_SNAP : phase === 'walled' ? WALL_SNAP : HOME_SNAP),
       act: async () => { phase = 'walled'; },   // first load after the click bounces to the wall
       currentUrl: async () => (phase === 'walled' ? 'https://login.okta.com/step-up' : 'https://sso.example.com/'),
-      reopenFresh: async (_url: string) => { reopened++; phase = 'home'; return HOME_SNAP; },   // fresh session passes
+      reopenFresh: async (url: string) => { reopenedWith.push(url); phase = 'home'; return HOME_SNAP; },   // fresh session passes
       callCount: () => 0,
     };
     const r = await walkRoute({ goalName: 'g', startStateId: 'sso:login', goalStateId: 'sso:home', store, states, browser, profile: 'default' });
-    expect(reopened).toBe(1);
+    // A click edge has no known-good target url, so the retry reloads the landed url.
+    expect(reopenedWith).toEqual(['https://login.okta.com/step-up']);
+    expect(r.status).toBe('done');
+  });
+
+  it('addressableUrl edge: the retry reloads the CANONICAL addressable url, not the walled challenge url', async () => {
+    const store = new MapStore(':memory:');
+    store.upsertState(makeState({ id: 'sso:a', nodeId: 'sso.example.com', semanticName: 'sso:a',
+      urlPattern: '', role: 'detail', fingerprint: ['link:on-a'],
+      affordances: [makeAffordance({ id: 'aff_go', label: 'open home', kind: 'navigate', toState: 'sso:home',
+        addressableUrl: 'https://sso.example.com/home' })] }));
+    store.upsertState(makeState({ id: 'sso:home', nodeId: 'sso.example.com', semanticName: 'sso:home',
+      urlPattern: '', role: 'detail', fingerprint: ['heading:Home'] }));
+    const states = store.allStates();
+    let phase: 'a' | 'walled' | 'home' = 'a';
+    const reopenedWith: string[] = [];
+    const browser: WalkBrowser = {
+      snapshot: async () => (phase === 'a' ? '- link "on-a" [ref=e1]' : phase === 'walled' ? WALL_SNAP : HOME_SNAP),
+      act: async () => { throw new Error('act() must NOT be called for an addressable jump'); },
+      goto: async () => { phase = 'walled'; },   // the jump bounces to the SSO wall
+      currentUrl: async () => (phase === 'walled' ? 'https://login.okta.com/step-up?nonce=abc123' : 'https://sso.example.com/home'),
+      reopenFresh: async (url: string) => { reopenedWith.push(url); phase = 'home'; return HOME_SNAP; },
+      callCount: () => 0,
+    };
+    const r = await walkRoute({ goalName: 'g', startStateId: 'sso:a', goalStateId: 'sso:home', store, states, browser, profile: 'default' });
+    // Challenge urls carry one-time nonces that error on reload — the retry must
+    // target the edge's known-good deterministic coordinate instead.
+    expect(reopenedWith).toEqual(['https://sso.example.com/home']);
     expect(r.status).toBe('done');
   });
 
