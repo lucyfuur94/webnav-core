@@ -89,19 +89,12 @@ describe('grammar: 44/2/59 data grid — row fold, near, effects, URL-template e
     expect(s.affordances.some((a) => a.label === 'Bulk delete' && a.kind === 'mutate' && a.needsClassification)).toBe(true);
   });
 
-  // MATRIX-MISMATCH: interior synthesis's declared-interactive-control filter
-  // (`draft.ts` ~854-855) only accepts INPUT_ROLES + 'button'; `columnheader` (the sort control
-  // role in a real a11y tree) is neither, so a sortable header is silently never synthesized as
-  // an affordance at all — not folded, not gated, just absent. The matrix's row 44 "headers
-  // mutate" claim does not hold for the columnheader role today.
-  it.fails('sortable column headers survive as their own affordances (not folded — only 2, below fold threshold) — MATRIX-MISMATCH: columnheader role is not in interior synthesis\'s accepted-control set (INPUT_ROLES ∪ button), so headers never synthesize', () => {
-    expect(s.affordances.some((a) => a.label === 'Name')).toBe(true);
-    expect(s.affordances.some((a) => a.label === 'Status')).toBe(true);
-  });
-
-  it('current (mismatched) behavior: columnheader controls are silently absent from the repertoire', () => {
-    expect(s.affordances.some((a) => a.label === 'Name')).toBe(false);
-    expect(s.affordances.some((a) => a.label === 'Status')).toBe(false);
+  // Matrix row 44: "headers mutate". interior synthesis now accepts `columnheader` (the sort
+  // control role in a real a11y tree) alongside INPUT_ROLES + button. Only 2 headers here (below
+  // the ≥3 fold threshold) so they synthesize individually, each a `mutate` affordance.
+  it('sortable column headers survive as their own affordances (not folded — only 2, below fold threshold)', () => {
+    expect(s.affordances.some((a) => a.label === 'Name' && a.kind === 'mutate')).toBe(true);
+    expect(s.affordances.some((a) => a.label === 'Status' && a.kind === 'mutate')).toBe(true);
   });
 
   it('pagination links (Next/Prev) resolve to the SAME URL-template state, not a separate page', () => {

@@ -67,26 +67,17 @@ describe('grammar: 17/19/22 select/combobox/listbox portal — options never sto
     }
   });
 
-  // MATRIX-MISMATCH: the matrix row 17 says the trigger becomes a `reveal`. In practice, when
-  // the ONLY added nodes are `option` role members (a plain listbox with no Apply/Cancel/Search
-  // chrome), every option is BOTH excluded from REVEAL_CHILD_ROLES (draft.ts:32 has no 'option')
-  // AND filtered as a value domain (enumeratedNames) — so `children.length === 0` and the opener
-  // falls through to `mutate`, not `reveal` (draft.ts ~757-761). The no-values-stored half of the
-  // matrix promise holds; the reveal-kind half does not for an option-only portal.
-  it.fails('reveal attribution goes to the TRIGGER (combobox), not the page body — MATRIX-MISMATCH: opener classifies mutate (children=0; option role excluded from REVEAL_CHILD_ROLES), not reveal', () => {
+  // Matrix row 17: the trigger becomes a `reveal` (options are the value domain, never stored).
+  // reveal-by-behavior (draft.ts): the opener's diff ADDED named option nodes → it opened an
+  // overlay ⇒ reveal, even though every option is folded out as value domain so children === [].
+  it('reveal attribution goes to the TRIGGER (combobox), not the page body — opener classifies reveal (options folded out as value domain, children may be empty)', () => {
     const g = draftFromEffects([enter(`${B}/order/new`, FORM), openTrigger, pickOption] as never);
     const s = g.states.find((x) => x.label === 'order-new')!;
     const opener = s.affordances.find((a) => a.label === 'Country')!;
     expect(opener).toBeTruthy();
     expect(opener.kind).toBe('reveal');
-  });
-
-  it('current (mismatched) behavior: the opener classifies as mutate, not reveal, for an option-only portal', () => {
-    const g = draftFromEffects([enter(`${B}/order/new`, FORM), openTrigger, pickOption] as never);
-    const s = g.states.find((x) => x.label === 'order-new')!;
-    const opener = s.affordances.find((a) => a.label === 'Country')!;
-    expect(opener).toBeTruthy();
-    expect(opener.kind).toBe('mutate');   // honest pin of the actual behavior (MATRIX-MISMATCH above)
+    // the reveal exposes NO option children — the value domain is read live, never stored.
+    expect((opener.children ?? []).length).toBe(0);
   });
 
   it('page-level durable actions (Save) survive alongside the picker', () => {
