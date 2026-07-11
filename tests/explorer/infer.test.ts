@@ -3,7 +3,7 @@ import { inferUrlModel, proposeTemplates } from '../../src/explorer/infer.js';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import { faceOf, jaccard, insideOverlay, nodeIndexByName } from '../../src/explorer/infer.js';
 import { extractShell, templateCore } from '../../src/explorer/infer.js';
-import { foldRepeats, subtreeFolds } from '../../src/explorer/infer.js';
+import { subtreeFolds } from '../../src/explorer/infer.js';
 
 describe('inferUrlModel', () => {
   it('infers a multi-segment base shared by ≥80% of urls and merges base-less redirect ghosts', () => {
@@ -106,24 +106,6 @@ describe('templateCore', () => {
     const r = templateCore([new Set(['heading:Dashboards', 'link:ASJDH'])]);
     expect(r.tokens.size).toBe(2);
     expect(r.provisional).toMatch(/seen once/i);
-  });
-});
-
-describe('foldRepeats', () => {
-  it('≥3 same-role same-depth siblings sharing a trailing word with varying prefixes fold to one', () => {
-    const nodes = parseSnapshot([
-      '- button "OS Remove" [ref=e1]', '- button "Revenue Remove" [ref=e2]',
-      '- button "Win Rate Remove" [ref=e3]', '- button "eCPM Remove" [ref=e4]',
-      '- button "Share" [ref=e5]',
-    ].join('\n'));
-    const { folds, foldedNames } = foldRepeats(nodes);
-    expect(folds).toEqual([{ role: 'button', suffix: 'Remove', count: 4 }]);
-    expect(foldedNames.has('OS Remove')).toBe(true);
-    expect(foldedNames.has('Share')).toBe(false);
-  });
-  it('two repeats do not fold (below evidence threshold)', () => {
-    const nodes = parseSnapshot(['- button "A Remove" [ref=e1]', '- button "B Remove" [ref=e2]'].join('\n'));
-    expect(foldRepeats(nodes).folds).toEqual([]);
   });
 });
 

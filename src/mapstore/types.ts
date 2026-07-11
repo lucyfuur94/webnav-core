@@ -25,8 +25,10 @@ export interface Affordance {
   id: string;                   // stable within its owning state, e.g. 'aff_cart'
   label: string;                // human/agent-readable, e.g. 'open the shopping cart'
   kind: AffordanceKind;
-  scope?: 'row';                 // a folded per-row repeat (>=3 identical siblings folded to
-                                 // one informational affordance); elementFp is null for these.
+  scope?: 'row' | 'widget';      // a folded repeated sibling subtree: 'row' = leaf/single-node
+                                 // unit (>=3 "<X> Remove" chips → one Remove), 'widget' = a >=2-node
+                                 // unit (repeated chart cards). One informational affordance;
+                                 // elementFp is null for these.
   elementFp?: ElementFingerprint | null;  // durable element key (role+name+content anchor); absent/null = legacy name-only resolution
   commit: boolean;              // irreversible (Place Order/Pay/Delete) — NEVER auto-fired (#2)
   toState: string | null;       // navigate/reveal destination; null = unexplored or n/a
