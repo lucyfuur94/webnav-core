@@ -43,6 +43,8 @@ export interface Frontier {
 // plus the obviously-in-place widget controls the demo maps declare. This list is
 // the knob: too broad and a real switcher hides; too narrow and every button
 // screams "explore me". Tune it here, never downstream.
+// SAFETY INVARIANT: this list only ever prunes mutate/input affordances — never navigate/reveal
+// (consider() checks kind first), so it can never hide a dangling opener from the frontier.
 const IN_PLACE_SHAPES: RegExp[] = [
   // pagination
   /\bpage\b/i, /\bpage size\b/i, /first page/i, /previous page/i, /next page/i, /last page/i,
