@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, isOpaqueSeg, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 import { loadPatternPacks, packDetectsOverlay, packValueNames, type PatternPack } from './patterns.js';
 
@@ -335,11 +335,9 @@ const DATE_TOKEN = String.raw`\d{1,2}\s+\w{3,9}\s+\d{2,4}|\d{4}-\d{2}-\d{2}`;
 const DATE_RANGE = new RegExp(`(?:${DATE_TOKEN})\\s*[-–]\\s*(?:${DATE_TOKEN})`, 'i');
 const isValueLabel = (name: string): boolean => isDataLiteral(name) || DATE_RANGE.test(name.trim());
 
-// A path segment that is an opaque instance id — all-digits or a long hex/uuid-ish token. The
-// design's sanctioned URL-SHAPE prior (a digit/hex segment is probably a param); site-AGNOSTIC (no
-// product tokens). Used to both flag param pages and keep ids out of labels; `{param}` (an already-
-// abstracted template slot) counts as opaque too.
-const isOpaqueSeg = (s: string): boolean => s === '{param}' || /^\d+$/.test(s) || /^[0-9a-f]{16,}$/i.test(s);
+// isOpaqueSeg (the sanctioned URL-SHAPE prior: opaque instance id vs meaningful module word) is
+// imported from infer.ts — the canonical home of the word-vs-opaque distinction, shared by the
+// base-inference param detection and the template dispose so they can never diverge.
 // A key whose TAIL segment is opaque is PROBABLY a parameterized instance page. Used ONLY to demote
 // a heading to "probably instance data" — never as silent truth. A page that formed a real {param}
 // template already reads as param; this catches the LONE opaque-id instance (e.g. `/dashboard/8001`)
@@ -364,8 +362,17 @@ function labelFromKey(key: string): string {
 // e.g. `report-flat`); a `tab:` is the fallback (two vizzes of one report differ only by their tab
 // set — `tab:Flat` distinguishes them where no heading does). Returns the bare name; null if
 // nothing structural distinguishes (→ the caller sends the pair to needsFix, never a wrong merge).
-function distinguishingHeading(core: Face, others: Face[]): string | null {
-  for (const prefix of ['heading:', 'tab:']) {
+// On a PARAM page (URL template carries `{param}`, or a lone opaque-id tail) a big `heading:` is
+// often the INSTANCE TITLE — the logged-in user's name, a specific dashboard/report name
+// (`heading:Demo User`, `heading:Sales Dashboard`). Same instance-data prior
+// `candidateTokensFor` uses to DEMOTE (not refuse) param-page headings: prefer a durable STRUCTURAL
+// `tab:` (the view's tab-set is structural — two report/dashboard VIEWS differ by tabs), and fall
+// back to a heading only when no tab distinguishes (two genuinely different page-TYPES at opaque-id
+// URLs — `heading:Grid List` vs `heading:Grid Viewer` — have no tabs and MUST keep their title).
+// A non-param page keeps heading-first (a section page's own `h1` title is its best discriminator).
+function distinguishingHeading(core: Face, others: Face[], isParam = false): string | null {
+  const prefixes = isParam ? ['tab:', 'heading:'] : ['heading:', 'tab:'];
+  for (const prefix of prefixes) {
     for (const t of core) {
       if (!t.startsWith(prefix)) continue;
       if (others.every((o) => !o.has(t))) return t.slice(prefix.length);
@@ -797,11 +804,50 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       const keep = realClusters.length === 1 ? realClusters[0].map((i) => landings[i]) : landings;
       pages.push(makePage(k, url, template, keep, labelBase)); continue;
     }
-    // ≥2 real clusters at one key → genuine SPA split, each named by a heading UNIQUE to its cluster.
-    const clusterCores = realClusters.map((idxs) => templateCore(idxs.map((i) => faceOf(landings[i]))).tokens);
+    // ≥2 real clusters at one key → CANDIDATE SPA split. The discriminator that names a split state
+    // must be STRUCTURAL (a page-TITLE heading / tab), NEVER instance CONTENT. A cluster core computed
+    // with faceOf carries two kinds of data heading distinguishingHeading would wrongly pick:
+    //  • FOLDED template-member names — a repeated data-item card's title (an announcement item,
+    //    `heading:Renamed Dimensions and Metrics`); dropped via templateFolds.gatedNames.
+    //  • DEEP (level ≥ 2) content headings — a help-article / section / item title nested in the page
+    //    body (`heading:Interface User Guide [level=3]`). The page's OWN title is the level-1 `h1`
+    //    (`Help Center`, `Announcements`); a level ≥ 2 heading is content, never a page discriminator.
+    // Compute each cluster's core with BOTH excluded (the same de-valued residue normFace drops for the
+    // folded case): what's left is structure only. If nothing structural then distinguishes the
+    // clusters, they are instances of ONE page → merge (below), never split-and-name-by-content.
+    const deepHeadingNames = (nodes: SnapNode[]): Set<string> => {
+      const out = new Set<string>();
+      for (const n of nodes) if (n.role === 'heading' && n.name && /\[level=([2-9]|\d\d+)\]/.test(n.raw)) out.add(n.name);
+      return out;
+    };
+    const clusterCore = (idxs: number[]): Face => {
+      const core = templateCore(idxs.map((i) => faceOf(landings[i]))).tokens;
+      const excluded = new Set<string>();
+      for (const i of idxs) {
+        for (const nm of templateFolds(landings[i]).gatedNames) excluded.add(nm);
+        for (const nm of deepHeadingNames(landings[i])) excluded.add(nm);
+      }
+      return new Set([...core].filter((t) => !excluded.has(t.slice(t.indexOf(':') + 1))));
+    };
+    const clusterCores = realClusters.map(clusterCore);
+    // On a param key, the discriminator must be a tab, not a heading (headings are instance titles).
+    const keyIsParam = (!!template && template.includes('{param}')) || looksParameterizedKey(k);
+    const distinctPerCluster = realClusters.map((_, ci) =>
+      distinguishingHeading(clusterCores[ci], clusterCores.filter((_, j) => j !== ci), keyIsParam));
+    // If NO cluster has a structural discriminator, the clusters differ ONLY by instance data — they
+    // are landings of ONE template (a sparse pre-data render + a settled render), so MERGE them into
+    // one page (templateCore then marks it provisional), never split-and-name-by-content nor drop the
+    // odd one to needsFix. (A GENUINE SPA split — Owned vs Shared, list vs viewer — keeps its distinct
+    // structural headings/tabs after data exclusion, so at least one cluster is distinguishable and the
+    // split proceeds below.)
+    if (distinctPerCluster.every((d) => d === null)) {
+      pages.push(makePage(k, url, template, realClusters.flat().map((i) => landings[i]), labelBase)); continue;
+    }
+    // ≥1 cluster is structurally distinct → genuine SPA split, each named by a STRUCTURAL heading
+    // unique to its cluster. A cluster with no such heading (its identity is instance data) is held
+    // out — it cannot be told apart from its siblings by structure.
     realClusters.forEach((idxs, ci) => {
-      const others = clusterCores.filter((_, j) => j !== ci);
-      const distinct = distinguishingHeading(clusterCores[ci], others);
+      const distinct = distinctPerCluster[ci];
       const clusterLandings = idxs.map((i) => landings[i]);
       if (!distinct) { splitNeedsFix.push({ label: labelBase, url, reason: 'same-url state with no distinguishing heading' }); return; }
       pages.push(makePage(k, url, template, clusterLandings, `${labelBase}-${slug(distinct)}`));
@@ -809,13 +855,26 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   }
 
   // ── 6b. NAME collisions: append a distinguishing core heading; still colliding → both needsFix ──
+  // An ERROR-page landing (a pre-redirect "Page not found" ghost that base-inference keyed onto a
+  // real page's label) is held out as degenerate BELOW (pass A) — but that detection ran AFTER this
+  // collision pass, so a ghost polluted the label namespace: it collided with the HEALTHY state of
+  // the same label, forcing that healthy state to take a disambiguating `-heading` suffix (real:
+  // `report-list` → `report-list-reports` because a `/v3/report/list` 404 ghost also labeled
+  // `report-list`), or pushing a genuine state to `name collision unresolved`. Detect error landings
+  // HERE and exclude them from the collision namespace — they never compete for a healthy state's name.
   const nameNeedsFix = new Map<PageInfo, string>();
   const byLabelGroups = new Map<string, PageInfo[]>();
-  for (const p of pages) (byLabelGroups.get(p.label) ?? byLabelGroups.set(p.label, []).get(p.label)!).push(p);
+  for (const p of pages) {
+    if (isErrorLanding(p.landings[0])) continue;   // error ghost — held out below, not a name rival
+    (byLabelGroups.get(p.label) ?? byLabelGroups.set(p.label, []).get(p.label)!).push(p);
+  }
   for (const [, group] of byLabelGroups) {
     if (group.length < 2) continue;
     for (const p of group) {
-      const distinct = distinguishingHeading(p.core, group.filter((q) => q !== p).map((q) => q.core));
+      // param page → tab-only discriminator (a heading here is instance data: `dashboard-demouser`,
+      // `report-<report-name>`). Same isParam test the fingerprint pool uses.
+      const pIsParam = (!!p.template && p.template.includes('{param}')) || looksParameterizedKey(p.key);
+      const distinct = distinguishingHeading(p.core, group.filter((q) => q !== p).map((q) => q.core), pIsParam);
       if (distinct) p.label = `${p.label}-${slug(distinct)}`;
     }
     // re-check: any still-duplicate label → all its members go to needsFix (name collision unresolved).

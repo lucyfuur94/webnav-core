@@ -552,10 +552,12 @@ describe('draftFromEffects — observation-based identity', () => {
     expect(labels.length).toBe(2);
   });
 
-  it('a same-url cluster with no distinguishing heading goes to needsFix', () => {
-    // two landings at one key, structurally distinct (jaccard<0.5 → separate clusters) but with
-    // the SAME heading "Reports" → no heading distinguishes the split → needsFix. Each landing
-    // has a distinct set of listitems (no shared shell here) so the faces don't cluster together.
+  it('two same-url landings differing ONLY by instance data MERGE (not split-and-name-by-content)', () => {
+    // two landings at one key with the SAME structural heading "Reports"; they differ only by their
+    // ROWS (Alpha N vs Beta N — instance data). No STRUCTURAL token distinguishes the clusters, so
+    // they are landings of ONE page → MERGE (the rows are data, dropped by templateCore), never split
+    // into content-named states nor a needsFix. (Was: split → needsFix; the tenant-rebuild defect fix
+    // — a discriminator must be structural, and a data-only difference is one page.)
     const items = (prefix: string) => Array.from({ length: 8 }, (_, i) => `- listitem "${prefix} ${i}" [ref=e${i + 2}]`);
     const A = ['- heading "Reports" [ref=e1]', ...items('Alpha')].join('\n');
     const B = ['- heading "Reports" [ref=e1]', ...items('Beta')].join('\n');
@@ -563,7 +565,12 @@ describe('draftFromEffects — observation-based identity', () => {
       nav(`${XB}/report/list`, A),
       nav(`${XB}/report/list`, B),
     ] as never);
-    expect((g.needsFix ?? []).some((d) => /no distinguishing heading/i.test(d.reason))).toBe(true);
+    const pages = g.states.filter((s) => s.label !== '_shell');
+    expect(pages.length).toBe(1);
+    expect(pages[0].label).toBe('report-list');
+    expect((g.needsFix ?? []).some((d) => /no distinguishing heading/i.test(d.reason))).toBe(false);
+    // the per-instance row values never leak into identity.
+    expect(pages[0].fingerprint.join()).not.toMatch(/Alpha|Beta/);
   });
 
   // RULE 2 + core (RULE 5) — a single-landing page keeps ALL its tokens as core but is marked
@@ -642,19 +649,23 @@ describe('draftFromEffects — X3 main-landmark identity scoping', () => {
     expect(all.every((s) => !('fingerprint' in s) || !(s as any).fingerprint.some((t: string) => /Rail [XY]/.test(t)))).toBe(true);
   });
 
-  it('NO `main` declared → behavior unchanged (the rail is ordinary page content)', () => {
-    // identical construction WITHOUT a `main` landmark: the same differing rail DOES split (the
-    // pre-X3 whole-face behavior), proving the fix is strictly gated on a declared `main`.
+  it('NO `main` declared → rail is in-face, but a rail-only difference still MERGES (no structural discriminator)', () => {
+    // identical construction WITHOUT a `main` landmark: the rail IS in the identity face here (main-
+    // scoping is gated on a declared `main`), and the two landings differ by it. BUT the rail is a
+    // set of per-visit-varying BUTTONS — not a heading/tab — so the SPA-split's discriminator (which
+    // must be STRUCTURAL, a heading/tab) finds nothing unique to either cluster → the two landings are
+    // ONE page and MERGE on their shared body heading. (Was: split → needsFix. The tenant-rebuild fix
+    // made a content-only difference merge instead of splitting-and-holding-out.)
     const U = `${MB}/nomain`;
     const g = draftFromEffects([
       navTo(U, noMain(RAIL_A, BODY), 0),
       navTo(U, noMain(RAIL_B, BODY), 1),
     ] as never);
-    // no main → the rail is in-face → the two landings differ → SPA-split with no distinguishing
-    // heading → held to needsFix (the honest documented degradation when main is absent).
     const pages = g.states.filter((s) => s.label !== '_shell');
-    expect(pages.length).toBe(0);
-    expect((g.needsFix ?? []).some((n) => /same-url state with no distinguishing heading/.test(n.reason))).toBe(true);
+    expect(pages.length).toBe(1);
+    expect(pages[0].fingerprint).toContain('heading:Sales View');
+    expect(pages[0].fingerprint.some((t) => /Alpha|Beta/.test(t)), 'no rail token anchors identity').toBe(false);
+    expect((g.needsFix ?? []).some((n) => /same-url state with no distinguishing heading/.test(n.reason))).toBe(false);
   });
 });
 
@@ -1094,6 +1105,59 @@ describe('draftFromEffects — dispose + SPA split run on SHELL-SUBTRACTED faces
     expect(labels.some((l) => /owned/.test(l))).toBe(true);
     expect(labels.some((l) => /shared/.test(l))).toBe(true);
     expect(labels).not.toContain('spa-view');   // the false single-cluster collapse must NOT happen
+  });
+});
+
+// Defect (tenant rebuild): SPA-split promoted INSTANCE CONTENT to a state label. A page recorded
+// twice — once sparse (heading only, captured before its data rendered) and once full (heading +
+// a repeated data-item card list) — clustered into two, and the split named the full cluster by a
+// FOLDED item-card heading (`announcements-renamed-dimensions-and-metrics`). The item headings are
+// per-instance DATA (folded template members), never a structural discriminator: the two landings
+// are ONE page (the second just has data), so they must MERGE (provisional), never split-and-name.
+describe('draftFromEffects — SPA-split discriminator must be STRUCTURAL, not instance content', () => {
+  const CB = 'https://c.test/app';
+  const CHROME = [
+    `- link "Home" [ref=e2]:\n    - /url: ${CB}/main/home`,
+    `- link "Reports" [ref=e3]:\n    - /url: ${CB}/report/list`,
+    `- link "News" [ref=e4]:\n    - /url: ${CB}/news/feed`,
+    `- link "Docs" [ref=e5]:\n    - /url: ${CB}/ext/docs`,
+    `- link "Support" [ref=e6]:\n    - /url: ${CB}/ext/support`,
+    '- button "Log out" [ref=e7]', '- button "Toggle theme" [ref=e8]',
+  ];
+  const pg = (h: string, extra: string[]) => [`- heading "${h}" [ref=e1]`, ...CHROME, ...extra].join('\n');
+  // one repeated data-item card: a link wrapping a level-2 item-title heading (the ANNOUNCEMENT
+  // shape). ≥2 of these fold to a widget template — their headings are folded members = data.
+  const card = (title: string) => [`- link "${title} Read more" [ref=e]:`, `  - heading "${title}" [ref=e]`];
+  const NEWS_SPARSE = pg('News', ['- paragraph "Loading" [ref=e11]']);            // captured pre-data
+  const NEWS_FULL = pg('News', ['- generic [ref=e10]:', ...card('Renamed Metrics'), ...card('New Interface'), ...card('Downtime Notice')]);
+  // filler pages so a shell forms (≥4 distinct keys) and the chrome reads as shell.
+  const HOME = pg('Home', ['- paragraph "Welcome" [ref=e11]', '- listitem "Recent" [ref=e12]']);
+  const REPORTS = pg('Reports', ['- button "New Report" [ref=e11]', '- textbox "Search" [ref=e12]']);
+  const DOCS = pg('Docs', ['- paragraph "Guide" [ref=e11]', '- link "API" [ref=e12]']);
+  const cnav = (toUrl: string, toSnap: string): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: `${CB}/main/home`, fromSnapshot: HOME,
+       action: { role: 'link', name: 'x', ref: 'e2', elementFp: { role: 'link', name: 'x', near: null } },
+       toUrl, toSnapshot: toSnap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    cnav(`${CB}/news/feed`, NEWS_SPARSE),
+    cnav(`${CB}/news/feed`, NEWS_FULL),
+    cnav(`${CB}/report/list`, REPORTS),
+    cnav(`${CB}/ext/docs`, DOCS),
+  ] as never);
+  const labels = g.states.map((s) => s.label);
+
+  it('MERGE: the two /news/feed landings become ONE `news-feed` state, NOT named by an item title', () => {
+    const news = g.states.filter((s) => /\/news\/feed/.test(s.urlPattern));
+    expect(news.length, 'sparse + full landing are ONE page').toBe(1);
+    expect(news[0].label).toBe('news-feed');
+    // the item titles are DATA — never in a label, a fingerprint, or as an affordance.
+    for (const bad of ['renamed-metrics', 'new-interface', 'downtime-notice'])
+      expect(labels.join(','), bad).not.toContain(bad);
+    expect(news[0].fingerprint.join(), 'fp is structural').not.toMatch(/Renamed Metrics|New Interface|Downtime/);
+  });
+  it('no needsFix "no distinguishing heading" for the merged page (it did not split)', () => {
+    expect((g.needsFix ?? []).some((f) => /no distinguishing heading/.test(f.reason)
+      && /news/.test(f.label))).toBe(false);
   });
 });
 
@@ -2048,12 +2112,18 @@ describe('draftFromEffects — unknowns report', () => {
     expect(u!.context).toContain(home._warning);
   });
 
-  // (d) SPA-split no-distinguishing-heading clusters: reported with kind ambiguous-cluster
-  // (NOT the generic degenerate-landing kind), extensionPoint core-design.
+  // (d) SPA-split ambiguous cluster: a GENUINE split (one cluster IS structurally distinct) where a
+  // SIBLING cluster has no structural discriminator of its own → that sibling surfaces as
+  // ambiguous-cluster (NOT the generic degenerate-landing kind), extensionPoint core-design.
+  // (Two clusters that differ ONLY by instance data — no structural discriminator in EITHER — now
+  // MERGE into one page instead of splitting; that path is covered by the SPA-split-discriminator-
+  // must-be-structural suite. This case keeps A structurally distinct so the split still happens.)
   it('(d) a same-URL SPA cluster with no distinguishing heading surfaces as ambiguous-cluster', () => {
-    const items = (prefix: string) => Array.from({ length: 8 }, (_, i) => `- listitem "${prefix} ${i}" [ref=e${i + 2}]`);
-    const A = ['- heading "Reports" [ref=e1]', ...items('Alpha')].join('\n');
-    const B = ['- heading "Reports" [ref=e1]', ...items('Beta')].join('\n');
+    const pad = (prefix: string) => Array.from({ length: 8 }, (_, i) => `- paragraph "${prefix} ${i}" [ref=e${i + 3}]`);
+    // A: structurally distinct — carries its own unique tab. B: only the shared heading + free-text
+    // padding (no structural token unique to it) → B is the ambiguous cluster.
+    const A = ['- heading "Reports" [ref=e1]', '- tab "Detailed" [ref=e2]', ...pad('Alpha')].join('\n');
+    const B = ['- heading "Reports" [ref=e1]', ...pad('Beta')].join('\n');
     const nav = (toUrl: string, toSnapshot: string, seq: number): StoredActionEffect => ({
       seq, capturedAt: 0, fromUrl: `${UB}/home`, fromSnapshot: HOME_UNK,
       action: { role: 'link', name: 'x', ref: 'e9', elementFp: { role: 'link', name: 'x', near: null } },

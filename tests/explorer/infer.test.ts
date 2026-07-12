@@ -18,6 +18,45 @@ describe('inferUrlModel', () => {
     expect(m.keyOf('https://x.test/v3/report/list')).toBe('/report/list');       // ghost merges
     expect(m.keyOf('https://x.test/v3/9999/report/list?tab=1#x')).toBe('/report/list'); // query/hash dropped
   });
+  it('a VARYING opaque-id base position is a {param}, not a locked literal (two tenants merge)', () => {
+    // Two accounts, SAME product, tenant id in the URL. The majority tenant (1041) must NOT lock
+    // as a literal base segment — the position varies across ≥2 opaque ids → it is a param, so
+    // both accounts' identical pages key to the SAME key. (The defect: 1041 at ~95% frequency won
+    // the ≥80% greedy peel, so /v3/9999/report/list kept its tenant and never merged with 1041's.)
+    const urls = [
+      // majority tenant (1041) spread across several modules so no single module hits the ≥80%
+      // greedy bar (mirrors the real corpus: report/dashboard/download/help-center/announcements).
+      'https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
+      'https://x.test/v3/9999/download/list', 'https://x.test/v3/9999/help-center',
+      'https://x.test/v3/9999/announcements', 'https://x.test/v3/9999/report/list',
+      // second tenant (1045), minority — same modules.
+      'https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
+    ];
+    const m = inferUrlModel(urls);
+    expect(m.base).toEqual(['v3', '{param}']);                  // v3 constant, tenant position = param
+    expect(m.keyOf('https://x.test/v3/9999/report/list')).toBe('/{param}/report/list');
+    expect(m.keyOf('https://x.test/v3/9999/report/list')).toBe('/{param}/report/list');   // SAME key → merge
+    expect(m.keyOf('https://x.test/v3/9999/dashboard/list')).toBe('/{param}/dashboard/list');
+  });
+  it('a base position with ONE value stays a literal segment (single tenant unchanged)', () => {
+    // The guard: a position is param only when ≥2 DISTINCT opaque ids are observed. One tenant →
+    // literal base (preserves the pre-existing single-account behavior above).
+    const m = inferUrlModel([
+      'https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
+      'https://x.test/v3/9999/announcements', 'https://x.test/v3/9999/help-center',
+    ]);
+    expect(m.base).toEqual(['v3', '9999']);
+  });
+  it('a VARYING WORD base position stays distinct (a module name is not a param)', () => {
+    // Guard's other arm: the varying position must be OPAQUE ids. Two different module words at a
+    // position (blog vs shop) are genuinely different top-level paths, never one {param} template.
+    const m = inferUrlModel([
+      ...Array(5).fill('https://x.test/app/blog/list'),
+      'https://x.test/app/blog/post', 'https://x.test/app/shop/list',
+    ]);
+    expect(m.base).toEqual(['app', 'blog']);                    // blog is the ≥80% literal; word ≠ param
+    expect(m.keyOf('https://x.test/app/shop/list')).toBe('/shop/list');   // shop kept distinct
+  });
   it('no base when paths share no constant prefix (github-style)', () => {
     const m = inferUrlModel(['https://g.test/facebook/react', 'https://g.test/trending', 'https://g.test/vuejs/vue']);
     expect(m.base).toEqual([]);
