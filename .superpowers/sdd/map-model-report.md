@@ -31,6 +31,30 @@ rebuilds, and after graph-edit into the store (graph-show).
 Synthetic TDD: `tests/explorer/draft.test.ts` → "shell-navigate targets are always sections
 (Defect 1)" — a shell target reached by a content link labeled with its slug stays parentless.
 
+### Deeper root (reviewer-ruled follow-through): slug leaking into affordance LABELS
+The slug labels that made Defect 1 possible originate at `draft.ts` affordance synthesis:
+`label: fp?.name ?? toLabel` — a navigate recorded via bare `use navigate` (no element clicked,
+no matching link found on the from-page) stamped the target's state SLUG as the user-facing
+affordance label. Blast radius on the real map: **3/15 navigate affordances, all `elementFp=null`**:
+
+| from | label BEFORE | label AFTER |
+|---|---|---|
+| `download-list` → report-list | `'report-list'` | `'Reports'` |
+| `report-list` → report-list | `'report-list'` | `'Reports'` |
+| `dashboard-category` → self | `'dashboard-category'` | `'Testuser'` |
+
+Fix (at the label's origin): `label: fp?.name ?? displayNameOf(toLabel) ?? toLabel` where
+`displayNameOf` = the target page's first core `heading:` token (document order — the same
+human-name source display layers read). The slug survives only as last resort when the target has
+no core heading. **All 3 real cases resolved to headings** ('Testuser' is that dashboard
+instance's own page title — exactly what a display layer shows for it), so the optional
+`synthetic: true` marker field was skipped (YAGNI — add it if a real map ever exercises the
+no-heading fallback). Rebuild grep: **zero slug-labeled navigate affordances** in BOTH the
+approved and skip-gate builds and in graph-show from the store.
+
+Synthetic TDD: "a bare navigate with NO recovered element name is labeled by the TARGET heading,
+never the slug".
+
 ## Defect 2 — opaque-param instance siblings must merge on non-contradiction
 
 ### Diagnosis (real dispose-arm numbers, normFace'd + shell-subtracted)
@@ -56,6 +80,12 @@ New predicate `nonContradictoryFaces(a,b)` applied ONLY between opaque-param mem
   rival page-type) AND `containment ≥ 0.5` (share real structure, not a disjoint contradicting
   page). Genuine contradiction — two RICH faces with disjoint controls / near-zero containment —
   still splits.
+
+Ponytail note (reviewer): the 0.5 thin-arm overlap floor is calibrated to the ONE observed real
+case — the two live dashboards sit at containment exactly 0.50, so the floor admits them with zero
+margin. A thin instance pair sharing slightly less structure will split. Deliberate ceiling
+(marked with a `ponytail:` comment at `NONCONTRA_OVERLAP` in draft.ts); retune only on a real
+counterexample, not speculatively.
 
 The control-gate (not raw token count) is the key discriminator: two report VIZZES under one
 `/report/{id}` template each carry 3-4 real controls (Table/Charts/Export vs Flat/Search/Download)
@@ -105,7 +135,7 @@ Result: `report` state carries `template=/report/{param}/{param}`, `dashboard` c
 
 ## Verification
 
-- `npm test`: **884 passed, 7 skipped** (live/e2e). `tsc --noEmit`: clean. `guidelines.test.ts`
+- `npm test`: **885 passed, 7 skipped** (live/e2e). `tsc --noEmit`: clean. `guidelines.test.ts`
   (map-stores-structure-not-data): pass.
 - Real rebuild (node-clear → analyse → graph-edit → graph-show) on `~/.webnav/webnav.db`:
   - Skip-gate build (task recipe, both dashboard instances present): 7 page states + `_shell`;
@@ -134,7 +164,15 @@ skip-gate build would cement probe-session noise (`shot4`/`shot5`) into the rele
 the review-gate principle, so the store is left on the clean approved build. The suite file is
 therefore NOT modified (no legitimate label change on the canonical build).
 
-**Follow-up (out of scope — a THIRD, pre-existing defect):** the skip-gate SPA-split lets a
-transient in-page article/variant landing rename a section state to data-derived labels
-(`-interface-user-guide`, `-renamed-dimensions-and-metrics`). That is the recording→SPA-split
-naming path, independent of the two assigned defects.
+## Named follow-up: SPA-split data-derived state renames (third defect, out of scope here)
+
+The skip-gate SPA-split lets a transient in-page article/variant landing rename a section state to
+a data-derived label: `help-center` → `help-center-interface-user-guide` (a probe session,
+`shot4`, captured the page with a help ARTICLE open), `announcements` →
+`announcements-renamed-dimensions-and-metrics` (`shot5`, a variant landing). This is the same
+complaint class as the slug-label fix above — technical/transient identifiers leaking into
+user-facing surfaces — but in the SPA-split NAMING path (`distinguishingHeading` picks a content
+heading from one noisy landing), independent of the two defects fixed here. It also degrades the
+renamed state (the polluted help-center lost its addressable-jump and article-section mutates
+leaked into its repertoire). Fix belongs upstream in the split-naming/landing-trust logic; tracked
+as its own defect, not patched here.

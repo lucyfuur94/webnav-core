@@ -975,6 +975,27 @@ describe('draftFromEffects — shell-navigate targets are always sections (Defec
     expect(reports.parentState).toBeNull();       // NOT parented under download-list
     expect(reports.role).toBe('section');         // shell target → top-level section
   });
+
+  it('a bare navigate with NO recovered element name is labeled by the TARGET heading, never the slug', () => {
+    // a `use navigate` effect: action carries no fp and the FROM page has NO link to the target,
+    // so the link scan recovers nothing — the old fallback stamped the state SLUG ('stats-index')
+    // as the user-facing affordance label (real map: 3/15 navigates read 'report-list'/
+    // 'dashboard-category', all elementFp=null). It must read the target's first core heading.
+    const STATS = pg('Usage Statistics', ['- paragraph "Daily numbers" [ref=e7]', '- listitem "Row one" [ref=e8]', '- button "Export stats" [ref=e9]']);
+    const bare = { seq: 1, capturedAt: 0, fromUrl: `${SB}/help/index`, fromSnapshot: HELP,
+      action: null, toUrl: `${SB}/stats/index`, toSnapshot: STATS, navigated: true,
+      diff: { added: [], removed: [] } };
+    const g2 = draftFromEffects([
+      hnav(`${SB}/main/home`, HOME, `${SB}/report/list`, REPORTS, 'Reports', 'e3'),
+      hnav(`${SB}/main/home`, HOME, `${SB}/download/list`, DOWNLOADS, 'Downloads', 'e4'),
+      hnav(`${SB}/main/home`, HOME, `${SB}/help/index`, HELP, 'Help', 'e5'),
+      bare,
+    ] as never);
+    const help = g2.states.find((s) => s.label === 'help-index')!;
+    const nav = help.affordances.find((a) => a.kind === 'navigate' && a.to === 'stats-index')!;
+    expect(nav.label).toBe('Usage Statistics');    // the target page's display heading
+    expect(nav.label).not.toBe('stats-index');     // never the slug
+  });
 });
 
 // ── shell-subtracted structural similarity (over-merge guard, mutation-proven gap): the dispose

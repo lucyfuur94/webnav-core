@@ -405,6 +405,8 @@ const sameControlFaces = (ca: Face, cb: Face): boolean =>
 // PROVISIONAL — a later contradicting landing re-splits it naturally on rebuild.
 const NONCONTRA_CONTAINMENT = 0.7;   // broad ⊆-compatibility bar (documented tunable)
 const NONCONTRA_OVERLAP = 0.5;       // thin-arm overlap floor — must share real structure, not disjoint (tunable)
+// ponytail: 0.5 floor calibrated to the ONE observed real case (two live dashboards at containment
+// exactly 0.50); a thin instance pair sharing slightly less will split — retune only on a real counterexample.
 const CTL_GATE = 4;                  // control-evidence gate (mirrors sameControlFaces' min-4)
 const nonContradictoryFaces = (a: Face, b: Face): boolean => {
   const [sm, lg] = a.size <= b.size ? [a, b] : [b, a];
@@ -822,6 +824,15 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   const pageKeyForEffectLanding = new Map<number, string>();
   effects.forEach((e, i) => { if (e.navigated && e.toSnapshot && ready(e.toSnapshot)) pageKeyForEffectLanding.set(i, fromPageKey(e.toUrl)); });
   const labelOf = (k: string | null) => (k ? pageForKey.get(k)?.label ?? null : null);
+  // A page's HUMAN display name: its first core `heading:` token (document order — Set keeps
+  // faceOf's insertion order). Used when a navigate affordance has NO recovered element name —
+  // labeling it with the target's state SLUG leaks a technical identifier into the user-facing
+  // repertoire (real map: 3/15 navigate affordances read 'report-list'/'dashboard-category').
+  const displayNameOf = (label: string): string | null => {
+    const p = pageList.find((q) => q.label === label);
+    for (const t of p?.core ?? []) if (t.startsWith('heading:')) return t.slice('heading:'.length);
+    return null;
+  };
 
   // ── 2. partition GOOD vs DEGENERATE, then fingerprint the good set against ITSELF ──
   // A degenerate landing (404/error, or no distinctive content) is held OUT of `states` and
@@ -1130,7 +1141,9 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         if (link) fp = { role: 'link', name: link.name!, near: null };
       }
       const id = `aff_${affSeq++}_${toLabel}`;
-      const aff: DraftAffordance = { id, label: fp?.name ?? toLabel, kind: 'navigate', to: toLabel };
+      // No recovered element name → take the TARGET page's display name (first core heading), the
+      // slug only as last resort (a slug label is a technical identifier on a user-facing surface).
+      const aff: DraftAffordance = { id, label: fp?.name ?? displayNameOf(toLabel) ?? toLabel, kind: 'navigate', to: toLabel };
       if (fp) aff.elementFp = fp;
       // a NAVIGATING commit-word ("Finish", "Place Order") must be flagged too — only the
       // mutate branch checked, so a recorded commit drafted as a plain navigate a walk
