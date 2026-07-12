@@ -14,9 +14,26 @@ const segsOf = (url: string): string[] => {
 
 export interface UrlModel { base: string[]; keyOf(url: string): string }
 
+// A path segment that is an opaque INSTANCE id — all-digits or a long hex/uuid-ish token — vs a
+// meaningful MODULE word (report/dashboard/list). The design's sanctioned URL-SHAPE prior; site-
+// AGNOSTIC (no product tokens). `{param}` (an already-abstracted template slot) counts as opaque.
+// Lives here with the URL model (the canonical home for the word-vs-opaque distinction); draft.ts
+// imports it so both the base-inference param detection and the template dispose share one rule.
+export const isOpaqueSeg = (s: string): boolean =>
+  s === PARAM || /^\d+$/.test(s) || /^[0-9a-f]{16,}$/i.test(s);
+const PARAM = '{param}';
+
 /** Site base = greedy leading segments shared by ≥80% of observed paths (e.g. version+tenant
  *  `v3/1041`). keyOf strips query/hash + the base segments IN ORDER WHERE PRESENT, so a
- *  pre-redirect URL missing the tenant still lands on the same key (the ghost merges). */
+ *  pre-redirect URL missing the tenant still lands on the same key (the ghost merges).
+ *
+ *  A base POSITION whose value VARIES across observed URLs is a PARAM, not a locked literal: when
+ *  the position's dominant value is an opaque id AND ≥2 DISTINCT opaque ids appear there (a tenant
+ *  slot `{1041,1045}`), the whole position becomes a `{param}` base entry so BOTH tenants' identical
+ *  pages key to the SAME key (account-portable identity). Guard (reuses isOpaqueSeg): a position
+ *  whose varying values are MODULE WORDS (report/shop) is a genuinely different path, NOT a param —
+ *  it must stay distinct. `keyOf` emits `{param}` at a param position only when the actual segment
+ *  is opaque; a non-opaque segment there (a pre-redirect ghost missing the tenant) is left in place. */
 export function inferUrlModel(urls: string[]): UrlModel {
   let work = urls.map(segsOf);
   const base: string[] = [];
@@ -26,13 +43,25 @@ export function inferUrlModel(urls: string[]): UrlModel {
     const heads = new Map<string, number>();
     for (const p of nonEmpty) heads.set(p[0], (heads.get(p[0]) ?? 0) + 1);
     const [top, cnt] = [...heads.entries()].sort((a, b) => b[1] - a[1])[0];
+    // A VARYING opaque-id position → `{param}` base entry (≥2 distinct opaque values seen here).
+    // The dominant value must itself be opaque, else a mostly-constant word position with a couple
+    // of stray opaque ids would wrongly abstract. Consume the position from every path either way.
+    const distinctOpaque = new Set([...heads.keys()].filter(isOpaqueSeg));
+    if (isOpaqueSeg(top) && distinctOpaque.size >= 2) {
+      base.push(PARAM);
+      work = work.map((p) => (isOpaqueSeg(p[0]) ? p.slice(1) : p));
+      continue;
+    }
     if (cnt < 0.8 * nonEmpty.length) break;
     base.push(top);
     work = work.map((p) => (p[0] === top ? p.slice(1) : p));
   }
   const keyOf = (url: string): string => {
     let p = segsOf(url);
-    for (const b of base) if (p[0] === b) p = p.slice(1);
+    for (const b of base) {
+      if (b === PARAM) { if (isOpaqueSeg(p[0])) p = [PARAM, ...p.slice(1)]; }   // opaque seg → {param}
+      else if (p[0] === b) p = p.slice(1);                                     // literal base → strip
+    }
     return '/' + p.join('/');
   };
   return { base, keyOf };
