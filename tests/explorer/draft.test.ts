@@ -437,6 +437,65 @@ describe('draftFromEffects — observation-based identity', () => {
     expect((g.needsFix ?? []).some((n) => n.urlPattern.includes('/dashboard/1210'))).toBe(true);
   });
 
+  // NON-CONTRADICTION arm (user norm: instances of one opaque-param template are never separate
+  // nodes). Two /dashboard/{id} instances share the template but each renders too few named
+  // controls to clear the full-face or control gates. They merge to ONE PROVISIONAL state when
+  // their faces don't contradict; two RICH instances that genuinely differ still split.
+  it('thin + rich opaque siblings merge to ONE provisional /dashboard/{param} state', () => {
+    // both under /dashboard/{id}, mirroring the real progneo case: each has a per-instance title
+    // (Testuser / Overview Dashboard — data) BUT shares the structural `heading:Outline`; both are
+    // below the evidence gate and render ~0 named controls, so only the non-contradiction arm can
+    // merge them. Neither matches /dashboard/list.
+    const DASH_LIST = shell('Dashboards', ['- button "New dashboard" [ref=e7]', '- listitem "Sales" [ref=e8]', '- textbox "Search" [ref=e9]']);
+    // ≥8 named nodes each (readiness gate): shell gives 6, so +2-3 content each. The real progneo
+    // shape: each has a per-instance page TITLE (data), shares the structural `heading:Outline` +
+    // `img:Layout`, and 1210 also carries a per-instance date-range button (1 control, under the ≥4
+    // gate). jaccard stays under 0.5 and control-face under the gate, so ONLY the prior arm merges
+    // them (containment of 1215-in-1210 = 0.67 ≥ the overlap floor).
+    const DASH_1210 = shell('Testuser', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]', '- button "01 Jan - 02 Jan window" [ref=e9]']);
+    const DASH_1215 = shell('Overview Dashboard', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]']);
+    // filler pages so the 5-link sidebar clears extractShell's ≥80%-of-DISTINCT-pages bar and is
+    // subtracted (else the shared chrome inflates the instance faces past every merge bar).
+    const ANN = shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]']);
+    const HELP = shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]']);
+    const g = draftFromEffects([
+      nav(`${XB}/dashboard/list`, DASH_LIST),
+      nav(`${XB}/dashboard/1210`, DASH_1210),
+      nav(`${XB}/dashboard/1215`, DASH_1215),
+      nav(`${XB}/announcements`, ANN),
+      nav(`${XB}/help-center`, HELP),
+    ] as never);
+    // the two instances are ONE state (label `dashboard`, opaque tail dropped), NOT two.
+    const insts = g.states.filter((s) => s.template?.includes('/dashboard/{param}'));
+    expect(insts.length).toBe(1);
+    expect(insts[0].provisional).toMatch(/URL-template prior/i);
+    // /dashboard/list (a WORD segment) is a distinct section — unaffected by the instance merge.
+    expect(g.states.some((s) => s.label === 'dashboard-list')).toBe(true);
+    // neither instance was held out to needsFix (they merged, not split).
+    expect((g.needsFix ?? []).some((n) => /dashboard\/12/.test(n.urlPattern))).toBe(false);
+  });
+
+  it('two RICH contradictory opaque siblings still SPLIT (distinct control faces)', () => {
+    // both under /widget/{id}, each with its OWN real controls that share nothing → genuine
+    // contradiction. A face WITH controls is never "too thin to contradict", so the prior arm
+    // must NOT fuse them; they split by their distinguishing tabs.
+    const WIDGET_A = shell('Widget A', ['- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]',
+      '- button "Export" [ref=e9]', '- button "Configure" [ref=e10]', '- listitem "row" [ref=e11]']);
+    const WIDGET_B = shell('Widget B', ['- tab "Flat" [ref=e7]', '- textbox "Search rows" [ref=e8]',
+      '- button "Download CSV" [ref=e9]', '- paragraph "Flat listing" [ref=e10]']);
+    const g = draftFromEffects([
+      nav(`${XB}/widget/3001`, WIDGET_A),
+      nav(`${XB}/widget/3002`, WIDGET_B),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    // two distinct instance states survive (distinguished by their unique tabs); not one merge.
+    const widgetStates = g.states.filter((s) => /\/widget\/300/.test(s.urlPattern));
+    expect(new Set(widgetStates.map((s) => s.urlPattern)).size).toBe(2);
+    // and NONE is marked as a URL-template prior merge.
+    expect(widgetStates.every((s) => !/URL-template prior/i.test(s.provisional ?? ''))).toBe(true);
+  });
+
   // RULE 4 — SPA split: two visits to ONE key with structurally different faces → two states,
   // each named by a heading token UNIQUE to its cluster; a cluster with no distinguishing
   // heading goes to needsFix.
@@ -873,6 +932,48 @@ describe('draftFromEffects — shell-based hierarchy (sections vs details)', () 
     const detail = g.states.find((s) => s.label === 'rep')!;   // /rep/9001 → opaque id dropped → `rep`
     expect(detail.role).toBe('detail');          // reached only by a content link ON reports
     expect(detail.parentState).toBe('rep-list');
+  });
+});
+
+// ── shell-target exemption (Defect 1): a page reached from the SHELL is a top-level SECTION even
+// when SOME OTHER page's body links to it under a NON-shell label. Real bug: download-list linked
+// to report-list under the raw label "report-list" (not the sidebar's "Reports"), so the parentOf
+// pass parented the sidebar section report-list under download-list. The fix reads the shell's OWN
+// navigate targets and never parents one.
+describe('draftFromEffects — shell-navigate targets are always sections (Defect 1)', () => {
+  const SB = 'https://s.test';
+  // 4 shell links so extractShell fires; Reports + Downloads are BOTH sidebar targets.
+  const NAV = [
+    `- link "Home" [ref=e2]:\n    - /url: ${SB}/main/home`,
+    `- link "Reports" [ref=e3]:\n    - /url: ${SB}/report/list`,
+    `- link "Downloads" [ref=e4]:\n    - /url: ${SB}/download/list`,
+    `- link "Help" [ref=e5]:\n    - /url: ${SB}/help/index`,
+  ];
+  const pg = (h: string, extra: string[]) => [`- heading "${h}" [ref=e1]`, ...NAV, ...extra].join('\n');
+  const HOME = pg('Home', ['- heading "Welcome" [ref=e7]', '- paragraph "Overview" [ref=e8]', '- listitem "Recent" [ref=e9]']);
+  const REPORTS = pg('Reports', ['- button "New report" [ref=e7]', '- listitem "OS Report" [ref=e8]', '- paragraph "Saved" [ref=e9]']);
+  const HELP = pg('Help', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]', '- paragraph "FAQ" [ref=e9]']);
+  // Downloads carries a CONTENT link to report-list under a NON-shell label ("report-list"),
+  // mimicking the real download-list → report-list edge that caused the wrong parenting.
+  const DOWNLOADS = pg('Downloads', ['- button "Download all" [ref=e7]',
+    `- link "report-list" [ref=e8]:\n    - /url: ${SB}/report/list`, '- paragraph "Exports" [ref=e9]']);
+  const hnav = (from: string, fromSnap: string, toUrl: string, toSnap: string, name: string, ref: string): StoredActionEffect =>
+    ({ seq: 0, capturedAt: 0, fromUrl: from, fromSnapshot: fromSnap,
+       action: { role: 'link', name, ref, elementFp: { role: 'link', name, near: null } },
+       toUrl, toSnapshot: toSnap, navigated: true, diff: { added: [], removed: [] } as any });
+  const g = draftFromEffects([
+    hnav(`${SB}/main/home`, HOME, `${SB}/report/list`, REPORTS, 'Reports', 'e3'),
+    hnav(`${SB}/main/home`, HOME, `${SB}/download/list`, DOWNLOADS, 'Downloads', 'e4'),
+    hnav(`${SB}/main/home`, HOME, `${SB}/help/index`, HELP, 'Help', 'e5'),
+    // the offending content edge: from Downloads to report-list, labeled "report-list".
+    hnav(`${SB}/download/list`, DOWNLOADS, `${SB}/report/list`, REPORTS, 'report-list', 'e8'),
+  ] as never);
+
+  it('a shell target reached by a content link stays a parentless section', () => {
+    const reports = g.states.find((s) => s.label === 'report-list')!;
+    expect(reports).toBeTruthy();
+    expect(reports.parentState).toBeNull();       // NOT parented under download-list
+    expect(reports.role).toBe('section');         // shell target → top-level section
   });
 });
 

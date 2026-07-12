@@ -385,6 +385,34 @@ const sameFace = (a: Face, b: Face): boolean =>
 // SPA-split (which must not re-split a merged instance's mid-query + settled landings).
 const sameControlFaces = (ca: Face, cb: Face): boolean =>
   Math.min(ca.size, cb.size) >= 4 && (jaccard(ca, cb) >= 0.6 || containment(ca, cb) >= 0.9);
+// NON-CONTRADICTION arm (user norm: instances of one opaque-param template are never separate
+// nodes). Applied ONLY between two members of an OPAQUE-param template group (the word-vs-opaque
+// segment gate keeps /dashboard/list etc. out — this is the caller's responsibility). Two thin,
+// icon-heavy dashboards (/dashboard/1210 vs /dashboard/1215) share the template but each renders
+// ~0 named controls, so neither the full-face (jaccard≥0.5) nor the control arm (ctl≥4) can fire —
+// yet they are the SAME page shape and must merge. They merge when their shell-subtracted identity
+// faces are NON-CONTRADICTORY:
+//   • the smaller is largely CONTAINED in the larger (containment ≥ 0.7, tunable), OR
+//   • the smaller is below the CONTROL-EVIDENCE gate (< CTL_GATE controls — the same ≥4 bar
+//     sameControlFaces uses; too few controls to assert a rival page-type structure) AND the two
+//     still OVERLAP (containment ≥ NONCONTRA_OVERLAP). The control-gate is what distinguishes "too
+//     thin to contradict" from "genuinely different": two dashboards (1 date-button / 0 controls,
+//     sharing their `widget:<sig>` + a heading → containment 0.5) merge; two report VIZZES under
+//     one /report/{id} template each carry ≥3-4 real controls (Table/Charts/Export vs Flat/Search/
+//     Download) sharing only a title (containment ~0.2) → they CONTRADICT and split by tab; a LIST
+//     vs a WIDGET viewer carry disjoint `widget:<sig>` tokens (containment 0) → also split.
+// The merge rests on the URL-template prior, not observed agreement, so the caller marks it
+// PROVISIONAL — a later contradicting landing re-splits it naturally on rebuild.
+const NONCONTRA_CONTAINMENT = 0.7;   // broad ⊆-compatibility bar (documented tunable)
+const NONCONTRA_OVERLAP = 0.5;       // thin-arm overlap floor — must share real structure, not disjoint (tunable)
+const CTL_GATE = 4;                  // control-evidence gate (mirrors sameControlFaces' min-4)
+const nonContradictoryFaces = (a: Face, b: Face): boolean => {
+  const [sm, lg] = a.size <= b.size ? [a, b] : [b, a];
+  const c = containment(sm, lg);
+  if (c >= NONCONTRA_CONTAINMENT) return true;             // smaller broadly ⊆ larger
+  // thin arm: too few controls to assert a distinct page-type, and not a disjoint (contradicting) page.
+  return controlFace(sm).size < CTL_GATE && controlFace(lg).size < CTL_GATE && c >= NONCONTRA_OVERLAP;
+};
 const unionOf = (fs: Face[]): Face => { const u: Face = new Set(); for (const f of fs) for (const t of f) u.add(t); return u; };
 // Single-link clustering of faces under a same-page predicate (union-find). Returns clusters as
 // index groups. One key with structurally-distinct landings splits into >1 cluster (SPA views at
@@ -418,6 +446,9 @@ function clusterFacesByIndex(n: number, same: (a: number, b: number) => boolean)
 interface PageInfo {
   key: string; url: string; template: string | null; label: string;
   landings: SnapNode[][]; faces: Face[]; core: Face; coreNodes: SnapNode[]; provisional: string | null;
+  priorMerged: boolean;      // members joined via the opaque-template non-contradiction prior (≥2
+                             // instances) — provisional by prior, NOT by seen-once, so the heading-
+                             // only holdout (a 1-instance gate) must not fire on it.
   nodes: SnapNode[];
   shadowNodes: SnapNode[];   // core-named + UNNAMED structural nodes (a `table` has no name but
                              // anchors its columnheaders; depth walks need the container chain) —
@@ -566,6 +597,9 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   const canonical = new Map<string, string>();         // member key → its merged template key
   const templateForKey = new Map<string, string>();    // canonical key → its template string
   const opaqueTemplates = new Set<string>();           // templates whose varying seg is an opaque id
+  const priorMergedTemplates = new Set<string>();      // templates a member joined ONLY via the URL-
+                                                       // template non-contradiction prior (not observed
+                                                       // structural agreement) → mark the state provisional
   const faceFor = new Map<string, Face>();             // key (original OR template) → anchor face
   const ctlFor = new Map<string, Face>();              // key (original OR template) → RAW control face
   for (const k of observedKeys) { faceFor.set(k, firstFace(k)); ctlFor.set(k, firstControlFace(k)); }
@@ -579,8 +613,16 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // false /{param}/list state (live finding).
     const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
     const anchor = faceFor.get(members[0])!, anchorCtl = ctlFor.get(members[0])!;
-    const merged = members.filter((k) => sameFace(faceFor.get(k)!, anchor) || (opaqueParams && sameControlFaces(ctlFor.get(k)!, anchorCtl)));
+    // Non-contradiction arm (opaque-param groups ONLY): a thin/icon-only instance shares the
+    // template but can't clear the full-face or control gates — merge it when its face doesn't
+    // CONTRADICT the anchor (see nonContradictoryFaces). Rests on the URL prior → provisional.
+    const priorMatch = (k: string) => opaqueParams && nonContradictoryFaces(faceFor.get(k)!, anchor);
+    const merged = members.filter((k) => sameFace(faceFor.get(k)!, anchor)
+      || (opaqueParams && sameControlFaces(ctlFor.get(k)!, anchorCtl)) || priorMatch(k));
     if (merged.length < 2) continue;                   // dispose: not structurally one page
+    const observedAgree = (k: string) => sameFace(faceFor.get(k)!, anchor)
+      || (opaqueParams && sameControlFaces(ctlFor.get(k)!, anchorCtl));
+    if (merged.some((k) => !observedAgree(k))) priorMergedTemplates.add(g.template);
     for (const m of merged) { canonical.set(m, g.template); templateForKey.set(g.template, g.template); }
     // a template's face = the UNION of its members' faces (the template's whole OBSERVED
     // repertoire). A single anchor face is a fragile representative: one report's anchor was its
@@ -619,7 +661,14 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       const bothOpaque = isOpaqueSeg(sa[diff]) && isOpaqueSeg(sb[diff]);
       const fa = faceFor.get(a)!, fb = faceFor.get(b)!;
       const ca = ctlFor.get(a) ?? controlFace(fa), cb = ctlFor.get(b) ?? controlFace(fb);
-      if (!(sameFace(fa, fb) || (bothOpaque && sameControlFaces(ca, cb)))) continue;
+      const observedAgree = sameFace(fa, fb) || (bothOpaque && sameControlFaces(ca, cb));
+      // Non-contradiction arm (opaque siblings only): merge two icon-only instances that share the
+      // template but each render too little to clear the full-face/control gates, unless their
+      // faces genuinely contradict. This is where /dashboard/1210 (rich icons) meets /dashboard/1215
+      // (thin) — the fixpoint compares canonical keys to EACH OTHER, so instances that never matched
+      // the list anchor still find each other here. Rests on the URL prior → provisional.
+      const priorMerge = bothOpaque && !observedAgree && nonContradictoryFaces(fa, fb);
+      if (!(observedAgree || priorMerge)) continue;
       const t = '/' + sa.map((s, x) => (x === diff || s === '{param}' || sb[x] === '{param}') ? '{param}' : s).join('/');
       if (t !== a) canonical.set(a, t);                            // never a self-loop
       if (t !== b) canonical.set(b, t);
@@ -627,6 +676,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       ctlFor.set(t, unionOf([ctlFor.get(t) ?? new Set<string>(), ca, cb]));     // raw control skeleton
       templateForKey.set(t, t);
       if (bothOpaque || opaqueTemplates.has(a) || opaqueTemplates.has(b)) opaqueTemplates.add(t);
+      if (priorMerge || priorMergedTemplates.has(a) || priorMergedTemplates.has(b)) priorMergedTemplates.add(t);
       mergedAny = true;
     }
     if (!mergedAny) break;
@@ -668,7 +718,14 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i) && !(settledExists && loadingIdx.includes(i)));
     // rule 5: durable face = templateCore(full faces) minus shell — the site chrome lives on
     // `_shell`, not on each page's core (else every state carries the whole sidebar).
-    const { tokens, provisional } = templateCore(coreIdx.map((i) => faces[i]));
+    const { tokens, provisional: coreProvisional } = templateCore(coreIdx.map((i) => faces[i]));
+    // An opaque-template state whose members joined via the non-contradiction PRIOR (not observed
+    // structural agreement) is provisional on that prior: a later contradicting landing re-splits it
+    // naturally on rebuild. This note takes precedence over templateCore's seen-once note.
+    const priorMerged = priorMergedTemplates.has(k);
+    const provisional = priorMerged
+      ? 'merged on URL-template prior — record more visits to confirm shared structure'
+      : coreProvisional;
     const core = minusShell(tokens);
     const nodes: SnapNode[] = [];
     for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
@@ -679,7 +736,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // extractShadow anchors columns on the (nameless) `table` node and walks depths; a named-only
     // view has no containers, so its collections came out empty on every site.
     const shadowNodes = landings[coreIdx[0]].filter((n) => !n.name || !n.name.trim() || core.has(`${n.role}:${n.name}`));
-    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, nodes, shadowNodes };
+    return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, priorMerged, nodes, shadowNodes };
   };
   for (const [k, { landings, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
@@ -697,7 +754,14 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // instance would otherwise re-split on their normFace'd (grid-folded) controls, undoing the
     // dispose merge. Index into the raw control faces by cluster position.
     const rawCtl = landings.map((l) => controlFace(minusShell(faceOf(mainScope(l)))));
-    const pred = opaqueTemplates.has(k)
+    // A template merged via the NON-CONTRADICTION prior (thin instances that agree on neither the
+    // full-face nor the control arm) must cluster with the SAME prior arm here — else the SPA-split
+    // re-splits the very instances the dispose just merged (the two thin dashboards land in separate
+    // clusters, find no distinguishing heading, and drop to needsFix — the merge is undone). Same
+    // principle as the control arm above: re-clustering with a STRICTER predicate undoes the merge.
+    const pred = priorMergedTemplates.has(k)
+      ? (ia: number, ib: number) => sameFace(identFaces[ia], identFaces[ib]) || sameControlFaces(rawCtl[ia], rawCtl[ib]) || nonContradictoryFaces(identFaces[ia], identFaces[ib])
+      : opaqueTemplates.has(k)
       ? (ia: number, ib: number) => sameFace(identFaces[ia], identFaces[ib]) || sameControlFaces(rawCtl[ia], rawCtl[ib])
       : (ia: number, ib: number) => sameFace(identFaces[ia], identFaces[ib]);
     const clusters = clusterFacesByIndex(identFaces.length, pred);
@@ -849,13 +913,18 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     //     identity YET: hold out as needsFix with the record-next ask, never a silent instance-data
     //     fingerprint. A param page with a STRUCTURAL token (tab/button) already kept it above.
     const headingOnly = fp.length && fp.every((t) => t.startsWith('heading:'));
-    if (isParam && headingOnly && p.provisional) {
+    // A PRIOR-MERGED template already has ≥2 instances whose SHARED heading survived templateCore —
+    // that repetition is exactly the "structural, not instance data" signal the 1-instance holdout
+    // below is missing. It's provisional-BY-PRIOR (multi-instance), not provisional-by-seen-once, so
+    // it must NOT be held out: keep the shared heading as identity, keep the prior note.
+    if (isParam && headingOnly && p.provisional && !p.priorMerged) {
       degenerate.set(pi, 'identity rests only on a heading that is likely instance data — record a different {param} instance to separate structure from data');
       continue;
     }
     stubs[pi].fingerprint = fp;
     // ≥2-instance heading-only identity is structural-but-still-worth-flagging: surface the
     // record-next note (kept, not held out). Matches the pre-rewrite provisional-warning contract.
+    // A prior-merged state already carries its own (prior) note — don't overwrite it.
     if (isParam && headingOnly && !p.provisional) {
       const note = 'identity rests on a heading that may be instance data — record a different {param} instance';
       p.provisional = note;
@@ -1236,11 +1305,27 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // hard-coded chrome heuristic (they're global nav even when a small site's shell didn't fire).
   const stateLabels = new Set(states.map((s) => s.label));
   const isSidebarLink = (label: string) => shell.has(`link:${label}`) || /\b(logo|home)\b/i.test(label);
+  // A page reached from the SHELL is a top-level section — regardless of what a content link on
+  // some OTHER page happens to be LABELED. isSidebarLink only recognizes a drill-in whose own
+  // action label matches a shell token, but a sidebar target is often ALSO linked from a page's
+  // body under a different label (real: download-list → report-list labeled "report-list", not
+  // the sidebar's "Reports") — that content edge would wrongly parent the section. The durable
+  // signal is the shell's OWN navigate targets: any state the `_shell` links to is global nav.
+  // Resolve them with the SAME link→label resolution the shell-state block uses (below), so the
+  // two agree by construction. A shell target NEVER receives a parent (stays a section).
+  const shellTargetLabels = new Set<string>();
+  for (const p of pageList) for (const n of p.nodes) {
+    if (n.role !== 'link' || !n.name || !n.url) continue;
+    if (!shell.has(`link:${n.name}`)) continue;
+    const target = labelByKey.get(fromPageKey(n.url));
+    if (target && stateLabels.has(target)) shellTargetLabels.add(target);
+  }
   // For each state, find a CONTENT (non-sidebar) navigate edge that lands on it → that's its parent.
   const parentOf = new Map<string, string>();
   for (const s of states) {
     for (const a of s.affordances) {
-      if (a.kind === 'navigate' && a.to && stateLabels.has(a.to) && a.to !== s.label && !isSidebarLink(a.label)) {
+      if (a.kind === 'navigate' && a.to && stateLabels.has(a.to) && a.to !== s.label
+          && !isSidebarLink(a.label) && !shellTargetLabels.has(a.to)) {
         if (!parentOf.has(a.to)) parentOf.set(a.to, s.label);   // first content drill-in wins
       }
     }

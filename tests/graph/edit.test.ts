@@ -349,3 +349,19 @@ it('dedups identical affordances WITHIN one payload (not just on re-edit)', () =
   const navs = store.getState('n.example:X')!.affordances!.filter((a) => a.kind === 'navigate' && a.toState === 'n.example:target');
   expect(navs.length).toBe(1);   // the exact duplicate collapsed to one
 });
+
+it('threads urlPattern template into the store (viewers show /dashboard/{param})', () => {
+  const store = freshStore();
+  editGraph(store, 'app.example', {
+    states: [
+      { label: 'dashboard', urlPattern: 'https://app.example/dashboard/1210',
+        template: '/dashboard/{param}', provisional: 'merged on URL-template prior' },
+    ], edges: [],
+  });
+  const s = store.getState('app.example:dashboard')!;
+  expect(s.template).toBe('/dashboard/{param}');   // survived edit + round-trips from the store
+  expect(s.urlPattern).toBe('https://app.example/dashboard/1210');   // instance URL kept as-is
+  // re-edit WITHOUT a template must keep the prior (additive, like urlPattern)
+  editGraph(store, 'app.example', { states: [{ label: 'dashboard' }], edges: [] });
+  expect(store.getState('app.example:dashboard')!.template).toBe('/dashboard/{param}');
+});

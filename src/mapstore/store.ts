@@ -87,6 +87,9 @@ export class MapStore implements IMapStore {
     if (!scols2.some((c) => c.name === 'provisional')) {         // seen-once note (Task 7-10 draft)
       this.db.exec('ALTER TABLE states ADD COLUMN provisional TEXT');
     }
+    if (!scols2.some((c) => c.name === 'url_template')) {         // /dashboard/{param} — viewer shows the template, not an instance URL
+      this.db.exec('ALTER TABLE states ADD COLUMN url_template TEXT');
+    }
     const ecols2: any[] = this.db.prepare('PRAGMA table_info(edges)').all();
     if (!ecols2.some((c) => c.name === 'core')) {
       this.db.exec('ALTER TABLE edges ADD COLUMN core INTEGER');
@@ -106,10 +109,10 @@ export class MapStore implements IMapStore {
     // Explicit column names (NOT positional VALUES): on a migrated DB the
     // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
     // schema. Naming the columns keeps the write correct regardless of order.
-    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state,provisional)
-      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent,@provisional)
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state,provisional,url_template)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent,@provisional,@template)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
-      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent, provisional=@provisional`)
+      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent, provisional=@provisional, url_template=@template`)
       .run({
         id: s.id, nodeId: s.nodeId, semanticName: s.semanticName, urlPattern: s.urlPattern, role: s.role,
         sig: JSON.stringify(s.availableSignals), fp: JSON.stringify(s.fingerprint),
@@ -117,6 +120,7 @@ export class MapStore implements IMapStore {
         shadow: s.declaredShadow ? JSON.stringify(s.declaredShadow) : null,
         parent: s.parentState ?? null,
         provisional: s.provisional ?? null,
+        template: s.template ?? null,
       });
   }
   getState(id: string): State | null {
@@ -413,7 +417,8 @@ function rowToState(r: any): State {
     affordances: r.affordances ? JSON.parse(r.affordances) : [],
     declaredShadow: r.declared_shadow ? JSON.parse(r.declared_shadow) : null,
     parentState: r.parent_state ?? null,
-    provisional: r.provisional ?? null };
+    provisional: r.provisional ?? null,
+    template: r.url_template ?? null };
 }
 
 function rowToEdge(r: any): Edge {
