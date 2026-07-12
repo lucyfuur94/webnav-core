@@ -86,6 +86,9 @@ export interface State {
   declaredShadow: DeclaredShadow | null;  // Layer 2 domain-shadow evidence; null = none captured
   provisional: string | null;   // seen only once — identity may rest on instance data, not
                                 // structure; a note asking the agent to record again to confirm.
+  template?: string | null;     // the {param} URL template this state was merged under (e.g.
+                                // /dashboard/{param}); urlPattern stays a concrete instance URL, so
+                                // viewers show the template shape instead of one instance's URL.
 }
 
 export function makeState(
