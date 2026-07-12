@@ -296,6 +296,45 @@ describe('draftFromEffects — Layer 1 in-page repertoire (mutate/reveal/input/n
     const search = list.affordances.find((a) => a.label === 'Search')!;
     expect(search.needsClassification).toBeFalsy();        // non-destructive → not flagged
   });
+
+  // Fix A (rowfold): recorded clicks on a collection-role element (row/gridcell/cell) are per-row
+  // INSTANCE interactions — their accessible name is instance data (title+date+user). They must
+  // fold to ONE scope:'row' template with a STRUCTURAL label, never N instance-labeled affordances.
+  it('non-navigating clicks on grid ROWS fold to one scope:row template, instance labels dropped', () => {
+    const rowClick = (name: string, ref: string) =>
+      mk({ role: 'row', name, ref, elementFp: { role: 'row', name, near: null } }, LIST, false);
+    const effs = [
+      ENTRY,
+      rowClick('Test_demo - Jul 8, 2026 12:20 IST devbrat.r', 'e40'),
+      rowClick('Testuser - Jan 13, 2026 19:31 IST devbrat.r', 'e41'),
+    ];
+    const draft = draftFromEffects(effs as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    // no affordance carries a row's instance-data name
+    expect(list.affordances.some((a) => /Test_demo|Testuser|IST devbrat/.test(a.label))).toBe(false);
+    // exactly ONE row-scoped template, structural label, no per-instance fp
+    const rowFolds = list.affordances.filter((a) => a.scope === 'row');
+    expect(rowFolds.length).toBe(1);
+    expect(rowFolds[0].kind).toBe('mutate');
+    expect(rowFolds[0].elementFp ?? null).toBeNull();
+  });
+
+  // Fix B (rowfold): a control whose label is dominated by a date-RANGE value (a date-range picker
+  // opener carrying its current range) is instance data — refused, both as mutate and reveal.
+  it('a date-range composite label is refused (reveal + mutate), real openers survive', () => {
+    const rangeOpen = (navigated: boolean, added: any[] = []) =>
+      mk({ role: 'button', name: 'Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC', ref: 'e50',
+        elementFp: { role: 'button', name: 'Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC', near: null } },
+        LIST, navigated, added);
+    const bareRange = mk({ role: 'button', name: '09 Jul 2026 - 10 Jul 2026 UTC', ref: 'e51',
+      elementFp: { role: 'button', name: '09 Jul 2026 - 10 Jul 2026 UTC', near: null } }, LIST, false);
+    const draft = draftFromEffects([ENTRY, rangeOpen(false), bareRange] as any);
+    const list = draft.states.find((s) => s.label === 'pim-list')!;
+    expect(list.affordances.some((a) => /\d{4}/.test(a.label) && /-/.test(a.label))).toBe(false);  // no date-range label
+    // real structural openers on the same page are untouched
+    expect(list.affordances.some((a) => a.label === 'Search')).toBe(true);
+    expect(list.affordances.some((a) => a.label === 'Add')).toBe(true);
+  });
 });
 
 // the snapshot a given drafted state was built from (test helper)
