@@ -321,6 +321,20 @@ const DATA_LITERAL =
   /^(?:\d{1,2}[ /-]\w{3,9}[ /-]\d{2,4}|\d{4}-\d{2}-\d{2}|[£$€]?\s?\d[\d,.]*%?)$/;
 const isDataLiteral = (name: string): boolean => DATA_LITERAL.test(name.trim());
 
+// A label DOMINATED by a date-RANGE value — a date-range picker OPENER whose accessible name is
+// its CURRENT range (`09 Jul 2026 - 10 Jul 2026 UTC`, `Last 7 Days (CD) : 02 Jul 2026 - 08 Jul
+// 2026UTC`). Same content-TYPE prior as DATA_LITERAL, extended to the COMPOSITE shape the anchored
+// bare-literal gate can't see: DATA_LITERAL is `^…$` on a lone date so it never eats `"Due 09 Jul
+// 2026"`, but a preset-prefix + range + TZ-suffix label isn't a bare literal and slipped through.
+// The durable affordance is "open the date-range picker"; its stored label must be a stable control
+// name, never the value — and this control's name IS the value (no other durable name), so we
+// REFUSE it (same posture as DATA_LITERAL). Gated on a two-date RANGE (`<date> - <date>`), NOT a
+// single date: a lone date is DATA_LITERAL's job and a range is the unmistakable signal of a
+// current-value picker label, so a real one-off control mentioning one date is untouched.
+const DATE_TOKEN = String.raw`\d{1,2}\s+\w{3,9}\s+\d{2,4}|\d{4}-\d{2}-\d{2}`;
+const DATE_RANGE = new RegExp(`(?:${DATE_TOKEN})\\s*[-–]\\s*(?:${DATE_TOKEN})`, 'i');
+const isValueLabel = (name: string): boolean => isDataLiteral(name) || DATE_RANGE.test(name.trim());
+
 // A path segment that is an opaque instance id — all-digits or a long hex/uuid-ish token. The
 // design's sanctioned URL-SHAPE prior (a digit/hex segment is probably a param); site-AGNOSTIC (no
 // product tokens). Used to both flag param pages and keep ids out of labels; `{param}` (an already-
@@ -1024,6 +1038,19 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
           elementFp: { role: 'textbox', name: e.action.name, near: null } });
         return;
       }
+      // ROW-FOLD (rowfold, rule 5/6): a recorded click whose element role is a COLLECTION role
+      // (`row`/`gridcell`/`cell`) is a per-row INSTANCE interaction — its accessible name is the
+      // row's instance data (a list item's title + date + owner), never durable structure. The
+      // interior-synthesis fold (templateFolds/subtreeFolds) never reaches a recorded click, so N
+      // such clicks would otherwise store N instance-labeled affordances. Fold to ONE scope:'row'
+      // template with a STRUCTURAL label (the collection role) + no per-instance fp (a folded
+      // template has no single durable coordinate; a row-mutate never routes). pushAff dedups by
+      // (kind+label+to), so every row click on a page collapses into this one template.
+      if (COLLECTION_ROLES.has(e.action.role)) {
+        pushAff(fromLabel, { id: `aff_${affSeq++}_${e.action.role}`, label: e.action.role,
+          kind: 'mutate', scope: 'row', elementFp: null });
+        return;
+      }
       // any other click: REVEAL if it exposed new ARIA-named nodes (an overlay/menu opened),
       // else MUTATE (an in-place change — sort/filter/search). Carries the recovered elementFp.
       if (e.action.name) {
@@ -1267,10 +1294,11 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       .filter((a) => a.kind === 'navigate' || !!a.scope || !a.elementFp
         || (a.kind === 'reveal' && !!a.children?.length)
         || (!!a.elementFp.name && a.elementFp.name.trim() !== ''))
-      // DATA-LITERAL GATE: a control named purely by a date/number is instance data (#5 refuses
+      // VALUE-LABEL GATE: a control named purely by a date/number OR dominated by a date-RANGE
+      // value (a date-range picker opener carrying its current range) is instance data (#5 refuses
       // dates), even when it resolves — refuse it as a stored affordance (its reveal children too).
-      .filter((a) => !isDataLiteral(a.label))
-      .map((a) => (a.children ? { ...a, children: a.children.filter((c) => !isDataLiteral(c.label)) } : a));
+      .filter((a) => !isValueLabel(a.label))
+      .map((a) => (a.children ? { ...a, children: a.children.filter((c) => !isValueLabel(c.label)) } : a));
     states.push({
       label: p.label, urlPattern: p.url, fingerprint: stubs[pi].fingerprint, affordances,
       ...(p.template ? { template: p.template } : {}),

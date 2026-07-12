@@ -136,11 +136,12 @@ describe('grammar: 18 multi-select — PARTIAL (tags-in-trigger nested value dom
 // menu/listbox NAMED-control signal survives the core's own enumeratedNames value-fold (every
 // quick-range button is a >=3 same-role/depth sibling group, so the strict overlayControl scan
 // has nothing left to flip). That gap is `packs/patterns/core/date-picker-divsoup.json` (the
-// shipped core pack this test loads for real, not a synthetic stand-in). Proves: the opener
-// classifies `reveal` ONLY once the pack is loaded (core alone declines → mutate), and no day
-// cell ever becomes a stored affordance/child either way (the no-values rule holds independent
-// of detection).
-describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — core pack flips opener to reveal, days never stored', () => {
+// shipped core pack this test loads for real, not a synthetic stand-in). Proves: the opener —
+// whose ONLY accessible name is its current date-RANGE value — is REFUSED by the value-label gate
+// (rowfold Fix B: a control labelled by a `<date> - <date>` range is instance data, never stored),
+// and no day cell ever becomes a stored affordance/child either way (the no-values rule holds
+// independent of detection or of whether the opener itself survives).
+describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — value-labelled opener refused, days never stored', () => {
   const REPORT = [
     '- heading "Report" [ref=e1]',
     '- button "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC" [ref=e2]',
@@ -193,21 +194,23 @@ describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — c
   };
   const effs = [enterReport(), openPicker] as never;
 
-  it('WITHOUT the pack (core alone): the picker stays undetected — opener classifies mutate', () => {
+  // rowfold Fix B: the opener's accessible name IS its current date-RANGE value, so it is REFUSED
+  // by the value-label gate — WITH or WITHOUT the pack, and whether the core would have classified
+  // it mutate (no pack) or reveal (pack). Storing "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC"
+  // as an affordance is the exact instance-data leak the gate removes; the durable structure ("open
+  // the date-range picker") has no other name to store.
+  it('WITHOUT the pack (core alone): the value-labelled opener is refused, not stored', () => {
     const g = draftFromEffects(effs, []);
     const s = g.states.find((x) => x.label === 'report')!;
-    const opener = s.affordances.find((a) => a.label.startsWith('Last 7 Days'))!;
-    expect(opener).toBeTruthy();
-    expect(opener.kind).toBe('mutate');
+    expect(s.affordances.some((a) => a.label.startsWith('Last 7 Days'))).toBe(false);
   });
 
-  it('WITH the shipped core pack: the opener classifies reveal', () => {
+  it('WITH the shipped core pack: the value-labelled opener is still refused (pack loads regardless)', () => {
     const packs = loadPatternPacks([CORE_PACKS_DIR]);
     expect(packs.some((p) => p.name === 'date-picker-divsoup-overlay')).toBe(true);
     const g = draftFromEffects(effs, packs);
     const s = g.states.find((x) => x.label === 'report')!;
-    const opener = s.affordances.find((a) => a.label.startsWith('Last 7 Days'))!;
-    expect(opener.kind).toBe('reveal');
+    expect(s.affordances.some((a) => a.label.startsWith('Last 7 Days'))).toBe(false);
   });
 
   it('day values are NEVER stored as affordances or reveal children (with or without the pack)', () => {
