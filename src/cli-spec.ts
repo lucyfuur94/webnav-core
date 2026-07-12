@@ -360,6 +360,16 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev mermaid www.saucedemo.com',
   },
   {
+    name: 'frontier',
+    summary: 'Report a map\'s UNEXPLORED FRONTIER — the declared affordances the map recorded an opener for but NEVER followed to a resolved state. This is how you know a walkthrough is COMPLETE: drive the frontier to empty (minus your hard exclusions) and the site is mapped; don\'t guess by eyeballing. Three item kinds, all from stored data (zero LLM): `dangling-target` (a navigate/reveal with no toState — opener seen, destination never captured), `unopened-panel` (a reveal whose children were never recorded), `ambiguous-action` (a mutate/input whose label does NOT match a known in-place shape — sort/refresh/pagination/toggle/close/search/… — so it MIGHT open a new surface an explorer should verify, e.g. an account/model switcher). NOT flagged: resolved navigates, reveals with children, clearly in-place mutates, and per-row/widget scope templates (already generalized). Output: {status, node, total, frontier:[{state,kind,label,reason,hint}], excluded:[…], byState:{stateId:count}}. Since the map is judgment-free, webnav does NOT know your hard "never click" list — pass it yourself with repeatable `--exclude <label>` (case-insensitive substring); matched items move to `excluded[]` (visible, off the worklist) rather than being dropped. Exit 0 = frontier empty (fully explored) · 3 = frontier non-empty (ran fine, work remains).',
+    args: [{ name: 'site', required: false, description: 'Site-node id (host), e.g. www.saucedemo.com. Also accepts --node.' }],
+    flags: [
+      { name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' },
+      { name: '--exclude', takesValue: true, description: 'A label to treat as a hard exclusion (repeatable). Case-insensitive substring; matched frontier items go to `excluded[]` instead of the worklist. Supply your own per-site "never click" list (e.g. Admin, a destructive toggle).' },
+    ],
+    example: 'webnav dev frontier www.saucedemo.com --exclude Admin --exclude "Reset App State"',
+  },
+  {
     name: 'capture-loop',
     summary: 'Self-improving capture loop: run --explore-cmd (drives one agent exploration of --objective, recording $WEBNAV_LOOP_SESSION), then a structured review audits video-vs-steps for capture gaps; repeats until a clean audit or exits 3 with the gaps to fix.',
     args: [],
