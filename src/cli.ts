@@ -33,6 +33,7 @@ export type ParsedArgs =
   | { cmd: 'export-map'; node: string }
   | { cmd: 'outline'; node: string }
   | { cmd: 'mermaid'; node: string }
+  | { cmd: 'frontier'; node: string; exclude: string[] }
   | { cmd: 'navigate'; url: string; session: string; browser: BrowserOpts }
   | { cmd: 'snapshot'; session: string }
   | { cmd: 'click'; ref: string; session: string }
@@ -202,6 +203,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // outline/mermaid take the site as a positional OR --node (ergonomic: `outline <site>`).
   if (cmd === 'outline') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
   if (cmd === 'mermaid') return { cmd, node: flagValue(rest, '--node') ?? rest[0] ?? '' };
+  // frontier: --node (or positional) + repeatable --exclude <label> (caller's hard "never click" list).
+  if (cmd === 'frontier') {
+    const excludeVals = new Set(flagValues(rest, '--exclude'));
+    const node = flagValue(rest, '--node') ?? rest.find((a) => !a.startsWith('--') && !excludeVals.has(a)) ?? '';
+    return { cmd, node, exclude: [...excludeVals] };
+  }
   if (cmd === 'effects') return { cmd, session: flagValue(rest, '--session') ?? '' };
   if (cmd === 'record-rename') return { cmd, from: flagValue(rest, '--from') ?? '', to: flagValue(rest, '--to') ?? '' };
   if (cmd === 'review') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', model: flagValue(rest, '--model') ?? 'sonnet', instructions: flagValue(rest, '--instructions') };
@@ -1063,6 +1070,28 @@ async function main() {
     const coverage = analyseCoverage(args.node, states);
     const text = args.cmd === 'outline' ? toOutline(args.node, states) : toMermaid(args.node, states);
     console.log(JSON.stringify({ status: 'ok', node: args.node, coverage, text }, null, 2));
+    return;
+  }
+  if (args.cmd === 'frontier') {
+    // The UNEXPLORED FRONTIER: declared affordances the map never followed to a
+    // resolved state. Measures "is exploration complete?" instead of guessing.
+    // Exit 3 (ran-fine-but-incomplete) when the frontier is non-empty; 0 when
+    // empty (fully explored, minus the caller's hard exclusions). Same
+    // ran-but-empty/incomplete convention as outline/mermaid.
+    const { MapStore } = await import('./mapstore/store.js');
+    const { computeFrontier } = await import('./graph/frontier.js');
+    const store = new MapStore(dbPath());
+    const states = store.statesForNode(args.node);
+    if (!states.length) {
+      console.log(JSON.stringify({ status: 'empty', node: args.node,
+        hint: `no interior captured for "${args.node}" — map it with the record/teach flow` }, null, 2));
+      process.exitCode = 3;
+      return;
+    }
+    const result = computeFrontier(args.node, states, args.exclude);
+    console.log(JSON.stringify(result, null, 2));
+    // frontier non-empty = work remains; exit 3 (ran fine, incomplete).
+    if (result.total > 0) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'creds') {
