@@ -1,7 +1,7 @@
 import React from 'react';
 import {Composition} from 'remotion';
 import {ProgneoWalkthrough, TOTAL_DURATION} from './ProgneoWalkthrough';
-import {FPS} from './chapters';
+import {FPS} from './timing';
 
 export const Root: React.FC = () => {
 	return (

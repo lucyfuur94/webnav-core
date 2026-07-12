@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "remotion studio src/index.ts",
-    "render": "remotion render src/index.ts ProgneoWalkthrough out/progneo-walkthrough.mp4"
+    "render": "remotion render src/index.ts ProgneoWalkthrough out/progneo-walkthrough-v2.mp4"
   },
   "license": "ISC",
   "dependencies": {

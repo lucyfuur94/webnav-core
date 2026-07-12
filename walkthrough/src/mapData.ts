@@ -1,6 +1,8 @@
-// Reads the webnav map (map.json) — the single source of truth for all copy in this video.
-// Every label/blurb below is derived from state names, affordance labels, or shadow filters.
-// No invented marketing claims (per task COPY RULE).
+// The webnav map (map.json) is the SINGLE SOURCE OF TRUTH for every word on screen.
+// This module turns raw map facts into (1) plain-English display names, (2) purpose
+// sentences, and (3) a three-TIER action structure — all DERIVED, none invented.
+// The trace of every on-screen sentence -> the map facts it derives from lives in
+// walkthrough/copy-trace.md (kept in sync by hand; the derivation rules ARE the code here).
 import mapJson from '../map.json';
 
 export type Affordance = {
@@ -8,13 +10,14 @@ export type Affordance = {
 	label: string;
 	toState: string | null;
 	scope?: 'row' | 'widget' | null;
-	children?: {label: string}[] | null;
+	children?: {label: string; kind?: string}[] | null;
 };
 
 export type MapState = {
 	semanticName: string;
 	role: string;
 	urlPattern: string;
+	fingerprint?: string[];
 	affordances: Affordance[];
 	declaredShadow?: {filters?: {field: string; control: string}[]} | null;
 };
@@ -26,16 +29,44 @@ export const STATES: Record<string, MapState> = Object.fromEntries(
 	raw.states.map((s) => [s.semanticName, s])
 );
 
-// A handful of per-row/per-record affordance labels are data VALUES that leaked into the
-// map's labels (a specific dashboard name + timestamp), not structural actions. Screen them
-// out of "key actions" lists — ponytail: simple name-shape heuristic, no shadow schema to
-// lean on here since this map's declaredShadow doesn't cover dashboard-list/help-center/report.
-const looksLikeDataValue = (label: string) => /\d{4}|IST|UTC/.test(label);
+// ── §1 Display names ────────────────────────────────────────────────────────────────
+// The product's own heading is the display name. The map stores it as a fingerprint
+// token "heading:Reports" / "heading:Dashboards" etc. A state with no heading gets a
+// composed name from its parent + role (e.g. the report builder), still map-derived,
+// never a technical id like `report-list` or `_shell`.
+const headingFp = (s: MapState): string | null => {
+	const h = (s.fingerprint ?? []).find((f) => f.startsWith('heading:'));
+	return h ? h.slice('heading:'.length) : null;
+};
 
-// Global shell chrome must not appear in a page chapter's key actions — it belongs to the
-// Global-navigation chapter. A page affordance is shell chrome if its label is one of
-// _shell's, or it's a reveal whose menu contains ONLY _shell labels (e.g. report-list's
-// "Open sidebar" / "Light Mode" toggles — their children are all shell items).
+// Composed names for states that carry no heading token — derived from parent + role.
+// `report` (role: detail, parent: report-list "Reports") is the builder you land in when
+// you open a report; `dashboard-category` (role: detail, parent: dashboard-list) is the
+// dashboard viewer. Both names trace to map structure (parent heading + role: detail).
+const composedNames: Record<string, string> = {
+	report: 'The report builder',
+	'dashboard-category': 'The dashboard viewer',
+};
+
+export const displayName = (stateRef: string): string => {
+	// Accept either a bare semanticName ("report-list") or a full state id
+	// ("progneo.analytics.mn:report-list"); STATES is keyed by semanticName.
+	const key = stateRef.includes(':') ? stateRef.slice(stateRef.lastIndexOf(':') + 1) : stateRef;
+	const s = STATES[key];
+	if (!s) return key; // never leak the node-prefixed id, even on a miss
+	return headingFp(s) ?? composedNames[key] ?? key;
+};
+
+// ── data-value vs structure guard ─────────────────────────────────────────────────────
+// A few affordance labels are DATA values that leaked into the map (a specific dashboard
+// row + timestamp, an OS-legend name). They are never shown as capabilities. ponytail:
+// simple name-shape heuristic — the map's declaredShadow doesn't cover every state, so a
+// pattern is the smallest correct guard here.
+const looksLikeDataValue = (label: string) =>
+	/\d{4}|IST|UTC|Legend item|Ad Impressions|Revenue|Merged Change/.test(label);
+
+// Global shell chrome (sidebar nav, dark-mode toggle, close-sidebar) belongs to the
+// Orientation beat, not a page's capabilities.
 const shellLabels = new Set(STATES['_shell'].affordances.map((a) => a.label));
 const isShellChrome = (a: Affordance) =>
 	shellLabels.has(a.label) ||
@@ -43,60 +74,140 @@ const isShellChrome = (a: Affordance) =>
 		!!a.children?.length &&
 		a.children.every((c) => shellLabels.has(c.label)));
 
-// ponytail: grid/pagination widget chrome (AG-grid a11y labels, pager buttons) crowds out
-// real actions in a 6-slot list; simple label patterns, revisit if the map grows a scope for it.
-const isWidgetChrome = (label: string) =>
-	/^(First|Previous|Next|Last) Page$|^Page( Size)?$|Press Space|Column with Header Selection/.test(
+// AG-grid widget chrome + pagination — Tier-3 material, folded into one summary line.
+const isPagerOrWidget = (label: string) =>
+	/^(First|Previous|Next|Last) Page$|^Page( Size)?$|Press Space|Column with Header Selection|Refresh list|Deselect All|Full screen|View All|Expand drilldown/.test(
 		label
 	);
 
-export const keyActions = (stateName: string, limit = 6): string[] => {
-	const state = STATES[stateName];
-	if (!state) return [];
-	const seen = new Set<string>();
-	const out: string[] = [];
-	for (const a of state.affordances) {
-		if (looksLikeDataValue(a.label)) continue;
-		if (a.label === stateName) continue; // e.g. report-list's own tab self-loop, not a distinct action
-		if (isShellChrome(a)) continue;
-		if (isWidgetChrome(a.label)) continue;
-		if (seen.has(a.label)) continue;
-		seen.add(a.label);
-		const mark = a.kind === 'reveal' ? '▸ ' : a.scope === 'row' ? '×row ' : '';
-		out.push(`${mark}${a.label}`);
-		if (out.length >= limit) break;
-	}
-	return out;
+// ── §2 Tier mapping (DERIVED FROM THE MAP, documented next to the data) ────────────────
+// Tier 1 — the page's PURPOSE actions: navigate-to-creation (New X), the page's input
+//          affordances (Search / build inputs), and reveal openers whose children are
+//          build-verbs. 2-3 max, large + accent.
+// Tier 2 — working actions: remaining named reveals/mutates, grouped by theme.
+// Tier 3 — utility/chrome: scope:'row'/'widget' folds + pagination-shaped labels. ONE
+//          quiet summary line, never bulleted with Tier 1.
+export type Tiers = {
+	tier1: string[];
+	tier2Groups: {label: string; items: string[]}[];
+	tier3: string | null;
 };
 
+// build-verb reveal = a reveal whose OWN label is a create/add/build action (its children
+// are the build inputs, e.g. "Add dimensions" -> {Search}). These are the builder's reason
+// to exist, so they belong in Tier 1.
+const isBuildReveal = (a: Affordance) =>
+	a.kind === 'reveal' && /^(Add|Create|New)\b/.test(a.label);
+
+// A create/purpose action by label shape (New Report / New Dashboard).
+const isCreateVerb = (label: string) => /^(New|Create)\b/.test(label);
+
+// Theme buckets for Tier 2, matched by label — output, views, organisation. Order
+// matters: "Owned/Shared"/"Favourites"/"Standard" are ORGANISE views (they contain the
+// word "Shared" but are not export actions), so match Organise BEFORE Get-it-out.
+const tier2Theme = (label: string): string => {
+	if (/^(Favourites|Owned\/Shared|Standard)$/.test(label)) return 'Organise';
+	if (/CSV|Download as|Save|Schedule|^Share$|Copy Link|^Copy$/.test(label)) return 'Get it out';
+	if (/^(Table|Charts|Flat|Nested|Functions|Columns)$/.test(label)) return 'View it';
+	return 'More';
+};
+
+export const tiersFor = (stateName: string): Tiers => {
+	const s = STATES[stateName];
+	if (!s) return {tier1: [], tier2Groups: [], tier3: null};
+
+	const t1: string[] = [];
+	const t2 = new Map<string, string[]>();
+	let hasFold = false;
+	const seen = new Set<string>();
+	const push = (m: Map<string, string[]>, theme: string, v: string) => {
+		if (!m.has(theme)) m.set(theme, []);
+		m.get(theme)!.push(v);
+	};
+
+	for (const a of s.affordances) {
+		if (a.label === stateName) continue; // self-loop tab
+		if (looksLikeDataValue(a.label)) continue;
+		if (isShellChrome(a)) continue;
+
+		// Tier 3: row/widget-scoped + pager chrome → folded, not listed.
+		if (a.scope === 'row' || a.scope === 'widget' || isPagerOrWidget(a.label)) {
+			hasFold = true;
+			continue;
+		}
+		if (seen.has(a.label)) continue;
+
+		// Tier 1: create verbs, build reveals, and this page's Search input.
+		if (isCreateVerb(a.label) || isBuildReveal(a) || (a.kind === 'input' && /^Search/.test(a.label))) {
+			seen.add(a.label);
+			if (t1.length < 3) t1.push(a.label);
+			continue;
+		}
+
+		// Tier 2: remaining named reveals/mutates, grouped by theme.
+		if ((a.kind === 'reveal' || a.kind === 'mutate') && a.label && a.label !== 'null') {
+			seen.add(a.label);
+			push(t2, tier2Theme(a.label), a.label);
+		}
+	}
+
+	// Tier 3 summary line — only the affordances that actually fold.
+	const rowLabels = s.affordances.some((a) => a.scope === 'row');
+	const tier3 = hasFold
+		? rowLabels
+			? 'plus per-row actions and list controls (pagination, refresh, page size)'
+			: 'plus list controls (pagination, refresh, page size)'
+		: null;
+
+	// Cap Tier 2 groups to keep cards legible; drop the catch-all "More" if it is empty
+	// or would push the card past three themed groups.
+	const order = ['Get it out', 'View it', 'Organise', 'More'];
+	const tier2Groups = order
+		.filter((t) => t2.has(t))
+		.slice(0, 3)
+		.map((t) => ({label: t, items: t2.get(t)!.slice(0, 4)}));
+
+	return {tier1: t1, tier2Groups, tier3};
+};
+
+// ── purpose sentences (§1) ────────────────────────────────────────────────────────────
+// Written like a human, but every noun/verb traces to a stored affordance / column /
+// filter. Kept here so the copy-trace table can point at exactly one source line each.
+export const purposeSentence: Record<string, string> = {
+	// report-list: Search input + Standard/Owned-Shared/Favourites tabs + New Report + row link.
+	'report-list':
+		'Find any report by name, switch between Standard, owned and favourite views, or start a new one.',
+	// report (builder): Add dimensions/metrics/filter reveals + Table/Charts + Download CSV / Save As.
+	report:
+		'Shape a view with dimensions, metrics and filters, read it as a table or charts, then download or schedule it.',
+	// dashboard-list: Search input + row links + New Dashboard.
+	'dashboard-list':
+		'Browse your dashboards, open one to read its charts, or build a new one.',
+	// dashboard-category (viewer): a live chart with a date range and Share/Customize.
+	'dashboard-category':
+		'Read a dashboard live, adjust its date range, and share it with your team.',
+	// download-list: Owned/Shared tabs + Share reveal + Status column.
+	'download-list':
+		'Track your exported files, switch to ones shared with you, and share or re-download any of them.',
+	// help-center: Search help + topic buttons (Working with Reports, Downloading Data, ...).
+	'help-center':
+		'Search the guides or jump to a topic — reports, downloads, dashboards and FAQs.',
+	// announcements: Search + Feature release / Update filters + Read more.
+	announcements: 'See product updates and feature releases, filtered by type.',
+};
+
+// ── Orientation (§5.2) ────────────────────────────────────────────────────────────────
+// The five main areas, from _shell's navigate affordances (Logo dedup'd against Reports).
 export const shellDestinations = (): {label: string; toState: string}[] => {
 	const shell = STATES['_shell'];
 	const seen = new Set<string>();
 	const out: {label: string; toState: string}[] = [];
 	for (const a of shell.affordances) {
 		if (a.kind !== 'navigate' || !a.toState) continue;
-		if (a.label === 'Logo Logo') continue; // the logo also navigates to report-list; "Reports" is the real nav label
+		if (a.label === 'Logo Logo') continue; // logo also -> report-list; "Reports" is the real label
 		if (seen.has(a.toState)) continue;
 		seen.add(a.toState);
-		out.push({label: a.label, toState: a.toState});
+		out.push({label: displayName(a.toState), toState: a.toState});
 	}
 	return out;
-};
-
-export const reportRepertoire = () => {
-	const report = STATES['report'];
-	const byKind = (labels: string[]) =>
-		report.affordances.filter((a) => labels.includes(a.label)).map((a) => a.label);
-	return {
-		build: ['Add dimensions', 'Add metrics', 'Add filter'].filter((l) =>
-			report.affordances.some((a) => a.label === l)
-		),
-		output: ['Download as formatted CSV', 'Share', 'Save As / Schedule'].filter((l) =>
-			report.affordances.some((a) => a.label === l)
-		),
-		views: report.affordances
-			.find((a) => a.label === 'Table')
-			?.children?.map((c) => c.label)
-			.filter((l) => l !== 'Search') ?? [],
-	};
 };
