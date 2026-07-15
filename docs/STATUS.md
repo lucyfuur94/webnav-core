@@ -1,5 +1,7 @@
 # webnav — STATUS (live handoff)
 
+> **NEXT SESSION: start from `docs/superpowers/specs/2026-07-13-usage-first-capture-roadmap.md`** — the agreed strategy (usage-first mapping, fidelity-before-volume) + the prioritized build queue.
+
 **Updated:** 2026-07-11 · **Branch:** `worktree-subtree-templates` (merging to `main`) · **Tests:** 717 unit pass + 7 skip (live e2e) · **Build:** green
 
 > **2026-07-11 (latest) — subtree-template induction shipped: repetition principle now covers the LAST scale (subtree).**
