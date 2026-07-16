@@ -224,4 +224,5 @@ it('session detail has a Ledger sub-tab before Logs, and two replay modes', () =
   expect(SHELL_HTML).toContain('Replay exact');                       // ledger-mode button
   expect(SHELL_HTML).toContain("startReplay('ledger')");   // pins the actual button wiring, not a comment
   expect(SHELL_HTML).toContain('recorded before the ledger existed'); // honest empty state
+  expect(SHELL_HTML).toContain("e.kind === 'navigate'");              // navigate-label fallback to target url
 });

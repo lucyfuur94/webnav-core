@@ -24,6 +24,15 @@ describe('RecordStore ledger (record_events)', () => {
     expect(evs[0].descriptor).toEqual({ leafText: 'Login' });
     expect(evs[1].disposition).toBe('dropped:failed:timeout');
   });
+  it('stamps a default t (nowMs) when the event carries none; an explicit t always wins', () => {
+    const s = store();
+    s.start('sess');
+    const noT = s.appendEvent('sess', { source: 'agent', kind: 'navigate', descriptor: {} }, 12345);
+    const withT = s.appendEvent('sess', { t: 111, source: 'human', kind: 'click', descriptor: {} }, 12345);
+    const evs = s.events('sess');
+    expect(evs[noT!].t).toBe(12345);
+    expect(evs[withT!].t).toBe(111);
+  });
   it('appendEvent is a no-op returning null when the session is inactive', () => {
     const s = store();
     s.start('sess'); s.stop('sess');

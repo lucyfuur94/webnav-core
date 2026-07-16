@@ -206,14 +206,16 @@ export class RecordStore {
   }
   /** Append one raw event to the session's ledger. isActive-gated like steps:
    *  recording off = off, for BOTH capture paths. Returns the ledger seq (for the
-   *  later disposition stamp) or null when not recording. */
-  appendEvent(sessionId: string, ev: LedgerEvent): number | null {
+   *  later disposition stamp) or null when not recording. `ev.t` (the human path's
+   *  page-clock timestamp) always wins; agent-path callers that pass no `t` get
+   *  stamped with `nowMs` so the dashboard's ledger time column is never blank. */
+  appendEvent(sessionId: string, ev: LedgerEvent, nowMs = Date.now()): number | null {
     if (!this.isActive(sessionId)) return null;
     const seq: any = this.db.prepare(
       'SELECT COUNT(*) AS c FROM record_events WHERE session_id=?').get(sessionId);
     this.db.prepare(
       'INSERT INTO record_events (session_id,seq,t,source,kind,descriptor) VALUES (?,?,?,?,?,?)')
-      .run(sessionId, seq.c, ev.t ?? null, ev.source, ev.kind, JSON.stringify(ev.descriptor));
+      .run(sessionId, seq.c, ev.t ?? nowMs, ev.source, ev.kind, JSON.stringify(ev.descriptor));
     return seq.c as number;
   }
   /** Stamp an event's fate: 'step:<stepSeq>' or 'dropped:<reason>'. */
