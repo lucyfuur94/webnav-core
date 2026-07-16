@@ -705,12 +705,15 @@ async function main() {
       kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
       label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
     }));
+    const { coverage } = await import('./recorder/coverage.js');
+    const cov = coverage(store.events(args.session));
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
     const res = await runSessionReview(args.session, {
       videosDir: join(videosRoot, args.session), outDir: join(reviewsRoot, args.session),
       steps, logs: [], log: (l) => process.stderr.write(l + '\n'),
       claudeModel: args.model, instructions: args.instructions, structured: true,
+      knownDrops: cov.dropped, coverage: cov,
     });
     const gaps = typeof res === 'string' ? [] : res.gaps;
     const approved = gaps.length === 0;
@@ -718,7 +721,7 @@ async function main() {
     store.setReview(args.session, { approved, gaps: gaps.length, at, model: args.model,
       reason: approved ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)` });
     console.log(JSON.stringify({ status: approved ? 'approved' : 'needs-fix', session: args.session,
-      approved, gaps, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
+      approved, gaps, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
     if (!approved) process.exitCode = 3;
     return;
   }

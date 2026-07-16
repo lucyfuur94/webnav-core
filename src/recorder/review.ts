@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Coverage } from './coverage.js';
 
 const run = promisify(execFile);
 
@@ -73,6 +74,7 @@ export function buildReviewPrompt(
   frames: ReviewFrame[],
   instructions?: string,
   structured?: boolean,
+  knownDrops?: Coverage['dropped'],
 ): string {
   const t = (ms: number) => new Date(ms).toLocaleTimeString();
   const stepTxt = steps.length
@@ -80,6 +82,10 @@ export function buildReviewPrompt(
     : '(no steps captured)';
   const logTxt = logLines.map((l) => `- [${t(l.t)}] ${l.line}`).join('\n') || '(no logs)';
   const frameTxt = frames.map((f, i) => `- frame ${i + 1} at ${t(f.atMs)}: ${f.path}`).join('\n') || '(no frames extracted)';
+  const dropTxt = knownDrops?.length
+    ? `\nASSEMBLY DROPS (already known — measured deterministically; do NOT re-report these as gaps):\n${
+        knownDrops.map((d) => `- seq ${d.seq} ${d.kind}: ${d.label ?? '(unlabeled)'} — ${d.reason}`).join('\n')}\n`
+    : '';
   return `You are auditing a browser-session RECORDER for capture gaps. A human browsed a website
 while our tool recorded their actions as "steps". We also have a screen video of the same
 session, from which scene-change frames were extracted (one image per visible change,
@@ -95,7 +101,7 @@ ${logTxt}
 
 VIDEO FRAMES (visible changes; READ each image file with the Read tool):
 ${frameTxt}
-
+${dropTxt}
 ${instructions ?? DEFAULT_INSTRUCTIONS}${structured ? STRUCTURED_TAIL : ''}`;
 }
 
@@ -109,6 +115,8 @@ export interface ReviewDeps {
   instructions?: string;             // editable audit task (default DEFAULT_INSTRUCTIONS)
   maxFrames?: number;
   structured?: boolean;              // also emit a parseable gap list (for the capture loop)
+  knownDrops?: Coverage['dropped'];  // deterministic assembly drops — fed to the prompt so the LLM only hunts sensor blindness
+  coverage?: Coverage;               // written into review.json alongside the LLM gaps
   exec?: typeof run;                 // injected for tests
 }
 
@@ -170,7 +178,7 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
     frames.push(...got);
     deps.log(`review: ${got.length} change-frames from ${take}`);
   }
-  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames, deps.instructions, deps.structured);
+  const prompt = buildReviewPrompt(session, deps.steps, deps.logs, frames, deps.instructions, deps.structured, deps.knownDrops);
   deps.log(`review: asking Claude (${deps.claudeModel ?? 'sonnet'}) — ${frames.length} frames, ${deps.steps.length} steps…`);
   let report: string;
   try {
@@ -186,7 +194,7 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
   deps.log('review: done — report saved');
   if (deps.structured) {
     const gaps = parseGaps(report);
-    writeFileSync(join(deps.outDir, 'review.json'), JSON.stringify({ gaps }, null, 2));
+    writeFileSync(join(deps.outDir, 'review.json'), JSON.stringify({ gaps, coverage: deps.coverage ?? null }, null, 2));
     return { report, gaps };
   }
   return report;
