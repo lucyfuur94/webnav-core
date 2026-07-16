@@ -260,6 +260,12 @@ describe('NAME_PROBE_JS (source contract)', () => {
     expect(NAME_PROBE_JS).toContain('el.textContent');          // last-resort own-text (sort headers / date-range button)
     expect(NAME_PROBE_JS).toContain('length <= 120');           // bounded single-line — long labels OK, no multi-row scrape
   });
+  it('never names webnav\'s own REC-overlay chrome, even if a page exposes it', async () => {
+    const { NAME_PROBE_JS } = await import('../../src/recorder/agent-session.js');
+    expect(NAME_PROBE_JS).toContain("el.closest('#__webnav_rec_badge')");
+    // the guard must be the first statement — before any of the real probing logic runs.
+    expect(NAME_PROBE_JS.indexOf("el.closest('#__webnav_rec_badge')")).toBeLessThan(NAME_PROBE_JS.indexOf('const ATTRS'));
+  });
 });
 
 describe('agent ledger', () => {

@@ -60,6 +60,11 @@ describe('injected JS constants', () => {
     // eval re-creates it if an SPA re-render wiped it.
     expect(INSTALLER_JS.indexOf('__webnav_rec_badge')).toBeLessThan(INSTALLER_JS.indexOf("return 'already'"));
   });
+  it('recording pill BUTTON is itself a11y-invisible (aria-hidden alone on the wrapper div does not hide a focusable descendant)', () => {
+    const pillBlock = INSTALLER_JS.slice(INSTALLER_JS.indexOf("createElement('button')"), INSTALLER_JS.indexOf('d.appendChild(p)'));
+    expect(pillBlock).toContain("p.setAttribute('aria-hidden', 'true')");
+    expect(pillBlock).toContain("p.setAttribute('tabindex', '-1')");
+  });
   it('drain reads and clears the queue', () => {
     expect(DRAIN_JS).toContain('__webnav_evq');
     expect(DRAIN_JS).toContain('removeItem');

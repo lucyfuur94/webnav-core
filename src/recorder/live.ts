@@ -64,6 +64,12 @@ export const INSTALLER_JS = `() => {
     const p = document.createElement('button');
     p.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:6px 12px;border-radius:999px;pointer-events:auto;cursor:pointer;border:0;';
     p.textContent = '\\u23FA record';
+    // A focusable element inside an aria-hidden container is STILL exposed by the
+    // a11y tree (aria-hidden on an ancestor doesn't suppress a focusable descendant) —
+    // the wrapper div's aria-hidden alone does not hide this button from snapshots.
+    // Make the pill itself a11y-invisible too. Doesn't touch pointer-events/onclick.
+    p.setAttribute('aria-hidden', 'true');
+    p.setAttribute('tabindex', '-1');
     d.appendChild(p);
     (document.body || document.documentElement).appendChild(d);
   }
