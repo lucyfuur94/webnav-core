@@ -44,7 +44,10 @@ export function landingStructure(effects: Pick<StoredActionEffect, 'toUrl' | 'to
     const interactive = nodes.filter((n) => n.ref && PROBE_ROLES.has(n.role));
     const nameless = namelessInteractive(nodes).length;
     const named = interactive.length - nameless;
-    byKey.set(landingKey(e.toUrl), { url: e.toUrl, named, nameless });
+    const k = landingKey(e.toUrl);
+    const prev = byKey.get(k);
+    // worst-wins: a later, healthier revisit must not hide an earlier gap (tie → keep existing)
+    if (!prev || nameless > prev.nameless) byKey.set(k, { url: e.toUrl, named, nameless });
   }
   return [...byKey.values()];
 }
