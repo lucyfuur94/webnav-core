@@ -93,6 +93,37 @@ describe('runActionRecorded', () => {
     expect(fx.requestedUrl).toBeUndefined();
   });
 
+  it('ledgers the action beside the step and returns stepSeq', async () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('sess');
+    const r = await runActionRecorded({
+      sessionId: 'sess', recordStore: s,
+      fromUrl: 'https://x.com/', fromSnapshot: '- button "Go" [ref=e1]',
+      action: { role: 'button', name: 'Go', ref: 'e1' },
+      adapter: fake('- button "Go" [ref=e1]', 'https://x.com/') as any,
+    });
+    expect(r.stepSeq).toBe(0);
+    const evs = s.events('sess');
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({ source: 'agent', kind: 'click', disposition: 'step:0' });
+    expect(evs[0].descriptor).toMatchObject({ cmd: 'click', ref: 'e1', role: 'button', name: 'Go' });
+  });
+
+  it('stamps dropped:failed on the ledger row when the action throws', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('s');
+    const r = await runActionRecorded({
+      sessionId: 's', recordStore: rec,
+      fromUrl: 'https://x.com/inventory.html', fromSnapshot: BEFORE,
+      action: { role: 'button', name: 'Add to cart', ref: 'e1' },
+      adapter: { ...fake(AFTER, 'https://x.com/inventory.html'), act: async () => { throw new Error('boom'); } } as any,
+    });
+    expect(r.status).toBe('failed');
+    const evs = rec.events('s');
+    expect(evs).toHaveLength(1);
+    expect(evs[0].disposition).toMatch(/^dropped:failed:/);
+  });
+
   it('settles a navigated action: retries a loading snapshot before recording (bounded)', async () => {
     vi.useFakeTimers();
     try {

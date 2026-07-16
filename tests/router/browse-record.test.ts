@@ -68,6 +68,22 @@ describe('recordNavigateEffect', () => {
       vi.useRealTimers();
     }
   });
+
+  it('ledgers the navigate before settling and stamps step:<seq> after', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('nav2');
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => READY,
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+    };
+    await recordNavigateEffect('https://x.test/', 'nav2', rec, adapter as any);
+    const evs = rec.events('nav2');
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({ source: 'agent', kind: 'navigate' });
+    expect(evs[0].descriptor).toMatchObject({ cmd: 'navigate', url: 'https://x.test/', fromUrl: 'https://x.test/' });
+    expect(evs[0].disposition).toMatch(/^step:\d+$/);
+  });
 });
 
 // `use navigate`'s authWall surfacing (design item 2, no-retry half): cli.ts feeds

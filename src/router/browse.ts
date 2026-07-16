@@ -110,14 +110,21 @@ export async function settleSnapshot(snap: () => Promise<string>, first?: string
 export async function recordNavigateEffect(
   url: string, sessionId: string, recordStore: RecordStore, adapter: BrowseAdapter,
 ): Promise<{ toUrl: string; toSnapshot: string }> {
+  // Ledger the intent BEFORE settling (spec 2026-07-16): an un-stamped row honestly
+  // reads as dropped:unprocessed in coverage if this function has no failure branch
+  // of its own — the caller's try owns errors.
+  const led = recordStore.appendEvent(sessionId, {
+    source: 'agent', kind: 'navigate', descriptor: { cmd: 'navigate', url, fromUrl: url },
+  });
   const toSnapshot = await settleSnapshot(() => adapter.snapshot!());
   const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
-  recordStore.appendActionEffect(sessionId, {
+  const stepSeq = recordStore.appendActionEffect(sessionId, {
     fromUrl: url, fromSnapshot: '', action: null,
     toUrl, toSnapshot, navigated: true,
     diff: diffSnapshots([], parseSnapshot(toSnapshot)),
     requestedUrl: url,
   });
+  if (led != null) recordStore.stampEvent(sessionId, led, stepSeq != null ? 'step:' + stepSeq : 'dropped:not-recorded');
   return { toUrl, toSnapshot };
 }
 
@@ -173,7 +180,7 @@ export interface RunActionArgs {
   text?: string;              // when present, the action TYPES (fill) instead of clicks
   adapter?: BrowseAdapter;
 }
-export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; reason?: string; }
+export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; reason?: string; stepSeq?: number | null; }
 
 /** Perform the agent's action, capture the after-page, record an ActionEffect.
  *  webnav does NOT decide what to fire — the agent supplies `action`; we record
@@ -181,6 +188,13 @@ export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boo
  *  browser lifecycle (an action sequence reuses the session) — we do NOT close. */
 export async function runActionRecorded(args: RunActionArgs): Promise<ActionRecordedResult> {
   const adapter = args.adapter ?? newAdapter();
+  // Ledger the intent BEFORE acting (spec 2026-07-16): a failed action must still be
+  // on the record. NO typed text in the descriptor — this path has no secret oracle.
+  const led = args.recordStore.appendEvent(args.sessionId, {
+    source: 'agent', kind: args.text != null ? 'type' : 'click',
+    descriptor: { cmd: args.text != null ? 'type' : 'click', ref: args.action.ref,
+      role: args.action.role, name: args.action.name, url: args.fromUrl },
+  });
   try {
     if (args.action.ref) {
       if (args.text != null) await adapter.fill!(args.action.ref, args.text);
@@ -211,16 +225,20 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
       }
     }
     let recorded = false;
+    let stepSeq: number | null = null;
     if (args.recordStore.isActive(args.sessionId)) {
-      args.recordStore.appendActionEffect(args.sessionId, {
+      stepSeq = args.recordStore.appendActionEffect(args.sessionId, {
         fromUrl: args.fromUrl, fromSnapshot: args.fromSnapshot, action: args.action,
         toUrl, toSnapshot, navigated, requestedUrl,
         diff: diffSnapshots(parseSnapshot(args.fromSnapshot), parseSnapshot(toSnapshot)),
       });
-      recorded = true;
+      recorded = stepSeq != null;
     }
-    return { status: 'done', recorded, navigated };
+    if (led != null) args.recordStore.stampEvent(args.sessionId, led, stepSeq != null ? 'step:' + stepSeq : 'dropped:not-recorded');
+    return { status: 'done', recorded, navigated, stepSeq };
   } catch (e) {
+    if (led != null) args.recordStore.stampEvent(args.sessionId, led,
+      'dropped:failed:' + String((e as Error).message ?? e).slice(0, 120));
     return { status: 'failed', recorded: false, reason: String(e) };
   }
 }

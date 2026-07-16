@@ -80,7 +80,9 @@ export interface AgentSessionDeps {
   };
   store: {
     isActive(s: string): boolean;
-    appendActionEffect(s: string, fx: ActionEffect): void;
+    appendActionEffect(s: string, fx: ActionEffect): number | null;
+    appendEvent(s: string, ev: { t?: number; source: 'human' | 'agent'; kind: string; descriptor: Record<string, unknown> }): number | null;
+    stampEvent(s: string, seq: number, disposition: string): void;
   };
   // recover an element fingerprint from a snapshot for a ref (durable click key)
   recover: (snapshot: string, ref: string) => { action: { role: string; name: string | null; ref: string; elementFp?: unknown } };
@@ -119,11 +121,14 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
 
       if (c.cmd === 'quit') break;
 
+      let pendingLedger: number | null = null;   // reset per command; stamped by this command or the catch below
       try {
         if (c.cmd === 'navigate') {
           if (!c.url) { out({ ok: false, error: 'navigate needs url' }); continue; }
           const fromUrl = await deps.adapter.currentUrl().catch(() => '');
           const fromSnapshot = fromUrl ? await deps.adapter.snapshot().catch(() => '') : '';
+          pendingLedger = deps.store.appendEvent(deps.sessionId, {
+            source: 'agent', kind: 'navigate', descriptor: { cmd: 'navigate', url: c.url, fromUrl: fromUrl || c.url } });
           await deps.adapter.goto(c.url);
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
@@ -131,11 +136,13 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           const toSnapshot = await settleSnapshot(() => deps.adapter.snapshot());
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
-            deps.store.appendActionEffect(deps.sessionId, {
+            const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl: fromUrl || c.url, fromSnapshot, action: null,
               toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] },
               requestedUrl: c.url,
             });
+            if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
+            pendingLedger = null;
             steps++; deps.notify('step', 'agent nav: ' + toUrl);
           }
           out({ ok: true, url: toUrl });
@@ -176,15 +183,20 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
             const probed = parseEvalResult(await deps.adapter.evalJs(NAME_PROBE_JS, c.ref).catch(() => ''));
             action.name = enrichName(action.name, probed);
           }
+          pendingLedger = deps.store.appendEvent(deps.sessionId, {
+            source: 'agent', kind: 'hover',
+            descriptor: { cmd: 'hover', ref: c.ref, role: action.role, name: action.name, url: fromUrl } });
           await deps.adapter.hover(c.ref);
           const toSnapshot = await deps.adapter.snapshot();
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
-            deps.store.appendActionEffect(deps.sessionId, {
+            const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl, fromSnapshot, action: { ...action, hover: true } as never,
               toUrl, toSnapshot, navigated: false,
               diff: diffSnapshots(parseSnapshot(fromSnapshot), parseSnapshot(toSnapshot)),
             });
+            if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
+            pendingLedger = null;
             steps++; deps.notify('step', 'agent hover: ' + (action.name ?? c.ref));
           }
           out({ ok: true, name: action.name, revealed: parseSnapshot(toSnapshot).length - parseSnapshot(fromSnapshot).length });
@@ -195,6 +207,8 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           out({ ok: false, error: 'unknown cmd: ' + String((c as { cmd?: string }).cmd) });
         }
       } catch (e) {
+        if (pendingLedger != null) { deps.store.stampEvent(deps.sessionId, pendingLedger,
+          'dropped:failed:' + String((e as Error).message ?? e).slice(0, 120)); pendingLedger = null; }
         out({ ok: false, error: String((e as Error).message ?? e) });
       }
     }
