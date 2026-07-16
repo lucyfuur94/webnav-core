@@ -310,7 +310,10 @@ export async function runLedgerReplay(
         await deps.adapter.click(ref);
       }
 
-      if (nextUrl && didNavigate(pageUrlOf(e), nextUrl)) {
+      // inputs/hovers never navigate (assembleEffect's guarantee for input; hover is a
+      // same-page reveal) — a page change after one of these belongs to the FOLLOWING
+      // event, so skip the landing check here rather than false-failing this step.
+      if (nextUrl && e.kind !== 'input' && e.kind !== 'type' && e.kind !== 'hover' && didNavigate(pageUrlOf(e), nextUrl)) {
         // bounded settle: a client-side redirect needs a beat before the url is real
         let cur = await deps.adapter.currentUrl();
         for (let w = 0; w < 3 && didNavigate(cur, nextUrl); w++) {
