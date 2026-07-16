@@ -81,6 +81,7 @@ export class PlaywrightAdapter {
   async open(url: string) { await throttleOpen(url); return this.exec('open', url, ...this.openFlags()); }
   async goto(url: string) { await throttleOpen(url); return this.exec('goto', url); }
   click(ref: string) { return this.exec('click', ref); }
+  rightClick(ref: string) { return this.exec('click', ref, 'right'); }
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
   press(key: string) { return this.exec('press', key); }

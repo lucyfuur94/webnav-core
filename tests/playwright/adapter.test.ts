@@ -53,6 +53,13 @@ describe('PlaywrightAdapter', () => {
     expect(snap).toBe(SHELL);   // never rendered → returns last; read.ts then reports blocked
   });
 
+  it('rightClick sends click <ref> right', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; });
+    await a.rightClick('e1');
+    expect(calls[0]).toEqual(['-s=s', 'click', 'e1', 'right']);
+  });
+
   it('fill passes ref then text in order', async () => {
     const calls: string[][] = [];
     const a = new PlaywrightAdapter('s', async (args) => { calls.push(args); return 'ok'; });
