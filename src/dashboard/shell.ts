@@ -1031,7 +1031,7 @@ function buildHead(ctx) {
     pollReplay(ctx.stepsBox, r.sessionId);
   };
   repB.onclick = () => startReplay('steps');
-  repXB.onclick = () => startReplay('ledger');   // exact replay — body carries mode: 'ledger'
+  repXB.onclick = () => startReplay('ledger');
   head.append(openB, recB, repB, repXB, anB, delB);
   ctx.headBox.append(head);
 }
