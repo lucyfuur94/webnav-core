@@ -32,6 +32,12 @@ describe('buildReviewPrompt', () => {
     expect(p).toContain('(no steps captured)');
     expect(p).toContain('(no frames extracted)');
   });
+  it('prompt includes known assembly drops so the LLM hunts only sensor blindness', () => {
+    const p = buildReviewPrompt('s', [], [], [], undefined, false,
+      [{ seq: 1, kind: 'click', label: 'Chart type', reason: 'unresolved-same-page' }]);
+    expect(p).toContain('ASSEMBLY DROPS (already known');
+    expect(p).toContain('Chart type');
+  });
 });
 
 
