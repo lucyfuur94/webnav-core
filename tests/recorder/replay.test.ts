@@ -253,6 +253,26 @@ describe('runLedgerReplay', () => {
     expect(fills).toEqual(['standard_user', 'typed']);   // supplied value filled
   });
 
+  it('input event followed by a cross-page event does not false-fail landing (never navigates)', async () => {
+    // event 0: input on /search (recorded value → no ask); currentUrl stays /search after
+    // fill (an uncaptured Enter/autosubmit is what actually moved the page, not this event).
+    // event 1: click on /results. The landing check must skip event 0 (input never navigates)
+    // rather than comparing /search against event 1's /results and false-failing.
+    const SEARCH = ['RootWebArea "Search" [ref=e1]', '  textbox "q" [ref=e2]', '  link "First" [ref=e3]'].join('\n');
+    const events = [
+      hev(0, { kind: 'input', url: 'https://x.com/search', tagName: 'input', nameAttr: 'q', value: 'shoes' }),
+      hev(1, { kind: 'click', url: 'https://x.com/results', tagName: 'a', leafText: 'First', role: null }),
+    ];
+    const ad = {
+      open: async () => {}, goto: async () => {}, click: async () => {},
+      fill: async () => {}, hover: async () => {}, snapshot: async () => SEARCH,
+      currentUrl: async () => 'https://x.com/search',   // never moves off /search
+      screenshot: async () => null, close: async () => '' };
+    const ctl = new ReplayController('s', [{ seq: 0, label: 'q' }, { seq: 1, label: 'First' }]);
+    const st = await runLedgerReplay(events as never, ctl, { adapter: ad as any, ...LDEPS });
+    expect(st.steps[0].status).toBe('ok');   // NOT 'fail'/"landed elsewhere"
+  });
+
   it('agent rows: navigate → goto target; hover → adapter.hover; type asks (no text ledgered)', async () => {
     const gotos: string[] = [];
     const hovers: string[] = [];
@@ -287,6 +307,24 @@ describe('runLedgerReplay', () => {
     ctl2.supply('query', false);
     const st2 = await p;
     expect(st2.steps[0].status).toBe('ok');
+  });
+
+  it('abort during waiting:value clears the waiting flag (consistent terminal state)', async () => {
+    const IN = ['RootWebArea "Login" [ref=e1]', '  textbox "user" [ref=e2]'].join('\n');
+    const noValue = [hev(0, { kind: 'input', url: 'https://x.com/login', tagName: 'input', nameAttr: 'user' })];
+    const ad = {
+      open: async () => {}, goto: async () => {}, click: async () => {}, fill: async () => {}, hover: async () => {},
+      snapshot: async () => IN, currentUrl: async () => 'https://x.com/login',
+      screenshot: async () => null, close: async () => '' };
+    const ctl = new ReplayController('s', [{ seq: 0, label: 'user' }]);
+    const p = runLedgerReplay(noValue as never, ctl, { adapter: ad as any, ...LDEPS });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(ctl.state.waiting).toBe('value');
+    ctl.control('abort');
+    const st = await p;
+    expect(st.waiting).toBe(null);
+    expect(st.done).toBe(true);
+    expect(st.steps[0].status).toBe('skipped');
   });
 
   it('commit-word click waits for confirm; declined → skipped', async () => {
