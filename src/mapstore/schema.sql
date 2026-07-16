@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS record_observations (
   navigated INTEGER, diff TEXT,
   UNIQUE(session_id, seq)
 );
+CREATE TABLE IF NOT EXISTS record_events (
+  session_id TEXT NOT NULL, seq INTEGER NOT NULL,
+  t INTEGER, source TEXT NOT NULL, kind TEXT NOT NULL,
+  descriptor TEXT NOT NULL, disposition TEXT,
+  PRIMARY KEY (session_id, seq)
+);
 CREATE TABLE IF NOT EXISTS walk_sessions (
   session_id TEXT PRIMARY KEY,
   start_state TEXT NOT NULL, goal_state TEXT NOT NULL,

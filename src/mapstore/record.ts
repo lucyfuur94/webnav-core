@@ -32,6 +32,17 @@ export interface ActionEffect {
 }
 export interface StoredActionEffect extends ActionEffect { seq: number; capturedAt: number; }
 
+// The raw-event LEDGER: every captured event, appended at the earliest capture point
+// (before assembly can lose it), later stamped with its fate. Descriptors only —
+// role/label/href/non-secret value — never CSS selectors (spec 2026-07-16). Secrets
+// are excluded at the SOURCE (the in-page listener / no agent text), so this table
+// can never contain them.
+export interface LedgerEvent {
+  t?: number; source: 'human' | 'agent'; kind: string;
+  descriptor: Record<string, unknown>;
+}
+export interface StoredLedgerEvent extends LedgerEvent { seq: number; disposition: string | null }
+
 export interface RecordSessionInfo {
   sessionId: string; active: boolean; startedAt: number; stoppedAt: number | null;
   steps: number; site: string | null;
@@ -135,6 +146,7 @@ export class RecordStore {
    *  session id replaces, not appends — the ingest receiver's default session is reused). */
   clearSession(sessionId: string): void {
     this.db.prepare('DELETE FROM record_observations WHERE session_id=?').run(sessionId);
+    this.db.prepare('DELETE FROM record_events WHERE session_id=?').run(sessionId);
   }
   /** Delete a recording ENTIRELY — observations AND the session row (live finding:
    *  clearSession alone left the row, so a "deleted" recording stayed in the list). */
@@ -152,6 +164,7 @@ export class RecordStore {
     this.db.transaction(() => {
       this.db.prepare('UPDATE record_sessions SET session_id=? WHERE session_id=?').run(to, from);
       this.db.prepare('UPDATE record_observations SET session_id=? WHERE session_id=?').run(to, from);
+      this.db.prepare('UPDATE record_events SET session_id=? WHERE session_id=?').run(to, from);
     })();
     return true;
   }
@@ -175,8 +188,8 @@ export class RecordStore {
     return rows.map((r) => ({ url: r.url, fingerprint: JSON.parse(r.fingerprint),
       declaredLinks: JSON.parse(r.declared_links), seq: r.seq, capturedAt: r.captured_at }));
   }
-  appendActionEffect(sessionId: string, fx: ActionEffect, nowMs = Date.now()): void {
-    if (!this.isActive(sessionId)) return;
+  appendActionEffect(sessionId: string, fx: ActionEffect, nowMs = Date.now()): number | null {
+    if (!this.isActive(sessionId)) return null;
     const seq: any = this.db.prepare(
       'SELECT COUNT(*) AS c FROM record_observations WHERE session_id=?').get(sessionId);
     this.db.prepare(
@@ -189,6 +202,30 @@ export class RecordStore {
         fx.fromUrl, fx.fromSnapshot, JSON.stringify(fx.action),
         fx.toUrl, fx.toSnapshot, fx.navigated ? 1 : 0, JSON.stringify(fx.diff),
         fx.requestedUrl ?? null);
+    return seq.c as number;
+  }
+  /** Append one raw event to the session's ledger. isActive-gated like steps:
+   *  recording off = off, for BOTH capture paths. Returns the ledger seq (for the
+   *  later disposition stamp) or null when not recording. */
+  appendEvent(sessionId: string, ev: LedgerEvent): number | null {
+    if (!this.isActive(sessionId)) return null;
+    const seq: any = this.db.prepare(
+      'SELECT COUNT(*) AS c FROM record_events WHERE session_id=?').get(sessionId);
+    this.db.prepare(
+      'INSERT INTO record_events (session_id,seq,t,source,kind,descriptor) VALUES (?,?,?,?,?,?)')
+      .run(sessionId, seq.c, ev.t ?? null, ev.source, ev.kind, JSON.stringify(ev.descriptor));
+    return seq.c as number;
+  }
+  /** Stamp an event's fate: 'step:<stepSeq>' or 'dropped:<reason>'. */
+  stampEvent(sessionId: string, seq: number, disposition: string): void {
+    this.db.prepare('UPDATE record_events SET disposition=? WHERE session_id=? AND seq=?')
+      .run(disposition, sessionId, seq);
+  }
+  events(sessionId: string): StoredLedgerEvent[] {
+    const rows: any[] = this.db.prepare(
+      'SELECT * FROM record_events WHERE session_id=? ORDER BY seq').all(sessionId);
+    return rows.map((r) => ({ seq: r.seq, t: r.t ?? undefined, source: r.source, kind: r.kind,
+      descriptor: JSON.parse(r.descriptor), disposition: r.disposition ?? null }));
   }
   actionEffects(sessionId: string): StoredActionEffect[] {
     const rows: any[] = this.db.prepare(
