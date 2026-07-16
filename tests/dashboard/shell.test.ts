@@ -115,9 +115,9 @@ it('Sessions tab: renamed label, bulk delete (in toolbar), new-session dialog, d
 });
 
 
-it('review UX: md renderer, sub-tab order Steps>Videos>Review>Logs, model+instructions controls', () => {
+it('review UX: md renderer, sub-tab order Ledger>Videos>Review>Logs, model+instructions controls', () => {
   expect(SHELL_HTML).toContain('function mdToHtml');
-  const order = ['data-sub="steps"', 'data-sub="videos"', 'data-sub="review"', 'data-sub="logs"']
+  const order = ['data-sub="ledger"', 'data-sub="videos"', 'data-sub="review"', 'data-sub="logs"']
     .map((k) => SHELL_HTML.indexOf(k));
   expect([...order].sort((a, b) => a - b)).toEqual(order);   // declared in that order
   expect(SHELL_HTML).toContain('last run:');
@@ -185,8 +185,8 @@ it('reopening a session is persistent (reuses saved login) — not a throwaway p
 
 it('loadSteps is DEFINED (live #1: it was called but never defined → SSE refresh threw)', () => {
   expect(SHELL_HTML).toMatch(/async function loadSteps\(/);
-  // and it is what the live-refresh + tab-switch call
-  expect(SHELL_HTML).toContain("if (detailCtx.subTab === 'steps') loadSteps(detailCtx)");
+  // and it is what the live-refresh + tab-switch call (now under the merged Ledger tab)
+  expect(SHELL_HTML).toContain("if (detailCtx.subTab === 'ledger') { loadSteps(detailCtx); loadLedger(detailCtx); }");
 });
 it('Open button disabled when a window is live; Record needs a window (#2/#3)', () => {
   expect(SHELL_HTML).toContain('openB.disabled = !!winSession');
@@ -216,7 +216,8 @@ it('widget-scoped affordances get a "widget" chip, mirroring the row-scoped "per
   expect(SHELL_HTML).toContain('widgetScoped(st, x)');
 });
 
-it('session detail has a Ledger sub-tab before Logs, and two replay modes', () => {
+it('session detail has ONE merged Ledger sub-tab (Raw + Webnav panes) before Logs, no separate Steps tab', () => {
+  expect(SHELL_HTML).not.toContain('data-sub="steps"');               // Steps sub-tab removed — merged in
   const tabs = SHELL_HTML.indexOf('data-sub="ledger"');
   expect(tabs).toBeGreaterThan(-1);
   expect(tabs).toBeLessThan(SHELL_HTML.indexOf('data-sub="logs"'));   // placed BEFORE Logs
@@ -225,4 +226,6 @@ it('session detail has a Ledger sub-tab before Logs, and two replay modes', () =
   expect(SHELL_HTML).toContain("startReplay('ledger')");   // pins the actual button wiring, not a comment
   expect(SHELL_HTML).toContain('recorded before the ledger existed'); // honest empty state
   expect(SHELL_HTML).toContain("e.kind === 'navigate'");              // navigate-label fallback to target url
+  expect(SHELL_HTML).toContain('>Raw<');                              // left pane header
+  expect(SHELL_HTML).toContain('>Webnav<');                           // right pane header
 });
