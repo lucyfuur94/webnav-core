@@ -122,6 +122,54 @@ describe('grammar: 44/2/59 data grid — row fold, near, effects, URL-template e
   });
 });
 
+// ── X6: the SAME grid landing, now with nameHints naming the per-row icon buttons. The
+// name-probe (Task 1/2) reads a tooltip/aria label off each nameless icon button and stores it
+// on the effect; draft's landing-intake patch applies it BEFORE the name gates, so the repertoire
+// the honest-omission test above proves is dropped now SURVIVES as a folded affordance. Same
+// fixture, hints the only difference — the positive counterpart the matrix's X6 row calls for.
+describe('grammar: X6 — nameHints recover the unnamed icon-only controls (positive)', () => {
+  // realistic playwright refs (parseSnapshot only recognises `e\d+`): each unnamed icon button
+  // gets its own eNN ref, and HINTS keys those. Same fixture shape as the honest-omission case
+  // above (3 rows, one nameless icon button each) — the nameHints are the only difference.
+  const gridRow = (id: number, name: string, iconRef: number) => [
+    `  - row [ref=e${id * 10}]:`,
+    `    - link "${name}" [ref=e${id * 10 + 1}]:\n        - /url: ${B}/items/${id}`,
+    `    - checkbox "Select ${name}" [ref=e${id * 10 + 2}]`,
+    `    - button "${name} Edit" [ref=e${id * 10 + 3}]`,
+    `    - button [ref=e${iconRef}]`,   // UNNAMED icon-only button — nameHints will name it
+  ];
+  const ICON = { 1: 71, 2: 72, 3: 73 };
+  const GRID = (ids: [number, string][]) => [
+    '- heading "Items" [ref=e1]',
+    '- checkbox "Select all" [ref=e2]',
+    '- columnheader "Name" [ref=e3] [aria-sort]',
+    '- table [ref=e9]:',
+    ...ids.flatMap(([id, name]) => gridRow(id, name, (ICON as Record<number, number>)[id])),
+    '- paragraph "1-50 of 500" [ref=e8]',
+  ].join('\n');
+  const LANDING = GRID([[1, 'Alpha widget'], [2, 'Beta widget'], [3, 'Gamma widget']]);
+  // observed tooltip label per icon button (same across rows, as a per-row action's tooltip is)
+  const HINTS = { e71: 'View details', e72: 'View details', e73: 'View details' };
+
+  const enter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${B}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${B}/items/list`, toSnapshot: LANDING, navigated: true, diff: { added: [], removed: [] } as any,
+    nameHints: HINTS };
+
+  const g = draftFromEffects([enter] as never);
+  const s = g.states.find((x) => x.label === 'items-list')!;
+
+  it('the hinted icon buttons fold to ONE affordance carrying the observed name', () => {
+    const viewed = s.affordances.filter((a) => a.scope && /View details/.test(a.label));
+    expect(viewed.length).toBe(1);
+  });
+
+  it('no empty-label affordance leaks (the patch only sets names, never blanks)', () => {
+    const allLabels = s.affordances.flatMap((a) => [a.label, ...(a.children ?? []).map((c) => c.label)]);
+    expect(allLabels.some((l) => l === '')).toBe(false);
+  });
+});
+
 // ── fx-data-grid's row-link -> detail URL template: a title link (/items/:id) becomes the
 // list-to-detail navigate edge (A4 + A5, row 44/49's "home turf"). Verifies the edge kind and
 // that the destination merges under one /items/{param} template rather than one state per id.

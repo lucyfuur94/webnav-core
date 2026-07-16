@@ -203,6 +203,30 @@ describe('runAgentSession', () => {
     }
   });
 
+  it('navigate: a nameless landing is probed → effect carries nameHints; a named landing probes nothing', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('nh1');
+    const ad = fakeAdapter();
+    // landing of icon-only buttons (≥8 nodes so classifyReadiness = ready, no settle retry)
+    const NAMELESS = 'RootWebArea "P" [ref=e1]\n  heading "Dash" [ref=e0]\n  button [ref=e5]\n  button [ref=e6]\n  link "Help" [ref=e7]\n  paragraph "Welcome" [ref=e8]\n  paragraph "More" [ref=e9]\n  paragraph "Even more" [ref=e10]';
+    ad.snapshot = async () => NAMELESS;
+    const probeRefs: string[] = [];
+    ad.evalJs = async (js: string, ref?: string) => {
+      if (ref) { probeRefs.push(ref); return JSON.stringify(ref === 'e5' ? 'Expand' : 'Favorite'); }
+      return JSON.stringify('EVAL:' + js);   // ref-less = the overlay eval
+    };
+    const io = driver(['{"cmd":"navigate","url":"https://s.test/dash"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'nh1', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: '', name: null, ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    expect(probeRefs.sort()).toEqual(['e5', 'e6']);   // only the two nameless buttons probed
+    const fx = store.actionEffects('nh1')[0];
+    expect(fx.nameHints).toEqual({ e5: 'Expand', e6: 'Favorite' });
+  });
+
   it('a NAMELESS click probes the element attributes for a label (title/aria-label)', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     store.start('n1');
