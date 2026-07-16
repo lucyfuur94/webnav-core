@@ -1062,7 +1062,7 @@ async function loadLedger(ctx) {
     + (c.dropped.length ? ' \\u00B7 <span style="color:var(--rec);font-weight:600">'+c.dropped.length+' dropped</span>' : ' \\u00B7 all captured')+'</div>'));
   const rows = d.events.map(e => {
     const desc = e.descriptor || {};
-    const label = desc.name || desc.ariaLabel || desc.leafText || desc.placeholder || '';
+    const label = desc.name || desc.ariaLabel || desc.leafText || desc.placeholder || (e.kind === 'navigate' ? (desc.url || '') : '');
     // fate uses the same positive-state color the Steps table's ✓ and the Review ok badge use (var(--ok));
     // a drop reason is flagged in var(--rec) like the "dropped" summary; a null disposition is muted.
     const fate = !e.disposition ? '<span class="muted">unprocessed</span>'
