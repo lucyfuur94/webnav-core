@@ -170,6 +170,42 @@ describe('grammar: X6 — nameHints recover the unnamed icon-only controls (posi
   });
 });
 
+// ── X6 mixed-visit identity: a hint patches a name into ONE landing's face; a hint token must
+// obey the SAME cross-visit majority vote (templateCore, infer.ts:331-341, 60% threshold) as any
+// other token — it is not privileged evidence. So the SAME key visited once WITH a hint (agent)
+// and once WITHOUT (human) treats the hint-only token as a MINORITY and drops it from the durable
+// core; a majority of hinted visits keeps it. (The named risk in review — locked here, not left
+// emergent.) NOTE: each visit carries a distinct per-visit token ("visit a/b/c") so neither
+// landing's face is a subset of the other — otherwise the unhinted landing reads as a PARTIAL
+// render of the hinted one (absence-of-name ≈ absence-of-node) and is excluded before the vote,
+// masking it. The distinct token is what makes every visit a FULL landing that actually votes.
+describe('grammar: X6 mixed hinted/unhinted visits — hint tokens obey the cross-visit majority', () => {
+  const BASE = ['- heading "Settings" [ref=e1]', '- button "Save" [ref=e2]', '- button "Cancel" [ref=e3]',
+    '- textbox "Name" [ref=e4b]', '- textbox "Email" [ref=e5b]', `- link "Docs" [ref=e6b]:\n    - /url: ${B}/docs`,
+    '- paragraph "Profile" [ref=e7b]'];
+  const PAGE = (visit: string, iconNamed: boolean) => [...BASE,
+    `- paragraph "visit ${visit}" [ref=e9b]`,
+    iconNamed ? '- button "Toggle panel" [ref=e50]' : '- button [ref=e50]'].join('\n');
+  const HINT = { e50: 'Toggle panel' };
+  const visitEff = (seq: number, visit: string, hinted: boolean): StoredActionEffect => ({
+    seq, capturedAt: 0, fromUrl: `${B}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${B}/settings`, toSnapshot: PAGE(visit, hinted), navigated: true, diff: { added: [], removed: [] } as any,
+    ...(hinted ? { nameHints: HINT } : {}) });
+  const hasToggle = (effs: StoredActionEffect[]) => {
+    const st = draftFromEffects(effs as never).states.find((x) => x.label === 'settings')!;
+    return st.affordances.some((a) => /Toggle panel/.test(a.label));
+  };
+
+  it('drops the hint-only token when it is the MINORITY (1 hinted of 2 visits)', () => {
+    expect(hasToggle([visitEff(0, 'a', true), visitEff(1, 'b', false)])).toBe(false);
+  });
+
+  it('keeps the hint token when it is the MAJORITY (2 hinted of 3 visits)', () => {
+    expect(hasToggle([visitEff(0, 'a', true), visitEff(1, 'b', true), visitEff(2, 'c', false)])).toBe(true);
+  });
+});
+
 // ── fx-data-grid's row-link -> detail URL template: a title link (/items/:id) becomes the
 // list-to-detail navigate edge (A4 + A5, row 44/49's "home turf"). Verifies the edge kind and
 // that the destination merges under one /items/{param} template rather than one state per id.
