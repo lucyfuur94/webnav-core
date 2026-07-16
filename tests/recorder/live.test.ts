@@ -202,6 +202,12 @@ describe('armed-mode overlay', () => {
   });
 });
 
+describe('pointer dot', () => {
+  it('glides (200ms transition) so teleporting agent mouse reads in video', () => {
+    expect(INSTALLER_JS).toContain('left .2s ease-out');
+  });
+});
+
 describe('storage-denied pages never produce junk (false window-closed)', () => {
   it('DRAIN_JS and push are try/catch-safe in-page', () => {
     // about:blank (opaque origin) THROWS on sessionStorage access while the window

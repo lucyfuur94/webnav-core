@@ -267,6 +267,65 @@ it('Fix B companion: an unresolved same-page click with NO real DOM change stays
   expect(logs.some((l) => l.startsWith('skip: unresolved'))).toBe(true);
 });
 
+it('ledgers every drained event and stamps its fate', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('ledger-1');
+  const ledger: any[] = [];
+  const ledgeringStore = {
+    isActive: (s: string) => store.isActive(s),
+    appendActionEffect: (s: string, fx: any, nowMs?: number) => store.appendActionEffect(s, fx, nowMs),
+    start: (s: string) => store.start(s),
+    stop: (s: string) => store.stop(s),
+    appendEvent: (_s: string, ev: any) => { ledger.push({ ...ev, seq: ledger.length, disposition: null }); return ledger.length - 1; },
+    stampEvent: (_s: string, seq: number, d: string) => { ledger[seq].disposition = d; },
+  };
+  // resolvable nav click (Login) + an unresolvable same-page click with no visible change
+  const resolvedClick = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/',
+    tagName: 'button', leafText: 'Login' }]);
+  const unresolvedClick = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/inventory.html',
+    tagName: 'div' }]);   // no role, no leafText → never resolves
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: resolvedClick },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV, drain: unresolvedClick },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  let n = 0;
+  await runLiveRecord({ adapter, store: ledgeringStore, sessionId: 'ledger-1', intervalMs: 0,
+    log: () => {}, isStopped: () => ++n > 8, sleep: async () => {} });
+  expect(ledger).toHaveLength(2);
+  expect(ledger[0].source).toBe('human');
+  expect(ledger[0].kind).toBe('click');
+  expect(ledger[0].descriptor.leafText).toBeDefined();        // the LiveEvent IS the descriptor
+  expect(ledger[0].disposition).toMatch(/^step:\d+$/);
+  expect(ledger[1].disposition).toBe('dropped:unresolved-same-page');
+});
+
+it('does not ledger events drained while recording is off (armed)', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  // NOT started — armed loop keeps polling but must not ledger the drained click.
+  const ledger: any[] = [];
+  const ledgeringStore = {
+    isActive: (s: string) => store.isActive(s),
+    appendActionEffect: (s: string, fx: any, nowMs?: number) => store.appendActionEffect(s, fx, nowMs),
+    start: (s: string) => store.start(s),
+    stop: (s: string) => store.stop(s),
+    appendEvent: (_s: string, ev: any) => { ledger.push({ ...ev, seq: ledger.length, disposition: null }); return ledger.length - 1; },
+    stampEvent: (_s: string, seq: number, d: string) => { ledger[seq].disposition = d; },
+  };
+  const armedClick = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/', tagName: 'button', leafText: 'Login' }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: armedClick },
+    { url: 'https://s.test/', snap: LOGIN },
+  ]);
+  let n = 0;
+  await runLiveRecord({ adapter, store: ledgeringStore, sessionId: 'armed-ledger', intervalMs: 0, armed: true,
+    log: () => {}, isStopped: () => ++n > 6, sleep: async () => {} });
+  expect(ledger).toHaveLength(0);
+});
+
 it('window close → onEnd(closed) fires and the session is stopped (live #1/#2/#3)', async () => {
   const store = RecordStore.fromDatabase(new Database(':memory:'));
   store.start('end-1');   // recording

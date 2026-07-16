@@ -141,7 +141,7 @@ export const INSTALLER_JS = `() => {
       el = document.createElement('div');
       el.id = '__webnav_ptr';
       el.setAttribute('aria-hidden', 'true');
-      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .05s linear,top .05s linear;display:none;';
+      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .2s ease-out,top .2s ease-out;display:none;';
       (document.body || document.documentElement).appendChild(el);
     }
     return el;

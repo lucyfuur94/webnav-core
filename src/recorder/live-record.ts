@@ -20,7 +20,9 @@ import type { ActionEffect } from '../mapstore/record.js';
 export interface LiveRecordDeps {
   adapter: { evalJs(f: string, ref?: string): Promise<string>; snapshot(): Promise<string>;
     currentUrl(): Promise<string>; close(): Promise<unknown> };
-  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect, nowMs?: number): void;
+  store: { isActive(s: string): boolean; appendActionEffect(s: string, fx: ActionEffect, nowMs?: number): number | null;
+    appendEvent(s: string, ev: { t?: number; source: 'human' | 'agent'; kind: string; descriptor: Record<string, unknown> }): number | null;
+    stampEvent(s: string, seq: number, disposition: string): void;
     start(s: string): unknown; stop(s: string): void };
   sessionId: string; intervalMs: number;
   log: (line: string) => void; isStopped: () => boolean;
@@ -42,7 +44,7 @@ export interface LiveRecordDeps {
   armed?: boolean;
 }
 
-interface Pending { ev: LiveEvent; drainIdx: number; waits: number }
+interface Pending { ev: LiveEvent; drainIdx: number; waits: number; ledgerSeq: number | null }
 
 export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: number; ticks: number }> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -132,7 +134,12 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
       // processed them and logged 'recorded …' while the store silently no-opped —
       // the log claimed captures that never persisted (live confusion).
       if (!deps.store.isActive(deps.sessionId)) data = [];
-      for (const ev of data) pending.push({ ev, drainIdx: ticks.length, waits: 0 });
+      for (const ev of data) pending.push({
+        ev, drainIdx: ticks.length, waits: 0,
+        // ledger the raw event NOW — before pairing can lose it (spec 2026-07-16)
+        ledgerSeq: deps.store.appendEvent(deps.sessionId, {
+          t: ev.t, source: 'human', kind: ev.kind, descriptor: ev as unknown as Record<string, unknown> }),
+      });
       // (a toggle's visual flip already happened optimistically in-page; the next
       // tick's TICK_JS paint carries the server truth.)
 
@@ -173,7 +180,10 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           fromIdx = Math.min(p.drainIdx, ticks.length - 1);
         }
         pending.splice(i, 1);
-        if (fromIdx === -1) { deps.log(`skip: no from-page for seq ${p.ev.seq}`); continue; }
+        if (fromIdx === -1) {
+          if (p.ledgerSeq != null) deps.store.stampEvent(deps.sessionId, p.ledgerSeq, 'dropped:no-from-page');
+          deps.log(`skip: no from-page for seq ${p.ev.seq}`); continue;
+        }
 
         const res = resolveEvent(p.ev, parseSnapshot(ticks[fromIdx].snapshot));
         let ref: string | null = res && 'ref' in res ? res.ref : null;
@@ -206,7 +216,8 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
         }
         if (fx) {
           // stamp the step with when the human ACTED, not when this slow loop got to it
-          deps.store.appendActionEffect(deps.sessionId, fx, p.ev.t);
+          const stepSeq = deps.store.appendActionEffect(deps.sessionId, fx, p.ev.t);
+          if (p.ledgerSeq != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, p.ledgerSeq, 'step:' + stepSeq);
           appended++;
           deps.onEvent?.('step');
           const lag = p.ev.t && Date.now() - p.ev.t > 2000
@@ -214,7 +225,10 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           if (fx.action) deps.log(`recorded ${fx.navigated ? 'nav' : fx.action.role}: ${fx.action.name ?? fx.toUrl}${lag}`);
           else deps.log(`recorded unresolved same-page change (action:null): ${fx.toUrl}${lag}`);
         }
-        else deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
+        else {
+          if (p.ledgerSeq != null) deps.store.stampEvent(deps.sessionId, p.ledgerSeq, 'dropped:unresolved-same-page');
+          deps.log(`skip: unresolved same-page click seq ${p.ev.seq}`);
+        }
       }
       // A fresh document just got its badge+listener via this tick's install; tick
       // again immediately so the paint/queue gap after a navigation stays minimal.
