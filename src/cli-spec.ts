@@ -420,6 +420,17 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev verify --node www.saucedemo.com --session sd1',
   },
   {
+    name: 'hover-probe',
+    summary: 'Reveal the HOVER / RIGHT-CLICK repertoire of the page the --session browser is currently on — the mega-menus and context menus that live in NO settled snapshot and so are otherwise omitted from the map (gap X2). An OPT-IN pass over a LIVE recording session: it snapshots the page, picks STRUCTURAL candidates (nodes with aria-haspopup, menuitems, and named interactive nodes inside a banner/navigation landmark — judgment-free, capped at --limit), hovers each, diffs what appears, and appends a reveal ActionEffect (marked hover) to the recording for any candidate that exposed new nodes. REVEAL ONLY — it never clicks anything inside a revealed menu (commit rule). --right-click switches to right-click (context menus, marked rightClick). The session MUST be recording (start it and drive it to the page first) — a non-recording session is refused, never a silent no-op. status done = something revealed · empty = nothing revealed (exit 3). Run it, then re-draft (dev graph-analyse --draft) to pick up the new reveal affordances.',
+    args: [],
+    flags: [
+      { name: '--session', takesValue: true, description: 'A live recording session already ON the page to probe (from dev record-start, driven to the page).' },
+      { name: '--limit', takesValue: true, default: '12', description: 'Max candidates to probe (default 12).' },
+      { name: '--right-click', takesValue: false, description: 'Right-click (context menus) instead of hover (mega-menus). Marks the effect rightClick.' },
+    ],
+    example: 'webnav dev hover-probe --session sd1 --limit 8',
+  },
+  {
     name: 'profile-status',
     summary: 'Evidence-based "is this profile still logged in for this site?" check — call BEFORE walking/recording an authed site instead of guessing. Opens ONE headless session under --profile, loads the site\'s map homeUrl (or --url), settles the landing, and classifies it against the site\'s own map fingerprints (the oracle: matchState) — valid (landed + matched a known state) | needs-login (foreign-host wall, interstitial/bot-wall, or a declared password field — includes loginUrl) | unknown (no map yet / ambiguous landing). The session is always reaped after. Exit 0 in all three cases — needs-login is a normal, useful answer, not a failure.',
     args: [],

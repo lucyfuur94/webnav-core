@@ -21,6 +21,8 @@ export interface ActionRef {
                     // makes a recorded flow re-runnable with different values; secrets never captured
   hover?: boolean;  // this action was a HOVER (reveal-on-hover menus/tooltips), not a click/type —
                     // a same-page reveal; the diff shows what the hover exposed. Never navigates.
+  rightClick?: boolean;  // this action was a RIGHT-CLICK (context menus) — like hover, a same-page
+                    // reveal whose diff shows the exposed menu. Never navigates, never fires an item.
 }
 export interface ActionEffect {
   fromUrl: string; fromSnapshot: string;
