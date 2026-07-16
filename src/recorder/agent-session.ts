@@ -8,7 +8,7 @@
 //
 // Pure core: deps injected (adapter, store, io, notify, video) so it's unit-tested
 // with scripted stdin + a fake adapter — no real browser.
-import { runActionRecorded, parseEvalResult, settleSnapshot } from '../router/browse.js';
+import { runActionRecorded, parseEvalResult, settleSnapshot, probeLanding } from '../router/browse.js';
 import { diffSnapshots } from '../explorer/diff.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { INSTALLER_JS, MODE_JS } from './live.js';
@@ -135,11 +135,14 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
           const toSnapshot = await settleSnapshot(() => deps.adapter.snapshot());
           const toUrl = await deps.adapter.currentUrl();
+          // X6: probe the SETTLED landing's nameless icon controls (title/aria/tooltip) before
+          // appending — fires only when nameless interactive nodes exist. Best-effort.
+          const nameHints = await probeLanding(deps.adapter, toSnapshot).catch(() => undefined);
           if (deps.store.isActive(deps.sessionId)) {
             const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl: fromUrl || c.url, fromSnapshot, action: null,
               toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] },
-              requestedUrl: c.url,
+              requestedUrl: c.url, nameHints,
             });
             if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
             pendingLedger = null;

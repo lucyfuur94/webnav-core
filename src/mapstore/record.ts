@@ -29,6 +29,10 @@ export interface ActionEffect {
   navigated: boolean; diff: SnapshotDiff;
   requestedUrl?: string;  // the URL a navigate ASKED for, before settle — toUrl may differ
                          // (client-side redirect); Task 7 uses the gap to alias requestedKey→settledKey
+  nameHints?: Record<string, string>;  // ref → observed label for NAMELESS icon controls on the
+                         // LANDING (tooltip/aria/title read from the live DOM by the name-probe,
+                         // X6). Effect-level (bare navigations have action:null); draft's landing
+                         // intake applies these before the name gates. Observed evidence, never invented.
 }
 export interface StoredActionEffect extends ActionEffect { seq: number; capturedAt: number; }
 
@@ -71,7 +75,7 @@ export class RecordStore {
     const have = new Set(cols.map((c) => c.name));
     for (const [col, type] of [['from_url', 'TEXT'], ['from_snapshot', 'TEXT'], ['action', 'TEXT'],
       ['to_url', 'TEXT'], ['to_snapshot', 'TEXT'], ['navigated', 'INTEGER'], ['diff', 'TEXT'],
-      ['requested_url', 'TEXT']] as const) {
+      ['requested_url', 'TEXT'], ['name_hints', 'TEXT']] as const) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE record_observations ADD COLUMN ${col} ${type}`);
     }
     // start_url = the URL the operator ASKED to record at (not wherever an auth
@@ -195,13 +199,13 @@ export class RecordStore {
     this.db.prepare(
       `INSERT INTO record_observations
         (session_id,seq,url,fingerprint,declared_links,captured_at,
-         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff,requested_url)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff,requested_url,name_hints)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(sessionId, seq.c,
         fx.toUrl, '[]', '[]', nowMs,
         fx.fromUrl, fx.fromSnapshot, JSON.stringify(fx.action),
         fx.toUrl, fx.toSnapshot, fx.navigated ? 1 : 0, JSON.stringify(fx.diff),
-        fx.requestedUrl ?? null);
+        fx.requestedUrl ?? null, fx.nameHints ? JSON.stringify(fx.nameHints) : null);
     return seq.c as number;
   }
   /** Append one raw event to the session's ledger. isActive-gated like steps:
@@ -237,6 +241,7 @@ export class RecordStore {
       action: JSON.parse(r.action), toUrl: r.to_url, toSnapshot: r.to_snapshot,
       navigated: r.navigated === 1, diff: JSON.parse(r.diff),
       requestedUrl: r.requested_url ?? undefined,
+      nameHints: r.name_hints ? JSON.parse(r.name_hints) : undefined,
       seq: r.seq, capturedAt: r.captured_at,
     }));
   }

@@ -543,7 +543,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   const ready = (snap: string) => classifyReadiness(snap) === 'ready';
   const landingsByKey = new Map<string, SnapNode[][]>();
   const urlVotes = new Map<string, Map<string, number>>();   // key → settled landing URL → count
-  const pushLanding = (url: string, snap: string) => {
+  const pushLanding = (url: string, snap: string, nameHints?: Record<string, string>) => {
     if (!ready(snap)) return;
     // FOREIGN-HOST gate (Finding 7): a ready landing on another host is a blocked door — record
     // it once per host for needsFix and refuse it as a landing (no page → no state, no request,
@@ -551,7 +551,17 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     const h = host(url);
     if (mapHost && h && h !== mapHost) { if (!foreignHosts.has(h)) foreignHosts.set(h, url); return; }
     const k = key(url);
-    (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(parseSnapshot(snap));
+    const nodes = parseSnapshot(snap);
+    // X6: patch NAMELESS nodes with their observed name-probe hint (tooltip/aria/title read from
+    // the live DOM at capture) BEFORE the nodes flow into landingsByKey — the ONE seam, so all
+    // five downstream name gates see the observed name. A hint only fills an empty name; a node
+    // that already has a name is never touched.
+    if (nameHints) {
+      for (const n of nodes) {
+        if (n.ref && !(n.name ?? '').trim() && nameHints[n.ref]) n.name = nameHints[n.ref];
+      }
+    }
+    (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(nodes);
     const votes = urlVotes.get(k) ?? urlVotes.set(k, new Map()).get(k)!;
     votes.set(url, (votes.get(url) ?? 0) + 1);
   };
@@ -567,7 +577,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // through the same readiness-gated pushLanding path.
     const sessionStart = i === 0 || e.seq <= effects[i - 1].seq;
     if (sessionStart && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);
-    if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot);
+    // nameHints are captured on the SETTLED landing (toSnapshot) → only applied there.
+    if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot, e.nameHints);
   });
   // ── urlPattern per key (axis 1 settledness — live finding): "first observed URL wins" let
   // SESSION ORDERING store a pre-redirect GHOST as a state's urlPattern. An SPA landing can be

@@ -4,6 +4,7 @@ import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js'
 import { diffSnapshots, didNavigate } from '../explorer/diff.js';
 import { classifyReadiness } from './readiness.js';
 import { classifyAuthLanding } from './auth-status.js';
+import { namelessInteractive, probeNames } from '../recorder/probe.js';
 import type { RecordStore } from '../mapstore/record.js';
 import type { ActionRef } from '../mapstore/record.js';
 import type { State } from '../mapstore/types.js';
@@ -12,7 +13,7 @@ import type { State } from '../mapstore/types.js';
 // or a fake (for tests). Only the methods we use are required.
 export interface BrowseAdapter {
   open(url: string): Promise<string>;
-  evalJs?(func: string): Promise<string>;
+  evalJs?(func: string, ref?: string): Promise<string>;   // ref-scoped for the name-probe (X6)
   network?(): Promise<string>;
   goBack?(): Promise<string>;
   reload?(): Promise<string>;
@@ -101,6 +102,20 @@ export async function settleSnapshot(snap: () => Promise<string>, first?: string
   return s;
 }
 
+/** X6 landing name-probe: read tooltip/aria labels off the NAMELESS icon controls of a settled
+ *  landing. Returns undefined when the page is fully named (so nameHints stays absent — zero eval
+ *  cost on well-named pages). Best-effort: adapter with no evalJs (a bare fake) probes nothing. */
+export async function probeLanding(
+  adapter: { evalJs?(js: string, ref?: string): Promise<string> },
+  toSnapshot: string,
+): Promise<Record<string, string> | undefined> {
+  if (!adapter.evalJs) return undefined;
+  const nameless = namelessInteractive(parseSnapshot(toSnapshot));
+  if (nameless.length === 0) return undefined;
+  const hints = await probeNames({ evalJs: adapter.evalJs.bind(adapter) }, nameless);
+  return Object.keys(hints).length ? hints : undefined;
+}
+
 /** Capture + record the effect of a standalone `use navigate` (cli.ts routes here
  *  AFTER opening `url` on the adapter — caller owns the browser lifecycle and the
  *  session auto-start). Settles before reading, records requestedUrl = the url the
@@ -118,11 +133,12 @@ export async function recordNavigateEffect(
   });
   const toSnapshot = await settleSnapshot(() => adapter.snapshot!());
   const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
+  const nameHints = await probeLanding(adapter, toSnapshot);
   const stepSeq = recordStore.appendActionEffect(sessionId, {
     fromUrl: url, fromSnapshot: '', action: null,
     toUrl, toSnapshot, navigated: true,
     diff: diffSnapshots([], parseSnapshot(toSnapshot)),
-    requestedUrl: url,
+    requestedUrl: url, nameHints,
   });
   if (led != null) recordStore.stampEvent(sessionId, led, stepSeq != null ? 'step:' + stepSeq : 'dropped:not-recorded');
   return { toUrl, toSnapshot };
