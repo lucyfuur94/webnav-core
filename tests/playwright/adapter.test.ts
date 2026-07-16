@@ -118,3 +118,27 @@ describe('resolveProfile', () => {
     expect(resolveProfile('a b*x', '/root/p')).toBe('/root/p/a_b_x');                       // sanitized
   });
 });
+
+import { wireSessionName } from '../../src/playwright/adapter.js';
+
+describe('wireSessionName (macOS unix-socket 104-char cap)', () => {
+  it('leaves short names untouched', () => {
+    expect(wireSessionName('walk-1')).toBe('walk-1');
+    expect(wireSessionName('a'.repeat(16))).toBe('a'.repeat(16));
+  });
+  it('caps long names to exactly 16 chars, deterministically', () => {
+    const long = 'replay-report-builder';   // 21 chars — the live crash name
+    const capped = wireSessionName(long);
+    expect(capped).toHaveLength(16);
+    expect(capped.startsWith('replay-re')).toBe(true);   // readable head survives
+    expect(wireSessionName(long)).toBe(capped);           // same input → same wire name
+    expect(wireSessionName(long + 'x')).not.toBe(capped); // distinct inputs stay distinct
+    expect(capped).toMatch(/^[\w.-]+$/);                  // stays a valid session name
+  });
+  it('adapter puts the capped name on the wire', async () => {
+    const calls: string[][] = [];
+    const a = new PlaywrightAdapter('replay-report-builder', async (args) => { calls.push(args); return 'ok'; });
+    await a.click('e1');
+    expect(calls[0][0]).toBe('-s=' + wireSessionName('replay-report-builder'));
+  });
+});
