@@ -4,7 +4,7 @@ import { COMMANDS, VERSION } from '../src/cli-spec.js';
 describe('COMMANDS registry', () => {
   it('has all the registered verbs', () => {
     const names = COMMANDS.map((c) => c.name).sort();
-    expect(names).toEqual(['capture', 'capture-loop', 'click', 'close', 'creds', 'dashboard', 'edge-add', 'effects', 'eval', 'export-map', 'frontier', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'import-map', 'ingest', 'list', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'node-clear', 'node-rm', 'outline', 'pattern-propose', 'profile-status', 'read', 'record-live', 'record-rename', 'record-start', 'record-stop', 'reload', 'review', 'search', 'session', 'sessions', 'snapshot', 'test', 'type', 'verify', 'walk', 'walk-resume']);
+    expect(names).toEqual(['capture', 'capture-loop', 'click', 'close', 'creds', 'dashboard', 'edge-add', 'effects', 'eval', 'export-map', 'frontier', 'go-back', 'graph-analyse', 'graph-edit', 'graph-show', 'hover-probe', 'import-map', 'ingest', 'list', 'login', 'mcp', 'mermaid', 'navigate', 'network', 'node-add', 'node-clear', 'node-rm', 'outline', 'pattern-propose', 'profile-status', 'read', 'record-live', 'record-rename', 'record-start', 'record-stop', 'reload', 'review', 'search', 'session', 'sessions', 'snapshot', 'test', 'type', 'verify', 'walk', 'walk-resume']);
   });
 
   it('outline has a summary and an example', () => {

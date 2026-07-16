@@ -49,6 +49,7 @@ export type ParsedArgs =
   | { cmd: 'review'; session: string; model: string; instructions?: string }
   | { cmd: 'capture-loop'; objective: string; exploreCmd: string; sessionPrefix: string; maxRounds: number; model: string }
   | { cmd: 'verify'; node: string; session: string }
+  | { cmd: 'hover-probe'; session: string; limit: number; rightClick: boolean }
   | { cmd: 'profile-status'; profile: string; site: string; url?: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
@@ -215,6 +216,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'review') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', model: flagValue(rest, '--model') ?? 'sonnet', instructions: flagValue(rest, '--instructions') };
   if (cmd === 'capture-loop') return { cmd, objective: flagValue(rest, '--objective') ?? '', exploreCmd: flagValue(rest, '--explore-cmd') ?? '', sessionPrefix: flagValue(rest, '--session-prefix') ?? 'cl', maxRounds: Number(flagValue(rest, '--max-rounds') ?? 5), model: flagValue(rest, '--model') ?? 'sonnet' };
   if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'hover-probe') return { cmd, session: flagValue(rest, '--session') ?? '', limit: Number(flagValue(rest, '--limit') ?? 12), rightClick: rest.includes('--right-click') };
   if (cmd === 'profile-status') {
     return { cmd, profile: flagValue(rest, '--profile') ?? '', site: flagValue(rest, '--site') ?? '', url: flagValue(rest, '--url') };
   }
@@ -826,6 +828,34 @@ async function main() {
     const allUnique = checks.every((c) => c.unique);
     console.log(JSON.stringify({ status: allUnique ? 'done' : 'non-unique', node: args.node, state: state.id, affordances: checks }, null, 2));
     if (!allUnique) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'hover-probe') {
+    // X2 (spec 2026-07-16 §2): an OPT-IN pass over the CURRENT page of a LIVE recording
+    // session. Hover (or --right-click) each structural candidate, diff the reveal, and
+    // append a reveal ActionEffect to the same recording. Attaches by session name (the
+    // `dev verify --session` shape) and appends like the agent-session loop.
+    if (!args.session) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev hover-probe --session <S> [--limit N] [--right-click]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { runHoverProbe } = await import('./recorder/hover-probe.js');
+    const store = new RecordStore(dbPath());
+    // The probe WRITES effects; a session that isn't recording would silently drop them
+    // (appendEvent/appendActionEffect are isActive-gated). That's dishonest, so refuse.
+    if (!store.isActive(args.session)) {
+      console.log(JSON.stringify({ status: 'error', session: args.session, hint: `session '${args.session}' is not recording — start it with 'dev record-start --session ${args.session}' and drive it to the page first` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const adapter = new PlaywrightAdapter(args.session);
+    const { probed, revealed } = await runHoverProbe({
+      adapter, store, sessionId: args.session, limit: args.limit, rightClick: args.rightClick,
+      log: (l) => process.stderr.write(l + '\n'),
+    });
+    console.log(JSON.stringify({ status: revealed ? 'done' : 'empty', session: args.session, probed, revealed }, null, 2));
+    if (revealed === 0) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'profile-status') {
