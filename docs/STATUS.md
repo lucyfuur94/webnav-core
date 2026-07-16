@@ -2,9 +2,29 @@
 
 > **NEXT SESSION: start from `docs/superpowers/specs/2026-07-13-usage-first-capture-roadmap.md`** — the agreed strategy (usage-first mapping, fidelity-before-volume) + the prioritized build queue.
 
-**Updated:** 2026-07-16 · **Branch:** `main` (ledger-replay merged) · **Tests:** 939 unit pass + 7 skip (live e2e) · **Build:** green
+**Updated:** 2026-07-16 · **Branch:** `sensor-gaps` (off `main`, ledger-replay merged) · **Tests:** 975 unit pass + 7 skip (live e2e) · **Build:** green
 
-> **2026-07-16 (latest) — raw-event LEDGER + two-mode replay shipped; both dashboard replay crashes fixed.**
+> **2026-07-16 (latest) — sensor-gaps increment: X6 landing name-probe + X2 hover-probe + per-landing structure audit; matrix verdicts updated.**
+> Per `2026-07-12-structure-coverage-matrix.md`'s GAPS table (Phase 1 future-proof program). Closes two of the
+> ranked gaps and audits five more against current code: **X6** (unnamed icon-only controls) — `probeLanding()`
+> probes a settled landing's nameless interactive nodes, threading hints through `ActionEffect.nameHints` into
+> `recordNavigateEffect` and the agent-session navigate branch; `draftFromEffects`'s `pushLanding` patches nameless
+> nodes with the hint before any name-gate runs. Closed on the **agent recording path only** — the human tick loop
+> deliberately skips the probe (per-eval latency cost), left honestly deferred. **X2** (hover-/right-click-only
+> affordances) — new opt-in `dev hover-probe --session <S> [--right-click]` verb: attaches to a live recording
+> session, hovers/right-clicks structural candidates (haspopup nodes, menuitems, named interactive nodes under
+> banner/navigation landmarks), diffs the reveal, appends a reveal ActionEffect the draft already turns into an
+> affordance — reveal-only, never fires a menu item; an unprobed recording still honestly omits (no regression).
+> **Structure audit** (`dev review`) now prints a per-landing summary so nameless-control gaps are measurable
+> instead of anecdotal; landing structure keeps the worst-observed visit per page (fixed a review pass that
+> silently preferred a better-observed later visit). **Gap audit against current code** (five other ranked gaps,
+> none touched this increment): X3 (main-landmark identity scoping), X4 (guarded-redirect aliasing), X5
+> (container-scoped folding for nested value domains — has a `ponytail:` follow-up comment marking it), X7
+> (structural settledness for live regions), X8 (baseline-presence precedence for overlay roles) all remain OPEN;
+> full evidence in the matrix's GAPS table. Full audit + before/after matrix diff in
+> `.superpowers/sdd/task-5-report.md`. Suite 975 pass / 7 skip, `tsc --noEmit` clean. Docs-only; no source touched.
+
+> **2026-07-16 — raw-event LEDGER + two-mode replay shipped; both dashboard replay crashes fixed.**
 > Per `2026-07-16-raw-event-ledger-replay-design.md` + plan `2026-07-16-raw-event-ledger-replay.md` (14 commits,
 > subagent-driven, per-task review + final whole-branch review, E2E-verified live headless on saucedemo).
 > **Ledger:** every captured event now persists to a new `record_events` table (append-only sibling — assembly/
