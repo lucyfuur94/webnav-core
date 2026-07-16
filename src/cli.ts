@@ -1539,6 +1539,7 @@ async function main() {
         activeCtl = ctl;
         const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
         void runReplay(effects, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
+          .catch(() => { /* engine already recorded state.error; never let this reject */ })
           .finally(() => { busy = null; });
         return { ok: true as const };
       },

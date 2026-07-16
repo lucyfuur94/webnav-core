@@ -192,10 +192,16 @@ export async function runReplay(
       }
       step.status = 'ok';
     }
+  } catch (e) {
+    // Engine failure (browser would not open, adapter died mid-run): resolve with a
+    // terminal error state — a REJECTED replay promise killed the whole dashboard
+    // process once (unhandled rejection; live crash 2026-07-15). Never rethrow.
+    st.error = String((e as Error).message ?? e);
+    skipRest(0);
   } finally {
     st.done = true;
     st.running = false;
-    await deps.adapter.close();
+    await deps.adapter.close().catch(() => {});   // close on a never-opened session throws too
   }
   return st;
 }
