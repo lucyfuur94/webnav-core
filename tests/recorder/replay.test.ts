@@ -129,3 +129,25 @@ it('recorded value = the flow variable: fills without pausing when no cred overr
   expect(st.steps[0].status).toBe('ok');
   expect(fills).toEqual(['standard_user']);   // recorded variable replayed, no waitFor pause
 });
+
+it('resolves with error state when the browser cannot open — never rejects', async () => {
+  const ctl = new ReplayController('s', [{ seq: 0, label: 'Login' }]);
+  const adapter = {
+    open: async () => { throw new Error('listen EINVAL bad.sock'); },
+    goto: async () => {}, click: async () => {}, fill: async () => {},
+    snapshot: async () => '', currentUrl: async () => '',
+    screenshot: async () => null,
+    close: async () => { throw new Error('no session'); },   // close ALSO throws (never opened)
+  };
+  const effects = [{ seq: 0, capturedAt: 1, fromUrl: 'https://x.com/', fromSnapshot: '',
+    action: { role: 'button', name: 'Login', ref: 'e1' },
+    toUrl: 'https://x.com/a', toSnapshot: '', navigated: true, diff: { added: [], removed: [] } }];
+  const st = await runReplay(effects as never, ctl, {
+    adapter, creds: { get: () => ({}), set: () => {} }, site: 'x.com', shotsDir: null,
+    sleep: async () => {},
+  });
+  expect(st.done).toBe(true);
+  expect(st.running).toBe(false);
+  expect(st.error).toContain('EINVAL');
+  expect(st.steps[0].status).toBe('skipped');   // never ran — honest terminal state
+});
