@@ -1,6 +1,7 @@
 import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
 import type { BrowserOpts } from './playwright/adapter.js';
+import { wireSessionName } from './playwright/adapter.js';
 import type { RecordingsDeps } from './dashboard/server.js';
 import type { State } from './mapstore/types.js';
 import { dbPath } from './paths.js';
@@ -1308,7 +1309,7 @@ async function main() {
               if (reason === 'closed') {
                 setTimeout(() => { try {
                   if (daemonPid !== undefined && execSync('ps -axo ppid=,comm= | awk \'$1==' + daemonPid + '\'', { encoding: 'utf8' }).toLowerCase().includes('chrom')) {
-                    execSync('pkill -f ' + JSON.stringify('-s=' + session));
+                    execSync('pkill -f ' + JSON.stringify('-s=' + wireSessionName(session)));
                   }
                 } catch { /* gone */ } }, 1500);
               }
