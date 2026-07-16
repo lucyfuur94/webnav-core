@@ -3,6 +3,7 @@ import { readdirSync, statSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { wireSessionName } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -165,7 +166,7 @@ function pidAlive(pid: number): boolean {
  * session is gone after.
  */
 export async function closeSession(name: string, pid?: number): Promise<boolean> {
-  try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); }
+  try { await execFileAsync('playwright-cli', [`-s=${wireSessionName(name)}`, 'close'], { maxBuffer: 1024 * 1024 }); }
   catch { /* graceful close failed; fall through to force-kill if we have a pid */ }
   if (pid === undefined) { removeSessionFiles(name); return true; }   // orphan: unlink the stale file
   if (!pidAlive(pid)) { removeSessionFiles(name); return true; }      // graceful close worked

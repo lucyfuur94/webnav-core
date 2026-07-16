@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor, pidFromPs, sessionNameFromPs, removeSessionFiles } from '../../src/playwright/sessions.js';
+import { wireSessionName } from '../../src/playwright/adapter.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
 // `ps -eo pid,command` style: leading PID, then the command (the daemon-session path).
@@ -151,10 +152,34 @@ describe('ttlSweepOpts (env → reap opts)', () => {
   });
 });
 
-import { closeByName } from '../../src/playwright/sessions.js';
+import { closeByName, closeSession } from '../../src/playwright/sessions.js';
 describe('closeByName', () => {
   it('is exported and callable (returns a boolean for a non-existent session)', async () => {
     const r = await closeByName('definitely-not-a-real-session-xyz');
     expect(typeof r).toBe('boolean');   // no throw; graceful path for orphan/missing
+  });
+});
+
+// closeSession's graceful-close shells out via execFile — mock node:child_process (no
+// injectable RunFn seam here, unlike PlaywrightAdapter) to assert the WIRE name (capped,
+// same as the daemon actually launched with) reaches `-s=`, not the raw long name.
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, execFile: (...args: unknown[]) => {
+    const cb = args[args.length - 1] as (err: Error | null, r: { stdout: string; stderr: string }) => void;
+    execFileCalls.push(args.slice(0, -1) as [string, string[]]);
+    cb(null, { stdout: '', stderr: '' });
+  } };
+});
+const execFileCalls: [string, string[]][] = [];
+
+describe('closeSession (long session name)', () => {
+  it('closes using the capped WIRE name, not the raw long name', async () => {
+    execFileCalls.length = 0;
+    const long = 'replay-report-builder';
+    await closeSession(long);
+    const [, args] = execFileCalls[0];
+    expect(args).toContain('-s=' + wireSessionName(long));
+    expect(args).not.toContain('-s=' + long);
   });
 });

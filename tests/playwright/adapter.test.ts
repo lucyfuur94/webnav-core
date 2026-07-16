@@ -141,4 +141,10 @@ describe('wireSessionName (macOS unix-socket 104-char cap)', () => {
     await a.click('e1');
     expect(calls[0][0]).toBe('-s=' + wireSessionName('replay-report-builder'));
   });
+  it('sanitizes non-wire characters in the head slice before capping', () => {
+    const capped = wireSessionName('weird name that is long!!');
+    expect(capped).toHaveLength(16);
+    expect(capped).toMatch(/^[\w.-]+$/);
+    expect(wireSessionName('weird name that is long!!')).toBe(capped);   // deterministic
+  });
 });

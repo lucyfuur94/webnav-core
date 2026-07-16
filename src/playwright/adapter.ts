@@ -39,11 +39,13 @@ const defaultRun: RunFn = async (args) => {
 // so reattach through this adapter keeps working; names ≤16 are untouched (every seed/
 // walk/record name in use today).
 const WIRE_MAX = 16;
+// djb2 xor variant — cheap, deterministic, good-enough spread for a 6-hex-digit tag.
 export function wireSessionName(name: string): string {
   if (name.length <= WIRE_MAX) return name;
   let h = 5381;
   for (let i = 0; i < name.length; i++) h = ((h * 33) ^ name.charCodeAt(i)) >>> 0;
-  return name.slice(0, 9) + '-' + h.toString(16).padStart(6, '0').slice(0, 6);
+  const head = name.slice(0, 9).replace(/[^\w.-]/g, '_');
+  return head + '-' + h.toString(16).padStart(6, '0').slice(0, 6);
 }
 
 export class PlaywrightAdapter {
