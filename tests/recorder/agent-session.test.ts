@@ -238,6 +238,88 @@ describe('NAME_PROBE_JS (source contract)', () => {
   });
 });
 
+describe('agent ledger', () => {
+  it('ledgers each action command with its fate; snapshot/eval add nothing; type stores no text', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('lg1');
+    const ad = fakeAdapter();
+    ad.currentUrl = async () => 'https://x.com/target';
+    ad.goto = async (u: string) => { ad.calls.push('goto:' + u); (ad as any)._url = u; };
+    const io = driver([
+      '{"cmd":"navigate","url":"https://x.com/target"}',
+      '{"cmd":"click","ref":"e1"}',
+      '{"cmd":"type","ref":"e3","text":"hunter2"}',
+      '{"cmd":"snapshot"}',
+      '{"cmd":"quit"}',
+    ]);
+    await runAgentSession({
+      sessionId: 'lg1', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'textbox', name: 'Field', ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null,
+      startUrl: 'https://x.com/',
+    });
+    const ledger = store.events('lg1');
+    expect(ledger.map((l) => l.kind)).toEqual(['navigate', 'click', 'type']);
+    expect(ledger[0].source).toBe('agent');
+    expect(ledger[0].descriptor.url).toBe('https://x.com/target');
+    for (const l of ledger) expect(l.disposition).toMatch(/^step:\d+$/);
+    expect(JSON.stringify(ledger[2].descriptor)).not.toContain('hunter2');
+  });
+
+  it('stamps dropped:failed when the action errors', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('lg2');
+    const ad = fakeAdapter();
+    ad.act = async () => { throw new Error('stale ref boom'); };
+    const io = driver(['{"cmd":"click","ref":"e5"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'lg2', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'button', name: 'Login', ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null,
+      startUrl: 'https://s.test/',
+    });
+    const ledger = store.events('lg2');
+    const click = ledger.find((l) => l.kind === 'click');
+    expect(click?.disposition).toMatch(/^dropped:failed:/);
+  });
+
+  it('hover ledgers with fate; navigate error drops the pending row', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('lg3');
+    const ad = fakeAdapter();
+    const io = driver(['{"cmd":"hover","ref":"e5"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'lg3', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: 'button', name: 'Menu', ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    const ledger = store.events('lg3');
+    expect(ledger.map((l) => l.kind)).toEqual(['hover']);
+    expect(ledger[0].disposition).toMatch(/^step:\d+$/);
+    expect(ledger[0].descriptor).toMatchObject({ cmd: 'hover', ref: 'e5', role: 'button', name: 'Menu' });
+  });
+
+  it('navigate error stamps dropped:failed on the pending ledger row', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('lg4');
+    const ad = fakeAdapter();
+    ad.goto = async () => { throw new Error('nav exploded'); };
+    const io = driver(['{"cmd":"navigate","url":"https://s.test/next"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'lg4', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: '', name: null, ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    const ledger = store.events('lg4');
+    expect(ledger.map((l) => l.kind)).toEqual(['navigate']);
+    expect(ledger[0].disposition).toMatch(/^dropped:failed:/);
+  });
+});
+
 describe('enrichName', () => {
   it('keeps the recovered accessible name when present', () => {
     expect(enrichName('Login', 'ignored')).toBe('Login');
