@@ -41,15 +41,22 @@ describe('landingStructure', () => {
     expect(s).toEqual([{ url: 'https://x.com/a', named: 1, nameless: 2 }]);
   });
 
-  it('dedupes landings that share host+pathname (query/hash differ)', () => {
-    const snapA = 'button "A" [ref=e1]';
-    const snapB = ['button "A" [ref=e1]', 'button [ref=e2]'].join('\n');
-    const s = landingStructure([
-      eff('https://x.com/list?page=1', snapA),
-      eff('https://x.com/list?page=2#frag', snapB),
+  it('dedupes landings that share host+pathname (query/hash differ), keeping the WORST-observed visit', () => {
+    const worse = ['button [ref=e1]', 'button [ref=e2]', 'button [ref=e3]', 'button [ref=e4]', 'button [ref=e5]',
+      'button "N1" [ref=e6]', 'button "N2" [ref=e7]'].join('\n');   // nameless:5 named:2
+    const better = ['button "N1" [ref=e1]', 'button "N2" [ref=e2]', 'button "N3" [ref=e3]', 'button "N4" [ref=e4]',
+      'button "N5" [ref=e5]', 'button "N6" [ref=e6]', 'button "N7" [ref=e7]'].join('\n');   // nameless:0 named:7
+    const worseThenBetter = landingStructure([
+      eff('https://x.com/list?page=1', worse),
+      eff('https://x.com/list?page=2#frag', better),
     ]);
-    // same host+pathname → one landing; counts + reported url come from the LAST-seen snapshot for that key
-    expect(s).toEqual([{ url: 'https://x.com/list?page=2#frag', named: 1, nameless: 1 }]);
+    expect(worseThenBetter).toEqual([{ url: 'https://x.com/list?page=1', named: 2, nameless: 5 }]);
+
+    const betterThenWorse = landingStructure([
+      eff('https://x.com/list?page=2#frag', better),
+      eff('https://x.com/list?page=1', worse),
+    ]);
+    expect(betterThenWorse).toEqual([{ url: 'https://x.com/list?page=1', named: 2, nameless: 5 }]);
   });
 
   it('distinct pathnames stay distinct landings', () => {
