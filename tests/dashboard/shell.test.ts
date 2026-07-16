@@ -215,3 +215,13 @@ it('widget-scoped affordances get a "widget" chip, mirroring the row-scoped "per
   expect(SHELL_HTML).toContain('per row');
   expect(SHELL_HTML).toContain('widgetScoped(st, x)');
 });
+
+it('session detail has a Ledger sub-tab before Logs, and two replay modes', () => {
+  const tabs = SHELL_HTML.indexOf('data-sub="ledger"');
+  expect(tabs).toBeGreaterThan(-1);
+  expect(tabs).toBeLessThan(SHELL_HTML.indexOf('data-sub="logs"'));   // placed BEFORE Logs
+  expect(SHELL_HTML).toContain('/events');                            // ledger fetch
+  expect(SHELL_HTML).toContain('Replay exact');                       // ledger-mode button
+  expect(SHELL_HTML).toContain("mode: 'ledger'");
+  expect(SHELL_HTML).toContain('recorded before the ledger existed'); // honest empty state
+});

@@ -975,7 +975,9 @@ function buildHead(ctx) {
   const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid var(--ok);color:var(--ok);border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
   const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong>'+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
-  const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
+  const repB = btn('▶ Replay'), repXB = btn('▶ Replay exact'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
+  repB.title = 'Replays the cleaned-up route. Finds each element again even if the page changed. Best for repeatable automation.';
+  repXB.title = 'Replays exactly what was done, event by event, nothing skipped. Best for exact reruns and for checking the recording caught everything.';
   // Open window and Record are SEPARATE intents here (live feedback): the window
   // opens ARMED; Record activates once the window exists.
   const openB = btn(hasWindow ? '🪟 window open' : (r.hasProfile ? '\\uD83D\\uDD10 Open (' + r.profile + ')' : 'Open window'));
@@ -1020,13 +1022,17 @@ function buildHead(ctx) {
     ctx.stepsBox.innerHTML = ''; setSubTab(ctx, 'steps');
     ctx.stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>'));
   };
-  repB.onclick = async () => {
-    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay', { method:'POST' });
+  // Two replay modes: 'steps' (the cleaned-up route) and 'ledger' (event-by-event, exact).
+  const startReplay = async (mode) => {
+    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay',
+      { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode: mode }) });
     if (!res.ok) { toast((await res.json()).error); return; }
     setSubTab(ctx, 'steps');
     pollReplay(ctx.stepsBox, r.sessionId);
   };
-  head.append(openB, recB, repB, anB, delB);
+  repB.onclick = () => startReplay('steps');
+  repXB.onclick = () => startReplay('ledger');   // exact replay — body carries mode: 'ledger'
+  head.append(openB, recB, repB, repXB, anB, delB);
   ctx.headBox.append(head);
 }
 
@@ -1041,6 +1047,33 @@ async function loadSteps(ctx) {
   ctx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' })), ctx.r.sessionId));
 }
 
+// --- Ledger sub-tab: the RAW event record with each event's fate. This is the
+// deterministic capture-coverage view (events → steps); drops are assembly losses.
+async function loadLedger(ctx) {
+  let d = null;
+  try { d = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/events'); } catch { return; }
+  ctx.ledgerBox.innerHTML = '';
+  if (!d || !d.events || !d.events.length) {
+    ctx.ledgerBox.append(el('<div class="muted" style="margin:8px 0">No ledger — this session was recorded before the ledger existed. Steps replay still works.</div>'));
+    return;
+  }
+  const c = d.coverage;
+  ctx.ledgerBox.append(el('<div style="margin:8px 0">'+c.total+' events \\u2192 '+c.captured+' steps'
+    + (c.dropped.length ? ' \\u00B7 <span style="color:var(--rec);font-weight:600">'+c.dropped.length+' dropped</span>' : ' \\u00B7 all captured')+'</div>'));
+  const rows = d.events.map(e => {
+    const desc = e.descriptor || {};
+    const label = desc.name || desc.ariaLabel || desc.leafText || desc.placeholder || '';
+    // fate uses the same positive-state color the Steps table's ✓ and the Review ok badge use (var(--ok));
+    // a drop reason is flagged in var(--rec) like the "dropped" summary; a null disposition is muted.
+    const fate = !e.disposition ? '<span class="muted">unprocessed</span>'
+      : e.disposition.indexOf('step:') === 0 ? '<span style="color:var(--ok);font-weight:600">step '+esc(e.disposition.slice(5))+'</span>'
+      : '<span style="color:var(--rec)">'+esc(e.disposition.replace('dropped:',''))+'</span>';
+    const t = e.t ? new Date(e.t).toLocaleTimeString() : '';
+    return '<tr><td class="muted">'+e.seq+'</td><td>'+esc(t)+'</td><td>'+esc(e.source)+'</td><td>'+esc(e.kind)+'</td><td>'+esc(String(label))+'</td><td>'+fate+'</td></tr>';
+  }).join('');
+  ctx.ledgerBox.append(el('<table><tr><th>#</th><th>time</th><th>src</th><th>kind</th><th>label</th><th>fate</th></tr>'+rows+'</table>'));
+}
+
 function setSubTab(ctx, name) {
   ctx.subTab = name;
   ctx.tabsBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.sub === name));
@@ -1048,10 +1081,12 @@ function setSubTab(ctx, name) {
   ctx.logsBox.style.display = name === 'logs' ? '' : 'none';
   ctx.videosBox.style.display = name === 'videos' ? '' : 'none';
   ctx.reviewBox.style.display = name === 'review' ? '' : 'none';
+  ctx.ledgerBox.style.display = name === 'ledger' ? '' : 'none';
   if (name === 'steps') loadSteps(ctx);   // refetch — steps landed while you were on Logs (live bug: stale view)
   if (name === 'logs') loadLogs(ctx);
   if (name === 'videos') loadVideos(ctx);
   if (name === 'review') loadReview(ctx);
+  if (name === 'ledger') loadLedger(ctx);
 }
 
 // Minimal markdown → HTML for the review report (esc() runs FIRST, so this only
@@ -1164,17 +1199,18 @@ async function showRecording(r, detail) {
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
   const headBox = el('<div style="margin-bottom:10px"></div>');
-  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button><button data-sub="logs">Logs</button></nav>');
+  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button><button data-sub="ledger">Ledger</button><button data-sub="logs">Logs</button></nav>');
   const stepsBox = el('<div></div>');
   const logsBox = el('<div style="display:none"></div>');
   const videosBox = el('<div style="display:none"></div>');
   const reviewBox = el('<div style="display:none"></div>');
-  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
+  const ledgerBox = el('<div style="display:none"></div>');
+  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox, ledgerBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
   detailCtx = ctx;
   tabsBar.querySelectorAll('button').forEach(b => { b.onclick = () => setSubTab(ctx, b.dataset.sub); });
   buildHead(ctx);
   stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
-  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox);
+  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox, ledgerBox);
 }
 
 // --- Logs sub-tab: continuous stream + freshness ping ---
