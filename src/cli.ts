@@ -770,12 +770,16 @@ async function main() {
         return fresh.actionEffects(session).length ? session : null;
       },
       review: async (session) => {
-        const steps = new RecordStore(dbPath()).actionEffects(session).map((e) => ({
+        const fresh = new RecordStore(dbPath());
+        const steps = fresh.actionEffects(session).map((e) => ({
           seq: e.seq, kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
           label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
         }));
+        const { coverage } = await import('./recorder/coverage.js');
+        const cov = coverage(fresh.events(session));
         const res = await runSessionReview(session, { videosDir: join(videosRoot, session), outDir: join(reviewsRoot, session),
-          steps, logs: [], log: (l) => process.stderr.write(l + '\n'), claudeModel: args.model, structured: true });
+          steps, logs: [], log: (l) => process.stderr.write(l + '\n'), claudeModel: args.model, structured: true,
+          knownDrops: cov.dropped, coverage: cov });
         return typeof res === 'string' ? [] : res.gaps;
       },
     });

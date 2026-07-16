@@ -21,4 +21,8 @@ describe('coverage', () => {
   it('empty ledger → zero coverage, no drops', () => {
     expect(coverage([])).toEqual({ total: 0, captured: 0, dropped: [] });
   });
+  it('skips empty-string label candidates, falls through to the next non-empty one', () => {
+    const c = coverage([ev(0, 'dropped:unresolved-same-page', { ariaLabel: '', leafText: 'X' })]);
+    expect(c.dropped[0].label).toBe('X');
+  });
 });
