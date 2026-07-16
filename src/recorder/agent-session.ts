@@ -37,6 +37,11 @@ export interface AgentSessionCmd {
 // attribute differently (title/aria-label, data-tooltip, data-tooltip-content [react-
 // tooltip], data-title, data-original-title [bootstrap]).
 export const NAME_PROBE_JS = `(el) => {
+  // Defense in depth: even if a page's a11y snapshot exposes our own REC-overlay
+  // pill (a focusable element inside an aria-hidden container isn't reliably
+  // suppressed), never let the probe mint a name for it — that could mint a
+  // bogus overlay affordance into the map (wrong-map class).
+  if (el.closest && el.closest('#__webnav_rec_badge')) return '';
   const ATTRS = ['aria-label','title','data-tooltip-content','data-tooltip','data-title','data-original-title','data-tip','aria-description'];
   const g = (n) => { if (!n || !n.getAttribute) return ''; for (const a of ATTRS) { const v = n.getAttribute(a); if (v && v.trim()) return v.trim(); } return ''; };
   let s = g(el);
