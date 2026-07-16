@@ -15,7 +15,8 @@ export function coverage(events: StoredLedgerEvent[]): Coverage {
     const d = e.disposition ?? 'dropped:unprocessed';   // never stamped = lost mid-pair
     if (d.startsWith('step:')) { captured++; continue; }
     const desc = e.descriptor as Record<string, unknown>;
-    const label = (desc.ariaLabel ?? desc.leafText ?? desc.name ?? desc.placeholder ?? null) as string | null;
+    const candidates = [desc.ariaLabel, desc.leafText, desc.name, desc.placeholder];
+    const label = (candidates.find((c) => typeof c === 'string' && c.trim() !== '') ?? null) as string | null;
     dropped.push({ seq: e.seq, kind: e.kind, label, reason: d.replace(/^dropped:/, '') });
   }
   return { total: events.length, captured, dropped };
