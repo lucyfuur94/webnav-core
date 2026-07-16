@@ -38,6 +38,18 @@ describe('buildReviewPrompt', () => {
     expect(p).toContain('ASSEMBLY DROPS (already known');
     expect(p).toContain('Chart type');
   });
+  it('prompt includes a LANDING STRUCTURE section when structure is passed', () => {
+    const p = buildReviewPrompt('s', [], [], [], undefined, false, undefined,
+      [{ url: 'https://x.com/a', named: 3, nameless: 5 }]);
+    expect(p).toContain('LANDING STRUCTURE (named vs NAMELESS interactive controls per page — many nameless controls = a sensor gap; compare against what the frames show)');
+    expect(p).toContain('https://x.com/a');
+    expect(p).toContain('named: 3');
+    expect(p).toContain('nameless: 5');
+  });
+  it('omits the section entirely when no structure is passed', () => {
+    const p = buildReviewPrompt('s', [], [], []);
+    expect(p).not.toContain('LANDING STRUCTURE');
+  });
 });
 
 
