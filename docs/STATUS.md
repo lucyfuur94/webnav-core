@@ -2,9 +2,32 @@
 
 > **NEXT SESSION: start from `docs/superpowers/specs/2026-07-13-usage-first-capture-roadmap.md`** — the agreed strategy (usage-first mapping, fidelity-before-volume) + the prioritized build queue.
 
-**Updated:** 2026-07-11 · **Branch:** `worktree-subtree-templates` (merging to `main`) · **Tests:** 717 unit pass + 7 skip (live e2e) · **Build:** green
+**Updated:** 2026-07-16 · **Branch:** `main` (ledger-replay merged) · **Tests:** 939 unit pass + 7 skip (live e2e) · **Build:** green
 
-> **2026-07-11 (latest) — subtree-template induction shipped: repetition principle now covers the LAST scale (subtree).**
+> **2026-07-16 (latest) — raw-event LEDGER + two-mode replay shipped; both dashboard replay crashes fixed.**
+> Per `2026-07-16-raw-event-ledger-replay-design.md` + plan `2026-07-16-raw-event-ledger-replay.md` (14 commits,
+> subagent-driven, per-task review + final whole-branch review, E2E-verified live headless on saucedemo).
+> **Ledger:** every captured event now persists to a new `record_events` table (append-only sibling — assembly/
+> pairing untouched) with a DISPOSITION stamp (`step:<n>` / `dropped:<reason>`): human path appends at drain time,
+> agent path in `runActionRecorded`/`recordNavigateEffect` (covers agent sessions AND one-shot `use` verbs) +
+> agent-session navigate/hover. Descriptors only, never selectors; secrets unreachable (human: nulled in-page;
+> agent: typed text never stored — replay falls back to creds/ask). **Coverage:** `coverage()` (`src/recorder/
+> coverage.ts`) = deterministic events-vs-steps diff; `dev review` + capture-loop reviews now print it, write it
+> to review.json, and feed known drops into the LLM prompt (audit hunts only sensor blindness). **Replay modes:**
+> `runLedgerReplay` (exact rerun of the raw stream; resolveEvent-based, never guesses, commit-gated, landing
+> verified from recorded URLs — gated to navigating kinds; never rejects) beside the existing steps replay;
+> `POST /api/recordings/:id/replay {mode:'steps'|'ledger'}` + `GET /api/recordings/:id/events`; dashboard gets a
+> **Ledger sub-tab** (Review→Ledger→Logs; summary + per-event fates; honest no-ledger message for old sessions)
+> and two replay buttons ("Replay" self-healing / "Replay exact" ledger) — for the testing team: record → auto-play.
+> **Crash fixes:** (1) `wireSessionName` caps session names >16 chars (macOS 104-char sun_path; `replay-<id>` names
+> broke `listen EINVAL`) at ALL three `-s=` sites incl. close/reap (the reap pkill was silently missing long-named
+> daemons); (2) both replay runners NEVER reject (resolve with `state.error`) + guarded close + `.catch()` at launch
+> — the dashboard no longer dies on a failed replay. Pointer dot glide 50ms→200ms.
+> **Pending user hands-on:** click both replay buttons headed (final acceptance); 4 leftover TEST sessions in
+> `~/.webnav/webnav.db` (`ledger-e2e`, `t-check`, `e2e-dash`, `""`) + `~/.webnav/recordings/t-check` to delete
+> (agent cleanup was permission-gated). Local merge only — not pushed.
+
+> **2026-07-11 — subtree-template induction shipped: repetition principle now covers the LAST scale (subtree).**
 > Per `2026-07-11-subtree-templates-design.md` + plan `2026-07-11-subtree-templates.md`. One new pure pass
 > (`subtreeFolds` in `src/explorer/infer.ts`): bottom-up two-level structural signatures per subtree —
 > L1 (named, control labels kept verbatim) and L2 (abstracted, all names stripped) — fold ≥2 same-L1 or
