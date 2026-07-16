@@ -1141,7 +1141,8 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     const { runLiveRecord } = await import('./recorder/live-record.js');
     const { MODE_JS } = await import('./recorder/live.js');
-    const { ReplayController, runReplay } = await import('./recorder/replay.js');
+    const { ReplayController, runReplay, runLedgerReplay } = await import('./recorder/replay.js');
+    const { coverage } = await import('./recorder/coverage.js');
     const { draftFromEffects } = await import('./explorer/draft.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
@@ -1536,8 +1537,29 @@ async function main() {
           return { ok: true as const };
         } catch (e) { return { ok: false as const, error: String(e) }; }
       },
-      replay: async (id: string) => {
+      events: (id: string) => {
+        const evs = recordStore.events(id);
+        return { events: evs, coverage: coverage(evs) };
+      },
+      replay: async (id: string, mode: 'steps' | 'ledger' = 'steps') => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        if (mode === 'ledger') {
+          const events = recordStore.events(id);
+          if (!events.length) return { ok: false as const, error: 'no ledger — recorded before the ledger existed; use steps replay' };
+          const site = (() => { try { return new URL(String((events[0].descriptor as Record<string, unknown>).url ?? (events[0].descriptor as Record<string, unknown>).fromUrl)).host; } catch { return ''; } })();
+          const label = (e: (typeof events)[number]) => {
+            const d = e.descriptor as Record<string, unknown>;
+            return String(d.name ?? d.ariaLabel ?? d.leafText ?? d.placeholder ?? e.kind);
+          };
+          busy = 'replay:' + id;
+          const ctl = new ReplayController(id, events.map((e) => ({ seq: e.seq, label: label(e) })));
+          activeCtl = ctl;
+          const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
+          void runLedgerReplay(events, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
+            .catch(() => { /* engine already recorded state.error; never let this reject */ })
+            .finally(() => { busy = null; });
+          return { ok: true as const };
+        }
         const effects = recordStore.actionEffects(id);
         if (!effects.length) return { ok: false as const, error: 'empty recording' };
         busy = 'replay:' + id;
