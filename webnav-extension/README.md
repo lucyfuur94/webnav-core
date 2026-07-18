@@ -33,3 +33,40 @@ cd webnav-extension && npm i && npm run build
 
 Secret rule: password / credit-card field *values* are never read — only role/name/url
 structure is captured.
+
+## Phase 2 — agent side panel (drive a tab with a goal)
+
+A docked side panel chat that streams Claude's replies + live narration and drives the
+active tab over CDP, talking to `webnav agent-serve` (local, port 7779).
+
+The panel opens the SSE stream itself (the service worker idles and would drop it),
+renders `turn` deltas into an assistant bubble + `action` narration lines, and forwards
+each `action` command to `background.js` to execute over ONE persistent `chrome.debugger`
+attach — get-ax (`getFullAXTree`), click (AX nodeId → `backendDOMNodeId` →
+`DOM.getBoxModel` content-quad centre → `Input.dispatchMouseEvent`), type (click to focus
+→ `Input.insertText`). The command result is POSTed back to `/api/agent/command-result`.
+
+**Permission modes** (bottom-left toggle, cycles Ask / Auto / Act, persisted): sent as
+`mode` on `POST /api/agent/goal`; the server maps it to the gate level (commits always
+gate). In **Ask** mode a `plan` event shows an Approve/Deny bar — Deny POSTs `/stop`.
+**Stop** aborts the run (`POST /api/agent/stop`). The driven tab is scoped into a
+labelled `webnav` tab group. (Group label flips to `webnav ✓` on done — animated
+loading dots on the group are deferred; the label is the minimal honest visual state.)
+
+### Load and try a goal
+
+```
+cd webnav-extension && npm i && npm run build   # tsc, emits *.js beside *.ts
+```
+
+1. In the webnav repo: `webnav agent-serve --port 7779`.
+2. `chrome://extensions` → Developer mode → Load unpacked → select this folder.
+3. Open the side panel — the toolbar action icon, or the `toggle-panel` command
+   (**Cmd+E** / **Ctrl+E**).
+4. (Optional) open **settings** to set the session name (`agent-1`) / server base
+   (`http://127.0.0.1:7779`).
+5. Navigate the active tab to e.g. `https://www.saucedemo.com`, pick a mode, type a goal
+   (e.g. *log in as standard_user and open the cart*), and Send (or Cmd/Ctrl+Enter).
+6. Watch the streamed reply + narration; the tab clicks/types itself. The yellow
+   "webnav is debugging this browser" banner is expected — it persists for the whole run
+   by design (one attach, no per-command detach) and clears on Stop / tab close.
