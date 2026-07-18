@@ -89,4 +89,7 @@ cd webnav-extension && npm i && npm run build   # tsc, emits *.js beside *.ts
    (e.g. *log in as standard_user and open the cart*), and Send (or Cmd/Ctrl+Enter).
 6. Watch the streamed reply + narration; the tab clicks/types itself. The yellow
    "webnav is debugging this browser" banner is expected — it persists for the whole run
-   by design (one attach, no per-command detach) and clears on Stop / tab close.
+   by design (one attach, no per-command detach) and clears on Stop / tab close. Closing
+   the side panel itself (without clicking Stop) also detaches — the panel holds a
+   long-lived port open for its own lifetime, and background.ts tears down the debugger
+   attach on that port's disconnect, so the banner never lingers as a zombie.

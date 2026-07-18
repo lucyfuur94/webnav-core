@@ -37,6 +37,12 @@ let running = false;
 let paused = false; // handed control to the user without detaching the debugger
 let assistantBubble: HTMLDivElement | null = null; // current streaming assistant reply
 
+// Long-lived port tracking the PANEL DOCUMENT's lifetime (not the run's) — connect once at
+// load. background.ts listens for this port's onDisconnect (panel closed/reloaded) and
+// detaches the debugger then, so closing the panel without clicking Stop can't leave the
+// driven tab's "debugging this browser" banner stuck forever.
+chrome.runtime.connect({ name: 'webnav-panel' });
+
 // ---------------------------------------------------------------------------
 // Config persistence (chrome.storage) — mirrors the popup pattern.
 // ---------------------------------------------------------------------------

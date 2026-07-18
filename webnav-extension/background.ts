@@ -163,6 +163,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === driveTabId) { driveTabId = null; lastAxByNodeId = new Map(); }
 });
 
+// The panel opens a long-lived port at load (see sidepanel.ts) purely so we can detect
+// panel close/reload: onDisconnect fires when the panel document goes away, whether or
+// not Stop was clicked. This is the safety net for the zombie-attach failure mode — Stop's
+// explicit detach-drive still fires immediately; this just catches the ungraceful case.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'webnav-panel') return;
+  port.onDisconnect.addListener(() => { detachDrive().catch(() => {}); });
+});
+
 // The command whose suggested key is Cmd+E / Ctrl+E. onCommand is a user gesture, which
 // sidePanel.open requires. Open the panel for the command's window.
 chrome.commands.onCommand.addListener((command) => {
