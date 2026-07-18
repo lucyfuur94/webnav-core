@@ -2,26 +2,19 @@
 <style>
   :root { color-scheme: light dark; }
   body { width: 280px; margin: 0; font: 13px/1.4 -apple-system, system-ui, sans-serif; padding: 14px; }
-  h1 { font-size: 13px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; transition: all .15s; }
-  .dot.on { background: #e5484d; box-shadow: 0 0 0 3px rgba(229,72,77,.25); }
+  h1 { font-size: 13px; margin: 0 0 12px; }
   label { display: block; margin: 0 0 8px; color: #888; font-size: 11px; }
   input { width: 100%; box-sizing: border-box; padding: 5px 7px; margin-top: 3px;
     border: 1px solid #ccc3; border-radius: 6px; font: inherit; background: #8881; color: inherit; }
-  .row { display: flex; gap: 8px; margin-top: 12px; }
-  button { flex: 1; padding: 7px; border: 0; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; }
-  #rec { background: #e5484d; color: #fff; }
-  #rec:disabled { background: #e5484d55; cursor: default; }
-  #stop { background: #8882; color: inherit; }
+  button { width: 100%; margin-top: 12px; padding: 7px; border: 0; border-radius: 6px;
+    font: inherit; font-weight: 600; cursor: pointer; background: #e5484d; color: #fff; }
+  button:disabled { background: #e5484d55; cursor: default; }
   #status { margin-top: 12px; padding: 8px; border-radius: 6px; background: #8881; font-size: 12px; text-align: center; }
   #status b { font-size: 15px; }
 </style>
-<h1><span id="dot" class="dot"></span> webnav recorder</h1>
+<h1>webnav recorder</h1>
 <label>Session <input id="sid" value="human-1"></label>
-<label>Ingest URL <input id="url" value="http://127.0.0.1:7778/ingest"></label>
-<div class="row">
-  <button id="rec">Record</button>
-  <button id="stop">Stop &amp; send</button>
-</div>
-<div id="status">idle</div>
+<label>Ingest URL <input id="url" value="http://127.0.0.1:7778/ingest-ax"></label>
+<button id="capture">Capture this page</button>
+<div id="status">idle — uses chrome.debugger; a "debugging this browser" banner is expected</div>
 <script src="popup.js" type="module"></script>
