@@ -9,7 +9,7 @@
 - Zero LLM in webnav; the adapter is pure deterministic transform. Map stores structure, never
   values (`tests/guidelines.test.ts` green). Never a wrong-resolve.
 - Reuse the spike's proven `adaptAXTree` and the existing `serveIngest`/`ingest` seam + the
-  `webnav-recorder/` skeleton — do not rebuild what exists.
+  `webnav-extension/` skeleton — do not rebuild what exists.
 - 2-space, single quotes; TDD; full `npm test` green per task; commit per task (author dikshant.y).
 - The `AXNode` type + `adaptAXTree` behavior must match what the spike captured (CDP
   `Accessibility.getFullAXTree` node shape: `{nodeId, role:{value}, name:{value}, properties[],
@@ -64,14 +64,14 @@ to accept `SnapNode[]` so AX steps skip the YAML round-trip), `tests/recorder/in
       with evidence; shadow-DOM finding recorded.
 
 ### Task 5 (Increment B): extension sensor swap — BUILD only, user-gated verify
-**Files:** `webnav-recorder/manifest.json` (+`debugger`), `webnav-recorder/background.ts`
-(debugger attach + getFullAXTree + POST /ingest-ax), `webnav-recorder/popup.ts`/`.html` (a
+**Files:** `webnav-extension/manifest.json` (+`debugger`), `webnav-extension/background.ts`
+(debugger attach + getFullAXTree + POST /ingest-ax), `webnav-extension/popup.ts`/`.html` (a
 "Capture this page" action), replace the DOM-walk in `content.ts`.
 **Steps:**
 - [ ] Add `debugger` permission; background attaches `chrome.debugger`, sends
       `Accessibility.getFullAXTree`, POSTs `{fromAX,toAX}` to `/ingest-ax`.
-- [ ] `tsc` clean in `webnav-recorder/` (its own tsconfig). Build artifacts.
-- [ ] Write a `webnav-recorder/README.md` load-and-test section: load unpacked → rich-controls +
+- [ ] `tsc` clean in `webnav-extension/` (its own tsconfig). Build artifacts.
+- [ ] Write a `webnav-extension/README.md` load-and-test section: load unpacked → rich-controls +
       shadow-DOM page → Capture → `webnav dev graph-analyse <session> --draft` shows the controls.
 - [ ] Commit `feat(extension): native-AX capture via chrome.debugger (replaces DOM-walk sensor)`.
 - [ ] HAND OFF to the user for the load-unpacked end-to-end test — do NOT claim end-to-end done.

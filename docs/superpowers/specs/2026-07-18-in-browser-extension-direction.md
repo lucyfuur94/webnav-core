@@ -26,7 +26,7 @@ the page, click, type — like Anthropic's Claude Chrome extension. The differen
 Two conflations we made before, corrected:
 
 1. **"Extensions can't record reliably."** FALSE as stated. What actually failed
-   (`[[webnav-recorder-capture-source]]`) was a Chrome extension doing a **DOM walk** — reading
+   (`[[webnav-extension-capture-source]]`) was a Chrome extension doing a **DOM walk** — reading
    raw HTML — which produced 0 edges and junk identity. The lesson was *"DOM-walk is the wrong
    sensor,"* not *"extension is the wrong surface."* The a11y tree (below) is a different,
    correct sensor an extension can reach.

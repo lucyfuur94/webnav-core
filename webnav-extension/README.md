@@ -1,4 +1,4 @@
-<!-- webnav-recorder/README.md -->
+<!-- webnav-extension/README.md -->
 # webnav recorder (Chrome MV3)
 
 Sensor: `chrome.debugger` → CDP `Accessibility.getFullAXTree` (real native accessibility
@@ -15,7 +15,7 @@ click→settle record loop — that's a later increment).
 ## Build
 
 ```
-cd webnav-recorder && npm i && npm run build
+cd webnav-extension && npm i && npm run build
 ```
 
 ## Load and test

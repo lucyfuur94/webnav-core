@@ -470,7 +470,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'ingest',
-    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-recorder Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse --session <id> --draft`. Runs until Ctrl-C.',
+    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-extension Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse --session <id> --draft`. Runs until Ctrl-C.',
     args: [],
     flags: [{ name: '--port', takesValue: true, default: '7778', description: 'Localhost port to listen on.' }],
     example: 'webnav dev ingest --port 7778',

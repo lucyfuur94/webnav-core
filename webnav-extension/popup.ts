@@ -1,4 +1,4 @@
-// webnav-recorder/popup.ts
+// webnav-extension/popup.ts
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
 const statusEl = () => document.getElementById('status')!;
