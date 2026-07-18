@@ -172,6 +172,10 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => { detachDrive().catch(() => {}); });
 });
 
+// Clicking the toolbar icon opens the SIDE PANEL directly (no popup) — the Claude-extension
+// behavior. setPanelBehavior makes the action-icon click a valid user gesture for the panel.
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 // The command whose suggested key is Cmd+E / Ctrl+E. onCommand is a user gesture, which
 // sidePanel.open requires. Open the panel for the command's window.
 chrome.commands.onCommand.addListener((command) => {
