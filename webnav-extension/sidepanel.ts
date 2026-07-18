@@ -99,7 +99,14 @@ function openStream(): void {
   es?.close();
   es = new EventSource(base + '/api/agent/events');
   es.onopen = () => { connEl.textContent = 'connected'; connEl.className = 'ok'; };
-  es.onerror = () => { connEl.textContent = 'disconnected'; connEl.className = ''; };
+  // EventSource auto-reconnects natively, so this flips back to 'connected' once the
+  // server is up — the message just tells a first-time user WHY it's down and how to fix
+  // it (the #1 dead-end: no local server running). ponytail: no manual retry loop needed.
+  es.onerror = () => {
+    connEl.textContent = 'disconnected — run `webnav agent-serve --port 7779`';
+    connEl.className = 'err';
+    connEl.title = 'The extension needs the local webnav agent server. Start it in a terminal:\n  webnav agent-serve --port 7779\nThen this reconnects automatically.';
+  };
   // EventSource natively skips `:`-comment keepalives; we only get real `data:` events.
   es.onmessage = (ev) => {
     let e: AgentEvent;
