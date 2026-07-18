@@ -6,7 +6,7 @@
   "permissions": ["activeTab", "scripting", "storage", "debugger", "sidePanel", "tabs", "tabGroups"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html" },
+  "action": { "default_title": "Open webnav agent" },
   "side_panel": { "default_path": "sidepanel.html" },
   "commands": {
     "toggle-panel": {
