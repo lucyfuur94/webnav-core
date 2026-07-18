@@ -79,6 +79,19 @@ of the snapshot format."**
 - **One engine, one map, two producers, two executors.** Replay becomes a *capability* not a
   backend: extension replays visibly with handoff; playwright-cli replays headless. Same graph.
 
+## ⟶ SPIKE RESULT (2026-07-18): GO-WITH-CONDITIONS — see `2026-07-18-extension-snapshot-spike-findings.md`
+
+The gate below was run and adversarially verified. Fingerprints minted from the
+extension-faithful native-AX sensor (CDP `getFullAXTree`) cross-resolve against playwright maps
+at 100% on clean pages and on a matched-capture 112-control real page (github), with ZERO
+wrong-resolves across ~130 nodes and the fragile `near`-anchor mechanism working identically
+across producers. Confounds isolated: viewport drift = verified spike artifact (gone when
+matched); text-transform (`Terms` vs `TERMS`) = a genuine producer code-path divergence, but
+consistent within a producer, so it only touches cross-producer replay and is mitigable.
+Conditions to carry into the build: same-producer round-trip is the robust path; extend the
+role map beyond the 4 tested interactive roles; still-untested = shadow DOM / iframes / canvas /
+mid-interaction SPA / the real chrome.debugger plumbing. The extension direction is REAL.
+
 ## The ONE hard, unbugdeable risk (what the spike must answer)
 
 Everything else is de-risked by existence proof — Anthropic's Claude extension does subscription
