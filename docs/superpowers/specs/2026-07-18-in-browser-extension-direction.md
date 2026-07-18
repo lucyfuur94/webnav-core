@@ -38,6 +38,27 @@ Two conflations we made before, corrected:
    Headless autopilot (nobody watching, 3am, server-side) is a *different, speculative* surface
    — keep playwright-cli for that and for our internal tests; it need not ship in the product.
 
+## Ground truth: Anthropic's extension manifest (read locally, v1.0.81, 2026-07-18)
+
+Not marketing — the installed extension's manifest.json. It is a 1:1 existence proof for every
+piece we planned, and it DEFINES the product bar ("proper extension, proper sidebar"):
+
+- **`sidePanel`** — the polished docked sidebar is Chrome's native Side Panel API (+ Cmd+E
+  toggle command). Ours uses the same surface: full chat thread, task input, live action
+  narration, take-over/hand-back — not just a record button.
+- **`accessibility-tree.js` content script into ALL urls/frames** — Anthropic's SENSOR is an
+  in-page accessibility-tree serializer. Production proof of our exact bet (a11y tree, never a
+  DOM walk). Correction to the earlier draft: the practical mechanism is a content-script a11y
+  serializer (+ CDP `Accessibility` domain via `debugger` as complement) — NOT `chrome.automation`
+  (which is not generally available to normal extensions).
+- **`debugger`** (the harmless yellow bar), **`tabGroups`** (the scoped-group pattern),
+  **`agent-visual-indicator.js`** (their REC-pill/pointer-dot analog), **`nativeMessaging`**
+  (the same extension↔local-process bridge we plan for the webnav link), `identity` (auth),
+  MV3, options page.
+
+Product bar for OUR extension = all of the above, PLUS the two webnav differentiators: the
+record toggle feeding the map, and graph-recall making run two instant.
+
 ## The actual architecture (settled thesis, restated for two producers)
 
 The lock-in was never "playwright the tool." It was **"playwright's snapshot serialization is the
