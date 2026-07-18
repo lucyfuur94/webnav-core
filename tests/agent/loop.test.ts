@@ -173,7 +173,7 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(browser.gotos).toEqual([]);
   });
 
-  it('emits events in order: turn, then action, then done', async () => {
+  it('emits events in order: turn, then narrate, then done', async () => {
     const browser = fakeBrowser(INVENTORY_SNAP);
     const store = newStore();
     const { fn } = fakeQueryCalling('click', { ref: 'e2' });
@@ -181,11 +181,28 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     await runAgentGoal({ goal: 'go', sessionId: 's7', mode: 'act', browser, store, states: [], emit, query: fn });
     const kinds = events.map((e) => e.type);
     const turnIdx = kinds.indexOf('turn');
-    const actionIdx = kinds.indexOf('action');
+    const narrateIdx = kinds.indexOf('narrate');
     const doneIdx = kinds.lastIndexOf('done');
     expect(turnIdx).toBeGreaterThanOrEqual(0);
-    expect(actionIdx).toBeGreaterThan(turnIdx);
-    expect(doneIdx).toBeGreaterThan(actionIdx);
+    expect(narrateIdx).toBeGreaterThan(turnIdx);
+    expect(doneIdx).toBeGreaterThan(narrateIdx);
+  });
+
+  it('the loop emits ZERO type:"action" events — action is the EXECUTE channel (server.ts), narration is display-only', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    // Exercise every narrating tool + the tool_use forwarding path.
+    for (const [tool, input] of [
+      ['click', { ref: 'e2' }],
+      ['type', { ref: 'e5', text: 'x' }],
+      ['goto', { url: 'https://x.test/' }],
+      ['get_page_ax', {}],
+    ] as const) {
+      const { fn } = fakeQueryCalling(tool, input as Record<string, unknown>);
+      const { emit, events } = emitSpy();
+      await runAgentGoal({ goal: 'g', sessionId: 'sz', mode: 'act', browser, store, states: [], emit, query: fn });
+      expect(events.some((e) => e.type === 'action')).toBe(false);
+    }
   });
 
   it('mode "ask" emits a plan event at the start', async () => {

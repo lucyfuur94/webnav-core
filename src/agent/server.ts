@@ -16,6 +16,9 @@ export type AgentCommand =
 
 export type AgentEvent =
   | { type: 'turn'; text: string }
+  // `narrate` is DISPLAY-ONLY (what the agent did, human-readable). `action` is the
+  // EXECUTE channel — the panel CDP-dispatches it. Never conflate the two.
+  | { type: 'narrate'; label: string; detail?: string }
   | { type: 'action'; id: string; cmd: AgentCommand }
   | { type: 'done'; summary?: string }
   | { type: 'error'; message: string }

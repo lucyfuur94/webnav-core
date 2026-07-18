@@ -8,6 +8,9 @@
 type Cmd = { kind: 'get-ax' | 'click' | 'type'; nodeId?: string; text?: string };
 type AgentEvent =
   | { type: 'turn'; text: string }
+  // `narrate` is display-only (what the agent did); NEVER execute it. `action` is the
+  // real CDP command channel — only it goes through execAction.
+  | { type: 'narrate'; label: string; detail?: string }
   | { type: 'action'; id: string; cmd: Cmd }
   | { type: 'done'; summary?: string }
   | { type: 'error'; message: string }
@@ -105,7 +108,14 @@ function handleEvent(e: AgentEvent): void {
       assistantBubble.textContent += e.text;
       thread.scrollTop = thread.scrollHeight;
       break;
+    case 'narrate':
+      // DISPLAY ONLY — the agent telling us what it did. Never CDP-execute this.
+      assistantBubble = null;
+      bubble('action', e.label + (e.detail ? ': ' + e.detail : ''));
+      break;
     case 'action':
+      // The REAL CDP command from the server's channel — this is the ONLY path that
+      // runs execAction (and POSTs a command-result the server's loop awaits).
       assistantBubble = null; // a new turn after the action starts a fresh bubble
       bubble('action', narrateAction(e.cmd));
       execAction(e.id, e.cmd);

@@ -674,13 +674,47 @@ async function main() {
   }
   if (args.cmd === 'agent-serve') {
     // Long-lived localhost receiver (like `ingest`/`dashboard`): the Chrome extension
-    // sidePanel's local server. Streams AgentEvent over SSE, accepts a goal, gives the
-    // (later) agent loop a real AgentChannel, and mounts /ingest-ax so a live goal run
-    // is recorded through the same path human/agent recordings use (Task 3). No
-    // onGoal wired yet — that's a later task; serving the channel routes is enough.
+    // sidePanel's local server. Streams AgentEvent over SSE, accepts a goal, runs the
+    // agent loop over a real AgentChannel that drives the extension's tab, and mounts
+    // /ingest-ax so a live goal run is recorded through the same path human/agent
+    // recordings use (Task 3).
     const { serveAgent } = await import('./agent/server.js');
     const { RecordStore } = await import('./mapstore/record.js');
-    const server = serveAgent(args.port, new RecordStore(dbPath()));
+    const { runAgentGoal } = await import('./agent/loop.js');
+    const { makeLiveExtensionBrowser } = await import('./router/live-extension-browser.js');
+    const { MapStore } = await import('./mapstore/store.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
+    // ponytail: one MapStore for the server's lifetime — same seeded map the `walk`
+    // verb uses, so check_route/walkRoute route against the real states. Extra sites
+    // recorded via /ingest-ax build the RecordStore, not this map; that's fine — the
+    // loop drives manually when the live page isn't a known state.
+    const mapStore = new MapStore();
+    ensureSeeded(mapStore);
+    const states = mapStore.allStates();
+    // onGoal: a goal POST runs the loop. Inputs = {} for v1 — the goal body carries no
+    // site/start-state to key CredStore by; the extension user is already logged in on
+    // the live tab, and creds-injection is a walk-verb concern. Real SDK query runs.
+    const onGoal = async (
+      goal: import('./agent/server.js').AgentGoalBody,
+      channel: import('./router/live-extension-browser.js').AgentChannel,
+      emit: (e: import('./agent/server.js').AgentEvent) => void,
+    ): Promise<void> => {
+      const browser = makeLiveExtensionBrowser(channel, {});
+      // ponytail: no /stop AbortSignal threaded — the server rejects pending commands
+      // on /stop (server.ts), which fails the in-flight tool and surfaces as an error
+      // event. TODO(stop): thread a real AbortSignal per goal if the SDK query itself
+      // needs cancelling mid-turn (currently it just fails the next browser command).
+      await runAgentGoal({
+        goal: goal.goal,
+        sessionId: goal.sessionId,
+        mode: goal.mode as 'ask' | 'auto' | 'act',
+        browser,
+        store: mapStore,
+        states,
+        emit,
+      });
+    };
+    const server = serveAgent(args.port, new RecordStore(dbPath()), { onGoal });
     process.stderr.write(`webnav agent-serve listening on http://127.0.0.1:${args.port}\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port }));
     await new Promise(() => {}); // run until killed
