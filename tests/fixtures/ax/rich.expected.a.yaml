@@ -1,0 +1,34 @@
+- main [ref=e2]:
+  - heading "Filters" [level=1] [ref=e3]
+  - generic [ref=e4]:
+    - text: Country
+    - combobox "Country" [ref=e5]:
+      - option "India" [selected]
+      - option "USA"
+      - option "Mongolia"
+  - group "Channels" [ref=e6]:
+    - generic [ref=e7]: Channels
+    - generic [ref=e8]:
+      - checkbox "Web" [ref=e9]
+      - text: Web
+    - generic [ref=e10]:
+      - checkbox "App" [ref=e11]
+      - text: App
+  - group "Plan" [ref=e12]:
+    - generic [ref=e13]: Plan
+    - generic [ref=e14]:
+      - radio "Free" [ref=e15]
+      - text: Free
+    - generic [ref=e16]:
+      - radio "Pro" [ref=e17]
+      - text: Pro
+  - generic [ref=e18]:
+    - switch "Dark mode" [ref=e19]
+    - text: Dark mode
+  - combobox "Search metric" [ref=e20]: Pick a metric
+  - button "Actions" [ref=e21]
+  - menu "Actions" [ref=e22]:
+    - menuitem "Duplicate" [ref=e23]
+    - menuitem "Archive" [ref=e24]
+    - menuitemcheckbox "Pin" [ref=e25]
+  - button "Apply" [ref=e26]

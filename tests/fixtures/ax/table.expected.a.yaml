@@ -1,0 +1,27 @@
+- generic [active] [ref=e1]:
+  - heading "Deals" [level=1] [ref=e2]
+  - table [ref=e3]:
+    - rowgroup [ref=e4]:
+      - row "Name Owner" [ref=e5]:
+        - columnheader "Name" [ref=e6]
+        - columnheader "Owner" [ref=e7]
+        - columnheader [ref=e8]
+    - rowgroup [ref=e9]:
+      - row "Acme Corp Dana Edit Delete" [ref=e10]:
+        - cell "Acme Corp" [ref=e11]
+        - cell "Dana" [ref=e12]
+        - cell "Edit Delete" [ref=e13]:
+          - button "Edit" [ref=e14]: ✎
+          - button "Delete" [ref=e15]: 🗑
+      - row "Globex Ravi Edit Delete" [ref=e16]:
+        - cell "Globex" [ref=e17]
+        - cell "Ravi" [ref=e18]
+        - cell "Edit Delete" [ref=e19]:
+          - button "Edit" [ref=e20]: ✎
+          - button "Delete" [ref=e21]: 🗑
+      - row "Initech Mei Edit Delete" [ref=e22]:
+        - cell "Initech" [ref=e23]
+        - cell "Mei" [ref=e24]
+        - cell "Edit Delete" [ref=e25]:
+          - button "Edit" [ref=e26]: ✎
+          - button "Delete" [ref=e27]: 🗑
