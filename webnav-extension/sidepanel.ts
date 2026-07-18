@@ -22,6 +22,7 @@ const goalEl = byId<HTMLTextAreaElement>('goal');
 const modeEl = byId<HTMLButtonElement>('mode');
 const sendEl = byId<HTMLButtonElement>('send');
 const stopEl = byId<HTMLButtonElement>('stop');
+const pauseEl = byId<HTMLButtonElement>('pause');
 const connEl = byId<HTMLSpanElement>('conn');
 const sidEl = byId<HTMLInputElement>('sid');
 const baseEl = byId<HTMLInputElement>('base');
@@ -33,6 +34,7 @@ let mode: Mode = 'Ask';
 let base = 'http://127.0.0.1:7779';
 let targetTabId: number | null = null;
 let running = false;
+let paused = false; // handed control to the user without detaching the debugger
 let assistantBubble: HTMLDivElement | null = null; // current streaming assistant reply
 
 // ---------------------------------------------------------------------------
@@ -212,13 +214,17 @@ async function startRun(): Promise<void> {
   await resolveTab();
   if (targetTabId == null) { bubble('error', '✗ no active tab to drive'); return; }
 
+  // Resume-from-paused is just a fresh goal: clear the paused flag and re-scope the group.
+  paused = false;
   running = true;
   sendEl.disabled = true;
   stopEl.classList.add('active');
+  pauseEl.classList.add('active');
   bubble('user', goal);
   goalEl.value = '';
 
-  // Persistent debugger attach for this run.
+  // Persistent debugger attach for this run. No-op if already attached to this tab
+  // (e.g. resuming from Pause, which deliberately left the attach live).
   const att = await chrome.runtime.sendMessage({ type: 'attach-drive', tabId: targetTabId });
   if (!att?.ok) { bubble('error', '✗ could not attach debugger: ' + (att?.error ?? '')); finishRun(); return; }
 
@@ -252,6 +258,7 @@ function finishRun(): void {
   running = false;
   sendEl.disabled = false;
   stopEl.classList.remove('active');
+  pauseEl.classList.remove('active');
   if (targetTabId != null) relabelTabGroup(targetTabId, 'webnav ✓');
 }
 
@@ -259,11 +266,36 @@ async function stopRun(): Promise<void> {
   await fetch(base + '/api/agent/stop', { method: 'POST' }).catch(() => {});
   bubble('done', 'loop halted');
   if (targetTabId != null) await chrome.runtime.sendMessage({ type: 'detach-drive' });
+  paused = false;
   finishRun();
+}
+
+// Pause = honest take-over, NOT true mid-turn resume. The SDK `query` behind the server's
+// agent loop is a single async generator; there is no cheap way to freeze and later replay
+// its exact reasoning state. So Pause stops the loop (same /api/agent/stop the server
+// already exposes — it rejects pending commands, which unwinds the current turn) but
+// deliberately SKIPS detach-drive, keeping the CDP attach alive so the tab stays
+// capture-able and re-drivable by hand. Resume is just sending a new goal: a fresh
+// runAgentGoal call that re-snapshots the current page (get-ax), so it naturally picks up
+// wherever the user left things — it does not "continue the old turn".
+// ponytail: while paused, the user's manual clicks/types on the page are NOT captured in
+// this increment (the full click→settle capture loop for manual driving is deferred — see
+// README). Don't claim otherwise in the UI.
+async function pauseRun(): Promise<void> {
+  if (!running || paused) return;
+  await fetch(base + '/api/agent/stop', { method: 'POST' }).catch(() => {});
+  paused = true;
+  running = false;
+  sendEl.disabled = false;
+  stopEl.classList.remove('active');
+  pauseEl.classList.remove('active');
+  if (targetTabId != null) await relabelTabGroup(targetTabId, 'webnav ⏸ paused');
+  bubble('done', 'paused — you have control. Interact with the page by hand, then send a new goal to resume (manual actions are not recorded yet). Resume starts a fresh turn from the current page.');
 }
 
 sendEl.onclick = startRun;
 stopEl.onclick = stopRun;
+pauseEl.onclick = pauseRun;
 goalEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startRun(); }
 });
