@@ -207,6 +207,21 @@ adapter currently discards it.
 
 ---
 
+## Status after build (2026-07-18) — READY TO MERGE, two honest gaps deferred
+
+All 6 tasks built + reviewed; final whole-branch review = READY TO MERGE (1027 tests green;
+zero-LLM engine, commit-protection, narrate/action split, and the CDP nodeId id-space all
+verified coherent by construction). Works as an agent sidebar: sidePanel chat → Claude streams
+reply + narration → drives the live tab via CDP → highlight pulse → Stop/Pause. The one real
+defect found (debugger not detached on panel-close → zombie banner) is fixed.
+
+**DEFERRED — do NOT describe these as working:**
+- **G1 (recall on your own sites):** a live agent run does NOT record into the map yet. `check_route`/
+  `walkRoute` recall only works against the pre-seeded saucedemo map. "Run-2 is instant" holds for
+  saucedemo, not for a site you drive fresh. Follow-up: feed the run's get-ax trees into `ingestAX`.
+- **G2 (permission modes):** Ask/Auto/Act are threaded but NOT enforced (the SDK query hardcodes
+  `permissionMode:'default'`; the Ask plan-bar is display-only). Follow-up: map mode→gate level.
+
 ## Verification
 
 - **Per task (headless, I run):** `npm test` green after each; `tsc` clean. Tasks 1–4 are fully
