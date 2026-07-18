@@ -103,12 +103,42 @@ async function boxCenter(tabId: number, backendNodeId: number): Promise<{ x: num
   return { x, y };
 }
 
+// On-page highlight pulse — shows the user WHERE the agent just acted (Claude-for-Chrome
+// has no such indicator). Reuses the {x,y} already computed for the click/type — zero
+// extra CDP round-trip. Injected as a single self-removing div via Runtime.evaluate:
+// ponytail: an injected div is simpler than the Overlay domain (would need Overlay.enable
+// + a separate highlight-config dance on the same attach); a div is one call, self-cleans,
+// and can't outlive the page since it removes itself.
+// A highlight failure must NEVER break the actual click/type — always wrapped, always
+// fire-and-forget (not awaited by the caller's critical path).
+function paintPulse(tabId: number, x: number, y: number): void {
+  const expr = `(() => {
+    try {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:${x}px;top:${y}px;width:24px;height:24px;' +
+        'margin-left:-12px;margin-top:-12px;border-radius:50%;background:rgba(74,124,255,0.55);' +
+        'border:2px solid rgba(74,124,255,0.9);pointer-events:none;z-index:2147483647;' +
+        'transform:scale(0.4);opacity:1;transition:transform 600ms ease-out,opacity 600ms ease-out;';
+      document.documentElement.appendChild(d);
+      requestAnimationFrame(() => { d.style.transform = 'scale(1.8)'; d.style.opacity = '0'; });
+      setTimeout(() => d.remove(), 650);
+    } catch (e) {}
+  })()`;
+  // Fire-and-forget: never await this on the click/type path, never throw past it.
+  // TODO(user-gated): confirm the pulse actually renders above real page content (a
+  // page with its own extreme z-index or a strict CSP could theoretically block it).
+  chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: expr }).catch(() => {});
+}
+
 async function clickNode(tabId: number, nodeId: string): Promise<void> {
   assertDriving(tabId);
   const { x, y } = await nodeCenter(tabId, nodeId);
   const base = { x, y, button: 'left' as const, clickCount: 1 };
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+  // Paint AFTER dispatch (never before) so the pulse can't intercept the real click; it's
+  // also pointer-events:none, so it wouldn't block input even if it landed first.
+  paintPulse(tabId, x, y);
 }
 
 async function typeNode(tabId: number, nodeId: string, text: string): Promise<void> {

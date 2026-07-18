@@ -53,6 +53,26 @@ gate). In **Ask** mode a `plan` event shows an Approve/Deny bar — Deny POSTs `
 labelled `webnav` tab group. (Group label flips to `webnav ✓` on done — animated
 loading dots on the group are deferred; the label is the minimal honest visual state.)
 
+**On-page highlight pulse:** every click (and the click-to-focus step of a type) paints a
+short-lived pulse at the exact point CDP clicked, reusing the same `DOM.getBoxModel` centre
+already computed for the click — no extra round-trip. It's a single self-removing
+`<div>` injected via `Runtime.evaluate` (pointer-events:none, painted *after* the real
+input is dispatched, so it can never block or intercept it). This is a differentiator vs.
+Claude-for-Chrome, which shows no on-page indicator of where it's acting.
+
+**Pause / take-over / hand-back:** **Pause** (next to Stop) halts the agent loop
+(`POST /api/agent/stop`, same endpoint Stop uses) but deliberately does **not** detach the
+CDP debugger — the tab stays attached so you can keep interacting with it by hand. The tab
+group relabels to `webnav ⏸ paused`. Honest scope: the SDK's `query` behind the agent loop
+is a single-shot async generator, so there is no cheap way to freeze and later replay its
+exact mid-turn reasoning. **Resume is not a true continuation** — it's sending a new goal
+(the same one, or a different one), which starts a **fresh turn from the current page**
+(the agent re-snapshots via get-ax, so it naturally picks up wherever you left the page).
+The UI says this explicitly. Also honest: **while paused, your manual clicks/types on the
+page are not captured in this increment** — the full click→settle capture-while-driving
+loop is a later increment, not built here. Stop still works as before (full halt +
+detach).
+
 ### Load and try a goal
 
 ```
