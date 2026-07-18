@@ -50,8 +50,9 @@ function text(t: string): { content: Array<{ type: 'text'; text: string }> } {
 }
 
 // Build the webnav tools. Each handler drives the injected browser/store; before
-// returning it emits a human-readable `action` line so the panel narrates what the
-// agent did (distinct from the browser's own dispatch, which goes over the channel).
+// returning it emits a human-readable `narrate` line so the panel shows what the
+// agent did. This is DISPLAY-ONLY — the browser's own dispatch (the real CDP
+// commands) goes over the channel as `action` events (server.ts), never from here.
 function buildTools(args: RunAgentGoalArgs): ToolDef[] {
   const { browser, store, states, emit } = args;
 
@@ -62,7 +63,7 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       shape: {},
       handler: async () => {
         const snap = await browser.snapshot();
-        emit({ type: 'action', id: 'get_page_ax', cmd: { kind: 'get-ax' } });
+        emit({ type: 'narrate', label: 'get_page_ax', detail: 'read page' });
         return text(snap);
       },
     },
@@ -73,7 +74,7 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       handler: async (a) => {
         const ref = String(a.ref);
         await browser.act(ref, null);
-        emit({ type: 'action', id: 'click', cmd: { kind: 'click', nodeId: ref } });
+        emit({ type: 'narrate', label: 'click', detail: ref });
         return text('clicked ' + ref);
       },
     },
@@ -88,7 +89,7 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
           return text('cannot type: this browser has no free-text input; field ' + ref + ' was NOT filled');
         }
         await browser.typeText(ref, val);
-        emit({ type: 'action', id: 'type', cmd: { kind: 'type', nodeId: ref, text: val } });
+        emit({ type: 'narrate', label: 'type', detail: '"' + val + '" into ' + ref });
         return text('typed "' + val + '" into ' + ref);
       },
     },
@@ -100,7 +101,7 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         const url = String(a.url);
         if (!browser.goto) return text('this browser cannot goto a URL');
         await browser.goto(url, null);
-        emit({ type: 'action', id: 'goto', cmd: { kind: 'click', nodeId: url } });
+        emit({ type: 'narrate', label: 'goto', detail: url });
         return text('navigated to ' + url);
       },
     },
@@ -115,16 +116,16 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         const nodes = parseSnapshot(await browser.snapshot());
         const match = matchState(nodes, states);
         if (match.status !== 'matched') {
-          emit({ type: 'action', id: 'check_route', cmd: { kind: 'get-ax' } });
+          emit({ type: 'narrate', label: 'check_route', detail: 'current page not on a known state' });
           return text('no route: current page is not on a known map state — drive manually with click/type/goto.');
         }
         const start = match.state.id;
         const path = findPath(store, start, goalStateId);
         if (!path) {
-          emit({ type: 'action', id: 'check_route', cmd: { kind: 'get-ax' } });
+          emit({ type: 'narrate', label: 'check_route', detail: 'no route ' + start + ' -> ' + goalStateId });
           return text('no route from ' + start + ' to ' + goalStateId + ' in the map — drive manually.');
         }
-        emit({ type: 'action', id: 'check_route', cmd: { kind: 'get-ax' } });
+        emit({ type: 'narrate', label: 'check_route', detail: path.join(' -> ') });
         // THE PAYOFF: hand the found route to the deterministic replay (walkRoute
         // UNMODIFIED), then narrate its terminal RecallResponse back to the agent.
         const res = await walkRoute({
@@ -194,7 +195,8 @@ const SYSTEM = [
 /**
  * Run one agent goal. Streams SDK narration back as AgentEvents:
  *  - assistant text  -> { type: 'turn', text }
- *  - tool-use blocks -> { type: 'action', ... } (the loop's tool handlers also emit their own)
+ *  - tool-use blocks -> { type: 'narrate', label } (display-only; the REAL CDP `action`
+ *                       events come from the channel in server.ts, never from here)
  *  - final result    -> { type: 'done', summary }
  *  - any throw        -> { type: 'error', message }
  * `mode` is threaded through for later Ask/Auto/Act gating; in 'ask' mode we emit a
@@ -217,7 +219,7 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
       if (m.type === 'assistant') {
         for (const block of m.message?.content ?? []) {
           if (block.type === 'text' && block.text) emit({ type: 'turn', text: block.text });
-          else if (block.type === 'tool_use') emit({ type: 'action', id: String(block.id ?? block.name ?? 'tool'), cmd: { kind: 'get-ax' } });
+          else if (block.type === 'tool_use') emit({ type: 'narrate', label: String(block.name ?? block.id ?? 'tool') });
         }
       } else if (m.type === 'result') {
         if (m.subtype === 'success') finalText = m.result ?? finalText;
