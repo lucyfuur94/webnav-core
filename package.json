@@ -1,7 +1,7 @@
 {
   "name": "@dikshanty94/webnav",
   "version": "0.2.0",
-  "description": "A navigation memory for AI agents \u2014 zero-LLM web-navigation CLI that recalls cheap, reliable routes instead of re-exploring.",
+  "description": "A navigation memory for AI agents — zero-LLM web-navigation CLI that recalls cheap, reliable routes instead of re-exploring.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -39,8 +39,10 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.214",
     "better-sqlite3": "^11.0.0",
-    "yaml": "^2.5.0"
+    "yaml": "^2.5.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
