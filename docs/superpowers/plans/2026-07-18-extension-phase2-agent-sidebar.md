@@ -136,7 +136,8 @@ adapter currently discards it.
 **Steps:**
 - [ ] `http.Server` on `--port` (default 7779, distinct from ingest 7778) with routes:
       `GET /api/agent/events` (SSE, payload JSON: `{type:'turn'|'action'|'done'|'error', …}`),
-      `POST /api/agent/goal {goal, sessionId, tabHint}` (starts a run),
+      `POST /api/agent/goal {goal, sessionId, mode}` (starts a run; `mode` = the permission mode
+      Ask|Auto|Act from Task 5's selector — supersedes the earlier `tabHint` placeholder),
       `POST /api/agent/command-result {id, result}` (resolves a pending command),
       `POST /ingest-ax` (reuse `ingestAX` so recording lands — mount the existing handler).
 - [ ] `AgentChannel` impl: `dispatch(cmd)` assigns an id, emits an `action` SSE, returns a promise
