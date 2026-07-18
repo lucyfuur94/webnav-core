@@ -123,10 +123,32 @@ the one novel thing. Validate value on the cheap surface first.
 - Never evade access controls; the extension uses the user's own authenticated session, honestly.
 - Commit points never auto-fired; handoff is the user's, not a bypass.
 
-## Open questions for the user (not blocking the spike)
+## LLM access + local architecture (SETTLED with user, 2026-07-18)
 
-1. **Our own extension using the user's Claude subscription, or riding Anthropic's extension?**
-   (Leaning: our own — we need to shape record/replay, and riding theirs means living at the mercy
-   of what they expose.) The spike is agnostic to this; it tests the snapshot layer either way.
-2. Does "subscription account" mean the user pastes an API key, or a real OAuth-to-Claude flow?
-   (Affects onboarding friction, not the core.)
+**Our own extension** (not riding Anthropic's), and the LLM is **`claude -p` on the user's own
+Claude Code subscription**, run by the LOCAL webnav process. The full shape:
+
+- **Extension** (browser): a11y capture, page driving, sidebar, record button, handoff.
+- **Local webnav process** (already exists — the CLI/dashboard/MCP server the user has installed):
+  grows one bridge for the extension (native-messaging host or a localhost endpoint — the old
+  `ingest` receiver is exactly this seam) and shells `claude -p` for reasoning.
+- **Why this is a small ask, not a new stack:** the target phase-1 user (us, developers, testing
+  teams) ALREADY has Chrome + Claude Code + webnav installed. Net-new install = one extension.
+
+Platform facts behind the split (verified):
+- An extension CANNOT spawn a process (sandbox); Native Messaging requires an installed native
+  host — so a local component is mandatory, and webnav's existing process IS it.
+- `claude -p` on the user's subscription from a local process is PROVEN in our own shipped code:
+  `dev review` (capture-review) shells `claude -p` today — the report-builder "✓ Verified" badge
+  was produced by it.
+
+**Pre-productization items (fine for dogfood, resolve before anything public):**
+1. TERMS CHECK: a distributed product that programmatically consumes users' Pro/Max quota via
+   `claude -p` needs Anthropic-terms verification — personal/dogfood use is squarely fine
+   (documented mode, our own pipeline uses it); building a public product on it is unverified.
+   Same honesty posture as bot-walls: don't build on an access path we haven't confirmed welcome.
+2. If/when productized, the official programmatic surface is the **Claude Agent SDK** (same
+   local-process constraint, cleaner than raw `-p`) — its subscription-auth story is the specific
+   thing to confirm then.
+3. Non-Claude-Code users (general consumers) are OUT of phase 1; the API-broker-through-our-backend
+   shape is the later path to them if wanted.
