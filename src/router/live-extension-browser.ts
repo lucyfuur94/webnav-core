@@ -104,6 +104,7 @@ export function makeLiveExtensionBrowser(
       }
       await dispatchClick(ref);
     },
+    typeText: (ref: string, text: string) => dispatchType(ref, text),
   };
   if (channel.goto) {
     browser.goto = async (url: string) => { await channel.goto!(url); };

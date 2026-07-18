@@ -111,6 +111,20 @@ describe('makeLiveExtensionBrowser — act()', () => {
   });
 });
 
+describe('makeLiveExtensionBrowser — typeText()', () => {
+  it('typeText(ref, text) dispatches {kind:"type", nodeId, text} using the REFMAP nodeId', async () => {
+    const { channel, dispatched } = fakeChannel(FULL_LOGIN_AX);
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const yaml = await browser.snapshot();
+    const userRef = parseSnapshot(yaml).find((n) => n.role === 'textbox' && n.name === 'Username')!.ref!;
+
+    expect(browser.typeText).toBeDefined();
+    await browser.typeText!(userRef, 'hello');
+
+    expect(dispatched).toEqual([{ kind: 'type', nodeId: '4', text: 'hello' }]);   // '4' = Username's real nodeId
+  });
+});
+
 describe('makeLiveExtensionBrowser — goto/currentUrl delegate to the channel when present', () => {
   it('goto() calls channel.goto when supplied', async () => {
     const calls: string[] = [];
