@@ -1,4 +1,4 @@
-// webnav-recorder/background.ts
+// webnav-extension/background.ts
 // Increment B: the sensor is chrome.debugger's CDP `Accessibility.getFullAXTree` — a
 // content script cannot call CDP, so this must run in the background service worker.
 // The extension stays DUMB (no adaptAXTree, no fingerprinting here): it POSTs raw AX

@@ -92,7 +92,7 @@ export function ingestAX(body: IngestAXBody, store: RecordStore): number {
   return n;
 }
 
-// Localhost-only receiver: the webnav-recorder Chrome extension POSTs recorded
+// Localhost-only receiver: the webnav-extension Chrome extension POSTs recorded
 // steps here; they land in webnav.db as ActionEffects via `ingest`, identical
 // to agent-recorded ones. No auth — localhost-only, no secrets in transit
 // beyond the map itself.

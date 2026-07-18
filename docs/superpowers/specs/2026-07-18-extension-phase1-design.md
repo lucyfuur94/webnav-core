@@ -7,7 +7,7 @@
 
 ## What exists (scouted, reuse — do not rebuild)
 
-- `webnav-recorder/` (repo root): an MV3 extension with a SOUND architecture — content script
+- `webnav-extension/` (repo root): an MV3 extension with a SOUND architecture — content script
   captures from/to snapshots + clicked ref → `background.ts` correlates click→settle into
   `RawStep`s → POSTs to the server. KEEP this skeleton. Its SENSOR is a DOM-walk
   (`content.ts` `domToSNode`/`accessibleName`) — the approach that produced 0 edges before; REPLACE it.
@@ -46,7 +46,7 @@ The load-bearing, reusable artifact. No extension load needed to verify.
 
 ## Increment B — extension sensor swap (build; final verify is user-gated)
 
-Reuse `webnav-recorder/`'s correlation skeleton; replace the sensor.
+Reuse `webnav-extension/`'s correlation skeleton; replace the sensor.
 
 1. `manifest.json`: add the `debugger` permission (getFullAXTree needs CDP; a content script
    cannot call it — same permission Anthropic's extension uses; the yellow banner is accepted,
@@ -73,4 +73,4 @@ full click→settle record loop over AX, shadow-DOM/iframe deep support. Phase 1
 
 Increment A: unit tests + a headless CDP capture of the rich-controls fixture showing 100%
 cross-resolve on the newly-mapped roles (I run this). Increment B: code builds (`tsc` in
-`webnav-recorder/`); end-to-end is the user's load-unpacked test.
+`webnav-extension/`); end-to-end is the user's load-unpacked test.

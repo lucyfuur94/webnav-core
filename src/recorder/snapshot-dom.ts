@@ -2,7 +2,7 @@
 // Serialize an accessibility tree to the playwright-parity snapshot text that
 // src/playwright/snapshot.ts::parseSnapshot reads. Pure + deterministic; the
 // in-repo test oracle for the extension's browser-side twin.
-// TWIN of webnav-recorder/serialize.ts::serialize — MUST stay in sync (same
+// TWIN of webnav-extension/serialize.ts::serialize — MUST stay in sync (same
 // ~15-line algorithm, duplicated deliberately; see the ponytail note there).
 
 export interface SerializableNode {

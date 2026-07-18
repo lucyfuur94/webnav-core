@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "webnav recorder",
+  "name": "webnav",
   "version": "0.1.0",
   "description": "Record real browsing into a webnav map (local).",
   "permissions": ["activeTab", "scripting", "storage", "debugger"],

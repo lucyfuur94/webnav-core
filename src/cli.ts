@@ -660,7 +660,7 @@ async function main() {
   }
   if (args.cmd === 'ingest') {
     // Long-lived localhost receiver (like `dashboard`/`mcp`): does NOT print-and-exit.
-    // The webnav-recorder Chrome extension POSTs recorded sessions here; they land
+    // The webnav-extension Chrome extension POSTs recorded sessions here; they land
     // in webnav.db as ActionEffects via `serveIngest` -> `ingest` (Task 2).
     const { serveIngest } = await import('./recorder/ingest.js');
     const { RecordStore } = await import('./mapstore/record.js');

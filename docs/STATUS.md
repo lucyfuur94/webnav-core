@@ -253,7 +253,7 @@
 >   `docs/superpowers/plans/2026-07-07-playwright-recorder.md`.
 
 > **2026-07-07 — human-session recorder: a second, real-usage producer into the same map (DONE except manual browser smoke).** ⚠️ **Superseded the same day** — this capture approach (Chrome-extension DOM-walk a11y approximation) proved broken on SPAs; see the "capture pivot" entry above for the evidence and the replacement (`dev record-live`, playwright-cli-based). Kept here as a documented dead-end.
-> - **What it is:** a Chrome MV3 extension (`webnav-recorder/`, isolated package) records real
+> - **What it is:** a Chrome MV3 extension (`webnav-extension/`, isolated package) records real
 >   human browsing and POSTs it to a new `webnav dev ingest --port 7778` localhost receiver, which
 >   writes `ActionEffect`s to `webnav.db` via the SAME `RecordStore` the agent-record path
 >   (`record-start`/`use`/`record-stop`) already uses. **Two producers, one sink** — from the
@@ -265,7 +265,7 @@
 >   memory an agent would otherwise have to build by driving the browser itself.
 > - **New verb:** `webnav dev ingest [--port 7778]` — starts a localhost HTTP receiver (`/ingest`),
 >   long-running like `dashboard`/`mcp`.
-> - **Flow for a human:** `webnav dev ingest` → load `webnav-recorder/` unpacked in Chrome → Record
+> - **Flow for a human:** `webnav dev ingest` → load `webnav-extension/` unpacked in Chrome → Record
 >   → do the flow → Stop & send → `webnav dev graph-analyse --session <id> --draft` → `graph-edit` →
 >   `walk`, same as an agent-recorded session.
 > - **Secret-field rule:** password/credit-card field VALUES are never recorded — only element
@@ -281,7 +281,7 @@
 >   extension compiles via `tsc -p`; the serializer twin is byte-identical to the in-repo oracle
 >   and content.ts's ref numbering aligns with it.
 > - **⚠️ Pending — manual browser smoke (the one human step):** `webnav dev ingest` → load
->   `webnav-recorder/` unpacked → record saucedemo login→cart → Stop & send → `graph-analyse
+>   `webnav-extension/` unpacked → record saucedemo login→cart → Stop & send → `graph-analyse
 >   --draft` → `graph-edit` → `walk`. This validates the DOM-walk role/name fidelity against a real
 >   page (the plan's flagged #1 risk — `domToSNode` approximates the a11y tree; `draft` verify-
 >   before-emit drops unresolvable fingerprints rather than mis-clicking, so it's a quality ceiling,

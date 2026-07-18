@@ -1,0 +1,1 @@
+{"name":"webnav-extension","version":"0.1.0","private":true,"description":"Chrome MV3 extension: record browsing into webnav.","scripts":{"build":"tsc -p tsconfig.json"},"devDependencies":{"@types/chrome":"^0.2.2","typescript":"^6.0.3"}}
