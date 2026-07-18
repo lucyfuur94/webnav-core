@@ -2,9 +2,16 @@
   "manifest_version": 3,
   "name": "webnav",
   "version": "0.1.0",
-  "description": "Record real browsing into a webnav map (local).",
-  "permissions": ["activeTab", "scripting", "storage", "debugger"],
+  "description": "Record real browsing into a webnav map, and drive a tab with a webnav agent (local).",
+  "permissions": ["activeTab", "scripting", "storage", "debugger", "sidePanel", "tabs", "tabGroups"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html" }
+  "action": { "default_popup": "popup.html" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": { "default": "Ctrl+E", "mac": "Command+E" },
+      "description": "Open the webnav agent side panel"
+    }
+  }
 }
