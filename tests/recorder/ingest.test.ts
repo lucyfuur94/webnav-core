@@ -237,8 +237,13 @@ describe('ingest', () => {
 
     const draft = draftFromEffects(store.actionEffects('ax-rowfold'));
     const allText = JSON.stringify(draft);
-    // the row-fold VALUES (per-row data) must never appear as affordance/state names —
-    // only the folded row TEMPLATE (scope:'row') may appear.
+    // The per-row data VALUES must never appear in the map from an AX-sourced landing —
+    // the no-values rule holding producer-agnostically. Mechanism (verified by mutation):
+    // the table's structure enters via extractShadow (src/explorer/shadow.ts), which reads
+    // ONLY columnheader names into collections[].columns — it has no cell/row/gridcell text
+    // path — and the per-row action buttons are separately widget-folded. (Not COLLECTION_ROLES
+    // /gridRepaint: those don't gate this fixture — a future value-leak regression will surface
+    // in extractShadow, look there.)
     for (const value of ['Acme Corp', 'Globex', 'Initech', 'Dana', 'Ravi', 'Mei']) {
       expect(allText.includes(value)).toBe(false);
     }
