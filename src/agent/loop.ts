@@ -84,14 +84,12 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       handler: async (a) => {
         const ref = String(a.ref);
         const val = String(a.text ?? '');
-        // ponytail: WalkBrowser.act has no raw-type path (its input slots are the
-        // walk's credential/shipping fills). For a plain field the minimal correct
-        // thing is to dispatch a click on the ref — the live-extension browser's
-        // dispatch carries a `type` command shape; a dedicated raw-type verb on
-        // WalkBrowser is the upgrade path if free-text typing becomes load-bearing.
-        await browser.act(ref, null);
+        if (!browser.typeText) {
+          return text('cannot type: this browser has no free-text input; field ' + ref + ' was NOT filled');
+        }
+        await browser.typeText(ref, val);
         emit({ type: 'action', id: 'type', cmd: { kind: 'type', nodeId: ref, text: val } });
-        return text('typed into ' + ref);
+        return text('typed "' + val + '" into ' + ref);
       },
     },
     {

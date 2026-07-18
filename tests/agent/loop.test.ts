@@ -12,7 +12,25 @@ import type { WalkBrowser } from '../../src/router/walk.js';
 
 // A fake WalkBrowser that records the calls the loop's tools make against it, and
 // returns a scripted snapshot YAML (so check_route can parse + match a state).
-function fakeBrowser(snapshotYaml: string): WalkBrowser & { acted: Array<[string, string | null]>; gotos: string[] } {
+function fakeBrowser(snapshotYaml: string): WalkBrowser & { acted: Array<[string, string | null]>; gotos: string[]; typed: Array<[string, string]> } {
+  const acted: Array<[string, string | null]> = [];
+  const gotos: string[] = [];
+  const typed: Array<[string, string]> = [];
+  return {
+    acted,
+    gotos,
+    typed,
+    snapshot: async () => snapshotYaml,
+    act: async (ref, slot) => { acted.push([ref, slot]); },
+    goto: async (url) => { gotos.push(url); },
+    typeText: async (ref, text) => { typed.push([ref, text]); },
+    callCount: () => acted.length + gotos.length,
+  };
+}
+
+// A browser variant with NO typeText — proves the honest-fallback path (no
+// silent click-and-claim-success on a browser that can't do raw free-text input).
+function fakeBrowserNoTypeText(snapshotYaml: string): WalkBrowser & { acted: Array<[string, string | null]>; gotos: string[] } {
   const acted: Array<[string, string | null]> = [];
   const gotos: string[] = [];
   return {
@@ -83,15 +101,26 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(browser.acted).toEqual([['e2', null]]);
   });
 
-  it('a type tool-call routes to the browser', async () => {
+  it('a type tool-call routes to browser.typeText(ref, text) — NOT act (act only clicks)', async () => {
     const browser = fakeBrowser(INVENTORY_SNAP);
     const store = newStore();
-    const { fn } = fakeQueryCalling('type', { ref: 'e5', text: 'hello' });
+    const { fn, toolResult } = fakeQueryCalling('type', { ref: 'e5', text: 'hello' });
     const { emit } = emitSpy();
     await runAgentGoal({ goal: 'type it', sessionId: 's2', mode: 'act', browser, store, states: [], emit, query: fn });
-    // type dispatches through the browser (a click+type on the same ref); at minimum act saw the ref.
-    expect(browser.acted.length).toBeGreaterThan(0);
-    expect(browser.acted.some(([ref]) => ref === 'e5')).toBe(true);
+    expect(browser.typed).toEqual([['e5', 'hello']]);
+    expect(browser.acted).toEqual([]);
+    expect(toolResult()).toContain('hello');
+    expect(toolResult()).toContain('e5');
+  });
+
+  it('a type tool-call on a browser with no typeText support returns an honest NOT-filled result (never a silent click)', async () => {
+    const browser = fakeBrowserNoTypeText(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, toolResult } = fakeQueryCalling('type', { ref: 'e5', text: 'hello' });
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'type it', sessionId: 's2b', mode: 'act', browser, store, states: [], emit, query: fn });
+    expect(browser.acted).toEqual([]);
+    expect(toolResult()).toMatch(/not filled|cannot type/i);
   });
 
   it('a goto tool-call routes to browser.goto(url)', async () => {

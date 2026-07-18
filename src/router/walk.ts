@@ -88,6 +88,12 @@ export interface WalkBrowser {
   // The live browser owns the `inputs` map and looks the slot up; the unit fake
   // ignores both and just advances the scripted snapshot.
   act(ref: string, inputSlot: string | null): Promise<void>;
+  // Type free text into a field by ref, WITHOUT clicking (act() only clicks — its
+  // inputSlot fills are for the walk's own credential/shipping precondition-fills,
+  // not a generic type). Optional: the playwright live adapter doesn't implement
+  // it yet; callers that need raw typing (the agent loop's `type` tool) must check
+  // for its presence and report honestly when absent.
+  typeText?(ref: string, text: string): Promise<void>;
   // Jump to a tier-1 addressable URL (edge.addressableUrl) instead of resolving a
   // ref — for icon-only/unstable links whose destination has a canonical URL. The
   // unit fake just advances its scripted snapshot (ignores the url).
