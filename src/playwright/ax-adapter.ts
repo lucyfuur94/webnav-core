@@ -14,6 +14,7 @@ export interface AXNode {
   properties?: { name: string; value: { value?: unknown } }[];
   childIds?: string[];
   parentId?: string;
+  backendDOMNodeId?: number;
 }
 
 // CDP roles playwright folds away (text merged into parent names, or structural/
@@ -39,14 +40,19 @@ function prop(n: AXNode, name: string): unknown {
   return n.properties?.find((p) => p.name === name)?.value?.value;
 }
 
-/** AX tree (flat, childIds-linked) → SnapNode[] in document order, depth = nesting.
- *  Every emitted node gets a synthetic ref (b1,b2,…) — playwright refs every node too,
- *  and cross-resolve compares fingerprints (role+name+near), never the ref strings. */
-export function adaptAXTree(nodes: AXNode[]): SnapNode[] {
+/** Internal walk function shared by adaptAXTree and adaptAXTreeWithRefs.
+ *  Traverses the AX tree and emits SnapNode[], optionally building a refMap.
+ */
+function walkAXTree(
+  nodes: AXNode[],
+  collectRefs: boolean = false,
+): { nodes: SnapNode[]; refMap: Map<string, { nodeId: string; backendDOMNodeId?: number }> | null } {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
   const root = nodes.find((n) => !n.parentId) ?? nodes[0];
   const out: SnapNode[] = [];
+  const refMap = collectRefs ? new Map<string, { nodeId: string; backendDOMNodeId?: number }>() : null;
   let ref = 0;
+
   const visit = (id: string, depth: number) => {
     const n = byId.get(id);
     if (!n) return;
@@ -57,18 +63,42 @@ export function adaptAXTree(nodes: AXNode[]): SnapNode[] {
       const role = ROLE_MAP[rawRole] ?? rawRole;
       const nm = (n.name?.value ?? '').trim();
       const url = prop(n, 'url');
+      const bRef = 'b' + (++ref);
       out.push({
         role,
         name: nm || null,
-        ref: 'b' + (++ref),
+        ref: bRef,
         url: typeof url === 'string' && url ? url : null,
-        raw: `${role}${nm ? ` "${nm}"` : ''} [ref=b${ref}]`,
+        raw: `${role}${nm ? ` "${nm}"` : ''} [ref=${bRef}]`,
         depth,
       });
+      if (refMap) {
+        refMap.set(bRef, { nodeId: n.nodeId, backendDOMNodeId: n.backendDOMNodeId });
+      }
       childDepth = depth + 1;
     }
     for (const c of n.childIds ?? []) visit(c, childDepth);
   };
+
   visit(root.nodeId, 0);
-  return out;
+  return { nodes: out, refMap };
+}
+
+/** AX tree (flat, childIds-linked) → SnapNode[] in document order, depth = nesting.
+ *  Every emitted node gets a synthetic ref (b1,b2,…) — playwright refs every node too,
+ *  and cross-resolve compares fingerprints (role+name+near), never the ref strings. */
+export function adaptAXTree(nodes: AXNode[]): SnapNode[] {
+  return walkAXTree(nodes, false).nodes;
+}
+
+/** AX tree → both SnapNode[] and a Map<bN ref, {nodeId, backendDOMNodeId}> for CDP driving.
+ *  The nodes are identical to adaptAXTree; the refMap enables clicking via ref. */
+export function adaptAXTreeWithRefs(
+  nodes: AXNode[],
+): { nodes: SnapNode[]; refMap: Map<string, { nodeId: string; backendDOMNodeId?: number }> } {
+  const result = walkAXTree(nodes, true);
+  return {
+    nodes: result.nodes,
+    refMap: result.refMap!,
+  };
 }

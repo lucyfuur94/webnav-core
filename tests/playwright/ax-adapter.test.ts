@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adaptAXTree, type AXNode } from '../../src/playwright/ax-adapter.js';
+import { adaptAXTree, adaptAXTreeWithRefs, type AXNode } from '../../src/playwright/ax-adapter.js';
 import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import { recoverFingerprint, resolveByFingerprint } from '../../src/playwright/fingerprint.js';
 
@@ -107,5 +107,116 @@ describe('adaptAXTree — table + form fixtures (parity smoke)', () => {
     const adapted = adaptAXTree(loadAX('form'));
     expect(adapted.some((n) => n.role === 'textbox' && n.name === 'Email')).toBe(true);
     expect(adapted.some((n) => n.role === 'textbox' && n.name === 'Password')).toBe(true);
+  });
+});
+
+describe('adaptAXTreeWithRefs — ref→nodeId map', () => {
+  it('rich fixture: adaptAXTreeWithRefs nodes deep-equal adaptAXTree (zero behavior change)', () => {
+    const axNodes = loadAX('rich');
+    const adapted = adaptAXTree(axNodes);
+    const { nodes: adaptedWithRefs } = adaptAXTreeWithRefs(axNodes);
+    expect(adaptedWithRefs).toEqual(adapted);
+  });
+
+  it('rich fixture: every emitted node ref maps to the correct nodeId from source', () => {
+    const axNodes = loadAX('rich');
+    const { nodes, refMap } = adaptAXTreeWithRefs(axNodes);
+
+    // For every node in the output, refMap must contain its ref with the correct nodeId
+    for (const node of nodes) {
+      const mapEntry = refMap.get(node.ref);
+      expect(mapEntry).toBeDefined();
+      expect(mapEntry?.nodeId).toBeDefined();
+
+      // Find the original AXNode to verify it matches
+      const original = axNodes.find((n) => n.nodeId === mapEntry?.nodeId);
+      expect(original).toBeDefined();
+      expect(original?.ignored).toBe(false);
+      expect(original?.role?.value).toBeTruthy();
+    }
+  });
+
+  it('rich fixture: refMap includes backendDOMNodeId when present in source', () => {
+    const axNodes = loadAX('rich');
+    const { nodes, refMap } = adaptAXTreeWithRefs(axNodes);
+
+    // Find a node with backendDOMNodeId that is also kept (not ignored, not dropped role)
+    const DROP_SET = new Set(DROP_ROLES);
+    const keptNodeWithBackendId = axNodes.find(
+      (n) => !n.ignored && n.backendDOMNodeId !== undefined && n.role?.value && !DROP_SET.has(n.role.value),
+    );
+    expect(keptNodeWithBackendId).toBeDefined();
+
+    if (keptNodeWithBackendId) {
+      // Find the corresponding output node via refMap
+      let foundInMap = false;
+      for (const [ref, mapEntry] of refMap) {
+        if (mapEntry.nodeId === keptNodeWithBackendId.nodeId) {
+          expect(mapEntry.backendDOMNodeId).toBe(keptNodeWithBackendId.backendDOMNodeId);
+          foundInMap = true;
+          break;
+        }
+      }
+      expect(foundInMap).toBe(true);
+    }
+  });
+
+  it('dropped/ignored nodes never appear in refMap', () => {
+    const axNodes = loadAX('rich');
+    const { nodes, refMap } = adaptAXTreeWithRefs(axNodes);
+
+    // Collect all nodeIds that appear in the refMap
+    const mappedNodeIds = new Set(Array.from(refMap.values()).map((v) => v.nodeId));
+
+    // Every mapped nodeId must exist in the output nodes (double-check)
+    for (const nodeId of mappedNodeIds) {
+      const inOutput = nodes.some((n) => {
+        const mapEntry = refMap.get(n.ref);
+        return mapEntry?.nodeId === nodeId;
+      });
+      expect(inOutput).toBe(true);
+    }
+
+    // No dropped/ignored nodes should have ended up in the map
+    for (const original of axNodes) {
+      if (original.ignored || !original.role?.value || DROP_ROLES.includes(original.role.value)) {
+        // This node should NOT be in the refMap
+        const inMap = Array.from(refMap.values()).some((v) => v.nodeId === original.nodeId);
+        expect(inMap).toBe(false);
+      }
+    }
+  });
+
+  it('synthetic test: inline AXNode with backendDOMNodeId threads through correctly', () => {
+    const testNodes: AXNode[] = [
+      {
+        nodeId: 'root',
+        ignored: false,
+        role: { value: 'region' },
+        name: { value: 'Test Region' },
+        childIds: ['child1'],
+      },
+      {
+        nodeId: 'child1',
+        ignored: false,
+        role: { value: 'button' },
+        name: { value: 'Click Me' },
+        backendDOMNodeId: 999,
+        parentId: 'root',
+      },
+    ];
+
+    const { nodes, refMap } = adaptAXTreeWithRefs(testNodes);
+    expect(nodes.length).toBe(2);
+
+    // Find the button node
+    const buttonNode = nodes.find((n) => n.role === 'button');
+    expect(buttonNode).toBeDefined();
+    expect(buttonNode?.name).toBe('Click Me');
+
+    // Verify refMap includes the backendDOMNodeId
+    const mapEntry = refMap.get(buttonNode!.ref);
+    expect(mapEntry?.nodeId).toBe('child1');
+    expect(mapEntry?.backendDOMNodeId).toBe(999);
   });
 });
