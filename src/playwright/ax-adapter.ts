@@ -3,8 +3,8 @@ import type { SnapNode } from './snapshot.js';
 // Adapt a raw CDP `Accessibility.getFullAXTree` node list into webnav's SnapNode[]
 // contract — the same shape `parseSnapshot` produces from playwright's YAML. This is
 // what lets an extension (no playwright-cli, only chrome.debugger) feed the engine
-// identically to playwright's producer. Promoted + hardened from the spike adapter
-// (tests/fixtures/ax/_spike-adapter-reference.mts.txt) per
+// identically to playwright's producer. Promoted + hardened from the snapshot-compat
+// spike (docs/superpowers/specs/2026-07-18-extension-snapshot-spike-findings.md) per
 // docs/superpowers/specs/2026-07-18-extension-phase1-design.md Increment A.
 export interface AXNode {
   nodeId: string;
