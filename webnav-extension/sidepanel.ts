@@ -64,11 +64,23 @@ modeEl.onclick = () => {
 // ---------------------------------------------------------------------------
 // Target tab — the panel outlives tab switches, so re-query on activation.
 // ---------------------------------------------------------------------------
+let targetTabUrl = '';
 async function resolveTab(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   targetTabId = tab?.id ?? null;
+  targetTabUrl = tab?.url ?? '';
 }
 resolveTab();
+
+// chrome.debugger cannot attach to chrome://, chrome-extension://, the Web Store, view-source:,
+// about: or file:// pages — attach throws "Cannot access a chrome:// URL". Only http(s) tabs are
+// drivable. Guard BEFORE attach so the user gets a clear reason, not a raw CDP error.
+function drivableReason(url: string): string | null {
+  if (!url) return 'the active tab has no URL yet — reload it and try again';
+  if (/^https?:\/\//i.test(url)) return null;
+  return 'the agent can only drive normal web pages (http/https). Open a website in this tab first — ' +
+    'it can\'t drive chrome:// pages, the New Tab page, the Web Store, or extension pages.';
+}
 chrome.tabs.onActivated.addListener(() => { if (!running) resolveTab(); });
 
 // ---------------------------------------------------------------------------
@@ -226,6 +238,8 @@ async function startRun(): Promise<void> {
   if (!goal || running) return;
   await resolveTab();
   if (targetTabId == null) { bubble('error', '✗ no active tab to drive'); return; }
+  const undrivable = drivableReason(targetTabUrl);
+  if (undrivable) { bubble('error', '✗ ' + undrivable); return; }
 
   // Resume-from-paused is just a fresh goal: clear the paused flag and re-scope the group.
   paused = false;
@@ -314,3 +328,12 @@ goalEl.addEventListener('keydown', (e) => {
 });
 
 openStream();
+
+// Watchdog: native EventSource auto-reconnect can settle into CLOSED and stay there
+// (e.g. the server wasn't running at panel load). Re-open every 3s whenever the stream
+// isn't OPEN/CONNECTING, so starting `webnav agent-serve` AFTER opening the panel flips
+// it to 'connected' on its own — no more manual close-and-reopen. ponytail: a 3s poll is
+// plenty for a localhost dev server; no exponential backoff needed.
+setInterval(() => {
+  if (!es || es.readyState === EventSource.CLOSED) openStream();
+}, 3000);
