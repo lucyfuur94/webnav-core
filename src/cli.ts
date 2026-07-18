@@ -55,6 +55,7 @@ export type ParsedArgs =
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number; open: boolean }
   | { cmd: 'ingest'; port: number }
+  | { cmd: 'agent-serve'; port: number }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -232,6 +233,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, port, open: rest.includes('--open') };
   }
   if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
+  if (cmd === 'agent-serve') return { cmd, port: Number(flagValue(rest, '--port') ?? 7779) };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted'),
@@ -666,6 +668,20 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     const server = serveIngest(args.port, new RecordStore(dbPath()));
     process.stderr.write(`webnav ingest listening on http://127.0.0.1:${args.port}/ingest\n`);
+    console.log(JSON.stringify({ status: 'listening', port: args.port }));
+    await new Promise(() => {}); // run until killed
+    return;
+  }
+  if (args.cmd === 'agent-serve') {
+    // Long-lived localhost receiver (like `ingest`/`dashboard`): the Chrome extension
+    // sidePanel's local server. Streams AgentEvent over SSE, accepts a goal, gives the
+    // (later) agent loop a real AgentChannel, and mounts /ingest-ax so a live goal run
+    // is recorded through the same path human/agent recordings use (Task 3). No
+    // onGoal wired yet — that's a later task; serving the channel routes is enough.
+    const { serveAgent } = await import('./agent/server.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const server = serveAgent(args.port, new RecordStore(dbPath()));
+    process.stderr.write(`webnav agent-serve listening on http://127.0.0.1:${args.port}\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port }));
     await new Promise(() => {}); // run until killed
     return;

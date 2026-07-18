@@ -475,6 +475,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
     flags: [{ name: '--port', takesValue: true, default: '7778', description: 'Localhost port to listen on.' }],
     example: 'webnav dev ingest --port 7778',
   },
+  {
+    name: 'agent-serve',
+    summary: 'Run the local agent server the webnav-extension sidePanel talks to. Starts an HTTP server on --port (default 7779): GET /api/agent/events streams SSE {type:turn|action|done|error|plan} events; POST /api/agent/goal {goal,sessionId,mode} starts a run; POST /api/agent/command-result {id,result} resolves a pending action command the server emitted; POST /api/agent/stop aborts the current run; POST /ingest-ax lands a live run as ActionEffects (same path as `dev ingest`). Runs until Ctrl-C.',
+    args: [],
+    flags: [{ name: '--port', takesValue: true, default: '7779', description: 'Localhost port to listen on.' }],
+    example: 'webnav dev agent-serve --port 7779',
+  },
 ];
 
 export const COMMANDS: CommandSpec[] = [...CONSUMER_COMMANDS, ...DEV_COMMANDS];
