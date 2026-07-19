@@ -15,8 +15,10 @@ const axFixture = (name: string): AXNode[] => JSON.parse(readFileSync(join(fixtu
 let servers: Server[] = [];
 afterEach(() => { for (const s of servers) s.close(); servers = []; });
 
+const TOKEN = 'test-token-abc123';
+
 async function listen(store: RecordStore, opts?: Parameters<typeof serveAgent>[2]): Promise<number> {
-  const server = serveAgent(0, store, opts);
+  const server = serveAgent(0, store, { token: TOKEN, ...opts });
   servers.push(server);
   await new Promise((r) => server.on('listening', r));
   return (server.address() as any).port;
@@ -24,13 +26,13 @@ async function listen(store: RecordStore, opts?: Parameters<typeof serveAgent>[2
 
 // Fake extension: opens the SSE stream, parses `data: {...}` lines into AgentEvent,
 // and lets the test answer `action` events by POSTing to /api/agent/command-result.
-function openEvents(port: number): { events: AgentEvent[]; close: () => void; waitFor: (pred: (e: AgentEvent) => boolean, timeoutMs?: number) => Promise<AgentEvent> } {
+function openEvents(port: number, token: string = TOKEN): { events: AgentEvent[]; close: () => void; waitFor: (pred: (e: AgentEvent) => boolean, timeoutMs?: number) => Promise<AgentEvent> } {
   const events: AgentEvent[] = [];
   const controller = new AbortController();
   const waiters: { pred: (e: AgentEvent) => boolean; resolve: (e: AgentEvent) => void }[] = [];
   (async () => {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/agent/events`, { signal: controller.signal });
+      const res = await fetch(`http://127.0.0.1:${port}/api/agent/events?token=${encodeURIComponent(token)}`, { signal: controller.signal });
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buf = '';
@@ -64,9 +66,11 @@ function openEvents(port: number): { events: AgentEvent[]; close: () => void; wa
   };
 }
 
-function postJson(port: number, path: string, body: unknown): Promise<{ status: number; json: any }> {
+function postJson(port: number, path: string, body: unknown, token: string | null = TOKEN): Promise<{ status: number; json: any }> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token != null) headers['x-webnav-token'] = token;
   return fetch(`http://127.0.0.1:${port}${path}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers, body: JSON.stringify(body),
   }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => null) }));
 }
 
@@ -187,6 +191,69 @@ describe('agent-serve', () => {
     const port = await listen(store);
     const res = await postJson(port, '/api/agent/command-result', { id: 'nope', result: {} });
     expect(res.status).toBe(404);
+  });
+
+  it('POST /api/agent/goal WITHOUT the token header → 401 unauthorized', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 's', mode: 'live' }, null);
+    expect(res.status).toBe(401);
+    expect(res.json).toEqual({ ok: false, error: 'unauthorized' });
+  });
+
+  it('POST /api/agent/goal with the WRONG token → 401 unauthorized', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 's', mode: 'live' }, 'wrong-token');
+    expect(res.status).toBe(401);
+    expect(res.json).toEqual({ ok: false, error: 'unauthorized' });
+  });
+
+  it('POST /api/agent/goal WITH the correct token → 200', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 's', mode: 'live' });
+    expect(res.status).toBe(200);
+    expect(res.json.ok).toBe(true);
+  });
+
+  it('SSE /events WITHOUT ?token → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent/events`);
+    expect(res.status).toBe(401);
+    await res.body?.cancel();
+  });
+
+  it('SSE /events WITH ?token → 200 event-stream', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent/events?token=${encodeURIComponent(TOKEN)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.body?.cancel();
+  });
+
+  it('POST /ingest-ax WITHOUT the token header → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/ingest-ax', { sessionId: 'x', steps: [] }, null);
+    expect(res.status).toBe(401);
+  });
+
+  it('does NOT set Access-Control-Allow-Origin', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 's', mode: 'live' });
+    // fetch surfaces response headers; the wildcard CORS header must be absent.
+    // (postJson already reads .json; re-fetch to inspect headers.)
+    const raw = await fetch(`http://127.0.0.1:${port}/api/agent/goal`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-webnav-token': TOKEN },
+      body: JSON.stringify({ goal: 'g', sessionId: 's', mode: 'live' }),
+    });
+    expect(raw.headers.get('access-control-allow-origin')).toBeNull();
+    await raw.body?.cancel();
+    expect(res.status).toBe(200);
   });
 
   it('POST /api/agent/stop rejects pending command promises', async () => {

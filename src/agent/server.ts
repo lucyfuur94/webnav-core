@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import type { AXNode } from '../playwright/ax-adapter.js';
 import type { AgentChannel } from '../router/live-extension-browser.js';
 import { ingestAX, type IngestAXBody } from '../recorder/ingest.js';
@@ -31,12 +32,18 @@ export interface AgentGoalBody { goal: string; sessionId: string; mode: string }
 export interface ServeAgentOpts {
   onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void) => Promise<void>;
   commandTimeoutMs?: number;
+  // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
+  // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
+  // header). Absent → generated at boot (safe default: never token-less). The cli
+  // generates + passes + prints it so the user can paste it into the extension panel.
+  token?: string;
 }
 
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
 export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpts = {}): http.Server {
   const commandTimeoutMs = opts.commandTimeoutMs ?? 30_000;
+  const token = opts.token ?? crypto.randomBytes(16).toString('hex');
   const emitters = new Set<(e: AgentEvent) => void>();
   const pending = new Map<string, Pending>();
   let seq = 0;
@@ -73,15 +80,28 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
     };
   }
 
-  const server = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type');
-    if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+  // Constant-time token check. The extension sends the secret as an `x-webnav-token`
+  // header on POSTs; EventSource can't set headers, so the SSE GET carries it as a
+  // `?token=` query param. No CORS headers are emitted at all — this server is only
+  // reached by the extension (a privileged context whose fetch/EventSource are NOT
+  // page-CORS-gated), so `*` was never needed; dropping it blocks any web page from
+  // reading responses cross-origin, and the token blocks driving the browser without
+  // the secret (closes the DNS-rebind / local-process attack).
+  const authorized = (req: http.IncomingMessage): boolean => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const presented = (req.headers['x-webnav-token'] as string | undefined) ?? url.searchParams.get('token') ?? '';
+    const a = Buffer.from(presented);
+    const b = Buffer.from(token);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
 
+  const server = http.createServer((req, res) => {
     const sendJson = (code: number, body: unknown) =>
       res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 
-    if (req.method === 'GET' && req.url === '/api/agent/events') {
+    if (!authorized(req)) return sendJson(401, { ok: false, error: 'unauthorized' });
+
+    if (req.method === 'GET' && (req.url ?? '').startsWith('/api/agent/events')) {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       res.write(': connected\n\n');
       const send = (e: AgentEvent) => res.write('data: ' + JSON.stringify(e) + '\n\n');

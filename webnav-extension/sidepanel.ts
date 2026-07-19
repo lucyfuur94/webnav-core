@@ -26,6 +26,7 @@ const pauseEl = byId<HTMLButtonElement>('pause');
 const connEl = byId<HTMLSpanElement>('conn');
 const sidEl = byId<HTMLInputElement>('sid');
 const baseEl = byId<HTMLInputElement>('base');
+const tokenEl = byId<HTMLInputElement>('token');
 
 const MODES = ['Ask', 'Auto', 'Act'] as const;
 type Mode = (typeof MODES)[number];
@@ -39,6 +40,7 @@ const START_URL = 'https://www.google.com';
 
 let mode: Mode = 'Ask';
 let base = 'http://127.0.0.1:7779';
+let token = ''; // per-run secret from `webnav agent-serve`; required on every request
 let targetTabId: number | null = null;
 let running = false;
 let paused = false; // handed control to the user without detaching the debugger
@@ -53,14 +55,17 @@ chrome.runtime.connect({ name: 'webnav-panel' });
 // ---------------------------------------------------------------------------
 // Config persistence (chrome.storage) — mirrors the popup pattern.
 // ---------------------------------------------------------------------------
-chrome.storage.local.get(['sid', 'base', 'mode']).then((s) => {
+chrome.storage.local.get(['sid', 'base', 'mode', 'token']).then((s) => {
   if (s.sid) sidEl.value = s.sid as string;
   if (s.base) { baseEl.value = s.base as string; base = s.base as string; }
+  if (s.token) { tokenEl.value = s.token as string; token = s.token as string; }
   if (s.mode && (MODES as readonly string[]).includes(s.mode as string)) mode = s.mode as Mode;
   modeEl.textContent = mode;
+  openStream(); // re-open once the persisted token is loaded (initial open may have been token-less)
 });
-baseEl.onchange = () => { base = baseEl.value; chrome.storage.local.set({ base }); };
+baseEl.onchange = () => { base = baseEl.value; chrome.storage.local.set({ base }); openStream(); };
 sidEl.onchange = () => chrome.storage.local.set({ sid: sidEl.value });
+tokenEl.onchange = () => { token = tokenEl.value.trim(); chrome.storage.local.set({ token }); openStream(); };
 
 modeEl.onclick = () => {
   mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
@@ -137,15 +142,26 @@ let es: EventSource | null = null;
 
 function openStream(): void {
   es?.close();
-  es = new EventSource(base + '/api/agent/events');
+  if (!token) {
+    // No token → the server would 401 the SSE GET; don't even open. Tell the user what to do.
+    es = null;
+    connEl.textContent = 'disconnected — paste the token from `webnav agent-serve` into settings';
+    connEl.className = 'err';
+    connEl.title = 'The agent server prints a token at startup. Open settings and paste it into the Token field.';
+    return;
+  }
+  // EventSource can't set headers, so the per-run token rides as a query param (the server
+  // accepts ?token= on the SSE GET and 401s a missing/wrong one).
+  es = new EventSource(base + '/api/agent/events?token=' + encodeURIComponent(token));
   es.onopen = () => { connEl.textContent = 'connected'; connEl.className = 'ok'; };
   // EventSource auto-reconnects natively, so this flips back to 'connected' once the
-  // server is up — the message just tells a first-time user WHY it's down and how to fix
-  // it (the #1 dead-end: no local server running). ponytail: no manual retry loop needed.
+  // server is up — the message tells a first-time user WHY it's down. A 401 (wrong/stale
+  // token) also lands here; EventSource doesn't expose the status, so we name both likely
+  // causes: server not running, or a token mismatch. ponytail: no manual retry loop needed.
   es.onerror = () => {
-    connEl.textContent = 'disconnected — run `webnav agent-serve --port 7779`';
+    connEl.textContent = 'disconnected — start `webnav agent-serve --port 7779` and paste its token into settings';
     connEl.className = 'err';
-    connEl.title = 'The extension needs the local webnav agent server. Start it in a terminal:\n  webnav agent-serve --port 7779\nThen this reconnects automatically.';
+    connEl.title = 'The extension needs the local webnav agent server AND its token. Start it in a terminal:\n  webnav agent-serve --port 7779\nThen paste the printed token into settings. It reconnects automatically once both match.';
   };
   // EventSource natively skips `:`-comment keepalives; we only get real `data:` events.
   es.onmessage = (ev) => {
@@ -214,9 +230,14 @@ async function execAction(id: string, cmd: Cmd): Promise<void> {
   await postResult(id, result);
 }
 
+// Every POST to the agent server carries the per-run token; the server 401s without it.
+function postHeaders(): Record<string, string> {
+  return { 'content-type': 'application/json', 'x-webnav-token': token };
+}
+
 async function postResult(id: string, result: unknown): Promise<void> {
   await fetch(base + '/api/agent/command-result', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: postHeaders(),
     body: JSON.stringify({ id, result }),
   }).catch(() => {});
 }
@@ -299,10 +320,16 @@ async function startRun(): Promise<void> {
   await scopeTabGroup(targetTabId);
 
   const res = await fetch(base + '/api/agent/goal', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: postHeaders(),
     body: JSON.stringify({ goal, sessionId: sidEl.value, mode: mode.toLowerCase() }),
   }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
-  if (!res?.ok) { bubble('error', '✗ goal rejected: ' + (res?.error ?? '')); finishRun(); }
+  if (!res?.ok) {
+    const hint = res?.error === 'unauthorized'
+      ? 'goal rejected: unauthorized — paste the token from `webnav agent-serve` into settings'
+      : 'goal rejected: ' + (res?.error ?? '');
+    bubble('error', '✗ ' + hint);
+    finishRun();
+  }
 }
 
 // Group + label the tab so the driven tab is visually scoped (Claude-extension parity).
@@ -330,7 +357,7 @@ function finishRun(): void {
 }
 
 async function stopRun(): Promise<void> {
-  await fetch(base + '/api/agent/stop', { method: 'POST' }).catch(() => {});
+  await fetch(base + '/api/agent/stop', { method: 'POST', headers: postHeaders() }).catch(() => {});
   bubble('done', 'loop halted');
   if (targetTabId != null) await chrome.runtime.sendMessage({ type: 'detach-drive' });
   paused = false;
@@ -350,7 +377,7 @@ async function stopRun(): Promise<void> {
 // README). Don't claim otherwise in the UI.
 async function pauseRun(): Promise<void> {
   if (!running || paused) return;
-  await fetch(base + '/api/agent/stop', { method: 'POST' }).catch(() => {});
+  await fetch(base + '/api/agent/stop', { method: 'POST', headers: postHeaders() }).catch(() => {});
   paused = true;
   running = false;
   sendEl.disabled = false;
