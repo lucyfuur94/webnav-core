@@ -365,6 +365,40 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(browser.gotos).toEqual(['https://other.test/here']); // navigated freely
   });
 
+  // ---- model selection: the panel's chosen model threads into the QueryFn -------
+  // A fake that CAPTURES the `model` param the loop passed (undefined when unset),
+  // proving runAgentGoal({ model }) reaches the SDK-query seam.
+  function modelCapturingQuery(): { fn: QueryFn; model: () => string | undefined; called: () => boolean } {
+    let captured: string | undefined;
+    let called = false;
+    const fn: QueryFn = async function* ({ model }) {
+      called = true;
+      captured = model;
+      yield resultMsg('ok');
+    };
+    return { fn, model: () => captured, called: () => called };
+  }
+
+  it('a model id threads into the QueryFn params', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, model, called } = modelCapturingQuery();
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'g', sessionId: 'm1', mode: 'act', model: 'claude-opus-4-8', browser, store, states: [], emit, query: fn });
+    expect(called()).toBe(true);
+    expect(model()).toBe('claude-opus-4-8');
+  });
+
+  it('omitting model → the QueryFn receives params.model === undefined (SDK default)', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, model, called } = modelCapturingQuery();
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'g', sessionId: 'm2', mode: 'act', browser, store, states: [], emit, query: fn });
+    expect(called()).toBe(true);
+    expect(model()).toBeUndefined();
+  });
+
   it('act mode: a goto to a new origin does NOT await approval (Act gates nothing)', async () => {
     const store = newStore();
     const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');

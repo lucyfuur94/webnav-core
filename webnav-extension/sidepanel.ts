@@ -29,6 +29,7 @@ const thread = byId<HTMLDivElement>('thread');
 const goalEl = byId<HTMLTextAreaElement>('goal');
 const modeEl = byId<HTMLDivElement>('mode'); // segmented switch container (.modeswitch)
 const modeHintEl = byId<HTMLDivElement>('mode-hint'); // #2: one-line selected-mode description
+const modelEl = byId<HTMLSelectElement>('model'); // header model selector (native <select>)
 const sendEl = byId<HTMLButtonElement>('send');
 const stopEl = byId<HTMLButtonElement>('stop');
 const pauseEl = byId<HTMLButtonElement>('pause');
@@ -68,6 +69,9 @@ type Mode = (typeof MODES)[number];
 const START_URL = 'https://www.google.com';
 
 let mode: Mode = 'Ask';
+// The SDK model the agent drives on. Default = Sonnet 5 (matches the <select>'s
+// selected option); persisted under `agentModel` (DISTINCT from the `mode` key).
+let agentModel = 'claude-sonnet-5';
 let base = 'http://127.0.0.1:7779';
 let token = ''; // per-run secret from `webnav agent-serve`; required on every request
 let sid = 'agent-1'; // session id; edited in the options tab, read fresh at startRun
@@ -88,12 +92,14 @@ chrome.runtime.connect({ name: 'webnav-panel' });
 // stored values; keys are unchanged (sid/base/mode/token) so whatever options.ts
 // writes, the panel picks up here — and reacts live via storage.onChanged.
 // ---------------------------------------------------------------------------
-chrome.storage.local.get(['sid', 'base', 'mode', 'token']).then((s) => {
+chrome.storage.local.get(['sid', 'base', 'mode', 'token', 'agentModel']).then((s) => {
   if (s.sid) sid = s.sid as string;
   if (s.base) base = s.base as string;
   if (s.token) token = (s.token as string).trim();
   if (s.mode && (MODES as readonly string[]).includes(s.mode as string)) mode = s.mode as Mode;
+  if (s.agentModel && isKnownModel(s.agentModel as string)) agentModel = s.agentModel as string;
   applyMode();
+  applyModel();
   openStream(); // re-open once the persisted token is loaded
   // First-run: no token means the panel can't connect. Open the options tab so the
   // user can paste it, instead of leaving them staring at "no token".
@@ -111,6 +117,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.mode) {
     const m = changes.mode.newValue as string;
     if ((MODES as readonly string[]).includes(m)) { mode = m as Mode; applyMode(); }
+  }
+  if (changes.agentModel) {
+    const m = changes.agentModel.newValue as string;
+    if (isKnownModel(m)) { agentModel = m; applyModel(); }
   }
   if (reopen) openStream();
 });
@@ -145,6 +155,21 @@ for (const b of modeButtons) {
     chrome.storage.local.set({ mode });
   };
 }
+
+// Model selector (native <select>). Values ARE the SDK model ids; the option set is
+// the source of truth for what's valid, so a stored/changed value is only honored if
+// it still matches an <option> (stale ids fall back to the current selection).
+function isKnownModel(v: string): boolean {
+  return Array.from(modelEl.options).some((o) => o.value === v);
+}
+function applyModel(): void {
+  modelEl.value = agentModel; // reflect restored state onto the control
+}
+modelEl.onchange = () => {
+  if (!isKnownModel(modelEl.value)) return;
+  agentModel = modelEl.value;
+  chrome.storage.local.set({ agentModel });
+};
 
 // ---------------------------------------------------------------------------
 // Target tab — the panel outlives tab switches, so re-query on activation.
@@ -723,7 +748,7 @@ async function startRun(): Promise<void> {
 
   const res = await fetch(base + '/api/agent/goal', {
     method: 'POST', headers: postHeaders(),
-    body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase() }),
+    body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase(), model: agentModel }),
   }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   if (!res?.ok) {
     const hint = res?.error === 'unauthorized'

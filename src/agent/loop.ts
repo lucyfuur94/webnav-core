@@ -29,6 +29,8 @@ export type QueryFn = (params: {
   prompt: string;
   tools: ToolDef[];
   mode: 'ask' | 'act';
+  // User-selected model id (e.g. 'claude-sonnet-5'). Omitted → the SDK default.
+  model?: string;
   emit: (e: AgentEvent) => void;
   signal?: AbortSignal;
 }) => AsyncIterable<unknown>;
@@ -37,6 +39,8 @@ export interface RunAgentGoalArgs {
   goal: string;
   sessionId: string;
   mode: 'ask' | 'act';
+  // User-selected model id, threaded to the SDK query. Omitted → the SDK default.
+  model?: string;
   browser: WalkBrowser;
   store: MapStore;
   states: State[];
@@ -203,7 +207,7 @@ function summarizeRecall(res: { status: string } & Record<string, unknown>): str
 
 // The default QueryFn: wire the tools into a real SDK MCP server and run query().
 // Imported lazily so unit tests (which inject a fake) never load the SDK.
-const defaultQuery: QueryFn = async function* ({ prompt, tools, signal }) {
+const defaultQuery: QueryFn = async function* ({ prompt, tools, model, signal }) {
   const { tool, createSdkMcpServer, query } = await import('@anthropic-ai/claude-agent-sdk');
   const sdkTools = tools.map((t) =>
     tool(t.name, t.description, t.shape, async (a: Record<string, unknown>, extra: unknown) => t.handler(a, extra)),
@@ -216,6 +220,8 @@ const defaultQuery: QueryFn = async function* ({ prompt, tools, signal }) {
       mcpServers: { webnav: server },
       allowedTools,
       permissionMode: 'default',
+      // Only pass `model` when the user picked one; omit → SDK default (never '').
+      ...(model ? { model } : {}),
       ...(signal ? { abortController: abortFromSignal(signal) } : {}),
     },
   });
@@ -274,7 +280,7 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
 
   try {
     let finalText = '';
-    for await (const msg of query({ prompt, tools, mode, emit, signal: args.signal })) {
+    for await (const msg of query({ prompt, tools, mode, model: args.model, emit, signal: args.signal })) {
       const m = msg as any;
       if (m.type === 'assistant') {
         for (const block of m.message?.content ?? []) {
