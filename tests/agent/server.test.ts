@@ -94,6 +94,38 @@ describe('agent-serve', () => {
     client.close();
   });
 
+  it('goto(url) emits an action with cmd {kind:goto,url}; POSTing command-result resolves it', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let channelRef: any;
+    const port = await listen(store, { onGoal: async (_goal, channel) => { channelRef = channel; } });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'sg', mode: 'live' });
+    for (let i = 0; i < 50 && !channelRef; i++) await new Promise((r) => setTimeout(r, 10));
+
+    const gotoPromise = channelRef.goto('https://example.com');
+    const action = await client.waitFor((e) => e.type === 'action' && (e as any).cmd.kind === 'goto') as any;
+    expect(action.cmd).toEqual({ kind: 'goto', url: 'https://example.com' });
+    await postJson(port, '/api/agent/command-result', { id: action.id, result: { ok: true } });
+    await expect(gotoPromise).resolves.toBeUndefined();  // AgentChannel.goto() resolves void
+    client.close();
+  });
+
+  it('currentUrl() emits {kind:current-url} and resolves with the POSTed url string', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let channelRef: any;
+    const port = await listen(store, { onGoal: async (_goal, channel) => { channelRef = channel; } });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'su', mode: 'live' });
+    for (let i = 0; i < 50 && !channelRef; i++) await new Promise((r) => setTimeout(r, 10));
+
+    const urlPromise = channelRef.currentUrl();
+    const action = await client.waitFor((e) => e.type === 'action' && (e as any).cmd.kind === 'current-url') as any;
+    expect(action.cmd).toEqual({ kind: 'current-url' });
+    await postJson(port, '/api/agent/command-result', { id: action.id, result: 'https://landed.example/here' });
+    await expect(urlPromise).resolves.toBe('https://landed.example/here');
+    client.close();
+  });
+
   it('getAX() round-trips an AXNode[]', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     let channelRef: any;

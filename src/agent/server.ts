@@ -12,7 +12,9 @@ import type { RecordStore } from '../mapstore/record.js';
 export type AgentCommand =
   | { kind: 'get-ax' }
   | { kind: 'click'; nodeId: string }
-  | { kind: 'type'; nodeId: string; text?: string };
+  | { kind: 'type'; nodeId: string; text?: string }
+  | { kind: 'goto'; url: string }
+  | { kind: 'current-url' };
 
 export type AgentEvent =
   | { type: 'turn'; text: string }
@@ -66,6 +68,8 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
     return {
       getAX: () => dispatchCommand({ kind: 'get-ax' }) as Promise<AXNode[]>,
       dispatch: async (cmd) => { await dispatchCommand(cmd); },
+      goto: async (url) => { await dispatchCommand({ kind: 'goto', url }); },
+      currentUrl: () => dispatchCommand({ kind: 'current-url' }) as Promise<string>,
     };
   }
 

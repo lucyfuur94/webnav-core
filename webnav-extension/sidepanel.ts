@@ -30,6 +30,13 @@ const baseEl = byId<HTMLInputElement>('base');
 const MODES = ['Ask', 'Auto', 'Act'] as const;
 type Mode = (typeof MODES)[number];
 
+// Launching from a chrome://, New-Tab, blank, or extension tab can't be driven (the CDP
+// debugger refuses those, and about:blank isn't attachable either). Instead of refusing,
+// we open a fresh REAL http(s) tab and drive that — the agent immediately goto()s to its
+// real destination, so this is just a neutral drivable landing. Google chosen: a real,
+// lightweight, always-reachable page (not an evasion; just somewhere attachable to start).
+const START_URL = 'https://www.google.com';
+
 let mode: Mode = 'Ask';
 let base = 'http://127.0.0.1:7779';
 let targetTabId: number | null = null;
@@ -82,6 +89,27 @@ function drivableReason(url: string): string | null {
     'it can\'t drive chrome:// pages, the New Tab page, the Web Store, or extension pages.';
 }
 chrome.tabs.onActivated.addListener(() => { if (!running) resolveTab(); });
+
+// Resolve once a freshly-created tab has finished loading, so the debugger attach + first
+// get-ax read a settled page. ponytail: 15s ceiling, then proceed anyway — attach/get-ax
+// will surface any real problem; a slow first paint shouldn't block the run outright.
+function waitTabComplete(tabId: number, timeoutMs = 15_000): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      resolve();
+    };
+    const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo): void => {
+      if (id === tabId && info.status === 'complete') done();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Thread rendering.
@@ -237,9 +265,21 @@ async function startRun(): Promise<void> {
   const goal = goalEl.value.trim();
   if (!goal || running) return;
   await resolveTab();
-  if (targetTabId == null) { bubble('error', '✗ no active tab to drive'); return; }
-  const undrivable = drivableReason(targetTabUrl);
-  if (undrivable) { bubble('error', '✗ ' + undrivable); return; }
+  // If the active tab isn't drivable (chrome://, New Tab, blank, extension page), don't
+  // refuse — open a fresh real tab and drive that. The agent goto()s to its real target.
+  if (targetTabId == null || drivableReason(targetTabUrl)) {
+    try {
+      const t = await chrome.tabs.create({ active: true, url: START_URL });
+      if (t.id == null) throw new Error('new tab has no id');
+      targetTabId = t.id;
+      targetTabUrl = START_URL;
+      await waitTabComplete(t.id);
+      bubble('action', 'opened a new tab to drive');
+    } catch (e) {
+      bubble('error', '✗ could not open a drivable tab: ' + String(e));
+      return;
+    }
+  }
 
   // Resume-from-paused is just a fresh goal: clear the paused flag and re-scope the group.
   paused = false;

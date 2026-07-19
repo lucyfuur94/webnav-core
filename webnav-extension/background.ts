@@ -150,6 +150,29 @@ async function typeNode(tabId: number, nodeId: string, text: string): Promise<vo
   await chrome.debugger.sendCommand({ tabId }, 'Input.insertText', { text });
 }
 
+// Navigate the driven tab and WAIT until it finishes loading before returning — the
+// agent's next get-ax must read the settled destination, not the pre-navigation page.
+// ponytail: chrome.tabs.onUpdated 'complete' is the native load signal; no CDP
+// Page.frameStoppedLoading dance needed. 15s ceiling so a hung load can't wedge the loop.
+function gotoTab(tabId: number, url: string, timeoutMs = 15_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (err?: Error): void => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      err ? reject(err) : resolve();
+    };
+    const onUpdated = (updatedTabId: number, changeInfo: chrome.tabs.OnUpdatedInfo): void => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') finish();
+    };
+    const timer = setTimeout(() => finish(new Error(`goto "${url}" did not finish loading within ${timeoutMs}ms`)), timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.update(tabId, { url }).catch((e) => finish(e instanceof Error ? e : new Error(String(e))));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Teardown listeners — a zombie attach is THE failure mode; detach on every path.
 // ---------------------------------------------------------------------------
@@ -227,7 +250,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   // POSTs back to /api/agent/command-result. get-ax → raw AXNode[]; click/type → {ok}.
   if (msg.type === 'exec-command') {
     (async () => {
-      const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string };
+      const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string; url?: string };
       try {
         if (cmd.kind === 'get-ax') {
           reply({ ok: true, result: await getAX(msg.tabId) });
@@ -237,6 +260,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         } else if (cmd.kind === 'type') {
           await typeNode(msg.tabId, cmd.nodeId!, cmd.text ?? '');
           reply({ ok: true, result: { ok: true } });
+        } else if (cmd.kind === 'goto') {
+          // goto/current-url act on the driven tab itself (not an AX node), so they
+          // need the attached tab, not msg.tabId's node cache.
+          if (driveTabId == null) throw new Error('no attached tab to navigate');
+          await gotoTab(driveTabId, cmd.url!);
+          reply({ ok: true, result: { ok: true } });
+        } else if (cmd.kind === 'current-url') {
+          if (driveTabId == null) throw new Error('no attached tab');
+          const t = await chrome.tabs.get(driveTabId);
+          reply({ ok: true, result: t.url });
         } else {
           reply({ ok: false, error: `unknown command kind: ${cmd.kind}` });
         }
