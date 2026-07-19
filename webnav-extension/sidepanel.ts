@@ -769,6 +769,10 @@ async function startRun(): Promise<void> {
   const att = await chrome.runtime.sendMessage({ type: 'attach-drive', tabId: targetTabId });
   if (!att?.ok) { bubble('error', '✗ could not attach debugger: ' + (att?.error ?? '')); finishRun(); return; }
 
+  // Group the driven tab into 'webnav' (visible scoping). No ungroup on finish — that was
+  // the close-trigger; the tab just stays grouped and gets relabeled ✓ when done.
+  await scopeTabGroup(targetTabId);
+
   const res = await fetch(base + '/api/agent/goal', {
     method: 'POST', headers: postHeaders(),
     body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase(), model: agentModel }),
@@ -785,10 +789,24 @@ async function startRun(): Promise<void> {
 // Group + label the tab so the driven tab is visually scoped (Claude-extension parity).
 // ponytail: title-label only for visual state — a "running/done" word on the group is the
 // minimal honest indicator. Animated loading dots are deferrable (noted in README).
-// (Tab-group scoping was removed: grouping/ungrouping the single driven tab around a run
-// — combined with the debugger detach at teardown — was closing the user's tab, and it
-// added little. The driven tab is just left as-is; run state shows in the panel, not via
-// a tab group. See the header conn lamp + activity strip for "is it working".)
+// Tab-group scoping: put the driven tab in a labelled 'webnav' group so it's visually
+// legible which tab the agent is working in (like Claude's extension). CRITICAL: we
+// group on run-start and RELABEL on finish, but we NEVER un-group at teardown — the old
+// ungroup-at-finish, firing as the debugger detached, was closing the tab. Leaving the
+// tab in its group (just relabeled 'webnav ✓') keeps it open. Best-effort throughout: a
+// tabGroups failure never breaks a run.
+async function scopeTabGroup(tabId: number, title = 'webnav ● running'): Promise<void> {
+  try {
+    const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+    await chrome.tabGroups.update(groupId, { title, color: 'blue' });
+  } catch { /* tabGroups can fail on some tab kinds; scoping is best-effort */ }
+}
+async function relabelTabGroup(tabId: number, title: string): Promise<void> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.groupId != null && tab.groupId >= 0) await chrome.tabGroups.update(tab.groupId, { title });
+  } catch { /* best-effort */ }
+}
 
 function finishRun(): void {
   running = false;
@@ -799,6 +817,8 @@ function finishRun(): void {
   // H3: never leave an Approve/Deny bar live once the run has ended (e.g. an Auto
   // cross-site goto that was denied, or any stop/done/error while a gate was open).
   resolvePlanBar('◦ run ended');
+  // Relabel the group to done — but NEVER ungroup (that + detach closed the tab).
+  if (targetTabId != null) relabelTabGroup(targetTabId, 'webnav ✓');
   // A finished run with an empty composer / lost connection must re-disable Send;
   // the `sendEl.disabled = false` above is unconditional, so re-derive the real state.
   updateSendEnabled();
