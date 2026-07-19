@@ -39,6 +39,7 @@ export type AgentCommand =
   | { kind: 'click'; nodeId: string }
   | { kind: 'type'; nodeId: string; text?: string }
   | { kind: 'goto'; url: string }
+  | { kind: 'scroll'; dy: number }
   | { kind: 'current-url' };
 
 export type AgentEvent =
@@ -142,6 +143,7 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
       getAX: () => dispatchCommand({ kind: 'get-ax' }) as Promise<AXNode[]>,
       dispatch: async (cmd) => { await dispatchCommand(cmd); },
       goto: async (url) => { await dispatchCommand({ kind: 'goto', url }); },
+      scroll: async (dy) => { await dispatchCommand({ kind: 'scroll', dy }); },
       currentUrl: () => dispatchCommand({ kind: 'current-url' }) as Promise<string>,
     };
   }

@@ -101,6 +101,11 @@ export interface WalkBrowser {
   // Sleep `ms` between readiness retries (JS-render race). Live browser implements it;
   // the unit fake omits it so tests resolve immediately (no waiting / no retry loop).
   waitMs?(ms: number): Promise<void>;
+  // Scroll the page by `dy` pixels (positive = down, negative = up) so content below
+  // the fold becomes reachable. Reveals nodes, never navigates. Optional: only the live
+  // extension browser supplies it; the unit fake and playwright walk omit it (the agent's
+  // scroll tool reports honestly when absent).
+  scroll?(dy: number): Promise<void>;
   callCount(): number;
   // The URL the browser is currently settled on — needed to classify an SSO-wall
   // landing (classifyAuthLanding wants landedUrl + site host). Optional: the unit
