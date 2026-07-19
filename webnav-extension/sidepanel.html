@@ -1,75 +1,14 @@
 <!-- webnav-extension/sidepanel.html — "Navigation console" (design-off winner) -->
 <meta charset="utf-8">
+<link rel="stylesheet" href="theme.css">
 <style>
   /* ────────────────────────────────────────────────────────────────────────
      webnav agent — navigation console
      A cartographic instrument panel. Claude's prose is humanist; the agent's
      actions read as a route ledger traced down a rail of map-pin waypoints.
-     Ground is an off-neutral with a faint #5b9dff bias (paper-with-blue-cast
-     in light; charted slate in dark). Both themes designed with equal care.
-     ──────────────────────────────────────────────────────────────────────── */
-  :root {
-    color-scheme: light dark;
-
-    /* Type roles */
-    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", "Cascadia Code", Menlo, Consolas, monospace;
-
-    /* LIGHT — charted paper: warm-neutral with a cool blue cast, never pure white */
-    --bg:        #eef1f6;   /* the sheet */
-    --panel:     #f8fafd;   /* raised surfaces, composer */
-    --sunken:    #e4e8f0;   /* inputs, wells */
-    --ink:       #1a2230;   /* primary text */
-    --ink-soft:  #4a5568;   /* secondary prose */
-    --ink-faint: #7b8598;   /* labels, coordinates */
-    --rule:      #d2d9e4;   /* hairlines */
-    --rule-soft: #dde3ec;
-    --accent:    #2f6fe0;   /* brand pin, tuned darker for AA on paper */
-    --accent-ink:#0d3a8f;   /* accent text on light */
-    --on-accent: #ffffff;
-    --user-bg:   #dbe6fb;   /* user goal bubble */
-    --user-ink:  #163a7a;
-    --ok:        #1a8a4e;
-    --ok-bg:     #dcf1e5;
-    --err:       #c23b3b;
-    --err-bg:    #f6e0e0;
-    --warn:      #9a6b00;
-    --rail:      #c3ccdb;   /* route rail hairline */
-    --rail-live: #2f6fe0;
-    --shadow:    0 1px 2px rgba(26,34,48,.06), 0 8px 24px rgba(26,42,74,.08);
-    --focus:     #2f6fe0;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      /* DARK — charted slate: blue-biased near-black, never flat #000 */
-      --bg:        #0d1017;
-      --panel:     #141924;
-      --sunken:    #0a0d13;
-      --ink:       #e7ecf4;
-      --ink-soft:  #a4aec0;
-      --ink-faint: #6b7688;
-      --rule:      #232b3a;
-      --rule-soft: #1b2230;
-      --accent:    #5b9dff;
-      --accent-ink:#8fbcff;
-      --on-accent: #08131f;
-      --user-bg:   #17263f;
-      --user-ink:  #bcd4ff;
-      --ok:        #43c07a;
-      --ok-bg:     #10281c;
-      --err:       #ff7b7b;
-      --err-bg:    #2a1417;
-      --warn:      #e2b93d;
-      --rail:      #29344a;
-      --rail-live: #5b9dff;
-      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45);
-      --focus:     #5b9dff;
-    }
-  }
-
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
+     The :root palette / dark @media / *,html,body height / ::selection now live
+     in theme.css (shared with options.html). This file keeps only panel-specific
+     styling below. ──────────────────────────────────────────────────────────── */
   body {
     margin: 0;
     display: flex;
@@ -80,7 +19,6 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  ::selection { background: color-mix(in srgb, var(--accent) 26%, transparent); }
 
   /* Faint chart-grid wash on the ground — the "map" texture, kept to a whisper. */
   body::before {
@@ -97,48 +35,37 @@
   }
   body > * { position: relative; z-index: 1; }
 
-  /* ───────────────────────── Header ───────────────────────── */
+  /* ───────────────────────── Header — slim status/toolbar ───────────────────────── */
   header {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 11px 13px 10px;
+    gap: 8px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--rule);
     background: var(--panel);
   }
-  .mark {
-    width: 22px; height: 22px;
-    flex: 0 0 auto;
-    color: var(--accent);
-  }
-  .mark svg { display: block; width: 100%; height: 100%; }
-  /* The mark pulses while the agent is driving — a living waypoint. */
-  body.running .mark { animation: markpulse 1.6s ease-in-out infinite; }
+  .spacer { flex: 1; }   /* single definition — the old footer .spacer is deleted */
+
   @keyframes markpulse {
     0%,100% { opacity: 1; transform: scale(1); }
     50%     { opacity: .6; transform: scale(.92); }
   }
-  .brand { display: flex; flex-direction: column; line-height: 1.1; flex: 1; min-width: 0; }
-  .brand .name {
-    font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: .02em;
-    color: var(--ink);
-  }
-  .brand .name b { color: var(--accent); font-weight: 600; }
-  .brand .tab {
+
+  /* Driven-tab chip — now a header element (was .brand .tab). */
+  .tab {
+    flex: 0 1 auto;
+    min-width: 0;
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--ink-faint);
-    margin-top: 2px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .brand .tab:empty { display: none; }
+  .tab:empty { display: none; }
 
-  /* Connection lamp — a coordinate readout, not a chat "online" dot. */
+  /* Connection lamp — coordinate readout. */
   .conn {
     display: inline-flex; align-items: center; gap: 6px;
+    flex: 0 0 auto;
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--ink-faint);
@@ -148,8 +75,6 @@
     background: var(--bg);
     white-space: nowrap;
     cursor: default;
-    max-width: 46%;
-    overflow: hidden; text-overflow: ellipsis;
   }
   .conn .lamp {
     width: 7px; height: 7px; border-radius: 50%;
@@ -161,6 +86,8 @@
   .conn.ok .lamp { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
   .conn.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--rule)); }
   .conn.err .lamp { background: var(--err); }
+  /* The lamp pulses while the agent drives (was body.running .mark). */
+  body.running .conn.ok .lamp { animation: markpulse 1.6s ease-in-out infinite; }
 
   .icon-btn {
     flex: 0 0 auto;
@@ -175,43 +102,6 @@
   }
   .icon-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
   .icon-btn svg { width: 15px; height: 15px; }
-
-  /* ───────────────────────── Settings drawer ───────────────────────── */
-  details.config {
-    border-bottom: 1px solid var(--rule);
-    background: var(--panel);
-  }
-  details.config summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 8px 13px;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    display: flex; align-items: center; gap: 6px;
-  }
-  details.config summary::-webkit-details-marker { display: none; }
-  details.config summary::before { content: "\25B8"; font-size: 9px; }
-  details.config[open] summary::before { content: "\25BE"; }
-  .config-body { padding: 2px 13px 12px; display: flex; flex-direction: column; gap: 9px; }
-  .config-body label {
-    display: flex; flex-direction: column; gap: 4px;
-    font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--ink-faint);
-  }
-  .config-body input {
-    font-family: var(--mono); font-size: 12px;
-    padding: 7px 9px;
-    border: 1px solid var(--rule);
-    border-radius: 7px;
-    background: var(--sunken);
-    color: var(--ink);
-    text-transform: none; letter-spacing: 0;
-  }
-  .config-body input::placeholder { color: var(--ink-faint); }
-  .config-body input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
 
   /* ───────────────────────── Thread (the route) ───────────────────────── */
   #thread {
@@ -377,6 +267,34 @@
     white-space: pre-wrap; word-break: break-word;
   }
 
+  /* Hover-reveal copy affordance on assistant prose + done/error summaries. */
+  .msg.assistant, .msg.done, .msg.error { position: relative; }
+  .copy-btn {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--rule); border-radius: 6px;
+    background: var(--panel); color: var(--ink-faint);
+    cursor: pointer; padding: 0;
+    opacity: 0; transition: opacity .12s;
+  }
+  .msg.assistant:hover .copy-btn, .msg.done:hover .copy-btn, .msg.error:hover .copy-btn,
+  .copy-btn:focus-visible { opacity: 1; }
+  .copy-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .copy-btn svg { width: 12px; height: 12px; }
+  /* Error bubbles also carry an inline Retry at top-right; nudge copy left so they don't stack. */
+  .msg.error .copy-btn { right: 74px; }
+
+  /* Retry — re-run the last goal from an errored run. */
+  .retry-btn {
+    margin-left: auto; align-self: center; flex: 0 0 auto;
+    padding: 4px 10px; border-radius: 7px; cursor: pointer;
+    font: 600 11px var(--sans);
+    border: 1px solid color-mix(in srgb, var(--err) 40%, var(--rule));
+    background: var(--panel); color: var(--err);
+  }
+  .retry-btn:hover { background: var(--err); color: var(--on-accent); border-color: var(--err); }
+
   /* ── Plan approval (Ask mode): a route brief awaiting sign-off ── */
   .plan {
     align-self: stretch;
@@ -496,7 +414,7 @@
   /* server-prereq strip — teaches the one real dependency without a wall of text */
   .empty .prereq {
     width: 100%;
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
     padding: 9px 11px;
     border: 1px dashed var(--rule);
     border-radius: 9px;
@@ -504,6 +422,7 @@
     color: var(--ink-faint);
     text-align: left;
   }
+  .empty .prereq .tok { flex-basis: 100%; }
   .empty .prereq code {
     color: var(--accent-ink);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -512,13 +431,31 @@
     white-space: nowrap;
   }
   .empty .prereq.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); border-style: solid; }
+  .empty .prereq .tok { color: var(--ink-faint); }
+  .empty .prereq .lnk {
+    border: 0; background: none; padding: 0; cursor: pointer;
+    font: inherit; color: var(--accent-ink); text-decoration: underline;
+  }
 
   /* ───────────────────────── Composer ───────────────────────── */
   footer {
+    position: relative;
     border-top: 1px solid var(--rule);
     background: var(--panel);
     padding: 10px 12px 12px;
   }
+  /* Jump-to-latest pill — floats above the composer when the user has scrolled up. */
+  .jump-latest {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 100%; margin-bottom: 8px;
+    display: none; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    font: 600 11px var(--mono);
+    background: var(--accent); color: var(--on-accent);
+    border: 0; box-shadow: var(--shadow);
+    z-index: 2;
+  }
+  .jump-latest.show { display: inline-flex; }
   .composer {
     border: 1px solid var(--rule);
     border-radius: 12px;
@@ -569,8 +506,6 @@
     color: var(--accent-ink);
     box-shadow: var(--shadow);
   }
-
-  .spacer { flex: 1; }
 
   #send {
     flex: 0 0 auto;
@@ -642,35 +577,28 @@
 
   @media (prefers-reduced-motion: reduce) {
     .msg.action.live::before, .activity .beam::after,
-    .msg.assistant.streaming::after, body.running .mark { animation: none; }
+    .msg.assistant.streaming::after, body.running .conn.ok .lamp { animation: none; }
     .activity .beam::after { width: 100%; opacity: .6; transform: none; }
     .msg.assistant.streaming::after { opacity: 1; }
-    body.running .mark { opacity: 1; transform: none; }
+    body.running .conn.ok .lamp { opacity: 1; transform: none; }
   }
 
   @media (max-width: 340px) {
     .modeswitch button { padding: 4px 6px; }
     #send span { display: none; }
     #send { padding: 7px 10px; }
-    .conn { max-width: 40%; }
   }
 </style>
 
 <header>
-  <span class="mark" aria-hidden="true">
-    <!-- webnav waypoint mark: stroked map-pin, hollow center (icons/ + dashboard shell) -->
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/>
-      <circle cx="12" cy="10" r="2.6"/>
-    </svg>
-  </span>
-  <span class="brand">
-    <span class="name">webnav <b>agent</b></span>
-    <span class="tab" id="tab" title="Driving tab"></span>
-  </span>
   <span class="conn" id="conn" title="Connection to the local webnav server">
     <span class="lamp"></span><span id="conn-text">connecting…</span>
   </span>
+  <span class="tab" id="tab" title="Driving tab"></span>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="new-chat" title="New chat" aria-label="New chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
   <button class="icon-btn" id="settings-toggle" title="Settings" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -678,26 +606,15 @@
   </button>
 </header>
 
-<details class="config" id="config">
-  <summary>Settings</summary>
-  <div class="config-body">
-    <label>Session
-      <input id="sid" value="agent-1">
-    </label>
-    <label>Server URL
-      <input id="base" value="http://127.0.0.1:7779">
-    </label>
-    <label>Token
-      <input id="token" placeholder="paste the token from `webnav agent-serve`">
-    </label>
-  </div>
-</details>
-
 <!-- THREAD — sidepanel.ts renders into this. Starts empty; JS injects the
      first-run empty state (.empty) and clears it on the first message. -->
 <div id="thread"></div>
 
 <footer>
+  <button class="jump-latest" id="jump-latest" type="button" aria-label="Jump to latest">
+    ↓ latest
+  </button>
+
   <div class="activity" aria-live="polite">
     <span class="label">tracing</span>
     <span class="beam"></span>
@@ -705,7 +622,7 @@
   </div>
 
   <div class="composer">
-    <textarea id="goal" rows="1" placeholder="Name a destination — e.g. log in and open the cart…"></textarea>
+    <textarea id="goal" rows="1" placeholder="Describe what to do on this page…"></textarea>
     <div class="controls">
       <div class="modeswitch" id="mode" role="group" aria-label="Permission mode" title="Ask: approve a plan first · Auto: run, ask before a new site · Act: full autonomy">
         <button type="button" data-mode="Ask" aria-pressed="true">Ask</button>
@@ -713,7 +630,7 @@
         <button type="button" data-mode="Act" aria-pressed="false">Act</button>
       </div>
       <span class="spacer"></span>
-      <button id="send" title="Send (⌘/Ctrl+Enter)">
+      <button id="send" title="Send (Enter)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         <span>Send</span>
       </button>

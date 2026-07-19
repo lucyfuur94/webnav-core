@@ -35,9 +35,7 @@ const connEl = byId<HTMLSpanElement>('conn');
 const connText = byId<HTMLSpanElement>('conn-text');
 const tabEl = byId<HTMLSpanElement>('tab');
 const activityStep = byId<HTMLSpanElement>('activity-step');
-const sidEl = byId<HTMLInputElement>('sid');
-const baseEl = byId<HTMLInputElement>('base');
-const tokenEl = byId<HTMLInputElement>('token');
+const jumpPill = byId<HTMLButtonElement>('jump-latest');
 
 // The connection lamp keeps its .conn base class + lamp child; we only swap the
 // ok/err state class and the text (never clobber connEl.className outright, or the
@@ -48,6 +46,14 @@ function setConn(text: string, state: 'ok' | 'err' | '' , title?: string): void 
   if (title != null) connEl.title = title;
   // The empty-state prereq strip mirrors the connection: flip it green when connected.
   updateEmptyPrereq(state === 'ok');
+  updateSendEnabled();
+}
+
+// Send is only meaningful with a non-empty goal AND a live connection. Disabled
+// otherwise so a click that would silently no-op (empty) or 401 (no token) can't happen.
+function updateSendEnabled(): void {
+  if (running) return; // run-controls own the button state during a run
+  sendEl.disabled = !goalEl.value.trim() || !connEl.classList.contains('ok');
 }
 
 const MODES = ['Ask', 'Auto', 'Act'] as const;
@@ -63,6 +69,8 @@ const START_URL = 'https://www.google.com';
 let mode: Mode = 'Ask';
 let base = 'http://127.0.0.1:7779';
 let token = ''; // per-run secret from `webnav agent-serve`; required on every request
+let sid = 'agent-1'; // session id; edited in the options tab, read fresh at startRun
+let lastGoal = ''; // the goal of the most recent run, for Retry on error
 let targetTabId: number | null = null;
 let running = false;
 let paused = false; // handed control to the user without detaching the debugger
@@ -75,19 +83,36 @@ let assistantBubble: HTMLDivElement | null = null; // current streaming assistan
 chrome.runtime.connect({ name: 'webnav-panel' });
 
 // ---------------------------------------------------------------------------
-// Config persistence (chrome.storage) — mirrors the popup pattern.
+// Config lives in the options tab now (options.html). The panel only READS the
+// stored values; keys are unchanged (sid/base/mode/token) so whatever options.ts
+// writes, the panel picks up here — and reacts live via storage.onChanged.
 // ---------------------------------------------------------------------------
 chrome.storage.local.get(['sid', 'base', 'mode', 'token']).then((s) => {
-  if (s.sid) sidEl.value = s.sid as string;
-  if (s.base) { baseEl.value = s.base as string; base = s.base as string; }
-  if (s.token) { tokenEl.value = s.token as string; token = s.token as string; }
+  if (s.sid) sid = s.sid as string;
+  if (s.base) base = s.base as string;
+  if (s.token) token = (s.token as string).trim();
   if (s.mode && (MODES as readonly string[]).includes(s.mode as string)) mode = s.mode as Mode;
   applyMode();
-  openStream(); // re-open once the persisted token is loaded (initial open may have been token-less)
+  openStream(); // re-open once the persisted token is loaded
+  // First-run: no token means the panel can't connect. Open the options tab so the
+  // user can paste it, instead of leaving them staring at "no token".
+  if (!token) chrome.runtime.openOptionsPage();
 });
-baseEl.onchange = () => { base = baseEl.value; chrome.storage.local.set({ base }); openStream(); };
-sidEl.onchange = () => chrome.storage.local.set({ sid: sidEl.value });
-tokenEl.onchange = () => { token = tokenEl.value.trim(); chrome.storage.local.set({ token }); openStream(); };
+
+// Editing base/token/sid in the options tab must update the live panel without a
+// reload. base/token changes re-open the SSE stream; sid is read fresh at startRun.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  let reopen = false;
+  if (changes.base) { base = (changes.base.newValue as string) ?? base; reopen = true; }
+  if (changes.token) { token = ((changes.token.newValue as string) ?? '').trim(); reopen = true; }
+  if (changes.sid) sid = (changes.sid.newValue as string) ?? sid;
+  if (changes.mode) {
+    const m = changes.mode.newValue as string;
+    if ((MODES as readonly string[]).includes(m)) { mode = m as Mode; applyMode(); }
+  }
+  if (reopen) openStream();
+});
 
 // One-line, honest description of what each mode gates (crit #3/#4). Shown as the
 // button's tooltip so the three modes read as genuinely different, not cosmetic.
@@ -185,14 +210,17 @@ function renderEmpty(): void {
     '<h2>Name a destination</h2>' +
     '<p>Describe where you want to go on this page, in plain words. The agent reads the page and drives it there — you watch every step.</p>' +
     '<div class="examples"></div>' +
-    '<div class="prereq"><span>Needs the local server:</span> <code>webnav agent-serve --port 7779</code></div>';
+    '<div class="prereq"><span>Needs the local server:</span> <code>webnav agent-serve --port 7779</code>' +
+    '<span class="tok">then paste its token in <button type="button" class="lnk" id="open-opts">settings</button></span></div>';
   const examples = wrap.querySelector('.examples') as HTMLDivElement;
-  for (const ex of ['Log in and open my cart', 'Find the cheapest item and add it', 'Go to checkout and read the total']) {
+  for (const ex of ['Log in to this site', 'Search for something and open the first result', 'Fill out and submit the form on this page']) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'ex'; b.textContent = ex;
-    b.onclick = () => { goalEl.value = ex; goalEl.focus(); autosize(); };
+    b.onclick = () => { goalEl.value = ex; goalEl.focus(); autosize(); updateSendEnabled(); };
     examples.appendChild(b);
   }
+  const openOpts = wrap.querySelector('#open-opts') as HTMLButtonElement | null;
+  if (openOpts) openOpts.onclick = () => chrome.runtime.openOptionsPage();
   thread.appendChild(wrap);
   updateEmptyPrereq(connEl.classList.contains('ok'));
 }
@@ -213,6 +241,50 @@ function clearEmpty(): void {
 // any non-action message closes it.
 let currentRoute: HTMLDivElement | null = null;
 
+// Only yank to the bottom if the user is already there (within 40px); otherwise leave
+// their scroll position and show the jump-to-latest pill so they can return in one click.
+function scrollThreadIfNearBottom(): void {
+  const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
+  if (nearBottom) thread.scrollTop = thread.scrollHeight;
+  else jumpPill.classList.add('show');
+}
+
+const COPY_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+
+// Hover copy button — writes the bubble's text (not the button glyph) to the clipboard.
+function addCopyButton(el: HTMLElement): void {
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn'; btn.type = 'button';
+  btn.title = 'Copy'; btn.setAttribute('aria-label', 'Copy message');
+  btn.innerHTML = COPY_SVG;
+  btn.onclick = () => {
+    // Copy the message text only — skip the control buttons (this copy button and any
+    // Retry button an error bubble carries), so their labels don't leak into the clipboard.
+    const text = Array.from(el.childNodes)
+      .filter((n) => !(n instanceof HTMLElement && n.tagName === 'BUTTON'))
+      .map((n) => n.textContent ?? '').join('');
+    navigator.clipboard.writeText(text.trim()).then(() => {
+      btn.classList.add('copied'); setTimeout(() => btn.classList.remove('copied'), 900);
+    }).catch(() => {});
+  };
+  el.appendChild(btn);
+}
+
+// Retry re-runs the last goal from the errored run. Puts the goal back in the composer
+// and fires startRun (which re-reads goalEl), so the user can also edit before retrying.
+function addRetryButton(el: HTMLElement, goal: string): void {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'retry-btn';
+  btn.textContent = 'Retry';
+  btn.onclick = () => {
+    if (running) return;
+    goalEl.value = goal; autosize(); updateSendEnabled();
+    startRun();
+  };
+  el.appendChild(btn);
+}
+
 function bubble(kind: string, text = ''): HTMLDivElement {
   clearEmpty();
   if (kind === 'action') return actionRow(text);
@@ -220,8 +292,12 @@ function bubble(kind: string, text = ''): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'msg ' + kind;
   el.textContent = text;
+  // done/error carry final text, so the copy button is safe to attach now. Assistant
+  // bubbles stream via `textContent +=` (which would clobber a child button), so their
+  // copy button is attached in endTurn() once the text is final.
+  if (kind === 'done' || kind === 'error') addCopyButton(el);
   thread.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
+  scrollThreadIfNearBottom();
   return el;
 }
 
@@ -248,7 +324,7 @@ function actionRow(text: string): HTMLDivElement {
   el.appendChild(v);
   if (target) { const t = document.createElement('span'); t.className = 'target'; t.textContent = ' ' + target; el.appendChild(t); }
   currentRoute.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
+  scrollThreadIfNearBottom();
   return el;
 }
 
@@ -268,6 +344,9 @@ function narrateAction(cmd: Cmd): string {
 // next `turn` starts a fresh one. Replaces the old `assistantBubble = null` lines.
 function endTurn(): void {
   assistantBubble?.classList.remove('streaming');
+  // Attach the copy button now that streaming (`textContent +=`) is done — adding it
+  // earlier would have been wiped by the delta appends. Skip empty bubbles.
+  if (assistantBubble && (assistantBubble.textContent ?? '').trim()) addCopyButton(assistantBubble);
   assistantBubble = null;
 }
 
@@ -310,7 +389,7 @@ function handleEvent(e: AgentEvent): void {
       // `.streaming` draws the caret; endTurn() removes it when the bubble is closed.
       if (!assistantBubble) { assistantBubble = bubble('assistant'); assistantBubble.classList.add('streaming'); }
       assistantBubble.textContent += e.text;
-      thread.scrollTop = thread.scrollHeight;
+      scrollThreadIfNearBottom();
       break;
     case 'narrate':
       // DISPLAY ONLY — the agent telling us what it did. Never CDP-execute this.
@@ -336,11 +415,13 @@ function handleEvent(e: AgentEvent): void {
       bubble('done', e.summary ? 'Done — ' + e.summary : 'Done.');
       finishRun();
       break;
-    case 'error':
+    case 'error': {
       endTurn();
-      bubble('error', e.message);
+      const el = bubble('error', e.message);
+      if (lastGoal) addRetryButton(el, lastGoal);
       finishRun();
       break;
+    }
   }
 }
 
@@ -458,6 +539,7 @@ function renderPlan(steps: string[]): void {
 async function startRun(): Promise<void> {
   const goal = goalEl.value.trim();
   if (!goal || running) return;
+  lastGoal = goal; // B4: remember it so an error can offer Retry
   await resolveTab();
   // If the active tab isn't drivable (chrome://, New Tab, blank, extension page), don't
   // refuse — open a fresh real tab and drive that. The agent goto()s to its real target.
@@ -497,7 +579,7 @@ async function startRun(): Promise<void> {
 
   const res = await fetch(base + '/api/agent/goal', {
     method: 'POST', headers: postHeaders(),
-    body: JSON.stringify({ goal, sessionId: sidEl.value, mode: mode.toLowerCase() }),
+    body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase() }),
   }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   if (!res?.ok) {
     const hint = res?.error === 'unauthorized'
@@ -549,6 +631,9 @@ function finishRun(): void {
   if (targetTabId != null) {
     relabelTabGroup(targetTabId, 'webnav ✓').then(() => ungroupTabIfOurs(targetTabId!));
   }
+  // A finished run with an empty composer / lost connection must re-disable Send;
+  // the `sendEl.disabled = false` above is unconditional, so re-derive the real state.
+  updateSendEnabled();
 }
 
 async function stopRun(): Promise<void> {
@@ -557,6 +642,35 @@ async function stopRun(): Promise<void> {
   if (targetTabId != null) await chrome.runtime.sendMessage({ type: 'detach-drive' });
   paused = false;
   finishRun();
+}
+
+// New chat (the header "+"): stop any active run, wipe the thread + all render
+// state, rotate the session id so a fresh chat's recordings/goals don't bleed into
+// the previous one, and re-show the empty state. Matches Claude: always available.
+async function resetChat(): Promise<void> {
+  if (running || paused) await stopRun(); // halts the loop + detaches; resets running/paused
+
+  // Rotate session id: keep the user's base name, append a fresh suffix so the
+  // server buckets this chat separately. Persisted so options.html reflects it too.
+  const baseName = sid.replace(/-[0-9a-z]+$/i, '') || 'agent';
+  sid = `${baseName}-${Date.now().toString(36)}`;
+  chrome.storage.local.set({ sid });
+
+  // Wipe thread + all per-conversation render state.
+  endTurn();                 // drop any streaming caret + null assistantBubble
+  currentRoute = null;       // close the route rail
+  pendingPlanBar = null;     // any open plan gate is gone with the thread
+  lastGoal = '';             // R3+B4: nothing to retry in a fresh chat
+  thread.replaceChildren();  // clear #thread
+  activityStep.textContent = 'working…';
+  jumpPill.classList.remove('show');
+
+  renderEmpty();             // first-run orientation again
+  updateEmptyPrereq(connEl.classList.contains('ok'));
+  goalEl.value = '';
+  autosize();
+  updateSendEnabled();       // B5: reflect empty composer
+  goalEl.focus();
 }
 
 // Pause = honest take-over, NOT true mid-turn resume. The SDK `query` behind the server's
@@ -589,23 +703,31 @@ function autosize(): void {
   goalEl.style.height = 'auto';
   goalEl.style.height = Math.min(goalEl.scrollHeight, 140) + 'px';
 }
-goalEl.addEventListener('input', autosize);
+goalEl.addEventListener('input', () => { autosize(); updateSendEnabled(); });
 
-// Settings drawer: the header gear toggles the <details>.
-byId<HTMLButtonElement>('settings-toggle').onclick = () => {
-  const cfg = byId<HTMLDetailsElement>('config');
-  cfg.open = !cfg.open;
-};
+// The header gear opens the full options page in a browser tab (Claude-style).
+byId<HTMLButtonElement>('settings-toggle').onclick = () => chrome.runtime.openOptionsPage();
+byId<HTMLButtonElement>('new-chat').onclick = resetChat;
+
+// Jump-to-latest pill: snap to the bottom and hide it; also hide once the user scrolls
+// back to the bottom on their own.
+jumpPill.onclick = () => { thread.scrollTop = thread.scrollHeight; jumpPill.classList.remove('show'); };
+thread.addEventListener('scroll', () => {
+  if (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40) jumpPill.classList.remove('show');
+});
 
 sendEl.onclick = startRun;
 stopEl.onclick = stopRun;
 pauseEl.onclick = pauseRun;
+// Enter sends; Shift+Enter inserts a newline (Claude/ChatGPT/Slack convention).
+// !isComposing guards IME: Enter mid-composition commits the candidate, doesn't send.
 goalEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startRun(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); startRun(); }
 });
 
 renderEmpty(); // first-run orientation until the first message
 openStream();
+updateSendEnabled();
 
 // Watchdog: native EventSource auto-reconnect can settle into CLOSED and stay there
 // (e.g. the server wasn't running at panel load). Re-open every 3s whenever the stream

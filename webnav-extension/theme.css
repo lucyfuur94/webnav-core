@@ -1,0 +1,67 @@
+/* webnav-extension/theme.css — shared design tokens for both the side panel and the
+   options page. One source of truth for the navigation-console palette + both themes.
+   Ground is an off-neutral with a faint #5b9dff bias (paper-with-blue-cast in light;
+   charted slate in dark). Both themes designed with equal care. */
+:root {
+  color-scheme: light dark;
+
+  /* Type roles */
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* LIGHT — charted paper: warm-neutral with a cool blue cast, never pure white */
+  --bg:        #eef1f6;   /* the sheet */
+  --panel:     #f8fafd;   /* raised surfaces, composer */
+  --sunken:    #e4e8f0;   /* inputs, wells */
+  --ink:       #1a2230;   /* primary text */
+  --ink-soft:  #4a5568;   /* secondary prose */
+  --ink-faint: #7b8598;   /* labels, coordinates */
+  --rule:      #d2d9e4;   /* hairlines */
+  --rule-soft: #dde3ec;
+  --accent:    #2f6fe0;   /* brand pin, tuned darker for AA on paper */
+  --accent-ink:#0d3a8f;   /* accent text on light */
+  --on-accent: #ffffff;
+  --user-bg:   #dbe6fb;   /* user goal bubble */
+  --user-ink:  #163a7a;
+  --ok:        #1a8a4e;
+  --ok-bg:     #dcf1e5;
+  --err:       #c23b3b;
+  --err-bg:    #f6e0e0;
+  --warn:      #9a6b00;
+  --rail:      #c3ccdb;   /* route rail hairline */
+  --rail-live: #2f6fe0;
+  --shadow:    0 1px 2px rgba(26,34,48,.06), 0 8px 24px rgba(26,42,74,.08);
+  --focus:     #2f6fe0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    /* DARK — charted slate: blue-biased near-black, never flat #000 */
+    --bg:        #0d1017;
+    --panel:     #141924;
+    --sunken:    #0a0d13;
+    --ink:       #e7ecf4;
+    --ink-soft:  #a4aec0;
+    --ink-faint: #6b7688;
+    --rule:      #232b3a;
+    --rule-soft: #1b2230;
+    --accent:    #5b9dff;
+    --accent-ink:#8fbcff;
+    --on-accent: #08131f;
+    --user-bg:   #17263f;
+    --user-ink:  #bcd4ff;
+    --ok:        #43c07a;
+    --ok-bg:     #10281c;
+    --err:       #ff7b7b;
+    --err-bg:    #2a1417;
+    --warn:      #e2b93d;
+    --rail:      #29344a;
+    --rail-live: #5b9dff;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.45);
+    --focus:     #5b9dff;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+::selection { background: color-mix(in srgb, var(--accent) 26%, transparent); }
