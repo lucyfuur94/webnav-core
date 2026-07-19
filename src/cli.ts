@@ -678,6 +678,7 @@ async function main() {
         goal: goal.goal,
         sessionId: goal.sessionId,
         mode: goal.mode === 'ask' ? 'ask' : 'act',
+        model: goal.model,
         browser,
         store: mapStore,
         states,

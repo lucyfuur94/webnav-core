@@ -27,7 +27,7 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'plan'; steps: string[] };
 
-export interface AgentGoalBody { goal: string; sessionId: string; mode: string }
+export interface AgentGoalBody { goal: string; sessionId: string; mode: string; model?: string }
 
 export interface ServeAgentOpts {
   // `awaitApproval` is the Ask/Auto approval gate (crit #3/#4): the loop calls it and

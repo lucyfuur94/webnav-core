@@ -103,6 +103,24 @@
   .icon-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
   .icon-btn svg { width: 15px; height: 15px; }
 
+  /* Model selector — a compact native <select> in the header. Native (not a custom
+     dropdown) so it's accessible + themes for free; styled to the console chrome.
+     var(--panel) works in both light and dark (it's theme-defined in theme.css). */
+  .modelsel {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    padding: 4px 7px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--panel);
+    cursor: pointer;
+    max-width: 118px;
+  }
+  .modelsel:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .modelsel:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
   /* ───────────────────────── Thread (the route) ───────────────────────── */
   #thread {
     flex: 1;
@@ -654,6 +672,11 @@
   </span>
   <span class="tab" id="tab" title="Driving tab"></span>
   <span class="spacer"></span>
+  <select class="modelsel" id="model" title="Model" aria-label="Model">
+    <option value="claude-haiku-4-5">Haiku 4.5</option>
+    <option value="claude-sonnet-5" selected>Sonnet 5</option>
+    <option value="claude-opus-4-8">Opus 4.8</option>
+  </select>
   <button class="icon-btn" id="new-chat" title="New chat" aria-label="New chat">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
   </button>
