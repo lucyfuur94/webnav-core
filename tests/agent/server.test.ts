@@ -317,6 +317,32 @@ describe('agent-serve', () => {
     client.close();
   });
 
+  it('POST /api/agent/stop aborts the AbortSignal handed to onGoal (cancels the SDK turn)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let signalRef: AbortSignal | undefined;
+    let aborted = false;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, _awaitApproval, signal) => {
+        signalRef = signal;
+        signal?.addEventListener('abort', () => { aborted = true; });
+        // keep the "turn" alive so /stop can abort it mid-flight
+        await new Promise<void>((resolve) => { signal?.addEventListener('abort', () => resolve()); });
+      },
+    });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'ab1', mode: 'act' });
+    for (let i = 0; i < 50 && !signalRef; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(signalRef).toBeTruthy();
+    expect(signalRef!.aborted).toBe(false);
+
+    const res = await postJson(port, '/api/agent/stop', {});
+    expect(res.status).toBe(200);
+    for (let i = 0; i < 50 && !aborted; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(aborted).toBe(true);
+    expect(signalRef!.aborted).toBe(true);
+    client.close();
+  });
+
   it('POST /api/agent/stop rejects pending command promises', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     let channelRef: any;
