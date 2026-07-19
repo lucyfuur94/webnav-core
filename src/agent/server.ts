@@ -30,7 +30,10 @@ export type AgentEvent =
 export interface AgentGoalBody { goal: string; sessionId: string; mode: string }
 
 export interface ServeAgentOpts {
-  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void) => Promise<void>;
+  // `awaitApproval` is the Ask/Auto approval gate (crit #3/#4): the loop calls it and
+  // blocks until the user POSTs /api/agent/approve (or /stop, which denies). Resolves
+  // true=proceed / false=deny.
+  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>) => Promise<void>;
   commandTimeoutMs?: number;
   // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
   // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
@@ -47,8 +50,23 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
   const emitters = new Set<(e: AgentEvent) => void>();
   const pending = new Map<string, Pending>();
   let seq = 0;
+  // Single outstanding approval gate (one goal runs at a time). onGoal is handed an
+  // awaitApproval() that parks here until /approve (or /stop, which denies) resolves it.
+  // ponytail: one slot, not a per-goal map — the server drives one goal at a time.
+  let pendingApproval: ((approved: boolean) => void) | null = null;
 
   const emit = (e: AgentEvent) => { for (const fn of emitters) fn(e); };
+
+  function awaitApproval(): Promise<boolean> {
+    // A fresh goal supersedes any stale unresolved gate (deny it so nothing leaks).
+    if (pendingApproval) pendingApproval(false);
+    return new Promise<boolean>((resolve) => { pendingApproval = resolve; });
+  }
+  function resolveApproval(approved: boolean): void {
+    const p = pendingApproval;
+    pendingApproval = null;
+    p?.(approved);
+  }
 
   function rejectAllPending(message: string): void {
     for (const [id, p] of pending) {
@@ -56,6 +74,7 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
       p.reject(new Error(message));
       pending.delete(id);
     }
+    resolveApproval(false); // /stop also denies an outstanding approval gate
   }
 
   // The real AgentChannel: every call becomes an `action` SSE event, resolved when
@@ -119,7 +138,7 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
         sendJson(200, { ok: true });
         if (opts.onGoal) {
           const channel = makeChannel();
-          opts.onGoal(body, channel, emit).catch((e) => emit({ type: 'error', message: String(e) }));
+          opts.onGoal(body, channel, emit, awaitApproval).catch((e) => emit({ type: 'error', message: String(e) }));
         }
       });
       return;
@@ -134,6 +153,16 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
         clearTimeout(p.timer);
         pending.delete(body.id!);
         p.resolve(body.result);
+        sendJson(200, { ok: true });
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/agent/approve') {
+      readBody(req).then((raw) => {
+        let body: { approved?: boolean };
+        try { body = JSON.parse(raw); } catch { return sendJson(400, { ok: false, error: 'invalid JSON body' }); }
+        resolveApproval(body.approved === true);
         sendJson(200, { ok: true });
       });
       return;

@@ -222,6 +222,120 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     await runAgentGoal({ goal: 'g', sessionId: 's9', mode: 'act', browser, store, states: [], emit, query: fn });
     expect(events.some((e) => e.type === 'error' && /boom/.test((e as any).message))).toBe(true);
   });
+
+  // ---- Ask/Auto/Act gate semantics (crit #3/#4) -----------------------------
+  // A query that RECORDS whether it ran (so we can assert Ask blocks before driving).
+  function trackingQuery(): { fn: QueryFn; ran: () => boolean } {
+    let started = false;
+    const fn: QueryFn = async function* () {
+      started = true;
+      yield assistantMsg([{ type: 'text', text: 'go' }]);
+      yield resultMsg('done');
+    };
+    return { fn, ran: () => started };
+  }
+
+  it('ask mode: emits plan, then AWAITS approval BEFORE query runs (blocks before first drive)', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, ran } = trackingQuery();
+    const { emit, events } = emitSpy();
+    // Controllable gate: stays pending until we resolve it.
+    let resolveApproval!: (v: boolean) => void;
+    const approvalP = new Promise<boolean>((r) => { resolveApproval = r; });
+    let awaited = false;
+    const awaitApproval = () => { awaited = true; return approvalP; };
+
+    const runP = runAgentGoal({ goal: 'g', sessionId: 'a1', mode: 'ask', browser, store, states: [], emit, query: fn, awaitApproval });
+    // Give the loop a tick to emit the plan + reach the await.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(events.some((e) => e.type === 'plan')).toBe(true);
+    expect(awaited).toBe(true);
+    expect(ran()).toBe(false); // BLOCKED — query has NOT started before approval
+
+    resolveApproval(true);
+    await runP;
+    expect(ran()).toBe(true); // approved → query ran
+  });
+
+  it('ask mode + deny: query never runs, no browser calls, a "denied" done event is emitted', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, ran } = trackingQuery();
+    const { emit, events } = emitSpy();
+    const awaitApproval = () => Promise.resolve(false);
+
+    await runAgentGoal({ goal: 'g', sessionId: 'a2', mode: 'ask', browser, store, states: [], emit, query: fn, awaitApproval });
+    expect(ran()).toBe(false);
+    expect(browser.callCount()).toBe(0);
+    const done = events.find((e) => e.type === 'done') as any;
+    expect(done).toBeTruthy();
+    expect(String(done.summary)).toMatch(/denied/i);
+  });
+
+  it('act mode: runs immediately, approval is NEVER awaited', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, ran } = trackingQuery();
+    const { emit } = emitSpy();
+    let awaited = false;
+    const awaitApproval = () => { awaited = true; return Promise.resolve(true); };
+
+    await runAgentGoal({ goal: 'g', sessionId: 'a3', mode: 'act', browser, store, states: [], emit, query: fn, awaitApproval });
+    expect(awaited).toBe(false); // Act gates nothing
+    expect(ran()).toBe(true);
+  });
+
+  it('auto mode: does NOT gate at run start (query runs without approval)', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, ran } = trackingQuery();
+    const { emit } = emitSpy();
+    let awaited = false;
+    const awaitApproval = () => { awaited = true; return Promise.resolve(true); };
+
+    await runAgentGoal({ goal: 'g', sessionId: 'a4', mode: 'auto', browser, store, states: [], emit, query: fn, awaitApproval });
+    expect(awaited).toBe(false); // Auto does not block the whole run (unlike Ask)
+    expect(ran()).toBe(true);
+  });
+
+  it('auto mode: a goto to a NEW ORIGIN awaits approval; deny aborts the goto without navigating', async () => {
+    const store = newStore();
+    // Browser whose current page is on x.test; goto to a DIFFERENT origin is cross-origin.
+    const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');
+    (browser as any).currentUrl = async () => 'https://x.test/page';
+    const { fn: gotoFn } = fakeQueryCalling('goto', { url: 'https://other.test/here' });
+    const { emit } = emitSpy();
+    const awaitApproval = () => Promise.resolve(false); // deny the cross-origin nav
+    await runAgentGoal({ goal: 'g', sessionId: 'a5', mode: 'auto', browser, store, states: [], emit, query: gotoFn, awaitApproval });
+    expect(browser.gotos).toEqual([]); // denied → NOT navigated
+  });
+
+  it('auto mode: a SAME-ORIGIN goto does NOT await approval (drives freely)', async () => {
+    const store = newStore();
+    const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');
+    (browser as any).currentUrl = async () => 'https://x.test/page';
+    const { fn: gotoFn } = fakeQueryCalling('goto', { url: 'https://x.test/other' });
+    const { emit } = emitSpy();
+    let awaited = false;
+    const awaitApproval = () => { awaited = true; return Promise.resolve(false); };
+    await runAgentGoal({ goal: 'g', sessionId: 'a6', mode: 'auto', browser, store, states: [], emit, query: gotoFn, awaitApproval });
+    expect(awaited).toBe(false);
+    expect(browser.gotos).toEqual(['https://x.test/other']);
+  });
+
+  it('act mode: a goto to a new origin does NOT await approval (Act gates nothing)', async () => {
+    const store = newStore();
+    const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');
+    (browser as any).currentUrl = async () => 'https://x.test/page';
+    const { fn: gotoFn } = fakeQueryCalling('goto', { url: 'https://other.test/here' });
+    const { emit } = emitSpy();
+    let awaited = false;
+    const awaitApproval = () => { awaited = true; return Promise.resolve(false); };
+    await runAgentGoal({ goal: 'g', sessionId: 'a7', mode: 'act', browser, store, states: [], emit, query: gotoFn, awaitApproval });
+    expect(awaited).toBe(false);
+    expect(browser.gotos).toEqual(['https://other.test/here']);
+  });
 });
 
 // Keep ToolDef exported-type referenced so the import isn't dropped.

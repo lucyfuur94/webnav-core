@@ -43,6 +43,11 @@ export interface RunAgentGoalArgs {
   emit: (e: AgentEvent) => void;
   query?: QueryFn;
   signal?: AbortSignal;
+  // The approval gate (crit #3/#4). Resolves true=proceed / false=deny. Wired by the
+  // server to a POST /api/agent/approve round-trip; the unit tests inject a fake.
+  // Absent → treated as an immediate approve (Act/Auto never call it anyway; only Ask
+  // and Auto's cross-origin goto do). See runAgentGoal for the exact per-mode semantics.
+  awaitApproval?: () => Promise<boolean>;
 }
 
 function text(t: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -100,6 +105,15 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       handler: async (a) => {
         const url = String(a.url);
         if (!browser.goto) return text('this browser cannot goto a URL');
+        // AUTO-mode gate (crit #3): a cross-origin navigation is the cheap "meaningful
+        // action" signal — Auto pauses for approval before leaving the current site.
+        // Same-origin gotos and all Act-mode gotos drive freely; Ask already gated the
+        // whole run up front. Conservative: if we can't prove same-origin, gate it.
+        if (args.mode === 'auto' && (await isCrossOrigin(browser, url))) {
+          emit({ type: 'plan', steps: ['Navigate to a new site: ' + url] });
+          const ok = args.awaitApproval ? await args.awaitApproval() : true;
+          if (!ok) return text('cross-site navigation to ' + url + ' was denied — NOT navigated.');
+        }
         await browser.goto(url, null);
         emit({ type: 'narrate', label: 'goto', detail: url });
         return text('navigated to ' + url);
@@ -141,6 +155,21 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       },
     },
   ];
+}
+
+// True if `target` is on a different origin than where the browser is settled. Used by
+// the Auto-mode goto gate. Conservative: if the current URL is unknown or either URL
+// won't parse, return true (gate it) — Auto errs toward asking, never toward a silent
+// cross-site jump.
+async function isCrossOrigin(browser: WalkBrowser, target: string): Promise<boolean> {
+  if (!browser.currentUrl) return true;
+  let current: string;
+  try { current = await browser.currentUrl(); } catch { return true; }
+  try {
+    return new URL(target).origin !== new URL(current).origin;
+  } catch {
+    return true;
+  }
 }
 
 // One-line summary of a walk's terminal response for the agent to read as a tool result.
@@ -199,8 +228,16 @@ const SYSTEM = [
  *                       events come from the channel in server.ts, never from here)
  *  - final result    -> { type: 'done', summary }
  *  - any throw        -> { type: 'error', message }
- * `mode` is threaded through for later Ask/Auto/Act gating; in 'ask' mode we emit a
- * plan event up front. Commit points are already protected by walkRoute (never auto-fired).
+ *
+ * Ask/Auto/Act gate semantics (crit #3/#4 — these three are OBSERVABLY different):
+ *  - ACT:  no confirmations. Drives freely. (Commit points are still protected by
+ *          walkRoute's needs-classification — never auto-fired.)
+ *  - AUTO: drives freely EXCEPT it pauses for approval before a goto to a NEW ORIGIN
+ *          (cross-site navigation = the cheap "meaningful action" signal). Gate lives in
+ *          the goto tool handler (buildTools). Same-origin driving is never gated.
+ *  - ASK:  emit the plan, then BLOCK the whole run on awaitApproval() BEFORE the query's
+ *          first driving tool can run. Approve → run. Deny → emit a "denied" done and
+ *          return without ever starting the query (nothing drives).
  */
 export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
   const { goal, mode, emit } = args;
@@ -210,6 +247,13 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
 
   if (mode === 'ask') {
     emit({ type: 'plan', steps: ['Check the map for a known route, then drive the tab step by step toward: ' + goal] });
+    // HARD GATE: block before the first drive. The SDK query does not start until the
+    // user approves — that is what makes Ask genuinely different from Auto/Act.
+    const ok = args.awaitApproval ? await args.awaitApproval() : true;
+    if (!ok) {
+      emit({ type: 'done', summary: 'denied — nothing was done' });
+      return;
+    }
   }
 
   try {
