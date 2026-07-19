@@ -764,9 +764,6 @@ async function startRun(): Promise<void> {
   const att = await chrome.runtime.sendMessage({ type: 'attach-drive', tabId: targetTabId });
   if (!att?.ok) { bubble('error', '✗ could not attach debugger: ' + (att?.error ?? '')); finishRun(); return; }
 
-  // Scope the driven tab into a labelled 'webnav' group (differentiator / visual state).
-  await scopeTabGroup(targetTabId);
-
   const res = await fetch(base + '/api/agent/goal', {
     method: 'POST', headers: postHeaders(),
     body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase(), model: agentModel }),
@@ -783,31 +780,10 @@ async function startRun(): Promise<void> {
 // Group + label the tab so the driven tab is visually scoped (Claude-extension parity).
 // ponytail: title-label only for visual state — a "running/done" word on the group is the
 // minimal honest indicator. Animated loading dots are deferrable (noted in README).
-// Tracks whether WE created the group, so finishRun only ungroups a group we made —
-// a tab the user had already grouped themselves is left alone (best-effort, non-destructive).
-let groupedByUs = false;
-async function scopeTabGroup(tabId: number, title = 'webnav ● running'): Promise<void> {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    groupedByUs = tab.groupId == null || tab.groupId < 0;
-    const groupId = await chrome.tabs.group({ tabIds: [tabId] });
-    await chrome.tabGroups.update(groupId, { title, color: 'blue' });
-  } catch { /* tabGroups can fail on some tab kinds; scoping is best-effort */ }
-}
-async function relabelTabGroup(tabId: number, title: string): Promise<void> {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    if (tab.groupId != null && tab.groupId >= 0) await chrome.tabGroups.update(tab.groupId, { title });
-  } catch { /* best-effort */ }
-}
-// Undo scopeTabGroup once the run is done — otherwise every run leaves the tab grouped
-// forever and groups accumulate. Only ungroups if WE created the group (groupedByUs);
-// a pre-existing user group is left untouched.
-async function ungroupTabIfOurs(tabId: number): Promise<void> {
-  if (!groupedByUs) return;
-  try { await chrome.tabs.ungroup([tabId]); } catch { /* best-effort */ }
-  groupedByUs = false;
-}
+// (Tab-group scoping was removed: grouping/ungrouping the single driven tab around a run
+// — combined with the debugger detach at teardown — was closing the user's tab, and it
+// added little. The driven tab is just left as-is; run state shows in the panel, not via
+// a tab group. See the header conn lamp + activity strip for "is it working".)
 
 function finishRun(): void {
   running = false;
@@ -818,9 +794,6 @@ function finishRun(): void {
   // H3: never leave an Approve/Deny bar live once the run has ended (e.g. an Auto
   // cross-site goto that was denied, or any stop/done/error while a gate was open).
   resolvePlanBar('◦ run ended');
-  if (targetTabId != null) {
-    relabelTabGroup(targetTabId, 'webnav ✓').then(() => ungroupTabIfOurs(targetTabId!));
-  }
   // A finished run with an empty composer / lost connection must re-disable Send;
   // the `sendEl.disabled = false` above is unconditional, so re-derive the real state.
   updateSendEnabled();
@@ -859,6 +832,8 @@ async function resetChat(): Promise<void> {
   updateEmptyPrereq(connEl.classList.contains('ok'));
   goalEl.value = '';
   autosize();
+  await resolveTab();        // re-point at the user's CURRENT tab (not stale state) so the
+                             // next goal drives what they're looking at, not a new google tab
   updateSendEnabled();       // B5: reflect empty composer
   goalEl.focus();
 }
@@ -884,7 +859,6 @@ async function pauseRun(): Promise<void> {
   currentRoute?.querySelector('.msg.action.live')?.classList.remove('live');
   currentRoute = null;
   resolvePlanBar('◦ paused'); // H3: a gate open at pause is no longer actionable
-  if (targetTabId != null) await relabelTabGroup(targetTabId, 'webnav ⏸ paused');
   bubble('done', 'paused — you have control. Interact with the page by hand, then send a new goal to resume (manual actions are not recorded yet). Resume starts a fresh turn from the current page.');
 }
 

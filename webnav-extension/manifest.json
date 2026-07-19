@@ -3,7 +3,7 @@
   "name": "webnav",
   "version": "0.1.0",
   "description": "Record real browsing into a webnav map, and drive a tab with a webnav agent (local).",
-  "permissions": ["activeTab", "scripting", "storage", "debugger", "sidePanel", "tabs", "tabGroups"],
+  "permissions": ["activeTab", "scripting", "storage", "debugger", "sidePanel", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
