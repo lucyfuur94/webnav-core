@@ -5,6 +5,30 @@ import type { AgentChannel } from '../router/live-extension-browser.js';
 import { ingestAX, type IngestAXBody } from '../recorder/ingest.js';
 import type { RecordStore } from '../mapstore/record.js';
 
+// Minimal drivable landing page (served unauthenticated at GET /landing). On-brand
+// (the webnav map-pin), both light + dark via prefers-color-scheme, self-contained (the
+// extension CSP + a bare browser tab: no external anything). It's just a neutral,
+// debugger-attachable place for the agent to start when the launch tab wasn't drivable —
+// the agent navigates onward from here immediately.
+const LANDING_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>webnav — ready</title>
+<style>
+  :root { color-scheme: light dark; --bg:#eef1f6; --ink:#1a2230; --ink-soft:#4a5568; --accent:#2f6fe0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1017; --ink:#e7ecf4; --ink-soft:#a4aec0; --accent:#5b9dff; } }
+  html,body { height:100%; margin:0; }
+  body { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    background:var(--bg); color:var(--ink); font:15px/1.5 ui-sans-serif,-apple-system,system-ui,sans-serif; }
+  svg { width:40px; height:40px; }
+  h1 { font-size:16px; font-weight:650; margin:0; letter-spacing:-.01em; }
+  p { margin:0; color:var(--ink-soft); font-size:13px; }
+</style></head><body>
+  <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/><circle cx="12" cy="10" r="2.6" fill="var(--accent)" stroke="none"/>
+  </svg>
+  <h1>webnav — ready</h1>
+  <p>Give the agent a goal in the side panel; it will navigate from here.</p>
+</body></html>`;
+
 // The local agent server: the Chrome extension sidePanel's counterpart. Streams
 // AgentEvent over SSE, accepts a goal, and gives the AGENT LOOP (a later task, via
 // opts.onGoal) a real AgentChannel that drives the extension by emitting `action`
@@ -140,6 +164,18 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
   const server = http.createServer((req, res) => {
     const sendJson = (code: number, body: unknown) =>
       res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+
+    // Drivable landing page — the one route that is NOT token-gated. When the agent must
+    // open a fresh tab (the user launched from a chrome:// / New Tab page that CDP can't
+    // drive), it lands HERE instead of an arbitrary google.com: a minimal, on-brand,
+    // http(s) (therefore debugger-attachable) page. It's a static page with NO capability,
+    // NO data, NO command surface — safe to serve unauthenticated (a browser tab can't send
+    // the x-webnav-token header anyway). The agent immediately goto()s to the real target.
+    if (req.method === 'GET' && (req.url === '/landing' || req.url === '/')) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(LANDING_HTML);
+      return;
+    }
 
     if (!authorized(req)) return sendJson(401, { ok: false, error: 'unauthorized' });
 
