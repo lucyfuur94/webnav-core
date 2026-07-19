@@ -33,7 +33,10 @@ export interface ServeAgentOpts {
   // `awaitApproval` is the Ask/Auto approval gate (crit #3/#4): the loop calls it and
   // blocks until the user POSTs /api/agent/approve (or /stop, which denies). Resolves
   // true=proceed / false=deny.
-  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>) => Promise<void>;
+  // `signal` (5th arg) is the /stop abort channel: the server aborts it when /stop is
+  // POSTed, and onGoal threads it to runAgentGoal → the SDK query's abortController, so
+  // /stop actually cancels the in-flight turn (not just rejects pending browser commands).
+  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>, signal: AbortSignal) => Promise<void>;
   commandTimeoutMs?: number;
   // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
   // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
@@ -54,6 +57,9 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
   // awaitApproval() that parks here until /approve (or /stop, which denies) resolves it.
   // ponytail: one slot, not a per-goal map — the server drives one goal at a time.
   let pendingApproval: ((approved: boolean) => void) | null = null;
+  // Single outstanding run's abort controller (one goal at a time, same as the approval
+  // slot). /stop aborts it so the SDK query is cancelled, not just the pending commands.
+  let currentGoalAbort: AbortController | null = null;
 
   const emit = (e: AgentEvent) => { for (const fn of emitters) fn(e); };
 
@@ -138,7 +144,12 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
         sendJson(200, { ok: true });
         if (opts.onGoal) {
           const channel = makeChannel();
-          opts.onGoal(body, channel, emit, awaitApproval).catch((e) => emit({ type: 'error', message: String(e) }));
+          // A fresh goal supersedes any prior run's abort controller.
+          const abort = new AbortController();
+          currentGoalAbort = abort;
+          opts.onGoal(body, channel, emit, awaitApproval, abort.signal)
+            .catch((e) => emit({ type: 'error', message: String(e) }))
+            .finally(() => { if (currentGoalAbort === abort) currentGoalAbort = null; });
         }
       });
       return;
@@ -169,7 +180,11 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
     }
 
     if (req.method === 'POST' && req.url === '/api/agent/stop') {
+      // Stop must ACTUALLY stop: reject in-flight browser commands AND abort the SDK
+      // query (via the per-goal signal threaded to runAgentGoal). Rejecting pending
+      // commands alone only fails the next browser call — the SDK turn keeps running.
       rejectAllPending('agent-serve: stopped');
+      currentGoalAbort?.abort();
       sendJson(200, { ok: true });
       return;
     }

@@ -699,12 +699,11 @@ async function main() {
       channel: import('./router/live-extension-browser.js').AgentChannel,
       emit: (e: import('./agent/server.js').AgentEvent) => void,
       awaitApproval: () => Promise<boolean>,
+      signal: AbortSignal,
     ): Promise<void> => {
       const browser = makeLiveExtensionBrowser(channel, {});
-      // ponytail: no /stop AbortSignal threaded — the server rejects pending commands
-      // on /stop (server.ts), which fails the in-flight tool and surfaces as an error
-      // event. TODO(stop): thread a real AbortSignal per goal if the SDK query itself
-      // needs cancelling mid-turn (currently it just fails the next browser command).
+      // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
+      // (loop.ts), so /stop cancels the in-flight turn — not just the next browser command.
       await runAgentGoal({
         goal: goal.goal,
         sessionId: goal.sessionId,
@@ -714,6 +713,7 @@ async function main() {
         states,
         emit,
         awaitApproval,
+        signal,
       });
     };
     // Per-run auth secret: the extension must present it on every /api/agent/* call

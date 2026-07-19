@@ -64,6 +64,36 @@ function assertDriving(tabId: number): void {
   }
 }
 
+// A cross-origin navigation commits a NEW renderer; for a brief window right after, the
+// chrome.debugger session is transiently unavailable and a sendCommand rejects with a
+// "detached"/"not attached"/"target closed"-class error. That's not real drift — the tab
+// and the agent's nodeId are still valid — so RE-ATTACH once and retry the command ONCE.
+// Bounded single retry (no loop). A genuine element-not-found/stale-node error is NOT in
+// this class and is NOT retried — that's the agent's job to re-resolve (see nodeCenter).
+function isDetachClassError(e: unknown): boolean {
+  const m = String((e as { message?: unknown })?.message ?? e).toLowerCase();
+  return m.includes('detached') || m.includes('not attached') ||
+    m.includes('target closed') || m.includes('cannot access') ||
+    m.includes('no target with given id') || m.includes('debugger is not attached') ||
+    // assertDriving's own message after chrome.debugger.onDetach cleared driveTabId.
+    m.includes('drive session not attached');
+}
+
+async function withReattach<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!isDetachClassError(e)) throw e; // real error (stale-node etc.) → let the agent re-resolve
+    // Transient CDP window after a cross-origin nav: re-attach to the same tab, retry once.
+    driveTabId = null; // force attachDrive to re-run the enable dance (skip the no-op guard)
+    lastAxByNodeId = new Map();
+    await attachDrive(tabId);
+    // TODO(user-gated): only a real cross-origin nav exercises this transient window;
+    // confirm the single re-attach+retry actually recovers a click issued mid-nav.
+    return await fn();
+  }
+}
+
 async function getAX(tabId: number): Promise<AXNode[]> {
   assertDriving(tabId);
   const result = await chrome.debugger.sendCommand({ tabId }, 'Accessibility.getFullAXTree');
@@ -82,12 +112,15 @@ async function nodeCenter(tabId: number, nodeId: string): Promise<{ x: number; y
   const ax = lastAxByNodeId.get(nodeId);
   const backendNodeId = ax?.backendDOMNodeId;
   if (backendNodeId == null) {
-    // The server's nodeId always comes from a get-ax we served, so its backend id should
-    // be cached. If not (stale tree / re-render), get-ax again then retry the lookup.
-    const nodes = await getAX(tabId);
-    const fresh = nodes.find((n) => n.nodeId === nodeId);
-    if (fresh?.backendDOMNodeId == null) throw new Error(`no backendDOMNodeId for AX node ${nodeId}`);
-    return boxCenter(tabId, fresh.backendDOMNodeId);
+    // STALE NODE — honest error, no fake recovery. AX nodeIds are EPHEMERAL: every
+    // getFullAXTree mints brand-new ids, so re-fetching the tree and re-finding this OLD
+    // id would ALWAYS miss (the old id no longer exists). The real contract: a nodeId not
+    // in the current cached snapshot means the page re-rendered since the agent last read
+    // it — the exec-command handler replies {ok:false,error}, the panel POSTs an error
+    // command-result, the tool returns the error, and the AGENT re-calls get_page_ax and
+    // re-resolves by fingerprint (the loop already does this on a failed action). We must
+    // NOT silently click a wrong element by guessing a substitute.
+    throw new Error(`stale-node: AX nodeId ${nodeId} not in current snapshot — re-snapshot needed`);
   }
   return boxCenter(tabId, backendNodeId);
 }
@@ -252,13 +285,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     (async () => {
       const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string; url?: string };
       try {
+        // withReattach: recover the transient post-cross-origin-nav CDP detach window
+        // (re-attach once, retry once); a stale-node/element error is NOT retried.
         if (cmd.kind === 'get-ax') {
-          reply({ ok: true, result: await getAX(msg.tabId) });
+          reply({ ok: true, result: await withReattach(msg.tabId, () => getAX(msg.tabId)) });
         } else if (cmd.kind === 'click') {
-          await clickNode(msg.tabId, cmd.nodeId!);
+          await withReattach(msg.tabId, () => clickNode(msg.tabId, cmd.nodeId!));
           reply({ ok: true, result: { ok: true } });
         } else if (cmd.kind === 'type') {
-          await typeNode(msg.tabId, cmd.nodeId!, cmd.text ?? '');
+          await withReattach(msg.tabId, () => typeNode(msg.tabId, cmd.nodeId!, cmd.text ?? ''));
           reply({ ok: true, result: { ok: true } });
         } else if (cmd.kind === 'goto') {
           // goto/current-url act on the driven tab itself (not an AX node), so they
