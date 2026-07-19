@@ -193,6 +193,19 @@ describe('agent-serve', () => {
     expect(res.status).toBe(404);
   });
 
+  it('serveAgent({token:""}) still requires a non-empty token — a request with no token → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const server = serveAgent(0, store, { token: '' });
+    servers.push(server);
+    await new Promise((r) => server.on('listening', r));
+    const port = (server.address() as any).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/agent/goal`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ goal: 'g', sessionId: 's', mode: 'live' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('POST /api/agent/goal WITHOUT the token header → 401 unauthorized', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const port = await listen(store);
@@ -341,6 +354,26 @@ describe('agent-serve', () => {
     expect(aborted).toBe(true);
     expect(signalRef!.aborted).toBe(true);
     client.close();
+  });
+
+  it('last-connection-wins: a second /events connection evicts the first — an emitted action reaches only the second', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let channelRef: any;
+    const port = await listen(store, { onGoal: async (_goal, channel) => { channelRef = channel; } });
+    const first = openEvents(port);
+    const second = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 's5', mode: 'live' });
+    for (let i = 0; i < 50 && !channelRef; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(channelRef).toBeTruthy();
+
+    channelRef.dispatch({ kind: 'click', nodeId: 'n1' }).catch(() => {});
+    await second.waitFor((e) => e.type === 'action');
+    // give the (evicted) first stream a moment too, to prove it truly never receives it.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(first.events.some((e) => e.type === 'action')).toBe(false);
+    expect(second.events.some((e) => e.type === 'action')).toBe(true);
+    first.close();
+    second.close();
   });
 
   it('POST /api/agent/stop rejects pending command promises', async () => {

@@ -1,13 +1,14 @@
 // webnav-extension/background.ts
-// Two jobs over ONE chrome.debugger attach point (CDP `1.3`):
-//   1. Phase-1 CAPTURE (unchanged) — attach → getFullAXTree → detach, POST /ingest-ax.
-//   2. Phase-2 DRIVE — a PERSISTENT attach the sidePanel opens once per run; the agent
-//      loop (server-side) streams `action` commands over SSE, the panel forwards each
-//      here, and we execute it via CDP (get-ax / click / type). We DO NOT detach per
-//      command — the yellow "debugging this browser" banner persists for the session by
-//      design. A zombie attach is the failure mode, so we detach on every teardown path.
+// The sidePanel's DRIVE job over a PERSISTENT chrome.debugger attach (CDP `1.3`): the
+// sidePanel attaches once per run; the agent loop (server-side) streams `action`
+// commands over SSE, the panel forwards each here, and we execute it via CDP
+// (get-ax / click / type / goto / current-url). We DO NOT detach per command — the
+// yellow "debugging this browser" banner persists for the session by design. A zombie
+// attach is the failure mode, so we detach on every teardown path.
 // The extension stays DUMB: it ships raw AX node arrays and dispatches raw CDP input;
 // all reasoning (adaptAXTree, fingerprints, ranking) lives server-side.
+// (The Phase-1 "Capture this page" popup + its `capture` message were removed — the
+// toolbar icon opens the side panel now, and nothing sent that message anymore.)
 
 type AXNode = {
   nodeId: string;
@@ -16,23 +17,7 @@ type AXNode = {
 };
 
 // ---------------------------------------------------------------------------
-// Phase-1 capture (KEEP EXACTLY — popup.ts still drives this).
-// ---------------------------------------------------------------------------
-async function captureTabAX(tabId: number): Promise<{ url: string; nodes: AXNode[] }> {
-  await chrome.debugger.attach({ tabId }, '1.3');
-  try {
-    await chrome.debugger.sendCommand({ tabId }, 'Accessibility.enable');
-    const result = await chrome.debugger.sendCommand({ tabId }, 'Accessibility.getFullAXTree');
-    const tab = await chrome.tabs.get(tabId);
-    return { url: tab.url ?? '', nodes: (result as { nodes: AXNode[] }).nodes };
-  } finally {
-    // ALWAYS detach — left attached, the yellow "debugging this browser" banner sticks.
-    await chrome.debugger.detach({ tabId }).catch(() => {});
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Phase-2 persistent driving session.
+// Persistent driving session.
 // ---------------------------------------------------------------------------
 // Exactly one driven tab at a time (one panel, one run). The AX tree from the last
 // get-ax is cached so a click/type command (which arrives carrying an AX `nodeId`) can
@@ -242,30 +227,9 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 // ---------------------------------------------------------------------------
-// Message router. Phase-1 `capture` kept as-is; Phase-2 verbs added.
+// Message router.
 // ---------------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  if (msg.type === 'capture') {
-    (async () => {
-      try {
-        const { url, nodes } = await captureTabAX(msg.tabId);
-        // A landing-only observation: fromAX/fromUrl empty + clickedRef null tell the
-        // server this is a pure fresh landing, not a click→settle pair.
-        const body = {
-          sessionId: msg.sessionId,
-          steps: [{ fromUrl: '', fromAX: [], toUrl: url, toAX: nodes, clickedRef: null }],
-        };
-        const res = await fetch(msg.ingestUrl, {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-        });
-        reply(await res.json());
-      } catch (e) {
-        reply({ ok: false, error: String(e) });
-      }
-    })();
-    return true; // async reply
-  }
-
   if (msg.type === 'attach-drive') {
     (async () => {
       try { await attachDrive(msg.tabId); reply({ ok: true }); }

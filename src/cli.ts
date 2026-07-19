@@ -55,7 +55,7 @@ export type ParsedArgs =
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number; open: boolean }
   | { cmd: 'ingest'; port: number }
-  | { cmd: 'agent-serve'; port: number }
+  | { cmd: 'agent-serve'; port: number; token?: string }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
@@ -233,7 +233,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, port, open: rest.includes('--open') };
   }
   if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
-  if (cmd === 'agent-serve') return { cmd, port: Number(flagValue(rest, '--port') ?? 7779) };
+  if (cmd === 'agent-serve') return { cmd, port: Number(flagValue(rest, '--port') ?? 7779), token: flagValue(rest, '--token') };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted'),
@@ -719,10 +719,13 @@ async function main() {
     // Per-run auth secret: the extension must present it on every /api/agent/* call
     // (header on POSTs, ?token= on the SSE GET). Without it any web page (DNS-rebind /
     // localhost fetch) or local process could POST a goal and drive the user's browser.
+    // `--token <hex>` pins a stable token across restarts (paste once into the panel);
+    // omitted → a fresh random token every run, as before.
     const { randomBytes } = await import('node:crypto');
-    const token = randomBytes(16).toString('hex');
+    const token = args.token || randomBytes(16).toString('hex');
+    const tokenMode = args.token ? 'pinned via --token' : 'random per-run';
     const server = serveAgent(args.port, new RecordStore(dbPath()), { onGoal, token });
-    process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token}  (paste this into the extension panel settings)\n`);
+    process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token} (${tokenMode})  (paste this into the extension panel settings)\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port, token }));
     await new Promise(() => {}); // run until killed
     return;

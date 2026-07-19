@@ -5,7 +5,10 @@
 // executed over the persistent CDP debugger session — then POSTs the result back so the
 // server's agent loop unblocks. See task-5-brief.md + the verified server contract.
 
-type Cmd = { kind: 'get-ax' | 'click' | 'type'; nodeId?: string; text?: string };
+type Cmd =
+  | { kind: 'get-ax' | 'click' | 'type'; nodeId?: string; text?: string }
+  | { kind: 'goto'; url?: string }
+  | { kind: 'current-url' };
 type AgentEvent =
   | { type: 'turn'; text: string }
   // `narrate` is display-only (what the agent did); NEVER execute it. `action` is the
@@ -139,11 +142,16 @@ function bubble(kind: string, text = ''): HTMLDivElement {
   return el;
 }
 
+// Kept for a friendly label even though the `action` handler no longer renders its own
+// bubble (ITEM 1 — `narrate` is the one displayed line per action); this stays the single
+// place that maps a raw Cmd to human text, for any future caller that needs one.
 function narrateAction(cmd: Cmd): string {
   if (cmd.kind === 'get-ax') return 'reading page…';
   if (cmd.kind === 'click') return 'clicking…';
   if (cmd.kind === 'type') return `typing "${cmd.text ?? ''}"…`;
-  return cmd.kind;
+  if (cmd.kind === 'goto') return cmd.url ? `navigating to ${cmd.url}…` : 'navigating…';
+  if (cmd.kind === 'current-url') return 'reading address…';
+  return (cmd as { kind: string }).kind;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,9 +205,10 @@ function handleEvent(e: AgentEvent): void {
       break;
     case 'action':
       // The REAL CDP command from the server's channel — this is the ONLY path that
-      // runs execAction (and POSTs a command-result the server's loop awaits).
+      // runs execAction (and POSTs a command-result the server's loop awaits). The
+      // human-readable line for this same tool call was already rendered by `narrate`
+      // (which always precedes the matching `action`) — don't render a second bubble here.
       assistantBubble = null; // a new turn after the action starts a fresh bubble
-      bubble('action', narrateAction(e.cmd));
       execAction(e.id, e.cmd);
       break;
     case 'plan':
@@ -352,8 +361,13 @@ async function startRun(): Promise<void> {
 // Group + label the tab so the driven tab is visually scoped (Claude-extension parity).
 // ponytail: title-label only for visual state — a "running/done" word on the group is the
 // minimal honest indicator. Animated loading dots are deferrable (noted in README).
+// Tracks whether WE created the group, so finishRun only ungroups a group we made —
+// a tab the user had already grouped themselves is left alone (best-effort, non-destructive).
+let groupedByUs = false;
 async function scopeTabGroup(tabId: number, title = 'webnav ● running'): Promise<void> {
   try {
+    const tab = await chrome.tabs.get(tabId);
+    groupedByUs = tab.groupId == null || tab.groupId < 0;
     const groupId = await chrome.tabs.group({ tabIds: [tabId] });
     await chrome.tabGroups.update(groupId, { title, color: 'blue' });
   } catch { /* tabGroups can fail on some tab kinds; scoping is best-effort */ }
@@ -364,13 +378,23 @@ async function relabelTabGroup(tabId: number, title: string): Promise<void> {
     if (tab.groupId != null && tab.groupId >= 0) await chrome.tabGroups.update(tab.groupId, { title });
   } catch { /* best-effort */ }
 }
+// Undo scopeTabGroup once the run is done — otherwise every run leaves the tab grouped
+// forever and groups accumulate. Only ungroups if WE created the group (groupedByUs);
+// a pre-existing user group is left untouched.
+async function ungroupTabIfOurs(tabId: number): Promise<void> {
+  if (!groupedByUs) return;
+  try { await chrome.tabs.ungroup([tabId]); } catch { /* best-effort */ }
+  groupedByUs = false;
+}
 
 function finishRun(): void {
   running = false;
   sendEl.disabled = false;
   stopEl.classList.remove('active');
   pauseEl.classList.remove('active');
-  if (targetTabId != null) relabelTabGroup(targetTabId, 'webnav ✓');
+  if (targetTabId != null) {
+    relabelTabGroup(targetTabId, 'webnav ✓').then(() => ungroupTabIfOurs(targetTabId!));
+  }
 }
 
 async function stopRun(): Promise<void> {

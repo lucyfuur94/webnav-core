@@ -96,6 +96,10 @@ export function ingestAX(body: IngestAXBody, store: RecordStore): number {
 // steps here; they land in webnav.db as ActionEffects via `ingest`, identical
 // to agent-recorded ones. No auth — localhost-only, no secrets in transit
 // beyond the map itself.
+// note: this is still the live `webnav dev ingest` verb (src/cli.ts), a separate
+// surface from agent-serve's own /ingest-ax mount. Its only in-extension caller was
+// the Phase-1 popup, removed 2026-07-19 (see webnav-extension/README.md) — the
+// wildcard CORS here is unrelated to that removal and is left as-is (out of scope).
 export function serveIngest(port: number, store: RecordStore): http.Server {
   const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
