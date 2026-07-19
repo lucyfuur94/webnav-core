@@ -652,8 +652,13 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     const { runAgentGoal } = await import('./agent/loop.js');
     const { makeLiveExtensionBrowser } = await import('./router/live-extension-browser.js');
+    const { ingestAX } = await import('./recorder/ingest.js');
     const { MapStore } = await import('./mapstore/store.js');
     const { ensureSeeded } = await import('./graph/seed.js');
+    // One RecordStore for the server's lifetime: it backs BOTH the /ingest-ax route AND
+    // the end-of-run flush below, so an agent run lands in the same webnav.db `dev
+    // dashboard` reads and run-2 recall learns from.
+    const recordStore = new RecordStore(dbPath());
     // ponytail: one MapStore for the server's lifetime — same seeded map the `walk`
     // verb uses, so check_route/walkRoute route against the real states. Extra sites
     // recorded via /ingest-ax build the RecordStore, not this map; that's fine — the
@@ -674,18 +679,30 @@ async function main() {
       const browser = makeLiveExtensionBrowser(channel, {});
       // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
       // (loop.ts), so /stop cancels the in-flight turn — not just the next browser command.
-      await runAgentGoal({
-        goal: goal.goal,
-        sessionId: goal.sessionId,
-        mode: goal.mode === 'ask' ? 'ask' : 'act',
-        model: goal.model,
-        browser,
-        store: mapStore,
-        states,
-        emit,
-        awaitApproval,
-        signal,
-      });
+      try {
+        await runAgentGoal({
+          goal: goal.goal,
+          sessionId: goal.sessionId,
+          mode: goal.mode === 'ask' ? 'ask' : 'act',
+          model: goal.model,
+          browser,
+          store: mapStore,
+          states,
+          emit,
+          awaitApproval,
+          signal,
+        });
+      } finally {
+        // RECORD the run into the map on END (done / error / stop). Housekeeping never
+        // breaks the command (guardrail-sweep rule): a record failure is a warning, never
+        // a thrown goal. Empty runs (no action taken) record nothing.
+        try {
+          const steps = browser.getRecordedSteps();
+          if (steps.length) ingestAX({ sessionId: goal.sessionId, steps }, recordStore);
+        } catch (e) {
+          process.stderr.write(`webnav agent-serve: recording flush failed (run unaffected): ${String(e)}\n`);
+        }
+      }
     };
     // Per-run auth secret: the extension must present it on every /api/agent/* call
     // (header on POSTs, ?token= on the SSE GET). Without it any web page (DNS-rebind /
@@ -695,7 +712,7 @@ async function main() {
     const { randomBytes } = await import('node:crypto');
     const token = args.token || randomBytes(16).toString('hex');
     const tokenMode = args.token ? 'pinned via --token' : 'random per-run';
-    const server = serveAgent(args.port, new RecordStore(dbPath()), { onGoal, token });
+    const server = serveAgent(args.port, recordStore, { onGoal, token });
     process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token} (${tokenMode})  (paste this into the extension panel settings)\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port, token }));
     await new Promise(() => {}); // run until killed
