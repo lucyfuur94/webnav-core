@@ -1,16 +1,13 @@
 <!-- webnav-extension/README.md -->
-# webnav recorder (Chrome MV3)
+# webnav agent extension (Chrome MV3)
 
 Sensor: `chrome.debugger` → CDP `Accessibility.getFullAXTree` (real native accessibility
 tree, same source real assistive tech and Chrome DevTools use). The extension stays
-DUMB — it POSTs the raw AX node array; the webnav server (`/ingest-ax`) adapts it into
-the same `SnapNode[]` shape playwright produces and reconstructs fingerprints/diffs with
-tested code. Loading the extension shows Chrome's "webnav recorder is debugging this
-browser" banner — that's the `debugger` permission at work, expected and accepted (the
-only way a content script's page can hand over `getFullAXTree`).
-
-Increment B builds a single **"Capture this page"** action only (not the full
-click→settle record loop — that's a later increment).
+DUMB — it ships raw AX node arrays and dispatches raw CDP input; the webnav server
+adapts/reasons over all of it (adaptAXTree, fingerprints, ranking, the agent loop
+itself). Loading the extension shows Chrome's "webnav is debugging this browser"
+banner — that's the `debugger` permission at work, expected and accepted (the only way
+this extension can drive the page / read its accessibility tree).
 
 ## Build
 
@@ -18,40 +15,28 @@ click→settle record loop — that's a later increment).
 cd webnav-extension && npm i && npm run build
 ```
 
-## Load and test
-
-1. `webnav dev ingest --port 7778` (in the webnav repo — starts the local receiver).
-2. `chrome://extensions` → Developer mode → Load unpacked → select this folder.
-3. Open any page you want to map. Click the extension icon.
-4. Set the session name (default `human-1`) and confirm the ingest URL
-   (`http://127.0.0.1:7778/ingest-ax`).
-5. Click **Capture this page**. Chrome shows the debugging banner while it captures,
-   then it detaches automatically. The popup reports how many steps were ingested.
-6. Back in the webnav repo: `webnav dev graph-analyse <session> --draft --skip-review-gate`
-   — this should show the captured page's controls (buttons/links/inputs), matching what
-   a playwright snapshot of the same page would show.
-
-Secret rule: password / credit-card field *values* are never read — only role/name/url
-structure is captured.
-
-## Phase 2 — agent side panel (drive a tab with a goal)
+## Current flow — agent side panel (drive a tab with a goal)
 
 A docked side panel chat that streams Claude's replies + live narration and drives the
 active tab over CDP, talking to `webnav agent-serve` (local, port 7779).
 
 The panel opens the SSE stream itself (the service worker idles and would drop it),
-renders `turn` deltas into an assistant bubble + `action` narration lines, and forwards
-each `action` command to `background.js` to execute over ONE persistent `chrome.debugger`
-attach — get-ax (`getFullAXTree`), click (AX nodeId → `backendDOMNodeId` →
-`DOM.getBoxModel` content-quad centre → `Input.dispatchMouseEvent`), type (click to focus
-→ `Input.insertText`). The command result is POSTed back to `/api/agent/command-result`.
+renders `turn` deltas into an assistant bubble + one human-readable `narrate` line per
+tool call, and forwards each matching `action` command to `background.js` to execute
+over ONE persistent `chrome.debugger` attach — get-ax (`getFullAXTree`), click (AX
+nodeId → `backendDOMNodeId` → `DOM.getBoxModel` content-quad centre →
+`Input.dispatchMouseEvent`), type (click to focus → `Input.insertText`), goto, and
+current-url. The command result is POSTed back to `/api/agent/command-result`. Only the
+most recently opened panel is ever driven — a second `/api/agent/events` connection
+evicts the first (last-connection-wins), so two open panels can't both fire CDP actions.
 
 **Permission modes** (bottom-left toggle, cycles Ask / Auto / Act, persisted): sent as
 `mode` on `POST /api/agent/goal`; the server maps it to the gate level (commits always
 gate). In **Ask** mode a `plan` event shows an Approve/Deny bar — Deny POSTs `/stop`.
 **Stop** aborts the run (`POST /api/agent/stop`). The driven tab is scoped into a
-labelled `webnav` tab group. (Group label flips to `webnav ✓` on done — animated
-loading dots on the group are deferred; the label is the minimal honest visual state.)
+labelled `webnav` tab group for the run (label flips to `webnav ✓` on done) and
+un-grouped again once the run finishes — unless the tab was already in a group you made
+yourself, which is left alone.
 
 **On-page highlight pulse:** every click (and the click-to-focus step of a type) paints a
 short-lived pulse at the exact point CDP clicked, reusing the same `DOM.getBoxModel` centre
@@ -79,12 +64,14 @@ detach).
 cd webnav-extension && npm i && npm run build   # tsc, emits *.js beside *.ts
 ```
 
-1. In the webnav repo: `webnav agent-serve --port 7779`.
+1. In the webnav repo: `webnav agent-serve --port 7779`. It prints a token — paste that
+   into the panel. (Optional: `webnav agent-serve --port 7779 --token <hex>` to pin a
+   stable token so you don't have to re-paste it on every restart.)
 2. `chrome://extensions` → Developer mode → Load unpacked → select this folder.
-3. Open the side panel — the toolbar action icon, or the `toggle-panel` command
-   (**Cmd+E** / **Ctrl+E**).
-4. (Optional) open **settings** to set the session name (`agent-1`) / server base
-   (`http://127.0.0.1:7779`).
+3. Open the side panel from any tab — the toolbar action icon, or the `toggle-panel`
+   command (**Cmd+E** / **Ctrl+E**).
+4. Open **settings** and paste the printed token; (optionally) set the session name
+   (`agent-1`) / server base (`http://127.0.0.1:7779`).
 5. Navigate the active tab to e.g. `https://www.saucedemo.com`, pick a mode, type a goal
    (e.g. *log in as standard_user and open the cart*), and Send (or Cmd/Ctrl+Enter).
 6. Watch the streamed reply + narration; the tab clicks/types itself. The yellow

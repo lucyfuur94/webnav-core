@@ -477,10 +477,13 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'agent-serve',
-    summary: 'Run the local agent server the webnav-extension sidePanel talks to. Starts an HTTP server on --port (default 7779): GET /api/agent/events streams SSE {type:turn|action|done|error|plan} events; POST /api/agent/goal {goal,sessionId,mode} starts a run; POST /api/agent/command-result {id,result} resolves a pending action command the server emitted; POST /api/agent/stop aborts the current run; POST /ingest-ax lands a live run as ActionEffects (same path as `dev ingest`). Runs until Ctrl-C.',
+    summary: 'Run the local agent server the webnav-extension sidePanel talks to. Starts an HTTP server on --port (default 7779): GET /api/agent/events streams SSE {type:turn|action|done|error|plan} events (last connection wins — opening a second panel evicts the first); POST /api/agent/goal {goal,sessionId,mode} starts a run; POST /api/agent/command-result {id,result} resolves a pending action command the server emitted; POST /api/agent/stop aborts the current run; POST /ingest-ax lands a live run as ActionEffects (same path as `dev ingest`). Runs until Ctrl-C.',
     args: [],
-    flags: [{ name: '--port', takesValue: true, default: '7779', description: 'Localhost port to listen on.' }],
-    example: 'webnav dev agent-serve --port 7779',
+    flags: [
+      { name: '--port', takesValue: true, default: '7779', description: 'Localhost port to listen on.' },
+      { name: '--token', takesValue: true, description: 'Pin the auth token to a fixed hex string, stable across restarts (paste into the panel once). Omit to get a fresh random token every run (the old behavior).' },
+    ],
+    example: 'webnav dev agent-serve --port 7779 --token deadbeef1234',
   },
 ];
 

@@ -49,8 +49,15 @@ interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; t
 
 export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpts = {}): http.Server {
   const commandTimeoutMs = opts.commandTimeoutMs ?? 30_000;
-  const token = opts.token ?? crypto.randomBytes(16).toString('hex');
-  const emitters = new Set<(e: AgentEvent) => void>();
+  // `||` not `??`: an explicitly-passed empty string must still fall back to a random
+  // token — token:'' would make authorized('') true and disable auth entirely.
+  const token = opts.token || crypto.randomBytes(16).toString('hex');
+  // LAST-CONNECTION-WINS (single-panel guard): two open panels (or a reopened panel
+  // racing the old EventSource's close) must not both receive+execute every `action` —
+  // that double-fires CDP clicks. Only the newest /events connection is kept live; a
+  // fresh connection evicts+ends whatever was there before.
+  let current: { send: (e: AgentEvent) => void; res: http.ServerResponse } | null = null;
+  const emit = (e: AgentEvent) => current?.send(e);
   const pending = new Map<string, Pending>();
   let seq = 0;
   // Single outstanding approval gate (one goal runs at a time). onGoal is handed an
@@ -60,8 +67,6 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
   // Single outstanding run's abort controller (one goal at a time, same as the approval
   // slot). /stop aborts it so the SDK query is cancelled, not just the pending commands.
   let currentGoalAbort: AbortController | null = null;
-
-  const emit = (e: AgentEvent) => { for (const fn of emitters) fn(e); };
 
   function awaitApproval(): Promise<boolean> {
     // A fresh goal supersedes any stale unresolved gate (deny it so nothing leaks).
@@ -127,12 +132,15 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
     if (!authorized(req)) return sendJson(401, { ok: false, error: 'unauthorized' });
 
     if (req.method === 'GET' && (req.url ?? '').startsWith('/api/agent/events')) {
+      // Evict whatever connection was previously current — last-connection-wins.
+      current?.res.end();
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       res.write(': connected\n\n');
       const send = (e: AgentEvent) => res.write('data: ' + JSON.stringify(e) + '\n\n');
-      emitters.add(send);
+      const self = { send, res };
+      current = self;
       const beat = setInterval(() => res.write(': ping\n\n'), 15000);
-      req.on('close', () => { clearInterval(beat); emitters.delete(send); });
+      req.on('close', () => { clearInterval(beat); if (current === self) current = null; });
       return;
     }
 
