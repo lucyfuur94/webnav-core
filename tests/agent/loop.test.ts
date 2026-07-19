@@ -160,7 +160,7 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     const browser = fakeBrowser(INVENTORY_SNAP);
     const { fn, toolResult } = fakeQueryCalling('list_routes', {});
     const { emit } = emitSpy();
-    await runAgentGoal({ goal: 'discover', sessionId: 'l1', mode: 'auto', browser, store, states, emit, query: fn });
+    await runAgentGoal({ goal: 'discover', sessionId: 'l1', mode: 'act', browser, store, states, emit, query: fn });
     const out = toolResult();
     expect(out).toContain('siteA:home');
     expect(out).toContain('Home');
@@ -177,7 +177,7 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     const browser = fakeBrowser('RootWebArea "Unknown page" [ref=e1]');
     const { fn, toolResult } = fakeQueryCalling('list_routes', {});
     const { emit } = emitSpy();
-    await runAgentGoal({ goal: 'discover', sessionId: 'l2', mode: 'auto', browser, store, states, emit, query: fn });
+    await runAgentGoal({ goal: 'discover', sessionId: 'l2', mode: 'act', browser, store, states, emit, query: fn });
     const out = toolResult();
     expect(out).toContain('siteA:home');
     expect(out).toContain('siteB:home');
@@ -194,12 +194,12 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     // Step 1: list_routes surfaces the destination id.
     const list = fakeQueryCalling('list_routes', {});
     const { emit: e1 } = emitSpy();
-    await runAgentGoal({ goal: 'discover', sessionId: 'l3a', mode: 'auto', browser, store, states, emit: e1, query: list.fn });
+    await runAgentGoal({ goal: 'discover', sessionId: 'l3a', mode: 'act', browser, store, states, emit: e1, query: list.fn });
     expect(list.toolResult()).toContain('sd:cart');
     // Step 2: feed that id to check_route — it resolves a route (proves the id is usable).
     const check = fakeQueryCalling('check_route', { goalStateId: 'sd:cart' });
     const { emit: e2 } = emitSpy();
-    await runAgentGoal({ goal: 'reach cart', sessionId: 'l3b', mode: 'auto', browser, store, states, emit: e2, query: check.fn });
+    await runAgentGoal({ goal: 'reach cart', sessionId: 'l3b', mode: 'act', browser, store, states, emit: e2, query: check.fn });
     expect(check.toolResult()).toContain('sd:inventory');
     expect(check.toolResult()).toContain('sd:cart');
     expect(check.toolResult()).not.toMatch(/drive manually|no route/i);
@@ -215,7 +215,7 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     const browser = fakeBrowser(INVENTORY_SNAP);
     const { fn, toolResult } = fakeQueryCalling('check_route', { goalStateId: 'sd:cart' });
     const { emit } = emitSpy();
-    await runAgentGoal({ goal: 'reach cart', sessionId: 's5', mode: 'auto', browser, store, states, emit, query: fn });
+    await runAgentGoal({ goal: 'reach cart', sessionId: 's5', mode: 'act', browser, store, states, emit, query: fn });
     // A hit reports the path it found + the walkRoute terminal status — never a "drive manually".
     expect(toolResult()).toContain('sd:inventory');
     expect(toolResult()).toContain('sd:cart');
@@ -230,7 +230,7 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     const browser = fakeBrowser('RootWebArea "Unknown page" [ref=e1]');
     const { fn, toolResult } = fakeQueryCalling('check_route', { goalStateId: 'sd:cart' });
     const { emit } = emitSpy();
-    await runAgentGoal({ goal: 'reach cart', sessionId: 's6', mode: 'auto', browser, store, states, emit, query: fn });
+    await runAgentGoal({ goal: 'reach cart', sessionId: 's6', mode: 'act', browser, store, states, emit, query: fn });
     expect(toolResult()).toMatch(/drive manually|not on a known state|no route/i);
     // walkRoute was never entered, so the browser did no navigation actions.
     expect(browser.acted).toEqual([]);
@@ -350,42 +350,19 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(ran()).toBe(true);
   });
 
-  it('auto mode: does NOT gate at run start (query runs without approval)', async () => {
-    const browser = fakeBrowser(INVENTORY_SNAP);
+  it('act mode: a cross-origin goto drives freely (no approval, no gate)', async () => {
+    // Two-mode model (Ask/Act): Auto and its cross-origin confirm were removed. Act just
+    // drives; the only hard stop is a commit point, enforced by walkRoute, not by mode.
     const store = newStore();
-    const { fn, ran } = trackingQuery();
-    const { emit } = emitSpy();
-    let awaited = false;
-    const awaitApproval = () => { awaited = true; return Promise.resolve(true); };
-
-    await runAgentGoal({ goal: 'g', sessionId: 'a4', mode: 'auto', browser, store, states: [], emit, query: fn, awaitApproval });
-    expect(awaited).toBe(false); // Auto does not block the whole run (unlike Ask)
-    expect(ran()).toBe(true);
-  });
-
-  it('auto mode: a goto to a NEW ORIGIN awaits approval; deny aborts the goto without navigating', async () => {
-    const store = newStore();
-    // Browser whose current page is on x.test; goto to a DIFFERENT origin is cross-origin.
     const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');
     (browser as any).currentUrl = async () => 'https://x.test/page';
     const { fn: gotoFn } = fakeQueryCalling('goto', { url: 'https://other.test/here' });
     const { emit } = emitSpy();
-    const awaitApproval = () => Promise.resolve(false); // deny the cross-origin nav
-    await runAgentGoal({ goal: 'g', sessionId: 'a5', mode: 'auto', browser, store, states: [], emit, query: gotoFn, awaitApproval });
-    expect(browser.gotos).toEqual([]); // denied → NOT navigated
-  });
-
-  it('auto mode: a SAME-ORIGIN goto does NOT await approval (drives freely)', async () => {
-    const store = newStore();
-    const browser = fakeBrowser('RootWebArea "on x" [ref=e1]');
-    (browser as any).currentUrl = async () => 'https://x.test/page';
-    const { fn: gotoFn } = fakeQueryCalling('goto', { url: 'https://x.test/other' });
-    const { emit } = emitSpy();
     let awaited = false;
     const awaitApproval = () => { awaited = true; return Promise.resolve(false); };
-    await runAgentGoal({ goal: 'g', sessionId: 'a6', mode: 'auto', browser, store, states: [], emit, query: gotoFn, awaitApproval });
-    expect(awaited).toBe(false);
-    expect(browser.gotos).toEqual(['https://x.test/other']);
+    await runAgentGoal({ goal: 'g', sessionId: 'a5', mode: 'act', browser, store, states: [], emit, query: gotoFn, awaitApproval });
+    expect(awaited).toBe(false); // Act never asks
+    expect(browser.gotos).toEqual(['https://other.test/here']); // navigated freely
   });
 
   it('act mode: a goto to a new origin does NOT await approval (Act gates nothing)', async () => {

@@ -57,7 +57,7 @@ function updateSendEnabled(): void {
   sendEl.disabled = !goalEl.value.trim() || !connEl.classList.contains('ok');
 }
 
-const MODES = ['Ask', 'Auto', 'Act'] as const;
+const MODES = ['Ask', 'Act'] as const;
 type Mode = (typeof MODES)[number];
 
 // Launching from a chrome://, New-Tab, blank, or extension tab can't be driven (the CDP
@@ -119,15 +119,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // button's tooltip so the three modes read as genuinely different, not cosmetic.
 const MODE_HINT: Record<Mode, string> = {
   Ask: 'Ask: shows a plan and WAITS for your Approve before driving anything.',
-  Auto: 'Auto: drives on its own, but asks before navigating to a new site.',
   Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
 };
 // #2 — one-line description of the SELECTED mode, shown under the switch (updated in
 // applyMode). Distinct from MODE_HINT (the hover tooltip) — this is the always-visible copy.
 const MODE_DESC: Record<Mode, string> = {
-  Ask: 'Shows a plan and waits for your approval before doing anything.',
-  Auto: 'Runs on its own; asks before navigating to a new site.',
-  Act: 'Runs fully autonomously (commit points still pause).',
+  Ask: 'Shows a plan and waits for your approval before it does anything.',
+  Act: 'Runs on its own. Irreversible steps (pay, place order, delete) still pause for you.',
 };
 const modeButtons = Array.from(modeEl.querySelectorAll<HTMLButtonElement>('button[data-mode]'));
 function applyMode(): void {
