@@ -47,29 +47,17 @@ describe('MapStore', () => {
   // ─── Internet graph (inter-site) ───────────────────────────────────────────
   it('upserts and retrieves a node', () => {
     const s = freshStore();
-    s.upsertNode({ id: 'github.com', homeUrl: 'https://github.com',
-      capabilities: ['code-search'], topics: ['code'] });
+    s.upsertNode({ id: 'github.com', homeUrl: 'https://github.com' });
     const n = s.getNode('github.com');
     expect(n?.homeUrl).toBe('https://github.com');
-    expect(n?.capabilities).toEqual(['code-search']);
-    expect(n?.topics).toEqual(['code']);
   });
 
   it('upsert is idempotent on node id (updates, no dup)', () => {
     const s = freshStore();
-    s.upsertNode({ id: 'x', homeUrl: 'https://a', capabilities: ['c'], topics: [] });
-    s.upsertNode({ id: 'x', homeUrl: 'https://b', capabilities: ['d'], topics: [] });
+    s.upsertNode({ id: 'x', homeUrl: 'https://a' });
+    s.upsertNode({ id: 'x', homeUrl: 'https://b' });
     expect(s.allNodes().length).toBe(1);
     expect(s.getNode('x')?.homeUrl).toBe('https://b');
-  });
-
-  it('nodesByCapability tests array membership, not substring', () => {
-    const s = freshStore();
-    s.upsertNode({ id: 'a', homeUrl: 'https://a', capabilities: ['web-search'], topics: [] });
-    s.upsertNode({ id: 'b', homeUrl: 'https://b', capabilities: ['code-search'], topics: [] });
-    expect(s.nodesByCapability('web-search').map((n) => n.id)).toEqual(['a']);
-    // 'search' is a substring of both capabilities but a member of neither.
-    expect(s.nodesByCapability('search')).toEqual([]);
   });
 
   it('upserts a node edge and finds it by fromNode', () => {

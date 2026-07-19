@@ -29,7 +29,6 @@ export interface IMapStore {
   upsertNode(n: SiteNode): void;
   getNode(id: string): SiteNode | null;
   allNodes(): SiteNode[];
-  nodesByCapability(capability: string): SiteNode[];
   upsertNodeEdge(e: NodeEdge): void;
   nodeEdgesFrom(fromNode: string): NodeEdge[];
   allNodeEdges(): NodeEdge[];
@@ -156,7 +155,7 @@ export class MapStore implements IMapStore {
   }
   /** Wipe a single node's INTERIOR — its states and their stored edges — so the site can be
    *  RE-LEARNED from scratch through webnav (never raw sqlite). The node row itself stays
-   *  (its id/capabilities/topics), so a fresh graph-edit lands back under it. No-op if unknown. */
+   *  (its id/homeUrl), so a fresh graph-edit lands back under it. No-op if unknown. */
   clearNode(nodeId: string): void {
     this.transaction(() => {
       const ids: any[] = this.db.prepare('SELECT id FROM states WHERE node_id=?').all(nodeId);
@@ -356,13 +355,14 @@ export class MapStore implements IMapStore {
 
   // ─── Internet graph (inter-site) — Phase 2 ─────────────────────────────────
   upsertNode(n: SiteNode): void {
-    this.db.prepare(`INSERT INTO nodes VALUES (@id,@homeUrl,@capabilities,@topics)
-      ON CONFLICT(id) DO UPDATE SET home_url=@homeUrl,
-      capabilities=@capabilities, topics=@topics`)
-      .run({
-        id: n.id, homeUrl: n.homeUrl,
-        capabilities: JSON.stringify(n.capabilities), topics: JSON.stringify(n.topics),
-      });
+    // ponytail: the `capabilities`/`topics` columns are dead internet-graph
+    // residue (audit B2). We keep the columns (they're NOT NULL, dropping them
+    // needs a table rebuild) but stop reading them — write '[]' to satisfy the
+    // constraint on fresh AND already-seeded DBs. Drop the columns only if the
+    // nodes table is ever rebuilt for another reason.
+    this.db.prepare(`INSERT INTO nodes (id,home_url,capabilities,topics) VALUES (@id,@homeUrl,'[]','[]')
+      ON CONFLICT(id) DO UPDATE SET home_url=@homeUrl`)
+      .run({ id: n.id, homeUrl: n.homeUrl });
   }
   getNode(id: string): SiteNode | null {
     const r: any = this.db.prepare('SELECT * FROM nodes WHERE id=?').get(id);
@@ -371,15 +371,6 @@ export class MapStore implements IMapStore {
   allNodes(): SiteNode[] {
     const rows: any[] = this.db.prepare('SELECT * FROM nodes ORDER BY id').all();
     return rows.map(rowToNode);
-  }
-  /**
-   * Nodes whose `capabilities` JSON array CONTAINS the given capability. We
-   * JSON-parse each row and test array membership rather than a SQL LIKE — a
-   * LIKE would false-match substrings (e.g. searching 'search' would hit
-   * 'web-search', 'code-search', 'repo-search' all at once). Membership is exact.
-   */
-  nodesByCapability(capability: string): SiteNode[] {
-    return this.allNodes().filter((n) => n.capabilities.includes(capability));
   }
 
   upsertNodeEdge(e: NodeEdge): void {
@@ -402,8 +393,7 @@ export class MapStore implements IMapStore {
 const edgeKey = (e: Edge) => e.fromState + ' ' + e.toState + ' ' + e.semanticStep;
 
 function rowToNode(r: any): SiteNode {
-  return { id: r.id, homeUrl: r.home_url,
-    capabilities: JSON.parse(r.capabilities), topics: JSON.parse(r.topics) };
+  return { id: r.id, homeUrl: r.home_url };
 }
 
 function rowToNodeEdge(r: any): NodeEdge {

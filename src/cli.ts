@@ -12,8 +12,7 @@ export type ParsedArgs =
   | { cmd: 'list' }
   | { cmd: 'read'; url: string; raw: boolean; browser: BrowserOpts }
   | { cmd: 'search'; query: string; top: number }
-  | { cmd: 'node-add'; id: string; url: string; capabilities: string[]; topics: string[] }
-  | { cmd: 'edge-add'; from: string; to: string; kind: string }
+  | { cmd: 'node-add'; id: string; url: string }
   | { cmd: 'capture'; url: string; out: string }
   | { cmd: 'eval'; url: string; js: string }
   | { cmd: 'network'; url: string }
@@ -59,12 +58,6 @@ export type ParsedArgs =
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
-
-// Split a comma-separated flag value into an array; absent flag → empty array.
-function listFlag(args: string[], name: string): string[] {
-  const v = flagValue(args, name);
-  return v === undefined ? [] : v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-}
 
 // Pull the value following a flag (or one of its aliases) out of an arg list.
 function flagValue(args: string[], ...names: string[]): string | undefined {
@@ -155,14 +148,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, query, top };
   }
   if (cmd === 'node-add') {
-    return {
-      cmd, id: rest[0], url: flagValue(rest, '--url') ?? '',
-      capabilities: listFlag(rest, '--capabilities'),
-      topics: listFlag(rest, '--topics'),
-    };
-  }
-  if (cmd === 'edge-add') {
-    return { cmd, from: rest[0], to: rest[1], kind: flagValue(rest, '--kind') ?? 'capability' };
+    return { cmd, id: rest[0], url: flagValue(rest, '--url') ?? '' };
   }
   if (cmd === 'eval') {
     const pos = rest.filter((a) => !a.startsWith('--'));
@@ -355,24 +341,8 @@ async function main() {
     const { addNode } = await import('./graph/teach.js');
     const store = new MapStore();
     ensureSeeded(store);
-    const node = addNode(store, {
-      id: args.id, homeUrl: args.url, capabilities: args.capabilities, topics: args.topics,
-    });
+    const node = addNode(store, { id: args.id, homeUrl: args.url });
     console.log(JSON.stringify(node, null, 2));
-    return;
-  }
-  if (args.cmd === 'edge-add') {
-    // edge-add: teach webnav a relationship between two KNOWN sites.
-    const { MapStore } = await import('./mapstore/store.js');
-    const { ensureSeeded } = await import('./graph/seed.js');
-    const { addEdge } = await import('./graph/teach.js');
-    const store = new MapStore();
-    ensureSeeded(store);
-    const result = addEdge(store, { from: args.from, to: args.to, kind: args.kind as any });
-    console.log(JSON.stringify(result, null, 2));
-    // "ran fine but couldn't" — an edge to an unknown node → exit 3, the same
-    // code search/recall use for a clean-but-unsatisfiable result.
-    if (result.status === 'unknown-node') process.exitCode = 3;
     return;
   }
   if (args.cmd === 'eval') {

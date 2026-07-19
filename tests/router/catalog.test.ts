@@ -4,7 +4,7 @@ import { MapStore } from '../../src/mapstore/store.js';
 import { makeState } from '../../src/mapstore/types.js';
 import type { SiteNode } from '../../src/mapstore/types.js';
 
-const node = (id: string, homeUrl: string): SiteNode => ({ id, homeUrl, capabilities: [], topics: [] });
+const node = (id: string, homeUrl: string): SiteNode => ({ id, homeUrl });
 
 // `list` is the table of contents: the sites webnav has a map for + their state counts.
 // It reads the LIVE store (the old gazetteer/goals version always returned empty — a bug).

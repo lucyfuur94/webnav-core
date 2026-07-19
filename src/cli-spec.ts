@@ -230,28 +230,14 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'node-add',
-    summary: 'Teach webnav a new site: its id, url, capabilities, topics.',
+    summary: 'Teach webnav a new site: its id and home url.',
     args: [
       { name: 'id', required: true, description: 'Node id (e.g. npmjs.com) — also the skeleton namespace.' },
     ],
     flags: [
       { name: '--url', takesValue: true, description: 'Entry/home URL for the site.' },
-      { name: '--capabilities', takesValue: true, description: 'Comma-separated capability/cluster names this site serves.' },
-      { name: '--topics', takesValue: true, description: 'Comma-separated declared content topics.' },
     ],
-    example: 'webnav dev node-add npmjs.com --url https://www.npmjs.com --capabilities package-search --topics javascript,packages',
-  },
-  {
-    name: 'edge-add',
-    summary: 'Teach webnav a relationship between two known sites.',
-    args: [
-      { name: 'from', required: true, description: 'Source node id (must already be known).' },
-      { name: 'to', required: true, description: 'Target node id (must already be known).' },
-    ],
-    flags: [
-      { name: '--kind', takesValue: true, default: 'capability', description: 'Edge kind: capability | hyperlink | co-use | content.' },
-    ],
-    example: 'webnav dev edge-add github.com pypi.org --kind hyperlink',
+    example: 'webnav dev node-add npmjs.com --url https://www.npmjs.com',
   },
   {
     name: 'capture',

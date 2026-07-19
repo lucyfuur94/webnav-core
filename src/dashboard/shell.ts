@@ -281,7 +281,7 @@ async function renderSites() {
   const detail = el('<div class="detail"><div class="empty">select a site to see its JSON map</div></div>');
   if (!sites.length) list.append(el('<div class="empty">no sites mapped yet</div>'));
   sites.forEach(s => {
-    const row = el('<div class="row"><div class="name">'+esc(s.id)+'</div><div class="meta">'+s.stateCount+' states · '+esc((s.capabilities||[]).join(', ')||'—')+'</div></div>');
+    const row = el('<div class="row"><div class="name">'+esc(s.id)+'</div><div class="meta">'+s.stateCount+' states</div></div>');
     row.onclick = async () => {
       list.querySelectorAll('.row').forEach(r => r.classList.remove('active'));
       row.classList.add('active');

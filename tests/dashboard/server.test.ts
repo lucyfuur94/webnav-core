@@ -22,7 +22,7 @@ describe('startDashboard', () => {
     const store = new MapStore(':memory:');
     seedGraph(store);            // default: saucedemo
     // a second site with a small interior, so the dashboard's multi-site / per-site endpoints are exercised.
-    store.upsertNode({ id: 'example.com', homeUrl: 'https://example.com', capabilities: ['code-search'], topics: ['code'] });
+    store.upsertNode({ id: 'example.com', homeUrl: 'https://example.com' });
     for (const id of ['home', 'list', 'detail']) {
       store.upsertState(makeState({ id: `example.com:${id}`, nodeId: 'example.com', semanticName: id, urlPattern: `https://example.com/${id}`, role: 'detail' }));
     }
@@ -53,7 +53,6 @@ describe('startDashboard', () => {
     const ex = sites.find((s: any) => s.id === 'example.com');
     expect(ex).toBeTruthy();
     expect(ex.stateCount).toBe(3);            // home, list, detail
-    expect(ex.capabilities).toContain('code-search');
   });
 
   it('GET /api/sites/:id returns node + states + interiorEdges; 404 unknown', async () => {

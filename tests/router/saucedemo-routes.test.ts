@@ -14,7 +14,6 @@ const sid = (label: string) => `${N}:${label}`;
 
 function fullSaucedemo(store: MapStore): void {
   editGraph(store, N, {
-    node: { capabilities: ['shopping-demo'], topics: ['shopping'] },
     states: [
       { label: 'login', fingerprint: ['textbox:Username', 'button:Login'], affordances: [
         { id: 'aff_username', label: 'enter Username', kind: 'input' },
