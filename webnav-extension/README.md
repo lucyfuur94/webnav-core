@@ -20,6 +20,16 @@ cd webnav-extension && npm i && npm run build
 A docked side panel chat that streams Claude's replies + live narration and drives the
 active tab over CDP, talking to `webnav agent-serve` (local, port 7779).
 
+**UI — "navigation console" (design-off winner):** a cartographic instrument panel.
+Claude's prose is humanist sans; the agent's actions read as a mono **route ledger**
+traced down a rail of map-pin waypoints (verb in accent mono, object distinct; the live
+step's pin pulses). A first-run empty state orients you (prereq strip flips green once the
+server connects), the header shows a driven-tab chip + a connection lamp + a pulsing
+map-pin while running, and a "tracing" activity strip surfaces above the composer during a
+run. Permission mode is a segmented **Ask / Auto / Act** switch. Both light and dark
+themes are designed with equal care (`prefers-color-scheme`), motion respects
+`prefers-reduced-motion`, and the layout holds to ~320px.
+
 The panel opens the SSE stream itself (the service worker idles and would drop it),
 renders `turn` deltas into an assistant bubble + one human-readable `narrate` line per
 tool call, and forwards each matching `action` command to `background.js` to execute

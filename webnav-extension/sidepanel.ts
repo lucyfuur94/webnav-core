@@ -19,17 +19,36 @@ type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'plan'; steps: string[] };
 
+// TODO(user-gated): visual load-unpacked pass — both light AND dark themes (contrast,
+// chart-grid whisper, pin/rail alignment, done/error mask glyphs), the running
+// activity strip + mark pulse + live-pin pulse (and that they stop under reduced-motion),
+// the route-rail verb/target split against real server `narrate` events, and layout at
+// ~320px. tsc + ID/wiring are verified; only a real render confirms the pixels.
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const thread = byId<HTMLDivElement>('thread');
 const goalEl = byId<HTMLTextAreaElement>('goal');
-const modeEl = byId<HTMLButtonElement>('mode');
+const modeEl = byId<HTMLDivElement>('mode'); // segmented switch container (.modeswitch)
 const sendEl = byId<HTMLButtonElement>('send');
 const stopEl = byId<HTMLButtonElement>('stop');
 const pauseEl = byId<HTMLButtonElement>('pause');
 const connEl = byId<HTMLSpanElement>('conn');
+const connText = byId<HTMLSpanElement>('conn-text');
+const tabEl = byId<HTMLSpanElement>('tab');
+const activityStep = byId<HTMLSpanElement>('activity-step');
 const sidEl = byId<HTMLInputElement>('sid');
 const baseEl = byId<HTMLInputElement>('base');
 const tokenEl = byId<HTMLInputElement>('token');
+
+// The connection lamp keeps its .conn base class + lamp child; we only swap the
+// ok/err state class and the text (never clobber connEl.className outright, or the
+// lamp markup + pill chrome disappear).
+function setConn(text: string, state: 'ok' | 'err' | '' , title?: string): void {
+  connText.textContent = text;
+  connEl.className = 'conn' + (state ? ' ' + state : '');
+  if (title != null) connEl.title = title;
+  // The empty-state prereq strip mirrors the connection: flip it green when connected.
+  updateEmptyPrereq(state === 'ok');
+}
 
 const MODES = ['Ask', 'Auto', 'Act'] as const;
 type Mode = (typeof MODES)[number];
@@ -77,24 +96,46 @@ const MODE_HINT: Record<Mode, string> = {
   Auto: 'Auto: drives on its own, but asks before navigating to a new site.',
   Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
 };
+const modeButtons = Array.from(modeEl.querySelectorAll<HTMLButtonElement>('button[data-mode]'));
 function applyMode(): void {
-  modeEl.textContent = mode;
+  // Reflect the active mode on the segmented switch (aria-pressed drives the styling).
+  for (const b of modeButtons) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
   modeEl.title = MODE_HINT[mode];
 }
-modeEl.onclick = () => {
-  mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-  applyMode();
-  chrome.storage.local.set({ mode });
-};
+// Each segment sets its mode directly (a clearer instrument than a blind cycle);
+// the persisted-state + hint plumbing is unchanged.
+for (const b of modeButtons) {
+  b.onclick = () => {
+    const m = b.dataset.mode as Mode;
+    if (!(MODES as readonly string[]).includes(m)) return;
+    mode = m;
+    applyMode();
+    chrome.storage.local.set({ mode });
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Target tab — the panel outlives tab switches, so re-query on activation.
 // ---------------------------------------------------------------------------
 let targetTabUrl = '';
+// The header chip shows WHICH tab the agent is driving. Strips scheme for compactness;
+// hidden (via :empty) when there's nothing drivable yet.
+function renderTabChip(): void {
+  let label = '';
+  try {
+    if (/^https?:\/\//i.test(targetTabUrl)) {
+      const u = new URL(targetTabUrl);
+      label = u.host + (u.pathname === '/' ? '' : u.pathname);
+    }
+  } catch { /* leave blank on unparseable url */ }
+  tabEl.textContent = label;
+  tabEl.title = targetTabUrl ? 'Driving: ' + targetTabUrl : 'Driving tab';
+}
 async function resolveTab(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   targetTabId = tab?.id ?? null;
   targetTabUrl = tab?.url ?? '';
+  renderTabChip();
 }
 resolveTab();
 
@@ -133,11 +174,80 @@ function waitTabComplete(tabId: number, timeoutMs = 15_000): Promise<void> {
 // ---------------------------------------------------------------------------
 // Thread rendering.
 // ---------------------------------------------------------------------------
+// First-run orientation. Lives inside #thread and is removed on the first message.
+// Example chips fill the composer; the prereq strip mirrors the live connection state.
+function renderEmpty(): void {
+  if (thread.querySelector('.empty') || thread.querySelector('.msg')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'empty';
+  wrap.innerHTML =
+    '<span class="bigmark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg></span>' +
+    '<h2>Name a destination</h2>' +
+    '<p>Describe where you want to go on this page, in plain words. The agent reads the page and drives it there — you watch every step.</p>' +
+    '<div class="examples"></div>' +
+    '<div class="prereq"><span>Needs the local server:</span> <code>webnav agent-serve --port 7779</code></div>';
+  const examples = wrap.querySelector('.examples') as HTMLDivElement;
+  for (const ex of ['Log in and open my cart', 'Find the cheapest item and add it', 'Go to checkout and read the total']) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'ex'; b.textContent = ex;
+    b.onclick = () => { goalEl.value = ex; goalEl.focus(); autosize(); };
+    examples.appendChild(b);
+  }
+  thread.appendChild(wrap);
+  updateEmptyPrereq(connEl.classList.contains('ok'));
+}
+// Flip the empty-state prereq strip green once the server is connected — the one
+// real dependency, shown resolved. No-op when the empty state isn't rendered.
+function updateEmptyPrereq(connected: boolean): void {
+  const p = thread.querySelector('.empty .prereq');
+  if (!p) return;
+  p.classList.toggle('ok', connected);
+  const lead = p.querySelector('span');
+  if (lead) lead.textContent = connected ? 'Server connected:' : 'Needs the local server:';
+}
+function clearEmpty(): void {
+  thread.querySelector('.empty')?.remove();
+}
+
+// Consecutive agent actions share one route rail. currentRoute is the open rail;
+// any non-action message closes it.
+let currentRoute: HTMLDivElement | null = null;
+
 function bubble(kind: string, text = ''): HTMLDivElement {
+  clearEmpty();
+  if (kind === 'action') return actionRow(text);
+  currentRoute = null; // any other message ends the current route rail
   const el = document.createElement('div');
   el.className = 'msg ' + kind;
   el.textContent = text;
   thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+  return el;
+}
+
+// An action row on the route rail, with the verb/target typographic split (the
+// verb in accent mono, the object distinct). The most recent action gets `.live`
+// (filled, pulsing pin); the prior live row is demoted. Text is the narrate line,
+// usually "verb: target" — split on the first ": ", else the first word.
+function actionRow(text: string): HTMLDivElement {
+  if (!currentRoute) {
+    currentRoute = document.createElement('div');
+    currentRoute.className = 'route';
+    currentRoute.setAttribute('role', 'log');
+    currentRoute.setAttribute('aria-label', 'Agent route');
+    thread.appendChild(currentRoute);
+  }
+  currentRoute.querySelector('.msg.action.live')?.classList.remove('live');
+  const el = document.createElement('div');
+  el.className = 'msg action live';
+  const sep = text.indexOf(': ');
+  const [verb, target] = sep >= 0
+    ? [text.slice(0, sep), text.slice(sep + 2)]
+    : (() => { const s = text.indexOf(' '); return s >= 0 ? [text.slice(0, s), text.slice(s + 1)] : [text, '']; })();
+  const v = document.createElement('span'); v.className = 'verb'; v.textContent = verb;
+  el.appendChild(v);
+  if (target) { const t = document.createElement('span'); t.className = 'target'; t.textContent = ' ' + target; el.appendChild(t); }
+  currentRoute.appendChild(el);
   thread.scrollTop = thread.scrollHeight;
   return el;
 }
@@ -154,6 +264,13 @@ function narrateAction(cmd: Cmd): string {
   return (cmd as { kind: string }).kind;
 }
 
+// Close the current streaming assistant bubble (drop the caret) and null it so the
+// next `turn` starts a fresh one. Replaces the old `assistantBubble = null` lines.
+function endTurn(): void {
+  assistantBubble?.classList.remove('streaming');
+  assistantBubble = null;
+}
+
 // ---------------------------------------------------------------------------
 // SSE stream — opened once, lives for the panel's lifetime.
 // ---------------------------------------------------------------------------
@@ -164,24 +281,20 @@ function openStream(): void {
   if (!token) {
     // No token → the server would 401 the SSE GET; don't even open. Tell the user what to do.
     es = null;
-    connEl.textContent = 'disconnected — paste the token from `webnav agent-serve` into settings';
-    connEl.className = 'err';
-    connEl.title = 'The agent server prints a token at startup. Open settings and paste it into the Token field.';
+    setConn('no token', 'err',
+      'The agent server prints a token at startup. Open settings and paste it into the Token field.');
     return;
   }
   // EventSource can't set headers, so the per-run token rides as a query param (the server
   // accepts ?token= on the SSE GET and 401s a missing/wrong one).
   es = new EventSource(base + '/api/agent/events?token=' + encodeURIComponent(token));
-  es.onopen = () => { connEl.textContent = 'connected'; connEl.className = 'ok'; };
+  es.onopen = () => setConn('connected', 'ok', 'Connected to the local webnav server');
   // EventSource auto-reconnects natively, so this flips back to 'connected' once the
   // server is up — the message tells a first-time user WHY it's down. A 401 (wrong/stale
   // token) also lands here; EventSource doesn't expose the status, so we name both likely
   // causes: server not running, or a token mismatch. ponytail: no manual retry loop needed.
-  es.onerror = () => {
-    connEl.textContent = 'disconnected — start `webnav agent-serve --port 7779` and paste its token into settings';
-    connEl.className = 'err';
-    connEl.title = 'The extension needs the local webnav agent server AND its token. Start it in a terminal:\n  webnav agent-serve --port 7779\nThen paste the printed token into settings. It reconnects automatically once both match.';
-  };
+  es.onerror = () => setConn('disconnected', 'err',
+    'The extension needs the local webnav agent server AND its token. Start it in a terminal:\n  webnav agent-serve --port 7779\nThen paste the printed token into settings. It reconnects automatically once both match.');
   // EventSource natively skips `:`-comment keepalives; we only get real `data:` events.
   es.onmessage = (ev) => {
     let e: AgentEvent;
@@ -194,13 +307,16 @@ function handleEvent(e: AgentEvent): void {
   switch (e.type) {
     case 'turn':
       // Stream deltas into one assistant bubble until an action/done/error breaks it.
-      if (!assistantBubble) assistantBubble = bubble('assistant');
+      // `.streaming` draws the caret; endTurn() removes it when the bubble is closed.
+      if (!assistantBubble) { assistantBubble = bubble('assistant'); assistantBubble.classList.add('streaming'); }
       assistantBubble.textContent += e.text;
       thread.scrollTop = thread.scrollHeight;
       break;
     case 'narrate':
       // DISPLAY ONLY — the agent telling us what it did. Never CDP-execute this.
-      assistantBubble = null;
+      endTurn();
+      // Show the driven step in the activity strip too (the live "what it's doing" readout).
+      activityStep.textContent = e.detail ? e.label + ': ' + e.detail : e.label;
       bubble('action', e.label + (e.detail ? ': ' + e.detail : ''));
       break;
     case 'action':
@@ -208,21 +324,21 @@ function handleEvent(e: AgentEvent): void {
       // runs execAction (and POSTs a command-result the server's loop awaits). The
       // human-readable line for this same tool call was already rendered by `narrate`
       // (which always precedes the matching `action`) — don't render a second bubble here.
-      assistantBubble = null; // a new turn after the action starts a fresh bubble
+      endTurn(); // a new turn after the action starts a fresh bubble
       execAction(e.id, e.cmd);
       break;
     case 'plan':
-      assistantBubble = null;
+      endTurn();
       renderPlan(e.steps);
       break;
     case 'done':
-      assistantBubble = null;
-      bubble('done', '✓ done' + (e.summary ? ' — ' + e.summary : ''));
+      endTurn();
+      bubble('done', e.summary ? 'Done — ' + e.summary : 'Done.');
       finishRun();
       break;
     case 'error':
-      assistantBubble = null;
-      bubble('error', '✗ ' + e.message);
+      endTurn();
+      bubble('error', e.message);
       finishRun();
       break;
   }
@@ -274,35 +390,66 @@ function postApprove(approved: boolean): void {
     body: JSON.stringify({ approved }),
   }).catch(() => {});
 }
+// The currently-open plan bar (Ask up-front, or an Auto cross-site gate). Tracked so a
+// stale bar can be resolved on deny AND on run-end — H3: an Auto denial (or the run
+// otherwise ending) must never leave a live Approve/Deny bar dangling. Cleared to a
+// resolved note, never left interactive once its gate is gone.
+let pendingPlanBar: HTMLDivElement | null = null;
+
+const PIN_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>';
+
+function resolvePlanBar(note: string): void {
+  if (!pendingPlanBar) return;
+  const resolved = document.createElement('div');
+  resolved.className = 'resolved';
+  resolved.textContent = note;
+  pendingPlanBar.replaceWith(resolved);
+  pendingPlanBar = null;
+}
+
 function renderPlan(steps: string[]): void {
+  clearEmpty();
+  currentRoute = null;
+  // A prior unresolved gate is superseded by this one — resolve it first (no dangling bars).
+  resolvePlanBar('◦ superseded');
   const el = document.createElement('div');
   el.className = 'plan';
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', 'Proposed plan');
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const pin = document.createElement('span');
+  pin.className = 'pin'; pin.innerHTML = PIN_SVG;
+  head.appendChild(pin);
+  head.appendChild(document.createTextNode('Proposed route'));
+  el.appendChild(head);
+
   const ol = document.createElement('ol');
   for (const s of steps) { const li = document.createElement('li'); li.textContent = s; ol.appendChild(li); }
   el.appendChild(ol);
-  const barText = document.createElement('div');
-  barText.style.cssText = 'font-size:11px;color:#888;margin-bottom:6px';
-  barText.textContent = 'The agent is waiting — Approve to let it drive, or Deny to stop.';
-  el.appendChild(barText);
+
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'Waiting — Approve to let it drive, or Deny to stop.';
+  el.appendChild(note);
+
   const bar = document.createElement('div');
   bar.className = 'bar';
   const approve = document.createElement('button');
-  approve.className = 'approve'; approve.textContent = 'Approve';
+  approve.className = 'approve'; approve.textContent = 'Approve & run';
   const deny = document.createElement('button');
   deny.className = 'deny'; deny.textContent = 'Deny';
-  approve.onclick = () => { postApprove(true); bar.replaceWith(mkNote('✓ approved')); };
+  approve.onclick = () => { postApprove(true); resolvePlanBar('✓ approved'); };
   // Deny releases the gate (approved:false); the server's loop returns without driving.
-  deny.onclick = () => { postApprove(false); bar.replaceWith(mkNote('✗ denied')); };
+  deny.onclick = () => { postApprove(false); resolvePlanBar('✗ denied'); };
   bar.appendChild(approve); bar.appendChild(deny);
   el.appendChild(bar);
+  pendingPlanBar = bar;
+
   thread.appendChild(el);
   thread.scrollTop = thread.scrollHeight;
-}
-function mkNote(text: string): HTMLDivElement {
-  const n = document.createElement('div');
-  n.style.cssText = 'font-size:11px;color:#888';
-  n.textContent = text;
-  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,10 +479,13 @@ async function startRun(): Promise<void> {
   paused = false;
   running = true;
   sendEl.disabled = true;
-  stopEl.classList.add('active');
-  pauseEl.classList.add('active');
+  // body.running swaps Send → Take-over/Stop, shows the activity strip, pulses the mark.
+  document.body.classList.add('running');
+  activityStep.textContent = 'working…';
+  renderTabChip();
   bubble('user', goal);
   goalEl.value = '';
+  autosize();
 
   // Persistent debugger attach for this run. No-op if already attached to this tab
   // (e.g. resuming from Pause, which deliberately left the attach live).
@@ -390,8 +540,12 @@ async function ungroupTabIfOurs(tabId: number): Promise<void> {
 function finishRun(): void {
   running = false;
   sendEl.disabled = false;
-  stopEl.classList.remove('active');
-  pauseEl.classList.remove('active');
+  document.body.classList.remove('running');
+  currentRoute?.querySelector('.msg.action.live')?.classList.remove('live');
+  currentRoute = null;
+  // H3: never leave an Approve/Deny bar live once the run has ended (e.g. an Auto
+  // cross-site goto that was denied, or any stop/done/error while a gate was open).
+  resolvePlanBar('◦ run ended');
   if (targetTabId != null) {
     relabelTabGroup(targetTabId, 'webnav ✓').then(() => ungroupTabIfOurs(targetTabId!));
   }
@@ -422,11 +576,26 @@ async function pauseRun(): Promise<void> {
   paused = true;
   running = false;
   sendEl.disabled = false;
-  stopEl.classList.remove('active');
-  pauseEl.classList.remove('active');
+  document.body.classList.remove('running');
+  currentRoute?.querySelector('.msg.action.live')?.classList.remove('live');
+  currentRoute = null;
+  resolvePlanBar('◦ paused'); // H3: a gate open at pause is no longer actionable
   if (targetTabId != null) await relabelTabGroup(targetTabId, 'webnav ⏸ paused');
   bubble('done', 'paused — you have control. Interact with the page by hand, then send a new goal to resume (manual actions are not recorded yet). Resume starts a fresh turn from the current page.');
 }
+
+// Composer auto-grows with content up to its CSS max-height (design has rows="1").
+function autosize(): void {
+  goalEl.style.height = 'auto';
+  goalEl.style.height = Math.min(goalEl.scrollHeight, 140) + 'px';
+}
+goalEl.addEventListener('input', autosize);
+
+// Settings drawer: the header gear toggles the <details>.
+byId<HTMLButtonElement>('settings-toggle').onclick = () => {
+  const cfg = byId<HTMLDetailsElement>('config');
+  cfg.open = !cfg.open;
+};
 
 sendEl.onclick = startRun;
 stopEl.onclick = stopRun;
@@ -435,6 +604,7 @@ goalEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startRun(); }
 });
 
+renderEmpty(); // first-run orientation until the first message
 openStream();
 
 // Watchdog: native EventSource auto-reconnect can settle into CLOSED and stay there
