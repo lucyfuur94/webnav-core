@@ -100,7 +100,7 @@ export function startDashboard(
       // ---- SITES (read-only) ----
       if (path === '/api/sites' && method === 'GET') {
         const sites = store.allNodes().map((n) => ({
-          id: n.id, homeUrl: n.homeUrl, capabilities: n.capabilities, topics: n.topics,
+          id: n.id, homeUrl: n.homeUrl,
           stateCount: store.statesForNode(n.id).length,
         }));
         return sendJson(200, sites);

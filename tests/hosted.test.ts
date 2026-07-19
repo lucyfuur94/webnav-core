@@ -10,7 +10,7 @@ const CFG = join(tmpdir(), `webnav-config-test-${process.pid}.json`);
 
 // A map pack the way the API returns it: skeleton ONLY, no credentials.
 const PACK: MapPack = {
-  node: { id: 'example.com', homeUrl: 'https://example.com', capabilities: [], topics: [] },
+  node: { id: 'example.com', homeUrl: 'https://example.com' },
   states: [
     makeState({ id: 'example.com:a', nodeId: 'example.com', semanticName: 'a', urlPattern: '', role: 'detail', fingerprint: ['x'] }),
     makeState({ id: 'example.com:b', nodeId: 'example.com', semanticName: 'b', urlPattern: '', role: 'detail', fingerprint: ['y'] }),

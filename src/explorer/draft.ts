@@ -87,7 +87,6 @@ const evidenceOf = (nodes: SnapNode[]): string => {
 };
 
 export interface DraftGraph {
-  node?: { capabilities?: string[]; topics?: string[] };
   states: DraftState[]; edges: never[];
   needsFix?: DegenerateState[];   // landings held out (404 / no distinctive fingerprint)
   unknowns?: Unknown[];           // extension-loop report — capped, see MAX_UNKNOWNS
@@ -1555,9 +1554,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // entry / walkExample / receipt.states see ONLY page states — `_shell` is site chrome, not a
   // navigable page in the tree.
   const entry = pageStates.length ? pageStates[0].label : null;
-  const node = host(pageList[0]?.url ?? '') ? { capabilities: [], topics: [] } : undefined;
   return {
-    node, states, edges: [],
+    states, edges: [],
     ...(needsFix.length ? { needsFix } : {}),
     ...(cappedUnknowns.length ? { unknowns: cappedUnknowns } : {}),
     ...(unknownsTruncated > 0 ? { unknownsTruncated } : {}),

@@ -3,7 +3,7 @@ import { MapStore } from '../../src/mapstore/store.js';
 import { makeState, makeEdge } from '../../src/mapstore/types.js';
 import type { SiteNode } from '../../src/mapstore/types.js';
 
-const node = (id: string, homeUrl: string): SiteNode => ({ id, homeUrl, capabilities: [], topics: [] });
+const node = (id: string, homeUrl: string): SiteNode => ({ id, homeUrl });
 
 // clearNode wipes a single node's interior (its states + their projected/stored edges) so a
 // site can be RE-LEARNED from scratch through webnav — never via raw sqlite. It must touch ONLY

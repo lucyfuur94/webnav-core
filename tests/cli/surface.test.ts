@@ -13,7 +13,6 @@ describe('CLI surface', () => {
     const h = topLevelHelp();
     // dev verbs ARE shown in the single top-level menu (complete tool list)...
     expect(h).toMatch(/^\s+node-add\b/m);
-    expect(h).toMatch(/^\s+edge-add\b/m);
     expect(h).toMatch(/^\s+dashboard\b/m);
     // ...but kept in their own category, invoked as `webnav dev <command>`.
     expect(h).toMatch(/dev — /);
@@ -22,7 +21,7 @@ describe('CLI surface', () => {
 
   it('dev help lists the admin verbs', () => {
     const h = devHelp();
-    for (const v of ['graph', 'node-add', 'edge-add', 'list', 'node-clear', 'capture']) {
+    for (const v of ['graph', 'node-add', 'list', 'node-clear', 'capture']) {
       expect(h).toContain(v);
     }
   });

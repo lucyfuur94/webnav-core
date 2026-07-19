@@ -27,7 +27,7 @@ export type EditAffordance = string | EditAffordanceObj;
 // it); null = CLEAR prior (a confirming re-record removes the seen-once note); string = set/replace.
 export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; provisional?: string | null; template?: string | null; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
-export interface EditGraph { states: EditState[]; edges: EditEdge[]; node?: { capabilities?: string[]; topics?: string[] }; }
+export interface EditGraph { states: EditState[]; edges: EditEdge[]; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
 
 let _affSeq = 0;
@@ -194,8 +194,6 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     store.upsertNode({
       id: node,
       homeUrl: existing?.homeUrl ?? `https://${node}`,
-      capabilities: graph.node?.capabilities ?? existing?.capabilities ?? [],
-      topics: graph.node?.topics ?? existing?.topics ?? [],
     });
     // Edge pass FIRST (it may author onto payload/stored states, written after).
     // Affordances are the SOURCE OF TRUTH: when the from-state has a matching

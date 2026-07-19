@@ -4,7 +4,7 @@ import { makeState } from '../../src/mapstore/types.js';
 
 // A trivial in-memory fake proves IMapStore is a real, implementable seam.
 class FakeStore implements Pick<IMapStore, 'allNodes' | 'statesForNode' | 'allEdges'> {
-  allNodes() { return [{ id: 'x.com', homeUrl: 'u', capabilities: [], topics: [] }]; }
+  allNodes() { return [{ id: 'x.com', homeUrl: 'u' }]; }
   statesForNode() { return []; }
   allEdges() { return []; }
 }
