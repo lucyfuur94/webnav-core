@@ -16,6 +16,19 @@ describe('classifyAuthLanding', () => {
     expect(r).toEqual({ auth: 'valid' });
   });
 
+  // Regression: the extension driver's currentUrl (chrome.tabs.get) can read '' or a
+  // stale/mid-navigation host. A matched snapshot is direct proof we're logged in on a
+  // real page, so it must win over the foreign/empty-host heuristic — else an authed
+  // SPA falsely returns needs-login (the observed progneo agent-run misfire, steps:0).
+  it('valid: known state matches even when the URL host is foreign or empty (stale currentUrl)', () => {
+    const states = [state('www.saucedemo.com:inventory', ['heading:Products'])];
+    const yml = '- heading "Products" [ref=e1]\n- listitem "Sauce Labs Backpack" [ref=e2]\n'
+      + '- button "Add to cart" [ref=e3]\n- link "Cart" [ref=e4]\n- text "Menu"\n'
+      + '- text "Filter"\n- text "Sort"\n- text "Footer"';
+    expect(classifyAuthLanding('https://accounts.google.com/o/oauth2', yml, 'www.saucedemo.com', states)).toEqual({ auth: 'valid' });
+    expect(classifyAuthLanding('', yml, 'www.saucedemo.com', states)).toEqual({ auth: 'valid' });
+  });
+
   it('needs-login: foreign-host landing (SSO wall bounced to another domain)', () => {
     const r = classifyAuthLanding('https://login.okta.com/sso/step-up', '- heading "Sign in"', 'www.saucedemo.com', []);
     expect(r.auth).toBe('needs-login');
