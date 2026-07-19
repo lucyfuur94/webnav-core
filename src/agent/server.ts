@@ -27,7 +27,10 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'plan'; steps: string[] };
 
-export interface AgentGoalBody { goal: string; sessionId: string; mode: string; model?: string }
+// `sessionId` is the PANEL's conversation key (e.g. 'agent-1'); the server maps it to a
+// remembered SDK session id so a follow-up goal RESUMES the same conversation. `newChat`
+// drops that stored id first so the New-chat (+) button starts fresh.
+export interface AgentGoalBody { goal: string; sessionId: string; mode: string; model?: string; newChat?: boolean }
 
 export interface ServeAgentOpts {
   // `awaitApproval` is the Ask/Auto approval gate (crit #3/#4): the loop calls it and
@@ -36,7 +39,11 @@ export interface ServeAgentOpts {
   // `signal` (5th arg) is the /stop abort channel: the server aborts it when /stop is
   // POSTed, and onGoal threads it to runAgentGoal → the SDK query's abortController, so
   // /stop actually cancels the in-flight turn (not just rejects pending browser commands).
-  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>, signal: AbortSignal) => Promise<void>;
+  // `resumeSessionId` (6th arg) is the SDK session id remembered for this panel
+  // conversation (undefined on a fresh conversation) — thread it to runAgentGoal's
+  // `resumeSessionId`. `onSdkSession` (7th arg) persists the SDK session id captured
+  // during the run under the panel key, so the NEXT goal on the same conversation resumes.
+  onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>, signal: AbortSignal, resumeSessionId: string | undefined, onSdkSession: (sdkSessionId: string) => void) => Promise<void>;
   commandTimeoutMs?: number;
   // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
   // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
@@ -67,6 +74,11 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
   // Single outstanding run's abort controller (one goal at a time, same as the approval
   // slot). /stop aborts it so the SDK query is cancelled, not just the pending commands.
   let currentGoalAbort: AbortController | null = null;
+  // Panel conversation key → last SDK session id, so a follow-up goal resumes the same
+  // conversation (Claude remembers what it did + the page it's on). Keyed by the panel's
+  // `sessionId`; the New-chat button rotates that key (or sends newChat:true) → fresh.
+  // ponytail: in-memory Map — one process per agent-serve, no persistence needed.
+  const sdkSessions = new Map<string, string>();
 
   function awaitApproval(): Promise<boolean> {
     // A fresh goal supersedes any stale unresolved gate (deny it so nothing leaks).
@@ -155,7 +167,11 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
           // A fresh goal supersedes any prior run's abort controller.
           const abort = new AbortController();
           currentGoalAbort = abort;
-          opts.onGoal(body, channel, emit, awaitApproval, abort.signal)
+          // New-chat: forget the prior SDK conversation for this key → this run cold-starts.
+          if (body.newChat) sdkSessions.delete(body.sessionId);
+          const resumeSessionId = sdkSessions.get(body.sessionId);
+          const onSdkSession = (id: string) => { sdkSessions.set(body.sessionId, id); };
+          opts.onGoal(body, channel, emit, awaitApproval, abort.signal, resumeSessionId, onSdkSession)
             .catch((e) => emit({ type: 'error', message: String(e) }))
             .finally(() => { if (currentGoalAbort === abort) currentGoalAbort = null; });
         }

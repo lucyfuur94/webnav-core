@@ -411,6 +411,54 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(awaited).toBe(false);
     expect(browser.gotos).toEqual(['https://other.test/here']);
   });
+
+  // ---- SDK conversation continuity (resume) ---------------------------------
+  // A fake that CAPTURES the prompt + the `resume` param it was handed, and yields
+  // a message carrying a canned session_id (mirrors the SDK's result SDKMessage).
+  function continuityQuery(sessionIdToEmit: string): {
+    fn: QueryFn;
+    prompt: () => string;
+    resume: () => string | undefined;
+  } {
+    let capturedPrompt = '';
+    let capturedResume: string | undefined;
+    const fn: QueryFn = async function* ({ prompt, resume }) {
+      capturedPrompt = prompt;
+      capturedResume = resume;
+      yield { type: 'result', subtype: 'success', result: 'ok', session_id: sessionIdToEmit } as any;
+    };
+    return { fn, prompt: () => capturedPrompt, resume: () => capturedResume };
+  }
+
+  it('a FRESH run (no resumeSessionId): sends SYSTEM+goal, no resume, captures the SDK session_id', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const q = continuityQuery('sdk-abc');
+    const { emit } = emitSpy();
+    let captured: string | undefined;
+    await runAgentGoal({
+      goal: 'open reports', sessionId: 'c1', mode: 'act', browser, store, states: [], emit,
+      query: q.fn, onSdkSession: (id) => { captured = id; },
+    });
+    expect(q.resume()).toBeUndefined();          // fresh: no resume threaded
+    expect(q.prompt()).toContain('open reports'); // goal present
+    expect(q.prompt()).toMatch(/RECALL FIRST/);   // SYSTEM prompt injected on turn 1
+    expect(captured).toBe('sdk-abc');             // session_id captured for the next turn
+  });
+
+  it('a RESUMED run (resumeSessionId set): passes resume:<id> and sends JUST the goal (no SYSTEM re-injection)', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const q = continuityQuery('sdk-def');
+    const { emit } = emitSpy();
+    await runAgentGoal({
+      goal: 'now open Reports', sessionId: 'c2', mode: 'act', browser, store, states: [], emit,
+      query: q.fn, resumeSessionId: 'sdk-abc',
+    });
+    expect(q.resume()).toBe('sdk-abc');            // resume threaded to the SDK
+    expect(q.prompt()).toBe('now open Reports');   // ONLY the goal — SYSTEM not re-injected
+    expect(q.prompt()).not.toMatch(/RECALL FIRST/);
+  });
 });
 
 // Keep ToolDef exported-type referenced so the import isn't dropped.
