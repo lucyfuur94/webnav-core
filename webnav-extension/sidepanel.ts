@@ -189,7 +189,17 @@ function renderTabChip(): void {
   tabEl.title = targetTabUrl ? 'Driving: ' + targetTabUrl : 'Driving tab';
 }
 async function resolveTab(): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // The side panel is window-scoped, but we want the tab the USER is looking at. Prefer
+  // the last-focused NORMAL browser window's active tab; fall back to the plain query.
+  // (currentWindow from the panel can resolve oddly, and tab.url may be withheld — we no
+  // longer treat a missing url as undrivable, so a partial answer is fine.)
+  let tab: chrome.tabs.Tab | undefined;
+  try {
+    const win = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
+    tab = win.tabs?.find((t) => t.active);
+  } catch { /* fall through */ }
+  if (!tab) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   targetTabId = tab?.id ?? null;
   targetTabUrl = tab?.url ?? '';
   renderTabChip();
@@ -199,11 +209,22 @@ resolveTab();
 // chrome.debugger cannot attach to chrome://, chrome-extension://, the Web Store, view-source:,
 // about: or file:// pages — attach throws "Cannot access a chrome:// URL". Only http(s) tabs are
 // drivable. Guard BEFORE attach so the user gets a clear reason, not a raw CDP error.
+// Return a reason string ONLY when the current tab is KNOWN-undrivable (a scheme the
+// CDP debugger genuinely refuses). Crucially: an EMPTY/unknown url is NOT treated as
+// undrivable — Chrome withholds tab.url in many cases, and assuming "no url = undrivable"
+// made the panel pop a new google tab even when you were on a real page. When we can't
+// tell, DRIVE THE CURRENT TAB and let the attach be the authority (its failure is handled
+// with a clear message). Only chrome://, extension, Web Store, about:, view-source:,
+// file:// are known-undrivable — open a fresh tab only for those.
+const UNDRIVABLE_SCHEME = /^(chrome|chrome-extension|about|view-source|file|edge|devtools):/i;
 function drivableReason(url: string): string | null {
-  if (!url) return 'the active tab has no URL yet — reload it and try again';
-  if (/^https?:\/\//i.test(url)) return null;
-  return 'the agent can only drive normal web pages (http/https). Open a website in this tab first — ' +
-    'it can\'t drive chrome:// pages, the New Tab page, the Web Store, or extension pages.';
+  if (url && UNDRIVABLE_SCHEME.test(url)) {
+    return 'the agent can\'t drive this page (chrome:// / extension / file). Opened a normal tab instead.';
+  }
+  if (url && /^https?:\/\//i.test(url) && /^https:\/\/chromewebstore\.google\.com/i.test(url)) {
+    return 'the agent can\'t drive the Chrome Web Store. Opened a normal tab instead.';
+  }
+  return null; // http(s), OR unknown/empty url → try driving the current tab
 }
 chrome.tabs.onActivated.addListener(() => { if (!running) resolveTab(); });
 
