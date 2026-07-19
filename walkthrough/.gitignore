@@ -3,3 +3,10 @@ out/
 gate/
 preview/
 .DS_Store
+
+# generated demo output (regenerable from the .tsx source)
+public/*.webm
+public/*.png
+out/*.webm
+out/*.png
+gate/*.png

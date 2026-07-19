@@ -460,7 +460,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
       { name: '--all', takesValue: false, description: 'reap: close EVERY session (default closes only orphans whose browser already died).' },
       { name: '--max-age-hours', takesValue: true, description: 'reap: also close LIVE sessions older than N hours (a TTL sweep).' },
     ],
-    example: 'webnav dev sessions reap            # close dead-browser orphans\nwebnav dev sessions reap --all      # close everything\nwebnav dev sessions list\n# Auto-sweep (opt-in): set WEBNAV_SESSION_TTL_HOURS=6 so walk/use-navigate reap\n# orphans + sessions older than 6h on start (never the one in use). Off by default.',
+    example: 'webnav dev sessions reap                    # close dead-browser orphans\nwebnav dev sessions reap --all              # close everything\nwebnav dev sessions reap --max-age-hours 6  # also close live sessions older than 6h\nwebnav dev sessions list',
   },
   {
     name: 'mcp',

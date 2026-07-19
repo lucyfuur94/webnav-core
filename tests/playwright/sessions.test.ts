@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inventorySessions, planReap, ttlSweepOpts, canOpen, ceilingFor, pidFromPs, sessionNameFromPs, removeSessionFiles } from '../../src/playwright/sessions.js';
+import { inventorySessions, planReap, canOpen, ceilingFor, pidFromPs, sessionNameFromPs, removeSessionFiles } from '../../src/playwright/sessions.js';
 import { wireSessionName } from '../../src/playwright/adapter.js';
 
 // A fake `ps` listing: each line is the daemon command with its --daemon-session path.
@@ -134,21 +134,6 @@ describe('ceilingFor (env → resolved cap)', () => {
   it('falls back to the default on garbage', () => {
     expect(ceilingFor('abc')).toBe(16);
     expect(ceilingFor('-3')).toBe(16);
-  });
-});
-
-describe('ttlSweepOpts (env → reap opts)', () => {
-  it('returns null when the env var is unset/blank (off by default)', () => {
-    expect(ttlSweepOpts(undefined, 'sess-x')).toBeNull();
-    expect(ttlSweepOpts('', 'sess-x')).toBeNull();
-  });
-  it('parses hours → maxAgeMs and protects the current session', () => {
-    expect(ttlSweepOpts('6', 'sess-x')).toEqual({ maxAgeMs: 6 * 3600_000, exclude: 'sess-x' });
-  });
-  it('returns null on a non-positive / non-numeric value (no accidental reap-all)', () => {
-    expect(ttlSweepOpts('0', 'sess-x')).toBeNull();
-    expect(ttlSweepOpts('-2', 'sess-x')).toBeNull();
-    expect(ttlSweepOpts('abc', 'sess-x')).toBeNull();
   });
 });
 
