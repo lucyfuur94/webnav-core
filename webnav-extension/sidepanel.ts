@@ -64,9 +64,13 @@ type Mode = (typeof MODES)[number];
 // Launching from a chrome://, New-Tab, blank, or extension tab can't be driven (the CDP
 // debugger refuses those, and about:blank isn't attachable either). Instead of refusing,
 // we open a fresh REAL http(s) tab and drive that — the agent immediately goto()s to its
-// real destination, so this is just a neutral drivable landing. Google chosen: a real,
-// lightweight, always-reachable page (not an evasion; just somewhere attachable to start).
-const START_URL = 'https://www.google.com';
+// real destination, so this is just a neutral drivable landing. The landing is webnav's
+// OWN on-brand page served (unauthenticated) by agent-serve at /landing — http, so it's
+// debugger-attachable (unlike about:blank / chrome:// / extension pages), and not an
+// arbitrary google.com. Derived from `base` so it tracks a custom port.
+function startUrl(): string {
+  return base.replace(/\/+$/, '') + '/landing';
+}
 
 let mode: Mode = 'Ask';
 // The SDK model the agent drives on. Default = Sonnet 5 (matches the <select>'s
@@ -735,12 +739,13 @@ async function startRun(): Promise<void> {
   // refuse — open a fresh real tab and drive that. The agent goto()s to its real target.
   if (targetTabId == null || drivableReason(targetTabUrl)) {
     try {
-      const t = await chrome.tabs.create({ active: true, url: START_URL });
+      const landing = startUrl();
+      const t = await chrome.tabs.create({ active: true, url: landing });
       if (t.id == null) throw new Error('new tab has no id');
       targetTabId = t.id;
-      targetTabUrl = START_URL;
+      targetTabUrl = landing;
       await waitTabComplete(t.id);
-      bubble('action', 'opened a new tab to drive');
+      bubble('action', 'opened a tab to drive from');
     } catch (e) {
       bubble('error', '✗ could not open a drivable tab: ' + String(e));
       return;
