@@ -212,6 +212,24 @@ async function typeNode(tabId: number, nodeId: string, text: string): Promise<vo
   await chrome.debugger.sendCommand({ tabId }, 'Input.insertText', { text });
 }
 
+// Scroll the driven page by `dy` px (positive = down). A wheel event at the viewport
+// centre scrolls whatever container sits under that point — the document OR an inner
+// scroll region (the analytics SPA's report builder, long lists), which window.scrollBy can't
+// reach. Cursor + pulse mirror clickNode so the user SEES the scroll happen.
+async function scrollTab(tabId: number, dy: number): Promise<void> {
+  assertDriving(tabId);
+  const metrics = (await chrome.debugger.sendCommand(
+    { tabId }, 'Page.getLayoutMetrics',
+  )) as { visualViewport?: { clientWidth: number; clientHeight: number } };
+  const vw = metrics.visualViewport?.clientWidth ?? 800;
+  const vh = metrics.visualViewport?.clientHeight ?? 600;
+  const x = vw / 2, y = vh / 2;
+  moveCursor(tabId, x, y);
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).catch(() => {});
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseWheel', { type: 'mouseWheel', x, y, deltaX: 0, deltaY: dy });
+  paintPulse(tabId, x, y);
+}
+
 // Navigate the driven tab and WAIT until it finishes loading before returning — the
 // agent's next get-ax must read the settled destination, not the pre-navigation page.
 // ponytail: chrome.tabs.onUpdated 'complete' is the native load signal; no CDP
@@ -291,7 +309,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   // POSTs back to /api/agent/command-result. get-ax → raw AXNode[]; click/type → {ok}.
   if (msg.type === 'exec-command') {
     (async () => {
-      const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string; url?: string };
+      const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string; url?: string; dy?: number };
       try {
         // withReattach: recover the transient post-cross-origin-nav CDP detach window
         // (re-attach once, retry once); a stale-node/element error is NOT retried.
@@ -308,6 +326,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           // need the attached tab, not msg.tabId's node cache.
           if (driveTabId == null) throw new Error('no attached tab to navigate');
           await gotoTab(driveTabId, cmd.url!);
+          reply({ ok: true, result: { ok: true } });
+        } else if (cmd.kind === 'scroll') {
+          if (driveTabId == null) throw new Error('no attached tab to scroll');
+          await withReattach(driveTabId, () => scrollTab(driveTabId!, Number(cmd.dy ?? 0)));
           reply({ ok: true, result: { ok: true } });
         } else if (cmd.kind === 'current-url') {
           if (driveTabId == null) throw new Error('no attached tab');

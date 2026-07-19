@@ -12,18 +12,21 @@ import type { WalkBrowser } from '../../src/router/walk.js';
 
 // A fake WalkBrowser that records the calls the loop's tools make against it, and
 // returns a scripted snapshot YAML (so check_route can parse + match a state).
-function fakeBrowser(snapshotYaml: string): WalkBrowser & { acted: Array<[string, string | null]>; gotos: string[]; typed: Array<[string, string]> } {
+function fakeBrowser(snapshotYaml: string): WalkBrowser & { acted: Array<[string, string | null]>; gotos: string[]; typed: Array<[string, string]>; scrolls: number[] } {
   const acted: Array<[string, string | null]> = [];
   const gotos: string[] = [];
   const typed: Array<[string, string]> = [];
+  const scrolls: number[] = [];
   return {
     acted,
     gotos,
     typed,
+    scrolls,
     snapshot: async () => snapshotYaml,
     act: async (ref, slot) => { acted.push([ref, slot]); },
     goto: async (url) => { gotos.push(url); },
     typeText: async (ref, text) => { typed.push([ref, text]); },
+    scroll: async (dy) => { scrolls.push(dy); },
     callCount: () => acted.length + gotos.length,
   };
 }
@@ -130,6 +133,15 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     const { emit } = emitSpy();
     await runAgentGoal({ goal: 'go', sessionId: 's3', mode: 'act', browser, store, states: [], emit, query: fn });
     expect(browser.gotos).toEqual(['https://x.test/cart.html']);
+  });
+
+  it('a scroll tool-call routes to browser.scroll(dy)', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn } = fakeQueryCalling('scroll', { dy: 600 });
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'scroll down', sessionId: 's-scroll', mode: 'act', browser, store, states: [], emit, query: fn });
+    expect(browser.scrolls).toEqual([600]);
   });
 
   it('get_page_ax returns the browser snapshot as tool text', async () => {

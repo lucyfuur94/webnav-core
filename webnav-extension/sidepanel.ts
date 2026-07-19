@@ -8,6 +8,7 @@
 type Cmd =
   | { kind: 'get-ax' | 'click' | 'type'; nodeId?: string; text?: string }
   | { kind: 'goto'; url?: string }
+  | { kind: 'scroll'; dy?: number }
   | { kind: 'current-url' };
 type AgentEvent =
   | { type: 'turn'; text: string }
@@ -469,6 +470,7 @@ function narrateAction(cmd: Cmd): string {
   if (cmd.kind === 'click') return 'clicking…';
   if (cmd.kind === 'type') return `typing "${cmd.text ?? ''}"…`;
   if (cmd.kind === 'goto') return cmd.url ? `navigating to ${cmd.url}…` : 'navigating…';
+  if (cmd.kind === 'scroll') return 'scrolling…';
   if (cmd.kind === 'current-url') return 'reading address…';
   return (cmd as { kind: string }).kind;
 }

@@ -143,6 +143,18 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       },
     },
     {
+      name: 'scroll',
+      description: 'Scroll the current page by dy pixels (positive = down, negative = up) to reveal content below or above the fold, then re-read with get_page_ax.',
+      shape: { dy: z.number().describe('pixels to scroll; positive scrolls down, negative up (e.g. 600)') },
+      handler: async (a) => {
+        const dy = Number(a.dy);
+        if (!browser.scroll) return text('this browser cannot scroll');
+        await browser.scroll(dy);
+        emit({ type: 'narrate', label: 'scroll', detail: (dy >= 0 ? 'down ' : 'up ') + Math.abs(dy) + 'px' });
+        return text('scrolled ' + (dy >= 0 ? 'down ' : 'up ') + Math.abs(dy) + 'px');
+      },
+    },
+    {
       name: 'list_routes',
       description:
         'List the recallable destination states webnav already knows for the CURRENT site. Call this FIRST to discover which goal state ids exist, then pass one to check_route. Returns id + name per destination.',

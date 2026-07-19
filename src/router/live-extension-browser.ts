@@ -10,6 +10,7 @@ export interface AgentChannel {
   dispatch(cmd: { kind: 'click' | 'type'; nodeId: string; text?: string }): Promise<void>;
   currentUrl?(): Promise<string>;
   goto?(url: string): Promise<void>;
+  scroll?(dy: number): Promise<void>;
 }
 
 // A LiveExtensionBrowser that also buffers the run as RawAXStep[] for ingestAX. The
@@ -185,6 +186,11 @@ export function makeLiveExtensionBrowser(
     // A pure navigation: clickedRef = null. beginStep captures the current page as fromAX;
     // the next snapshot (or getRecordedSteps) supplies toAX.
     browser.goto = async (url: string) => { await beginStep(null); await channel.goto!(url); };
+  }
+  if (channel.scroll) {
+    // A pure in-page reveal (no navigation, no click) — records NO step. The next
+    // snapshot() naturally picks up whatever scrolled into view.
+    browser.scroll = (dy: number) => channel.scroll!(dy);
   }
   if (channel.currentUrl) {
     browser.currentUrl = () => channel.currentUrl!();
