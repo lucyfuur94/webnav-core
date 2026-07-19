@@ -1,7 +1,7 @@
 // The dashboard shell: a single self-contained page (vanilla JS + fetch) for the
 // SITES and CREDENTIALS operator views. No build step — matches webnav's ethos
-// for its OWN UI; the heavy xyflow graph viewer is the separate web/dist bundle,
-// linked from here as the "Graph" tab (opens /graph). Kept deliberately plain.
+// for its OWN UI. Kept deliberately plain. (The heavy graph viewer left with the
+// webnav-site repo; inspect a map via `dev outline` / `dev mermaid` instead.)
 export const SHELL_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
