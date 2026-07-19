@@ -707,7 +707,7 @@ async function main() {
       await runAgentGoal({
         goal: goal.goal,
         sessionId: goal.sessionId,
-        mode: goal.mode as 'ask' | 'auto' | 'act',
+        mode: goal.mode === 'ask' ? 'ask' : 'act',
         browser,
         store: mapStore,
         states,
