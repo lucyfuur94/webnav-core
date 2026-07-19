@@ -148,10 +148,54 @@ function paintPulse(tabId: number, x: number, y: number): void {
   chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: expr }).catch(() => {});
 }
 
+// Persistent agent cursor — a fixed pointer that GLIDES to each target before the action,
+// so the user can SEE where the agent is and what it's about to touch (like Claude-for-Chrome).
+// Same technique as paintPulse: a single self-contained expression injected via
+// Runtime.evaluate. Idempotent: it reuses id="__webnav_cursor__" if already present (a fresh
+// page — post-navigation — has none, so it re-creates; re-injection never stacks duplicates).
+// The glide is CSS `transition` on `transform` (~350ms ease). prefers-reduced-motion → jump
+// (transition cleared). The cursor is per-page injected DOM: a navigation clears it and the
+// next moveCursor re-creates it; teardown/detach drops the whole page context.
+// pointer-events:none means it can NEVER intercept input. High-contrast: white fill + dark
+// stroke reads on both light and dark backgrounds.
+// A cursor failure must NEVER break the actual click/type — always wrapped, always
+// fire-and-forget (not awaited on the caller's critical path), exactly like paintPulse.
+function moveCursor(tabId: number, x: number, y: number): void {
+  const expr = `(() => {
+    try {
+      var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var c = document.getElementById('__webnav_cursor__');
+      if (!c) {
+        c = document.createElement('div');
+        c.id = '__webnav_cursor__';
+        c.style.cssText = 'position:fixed;left:0;top:0;width:22px;height:22px;pointer-events:none;' +
+          'z-index:2147483647;will-change:transform;';
+        // SVG arrow pointer: white fill, dark stroke → visible on light AND dark pages.
+        c.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" ' +
+          'style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))">' +
+          '<path d="M2 2 L2 16 L6 12 L9 19 L12 18 L9 11 L15 11 Z" ' +
+          'fill="#ffffff" stroke="#1a1a1a" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+        document.documentElement.appendChild(c);
+      }
+      c.style.transition = reduce ? 'none' : 'transform 350ms cubic-bezier(0.22,0.61,0.36,1)';
+      c.style.transform = 'translate(' + ${x} + 'px,' + ${y} + 'px)';
+    } catch (e) {}
+  })()`;
+  // Fire-and-forget: never await this on the click/type path, never throw past it.
+  // TODO(user-gated): the actual render — glide smoothness, visibility on real light/dark
+  // pages, prefers-reduced-motion jump — is confirmed only by a load-unpacked pass.
+  chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: expr }).catch(() => {});
+}
+
 async function clickNode(tabId: number, nodeId: string): Promise<void> {
   assertDriving(tabId);
   const { x, y } = await nodeCenter(tabId, nodeId);
+  // Glide the visible cursor to the target FIRST (cosmetic, fire-and-forget — the click
+  // below never waits on the animation callback). A real mouseMoved to (x,y) fires hover
+  // states, so what the user sees the cursor land on matches what actually gets clicked.
+  moveCursor(tabId, x, y);
   const base = { x, y, button: 'left' as const, clickCount: 1 };
+  await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).catch(() => {});
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
   await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
   // Paint AFTER dispatch (never before) so the pulse can't intercept the real click; it's
