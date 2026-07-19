@@ -28,6 +28,7 @@ const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) 
 const thread = byId<HTMLDivElement>('thread');
 const goalEl = byId<HTMLTextAreaElement>('goal');
 const modeEl = byId<HTMLDivElement>('mode'); // segmented switch container (.modeswitch)
+const modeHintEl = byId<HTMLDivElement>('mode-hint'); // #2: one-line selected-mode description
 const sendEl = byId<HTMLButtonElement>('send');
 const stopEl = byId<HTMLButtonElement>('stop');
 const pauseEl = byId<HTMLButtonElement>('pause');
@@ -121,11 +122,19 @@ const MODE_HINT: Record<Mode, string> = {
   Auto: 'Auto: drives on its own, but asks before navigating to a new site.',
   Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
 };
+// #2 — one-line description of the SELECTED mode, shown under the switch (updated in
+// applyMode). Distinct from MODE_HINT (the hover tooltip) — this is the always-visible copy.
+const MODE_DESC: Record<Mode, string> = {
+  Ask: 'Shows a plan and waits for your approval before doing anything.',
+  Auto: 'Runs on its own; asks before navigating to a new site.',
+  Act: 'Runs fully autonomously (commit points still pause).',
+};
 const modeButtons = Array.from(modeEl.querySelectorAll<HTMLButtonElement>('button[data-mode]'));
 function applyMode(): void {
   // Reflect the active mode on the segmented switch (aria-pressed drives the styling).
   for (const b of modeButtons) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
   modeEl.title = MODE_HINT[mode];
+  modeHintEl.textContent = MODE_DESC[mode]; // #2: keep the visible line in sync with the mode
 }
 // Each segment sets its mode directly (a clearer instrument than a blind cycle);
 // the persisted-state + hint plumbing is unchanged.
@@ -249,6 +258,79 @@ function scrollThreadIfNearBottom(): void {
   else jumpPill.classList.add('show');
 }
 
+// ---------------------------------------------------------------------------
+// #5 — light markdown renderer (XSS-safe, streaming-safe).
+// Model text is UNTRUSTED. The one hard rule: escape HTML FIRST, then apply the
+// markdown regex passes to the ESCAPED text — so a `<script>` in the reply can never
+// become live markup, only visible text. Code spans are lifted to placeholders before
+// bold/italic so `*` inside code isn't styled. Streaming-safe because callers keep the
+// RAW accumulated text and re-render the whole buffer on each delta (see renderMarkdown).
+// ---------------------------------------------------------------------------
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function mdToHtml(raw: string): string {
+  let s = escapeHtml(raw);
+  // Lift code spans out FIRST (on escaped text) so their contents dodge bold/italic/list
+  // passes; restore at the end. Fenced ``` blocks before inline ` so the fence wins.
+  // Placeholder wraps the index in a control-char sentinel (never in model prose) so it
+  // can't collide with a bare digit and isn't mistaken for a list line or a newline.
+  const codes: string[] = [];
+  const stash = (html: string): string => '\x01' + (codes.push(html) - 1) + '\x01';
+  s = s.replace(/```([\s\S]*?)```/g, (_m, c) => stash('<pre><code>' + c.replace(/^\n/, '') + '</code></pre>'));
+  s = s.replace(/`([^`\n]+)`/g, (_m, c) => stash('<code>' + c + '</code>'));
+  // Inline emphasis (bold before italic so `**x**` isn't eaten by the single-* rule).
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  // Lists: group consecutive `- ` / `1.` lines into one <ul>/<ol>. Build line by line.
+  const lines = s.split('\n');
+  const out: string[] = [];
+  let list: 'ul' | 'ol' | null = null;
+  const closeList = (): void => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of lines) {
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+    const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+    if (ul) {
+      if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+      out.push('<li>' + ul[1] + '</li>');
+    } else if (ol) {
+      if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+      out.push('<li>' + ol[1] + '</li>');
+    } else {
+      closeList();
+      out.push(line);
+    }
+  }
+  closeList();
+  // Line breaks: join non-list lines with <br>; list tags already carry their own layout.
+  s = out.join('\n').replace(/\n(?![<])/g, '<br>').replace(/\n/g, '');
+  // Restore code spans.
+  s = s.replace(/\x01(\d+)\x01/g, (_m, i) => codes[Number(i)]);
+  return s;
+}
+
+// Render markdown into a bubble, keeping the RAW text in a data-attr so streaming deltas
+// re-render the full buffer (never innerHTML raw model text) and copy grabs the raw text.
+function renderMarkdown(el: HTMLElement, raw: string): void {
+  el.dataset.raw = raw;
+  el.innerHTML = mdToHtml(raw);
+}
+
+// Self-check (crit #5) — asserts bold renders AND that HTML in model text is escaped
+// (XSS). Runs once at module load; throws loudly in dev if the renderer regresses.
+function mdSelfCheck(): void {
+  const bold = mdToHtml('**x**');
+  if (!bold.includes('<strong>x</strong>')) throw new Error('md: **x** should render <strong>');
+  const xss = mdToHtml('<script>alert(1)</script>');
+  if (xss.includes('<script>')) throw new Error('md: raw <script> must be escaped');
+  if (!xss.includes('&lt;script&gt;')) throw new Error('md: script tag should be escaped to entities');
+  const code = mdToHtml('`a*b*c`');
+  if (!code.includes('<code>a*b*c</code>')) throw new Error('md: * inside code must not italicize');
+}
+mdSelfCheck();
+
 const COPY_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 
@@ -259,11 +341,14 @@ function addCopyButton(el: HTMLElement): void {
   btn.title = 'Copy'; btn.setAttribute('aria-label', 'Copy message');
   btn.innerHTML = COPY_SVG;
   btn.onclick = () => {
-    // Copy the message text only — skip the control buttons (this copy button and any
-    // Retry button an error bubble carries), so their labels don't leak into the clipboard.
-    const text = Array.from(el.childNodes)
-      .filter((n) => !(n instanceof HTMLElement && n.tagName === 'BUTTON'))
-      .map((n) => n.textContent ?? '').join('');
+    // Markdown-rendered bubbles keep the RAW source in data-raw — copy THAT (with the
+    // `**`/backticks), not the rendered HTML's text. Otherwise copy the message text only,
+    // skipping the control buttons (this copy button + any Retry) so labels don't leak.
+    const text = el.dataset.raw != null
+      ? el.dataset.raw
+      : Array.from(el.childNodes)
+          .filter((n) => !(n instanceof HTMLElement && n.tagName === 'BUTTON'))
+          .map((n) => n.textContent ?? '').join('');
     navigator.clipboard.writeText(text.trim()).then(() => {
       btn.classList.add('copied'); setTimeout(() => btn.classList.remove('copied'), 900);
     }).catch(() => {});
@@ -340,14 +425,57 @@ function narrateAction(cmd: Cmd): string {
   return (cmd as { kind: string }).kind;
 }
 
+// #3b — the SDK exposes webnav's tools as an in-process MCP server, so tool_use names
+// can arrive as `mcp__webnav__<tool>`. That raw string must NEVER reach the user. loop.ts
+// already humanizes at the source; this is the defensive strip so any label reaching the
+// panel is friendly regardless of path. Humanize the internal-sounding verbs; click/type/
+// goto already read fine.
+const FRIENDLY_LABEL: Record<string, string> = {
+  check_route: 'checking the map',
+  get_page_ax: 'reading the page',
+};
+function friendlyLabel(raw: string): string {
+  const name = raw.replace(/^mcp__webnav__/, '');
+  return FRIENDLY_LABEL[name] ?? name;
+}
+
 // Close the current streaming assistant bubble (drop the caret) and null it so the
 // next `turn` starts a fresh one. Replaces the old `assistantBubble = null` lines.
 function endTurn(): void {
   assistantBubble?.classList.remove('streaming');
-  // Attach the copy button now that streaming (`textContent +=`) is done — adding it
-  // earlier would have been wiped by the delta appends. Skip empty bubbles.
+  // Attach the copy button now that streaming is done — adding it earlier would have been
+  // wiped by the delta re-renders. Skip empty bubbles.
   if (assistantBubble && (assistantBubble.textContent ?? '').trim()) addCopyButton(assistantBubble);
   assistantBubble = null;
+}
+
+// #6 — subtle completion. The SDK's final result text is usually IDENTICAL to the last
+// streamed assistant turn (loop.ts sets finalText = last result). So:
+//   - no summary, or a summary that duplicates the last streamed text → don't render a
+//     second bubble; just tag the last assistant message with a quiet ✓.
+//   - a genuinely-new summary → render it as a normal assistant-style markdown message
+//     with a small ✓, NOT a loud green box.
+// `lastEl` is the still-open streaming assistant bubble (captured BEFORE endTurn nulls it).
+function renderDone(lastEl: HTMLDivElement | null, summary?: string): void {
+  const sum = (summary ?? '').trim();
+  const last = (lastEl?.dataset.raw ?? '').trim();
+  // Only a NON-empty last message can be a duplicate — an empty stream means the summary
+  // is genuinely new and must render.
+  const duplicates = sum !== '' && last !== '' && (sum === last || last.endsWith(sum) || sum.endsWith(last));
+  if (sum === '' || duplicates) {
+    // Nothing new to say — mark the last assistant message complete with a subtle ✓.
+    if (lastEl) lastEl.classList.add('done-tick');
+    return;
+  }
+  // A new closing summary: render it as assistant-style prose (markdown, subtle ✓ rule).
+  clearEmpty();
+  currentRoute = null;
+  const el = document.createElement('div');
+  el.className = 'msg done';
+  renderMarkdown(el, sum);
+  addCopyButton(el);
+  thread.appendChild(el);
+  scrollThreadIfNearBottom();
 }
 
 // ---------------------------------------------------------------------------
@@ -387,17 +515,22 @@ function handleEvent(e: AgentEvent): void {
     case 'turn':
       // Stream deltas into one assistant bubble until an action/done/error breaks it.
       // `.streaming` draws the caret; endTurn() removes it when the bubble is closed.
+      // #5: accumulate the RAW text and re-render the whole buffer as markdown each delta
+      // (never innerHTML raw model text — mdToHtml escapes first).
       if (!assistantBubble) { assistantBubble = bubble('assistant'); assistantBubble.classList.add('streaming'); }
-      assistantBubble.textContent += e.text;
+      renderMarkdown(assistantBubble, (assistantBubble.dataset.raw ?? '') + e.text);
       scrollThreadIfNearBottom();
       break;
-    case 'narrate':
+    case 'narrate': {
       // DISPLAY ONLY — the agent telling us what it did. Never CDP-execute this.
       endTurn();
+      // #3b — strip any `mcp__webnav__` prefix + humanize before it ever renders.
+      const label = friendlyLabel(e.label);
       // Show the driven step in the activity strip too (the live "what it's doing" readout).
-      activityStep.textContent = e.detail ? e.label + ': ' + e.detail : e.label;
-      bubble('action', e.label + (e.detail ? ': ' + e.detail : ''));
+      activityStep.textContent = e.detail ? label + ': ' + e.detail : label;
+      bubble('action', label + (e.detail ? ': ' + e.detail : ''));
       break;
+    }
     case 'action':
       // The REAL CDP command from the server's channel — this is the ONLY path that
       // runs execAction (and POSTs a command-result the server's loop awaits). The
@@ -411,8 +544,11 @@ function handleEvent(e: AgentEvent): void {
       renderPlan(e.steps);
       break;
     case 'done':
+      // #6 — subtle completion. Pass the still-open assistant bubble BEFORE endTurn nulls
+      // it, so we can dedupe (the SDK's final result IS usually the last streamed turn —
+      // don't render it twice) or tick that bubble in place.
+      renderDone(assistantBubble, e.summary);
       endTurn();
-      bubble('done', e.summary ? 'Done — ' + e.summary : 'Done.');
       finishRun();
       break;
     case 'error': {
