@@ -714,9 +714,14 @@ async function main() {
         emit,
       });
     };
-    const server = serveAgent(args.port, new RecordStore(dbPath()), { onGoal });
-    process.stderr.write(`webnav agent-serve listening on http://127.0.0.1:${args.port}\n`);
-    console.log(JSON.stringify({ status: 'listening', port: args.port }));
+    // Per-run auth secret: the extension must present it on every /api/agent/* call
+    // (header on POSTs, ?token= on the SSE GET). Without it any web page (DNS-rebind /
+    // localhost fetch) or local process could POST a goal and drive the user's browser.
+    const { randomBytes } = await import('node:crypto');
+    const token = randomBytes(16).toString('hex');
+    const server = serveAgent(args.port, new RecordStore(dbPath()), { onGoal, token });
+    process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token}  (paste this into the extension panel settings)\n`);
+    console.log(JSON.stringify({ status: 'listening', port: args.port, token }));
     await new Promise(() => {}); // run until killed
     return;
   }
