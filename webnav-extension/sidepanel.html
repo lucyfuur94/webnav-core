@@ -140,7 +140,8 @@
     margin-bottom: 3px;
   }
 
-  /* Claude's prose — humanist, warm, left, no bubble chrome. It speaks. */
+  /* Claude's prose — humanist, warm, left, no bubble chrome. It speaks.
+     Markdown-rendered (#5): breaks come from <br>/lists, so white-space is normal. */
   .msg.assistant {
     align-self: stretch;
     max-width: 100%;
@@ -148,7 +149,6 @@
     color: var(--ink);
     font-size: 13.5px;
     line-height: 1.55;
-    white-space: pre-wrap;
     word-break: break-word;
   }
   .msg.assistant.streaming::after {
@@ -161,6 +161,31 @@
     animation: caret 1.1s step-end infinite;
   }
   @keyframes caret { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+
+  /* #5 — light-markdown element styling, shared by assistant prose + the done summary. */
+  .msg.assistant strong, .msg.done strong { font-weight: 650; }
+  .msg.assistant em, .msg.done em { font-style: italic; }
+  .msg.assistant code, .msg.done code {
+    font-family: var(--mono); font-size: 12px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    padding: 1px 4px; border-radius: 4px;
+  }
+  .msg.assistant pre, .msg.done pre {
+    margin: 6px 0;
+    padding: 8px 10px;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .msg.assistant pre code, .msg.done pre code {
+    background: none; padding: 0; font-size: 11.5px; white-space: pre;
+  }
+  .msg.assistant ul, .msg.assistant ol, .msg.done ul, .msg.done ol {
+    margin: 4px 0; padding-left: 20px;
+  }
+  .msg.assistant li, .msg.done li { margin: 2px 0; }
 
   /* ── The route rail: agent actions traced down a hairline with pin waypoints ──
      Consecutive .msg.action rows are grouped by JS into a .route rail; a lone
@@ -205,11 +230,13 @@
   }
   .route .msg.action::before { left: -29px; }   /* onto the shared rail */
   #thread > .msg.action::before { left: -6px; }  /* onto its own left border */
+  /* #4 — routine (past) action rows read as CALM neutral history: the verb is soft ink,
+     the target fainter. Only the LIVE (current) row gets the accent, below. */
   .msg.action .verb {
-    color: var(--accent-ink);
+    color: var(--ink-soft);
     font-weight: 600;
   }
-  .msg.action .target { color: var(--ink); }
+  .msg.action .target { color: var(--ink-faint); }
   /* the live (most recent) action: filled pin, faint pulse, brighter rail above it */
   .msg.action.live::before {
     background: var(--rail-live);
@@ -218,26 +245,54 @@
     animation: pulse 1.6s ease-in-out infinite;
   }
   .msg.action.live { color: var(--ink); }
+  /* #4 — the current step is the ONE accented row: verb in accent, target in full ink. */
+  .msg.action.live .verb { color: var(--accent-ink); }
+  .msg.action.live .target { color: var(--ink); }
   @keyframes pulse {
     0%,100% { box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px color-mix(in srgb, var(--rail-live) 34%, transparent); }
     50%     { box-shadow: 0 0 0 3px var(--bg), 0 0 0 7px color-mix(in srgb, var(--rail-live) 10%, transparent); }
   }
 
-  /* Done — the route reaches its destination (a solid pin, checkmark). */
+  /* Done — SUBTLE completion (#6). Rendered as normal assistant-style prose with a thin
+     top-rule + a quiet ✓ marker, NOT a filled green box. Loud color is reserved for errors.
+     Used both for the agent's closing summary AND stop/pause status notes. */
   .msg.done {
     align-self: stretch;
+    max-width: 100%;
     margin: 8px 0 4px;
-    padding: 9px 11px;
-    background: var(--ok-bg);
-    color: var(--ok);
-    border: 1px solid color-mix(in srgb, var(--ok) 34%, transparent);
-    border-radius: 10px;
-    font-size: 12.5px;
-    line-height: 1.45;
-    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 2px 4px;
+    border-top: 1px solid var(--rule-soft);
+    color: var(--ink);
+    font-size: 13.5px;
+    line-height: 1.55;
     white-space: pre-wrap; word-break: break-word;
   }
-  .msg.done::before, .msg.error::before {
+  .msg.done::before {
+    flex: 0 0 auto;
+    width: 13px; height: 13px;
+    margin-right: 6px;
+    display: inline-block;
+    vertical-align: -1px;
+    background: var(--ok);
+    -webkit-mask: var(--glyph) center / contain no-repeat;
+            mask: var(--glyph) center / contain no-repeat;
+    content: "";
+    --glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+  }
+  /* A completed assistant message whose text the done summary duplicated: a quiet ✓ in
+     the margin instead of a second bubble. */
+  .msg.assistant.done-tick { position: relative; }
+  .msg.assistant.done-tick::after {
+    content: "✓";
+    display: inline-block;
+    margin-left: 6px;
+    color: var(--ok);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* Errors STAY loud/red — they should stand out (#6). */
+  .msg.error::before {
     flex: 0 0 auto; margin-top: 1px;
     width: 16px; height: 16px;
     display: inline-block;
@@ -245,11 +300,6 @@
     -webkit-mask: var(--glyph) center / contain no-repeat;
             mask: var(--glyph) center / contain no-repeat;
     content: "";
-  }
-  .msg.done::before {
-    --glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
-  }
-  .msg.error::before {
     --glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>');
   }
 
@@ -480,6 +530,14 @@
     margin-top: 8px;
   }
 
+  /* #2 — subtle one-line description of the selected mode, under the switch. */
+  .modehint {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--ink-faint);
+  }
+
   /* Permission mode — a segmented instrument switch (Ask / Auto / Act).
      #mode is the container; sidepanel.ts wires its three <button data-mode> to
      the mode state (aria-pressed reflects the active one). */
@@ -643,6 +701,8 @@
         </button>
       </div>
     </div>
+    <!-- #2 — one-line description of the SELECTED mode, updated in applyMode(). -->
+    <div class="modehint" id="mode-hint"></div>
   </div>
 </footer>
 

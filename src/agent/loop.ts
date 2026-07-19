@@ -54,6 +54,20 @@ function text(t: string): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: t }] };
 }
 
+// Friendly narrate labels for the panel (crit #3b). The SDK exposes webnav's tools as
+// an in-process MCP server, so tool_use block names arrive as `mcp__webnav__<tool>`;
+// that raw string must never reach the user. Strip the prefix and humanize the couple
+// of internal-sounding verbs (click/type/goto already read fine). The panel also strips
+// defensively — this keeps the label clean at the source.
+function friendlyLabel(raw: string): string {
+  const name = raw.replace(/^mcp__webnav__/, '');
+  const friendly: Record<string, string> = {
+    check_route: 'checking the map',
+    get_page_ax: 'reading the page',
+  };
+  return friendly[name] ?? name;
+}
+
 // Build the webnav tools. Each handler drives the injected browser/store; before
 // returning it emits a human-readable `narrate` line so the panel shows what the
 // agent did. This is DISPLAY-ONLY — the browser's own dispatch (the real CDP
@@ -68,7 +82,7 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       shape: {},
       handler: async () => {
         const snap = await browser.snapshot();
-        emit({ type: 'narrate', label: 'get_page_ax', detail: 'read page' });
+        emit({ type: 'narrate', label: friendlyLabel('get_page_ax'), detail: 'read page' });
         return text(snap);
       },
     },
@@ -130,16 +144,16 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         const nodes = parseSnapshot(await browser.snapshot());
         const match = matchState(nodes, states);
         if (match.status !== 'matched') {
-          emit({ type: 'narrate', label: 'check_route', detail: 'current page not on a known state' });
+          emit({ type: 'narrate', label: friendlyLabel('check_route'), detail: 'current page not on a known state' });
           return text('no route: current page is not on a known map state — drive manually with click/type/goto.');
         }
         const start = match.state.id;
         const path = findPath(store, start, goalStateId);
         if (!path) {
-          emit({ type: 'narrate', label: 'check_route', detail: 'no route ' + start + ' -> ' + goalStateId });
+          emit({ type: 'narrate', label: friendlyLabel('check_route'), detail: 'no route ' + start + ' -> ' + goalStateId });
           return text('no route from ' + start + ' to ' + goalStateId + ' in the map — drive manually.');
         }
-        emit({ type: 'narrate', label: 'check_route', detail: path.join(' -> ') });
+        emit({ type: 'narrate', label: friendlyLabel('check_route'), detail: path.join(' -> ') });
         // THE PAYOFF: hand the found route to the deterministic replay (walkRoute
         // UNMODIFIED), then narrate its terminal RecallResponse back to the agent.
         const res = await walkRoute({
@@ -263,7 +277,7 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
       if (m.type === 'assistant') {
         for (const block of m.message?.content ?? []) {
           if (block.type === 'text' && block.text) emit({ type: 'turn', text: block.text });
-          else if (block.type === 'tool_use') emit({ type: 'narrate', label: String(block.name ?? block.id ?? 'tool') });
+          else if (block.type === 'tool_use') emit({ type: 'narrate', label: friendlyLabel(String(block.name ?? block.id ?? 'tool')) });
         }
       } else if (m.type === 'result') {
         if (m.subtype === 'success') finalText = m.result ?? finalText;
