@@ -64,6 +64,7 @@ function friendlyLabel(raw: string): string {
   const friendly: Record<string, string> = {
     check_route: 'checking the map',
     get_page_ax: 'reading the page',
+    list_routes: 'listing known routes',
   };
   return friendly[name] ?? name;
 }
@@ -131,6 +132,28 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         await browser.goto(url, null);
         emit({ type: 'narrate', label: 'goto', detail: url });
         return text('navigated to ' + url);
+      },
+    },
+    {
+      name: 'list_routes',
+      description:
+        'List the recallable destination states webnav already knows for the CURRENT site. Call this FIRST to discover which goal state ids exist, then pass one to check_route. Returns id + name per destination.',
+      shape: {},
+      handler: async () => {
+        // ZERO-LLM: pure filtering of the in-memory states. Current site = the nodeId of
+        // whatever known state the live page matches (fingerprint-based, so account-id URL
+        // differences never matter). If the page matches no state, fall back to ALL sites'
+        // destinations so the agent still sees what maps exist. A real destination has a
+        // NON-EMPTY fingerprint (mirrors matchState: _shell + empty-fp stubs identify nothing).
+        const match = matchState(parseSnapshot(await browser.snapshot()), states);
+        const site = match.status === 'matched' ? match.state.nodeId : null;
+        const dests = states.filter(
+          (s) => s.fingerprint.length > 0 && (site === null || s.nodeId === site),
+        );
+        emit({ type: 'narrate', label: friendlyLabel('list_routes'), detail: dests.length + ' destination(s)' });
+        if (dests.length === 0) return text('no recallable destinations known for this site — drive manually with click/type/goto.');
+        const lines = dests.map((s) => '- ' + s.id + ' — ' + s.semanticName);
+        return text('known destinations (pass an id to check_route):\n' + lines.join('\n'));
       },
     },
     {
@@ -230,8 +253,8 @@ function abortFromSignal(signal: AbortSignal): AbortController {
 
 const SYSTEM = [
   'You navigate a live browser tab to accomplish the user goal.',
-  'RECALL FIRST: before manually clicking, call check_route with the destination state id — if the map knows a route, webnav walks it deterministically and reports the result.',
-  'Otherwise: call get_page_ax to see the page, then click/type/goto by ref.',
+  'RECALL FIRST: call list_routes to discover the destination state ids webnav already knows for this site, then call check_route with the relevant id — if the map knows a route, webnav walks it deterministically and reports the result. You do NOT need to guess ids; list_routes shows the real ones.',
+  'Only if list_routes is empty or check_route reports no route: call get_page_ax to see the page, then drive manually with click/type/goto by ref.',
   'Irreversible actions (Place Order, Pay, Delete) are never fired automatically — if the walk hits one it stops and hands back to you.',
 ].join(' ');
 

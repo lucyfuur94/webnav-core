@@ -141,6 +141,70 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(toolResult()).toContain('Add to cart');
   });
 
+  // ---- list_routes: the agent discovers a site's recallable destinations --------
+  // Two sites in one loaded state-set. siteA has two real destinations + a _shell
+  // (empty fp, routing source only) + an empty-fp stub. siteB is a whole other site.
+  function twoSiteStates(): State[] {
+    const aHome = makeState({ id: 'siteA:home', nodeId: 'site.example', semanticName: 'Home', urlPattern: '/', role: 'section', fingerprint: ['button:Add to cart'] });
+    const aCart = makeState({ id: 'siteA:cart', nodeId: 'site.example', semanticName: 'Cart', urlPattern: '/cart', role: 'section', fingerprint: ['link:Checkout'] });
+    const aShell = makeState({ id: 'siteA:_shell', nodeId: 'site.example', semanticName: 'shell', urlPattern: '/', role: 'shell', fingerprint: [] });
+    const aStub = makeState({ id: 'siteA:stub', nodeId: 'site.example', semanticName: 'Provisional', urlPattern: '/x', role: 'detail', fingerprint: [] });
+    const bHome = makeState({ id: 'siteB:home', nodeId: 'other.example', semanticName: 'B Home', urlPattern: '/', role: 'section', fingerprint: ['heading:Welcome'] });
+    return [aHome, aCart, aShell, aStub, bHome];
+  }
+
+  it('list_routes on siteA lists siteA real destinations (id+name), EXCLUDES _shell + empty-fp stubs, EXCLUDES other site', async () => {
+    const store = newStore();
+    const states = twoSiteStates();
+    // Browser is on siteA:home (its fingerprint), so the current site resolves to site.example.
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const { fn, toolResult } = fakeQueryCalling('list_routes', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'discover', sessionId: 'l1', mode: 'auto', browser, store, states, emit, query: fn });
+    const out = toolResult();
+    expect(out).toContain('siteA:home');
+    expect(out).toContain('Home');
+    expect(out).toContain('siteA:cart');
+    expect(out).toContain('Cart');
+    expect(out).not.toContain('siteA:_shell');   // routing source, never a destination
+    expect(out).not.toContain('siteA:stub');     // empty fingerprint = not a real destination
+    expect(out).not.toContain('siteB:home');     // a different site
+  });
+
+  it('list_routes when the current page matches NO state falls back to ALL sites\' destinations (still excludes _shell + empty-fp)', async () => {
+    const store = newStore();
+    const states = twoSiteStates();
+    const browser = fakeBrowser('RootWebArea "Unknown page" [ref=e1]');
+    const { fn, toolResult } = fakeQueryCalling('list_routes', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'discover', sessionId: 'l2', mode: 'auto', browser, store, states, emit, query: fn });
+    const out = toolResult();
+    expect(out).toContain('siteA:home');
+    expect(out).toContain('siteB:home');
+    expect(out).not.toContain('siteA:_shell');
+    expect(out).not.toContain('siteA:stub');
+  });
+
+  it('discovery -> recall: an id surfaced by list_routes is usable by check_route (findPath matches it)', async () => {
+    const store = newStore();
+    const states = invStates();
+    for (const s of states) store.upsertState(s);
+    store.upsertEdge(makeEdge({ fromState: 'sd:inventory', toState: 'sd:cart', semanticStep: 'open cart', kind: 'navigate' }));
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    // Step 1: list_routes surfaces the destination id.
+    const list = fakeQueryCalling('list_routes', {});
+    const { emit: e1 } = emitSpy();
+    await runAgentGoal({ goal: 'discover', sessionId: 'l3a', mode: 'auto', browser, store, states, emit: e1, query: list.fn });
+    expect(list.toolResult()).toContain('sd:cart');
+    // Step 2: feed that id to check_route — it resolves a route (proves the id is usable).
+    const check = fakeQueryCalling('check_route', { goalStateId: 'sd:cart' });
+    const { emit: e2 } = emitSpy();
+    await runAgentGoal({ goal: 'reach cart', sessionId: 'l3b', mode: 'auto', browser, store, states, emit: e2, query: check.fn });
+    expect(check.toolResult()).toContain('sd:inventory');
+    expect(check.toolResult()).toContain('sd:cart');
+    expect(check.toolResult()).not.toMatch(/drive manually|no route/i);
+  });
+
   it('check_route on a KNOWN state with a findable path consults findPath and runs walkRoute', async () => {
     // Store the two states + an edge so findPath(inventory -> cart) succeeds.
     const store = newStore();
