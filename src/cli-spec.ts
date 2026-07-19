@@ -24,7 +24,18 @@ export interface CommandSpec {
   example: string; // e.g. 'webnav recall "python retry" --top 5'
 }
 
-export const VERSION = '0.1.0';
+// Single source of truth: read the version from package.json at runtime (no
+// resolveJsonModule needed, and no hand-maintained constant to drift). Works from
+// both src/ (tsx) and dist/ — ../package.json resolves to the repo root either way.
+import { readFileSync as _readVersionFile } from 'node:fs';
+import { fileURLToPath as _versionUrl } from 'node:url';
+export const VERSION: string = (() => {
+  try {
+    return JSON.parse(_readVersionFile(_versionUrl(new URL('../package.json', import.meta.url)), 'utf8')).version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 
 // Browser-launch flags shared by every verb that opens a browser (read / navigate
 // / walk). Default is HEADED (a visible window); --headless opts out.
