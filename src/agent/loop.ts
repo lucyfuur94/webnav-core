@@ -279,7 +279,10 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
       if (m.type === 'assistant') {
         for (const block of m.message?.content ?? []) {
           if (block.type === 'text' && block.text) emit({ type: 'turn', text: block.text });
-          else if (block.type === 'tool_use') emit({ type: 'narrate', label: friendlyLabel(String(block.name ?? block.id ?? 'tool')) });
+          // NOTE: we deliberately do NOT narrate the tool_use block here. Each tool's
+          // handler (buildTools) emits its OWN narrate with the RESULT detail (e.g.
+          // "listing known routes: 46 destination(s)"); narrating the announcement too
+          // produced a duplicate bare line per action. The handler narrate is the one.
         }
       } else if (m.type === 'result') {
         if (m.subtype === 'success') finalText = m.result ?? finalText;

@@ -447,6 +447,14 @@ function endTurn(): void {
   assistantBubble = null;
 }
 
+// The blue pulsing `.live` pin means "a tool is running RIGHT NOW". Only the in-flight
+// action should pulse; once the agent moves on (starts talking, runs the next tool, or
+// finishes) the completed row must settle to a plain dot like the others. Called from
+// every event that means "the previous action is no longer the live one".
+function settleLiveAction(): void {
+  document.querySelectorAll('.msg.action.live').forEach((el) => el.classList.remove('live'));
+}
+
 // #6 — subtle completion. The SDK's final result text is usually IDENTICAL to the last
 // streamed assistant turn (loop.ts sets finalText = last result). So:
 //   - no summary, or a summary that duplicates the last streamed text → don't render a
@@ -515,6 +523,8 @@ function handleEvent(e: AgentEvent): void {
       // `.streaming` draws the caret; endTurn() removes it when the bubble is closed.
       // #5: accumulate the RAW text and re-render the whole buffer as markdown each delta
       // (never innerHTML raw model text — mdToHtml escapes first).
+      // The agent is talking now, not acting — settle any still-pulsing action row.
+      if (!assistantBubble) settleLiveAction();
       if (!assistantBubble) { assistantBubble = bubble('assistant'); assistantBubble.classList.add('streaming'); }
       renderMarkdown(assistantBubble, (assistantBubble.dataset.raw ?? '') + e.text);
       scrollThreadIfNearBottom();
