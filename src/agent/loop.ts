@@ -31,6 +31,9 @@ export type QueryFn = (params: {
   mode: 'ask' | 'act';
   // User-selected model id (e.g. 'claude-sonnet-5'). Omitted → the SDK default.
   model?: string;
+  // SDK session id to resume (Options.resume). Present → continue that conversation
+  // (history + system prompt already loaded); omit → fresh conversation.
+  resume?: string;
   emit: (e: AgentEvent) => void;
   signal?: AbortSignal;
 }) => AsyncIterable<unknown>;
@@ -47,6 +50,13 @@ export interface RunAgentGoalArgs {
   emit: (e: AgentEvent) => void;
   query?: QueryFn;
   signal?: AbortSignal;
+  // Conversation continuity. `resumeSessionId` (from a prior turn) → resume that SDK
+  // conversation instead of cold-starting; on a resumed turn only the new goal is sent
+  // (the SDK already holds the system prompt + history). `onSdkSession` is called with
+  // the SDK session id captured from the message stream, so the caller can persist it
+  // and resume it on the NEXT goal in the same panel conversation.
+  resumeSessionId?: string;
+  onSdkSession?: (sdkSessionId: string) => void;
   // The approval gate (crit #3/#4). Resolves true=proceed / false=deny. Wired by the
   // server to a POST /api/agent/approve round-trip; the unit tests inject a fake.
   // Absent → treated as an immediate approve. Only ASK mode calls it (up front, before
@@ -207,7 +217,7 @@ function summarizeRecall(res: { status: string } & Record<string, unknown>): str
 
 // The default QueryFn: wire the tools into a real SDK MCP server and run query().
 // Imported lazily so unit tests (which inject a fake) never load the SDK.
-const defaultQuery: QueryFn = async function* ({ prompt, tools, model, signal }) {
+const defaultQuery: QueryFn = async function* ({ prompt, tools, model, resume, signal }) {
   const { tool, createSdkMcpServer, query } = await import('@anthropic-ai/claude-agent-sdk');
   const sdkTools = tools.map((t) =>
     tool(t.name, t.description, t.shape, async (a: Record<string, unknown>, extra: unknown) => t.handler(a, extra)),
@@ -222,6 +232,8 @@ const defaultQuery: QueryFn = async function* ({ prompt, tools, model, signal })
       permissionMode: 'default',
       // Only pass `model` when the user picked one; omit → SDK default (never '').
       ...(model ? { model } : {}),
+      // Continue a prior conversation (Options.resume) when a session id is carried over.
+      ...(resume ? { resume } : {}),
       ...(signal ? { abortController: abortFromSignal(signal) } : {}),
     },
   });
@@ -265,7 +277,10 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
   const { goal, mode, emit } = args;
   const query = args.query ?? defaultQuery;
   const tools = buildTools(args);
-  const prompt = SYSTEM + '\n\nGoal: ' + goal;
+  // Turn 1 (fresh): send SYSTEM + goal. Resumed turn: send JUST the goal — the SDK
+  // already holds the system prompt + history from the resumed session, so re-injecting
+  // SYSTEM would make Claude re-orient and re-list routes every message (the whole bug).
+  const prompt = args.resumeSessionId ? goal : SYSTEM + '\n\nGoal: ' + goal;
 
   if (mode === 'ask') {
     emit({ type: 'plan', steps: ['Check the map for a known route, then drive the tab step by step toward: ' + goal] });
@@ -280,8 +295,15 @@ export async function runAgentGoal(args: RunAgentGoalArgs): Promise<void> {
 
   try {
     let finalText = '';
-    for await (const msg of query({ prompt, tools, mode, model: args.model, emit, signal: args.signal })) {
+    let sdkSessionSeen = false;
+    for await (const msg of query({ prompt, tools, mode, model: args.model, resume: args.resumeSessionId, emit, signal: args.signal })) {
       const m = msg as any;
+      // Capture the SDK session id off the message stream (every SDKMessage carries it).
+      // Report it ONCE so the caller can persist it and resume this conversation next turn.
+      if (!sdkSessionSeen && typeof m.session_id === 'string' && m.session_id) {
+        sdkSessionSeen = true;
+        args.onSdkSession?.(m.session_id);
+      }
       if (m.type === 'assistant') {
         for (const block of m.message?.content ?? []) {
           if (block.type === 'text' && block.text) emit({ type: 'turn', text: block.text });

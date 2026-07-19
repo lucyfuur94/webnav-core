@@ -675,6 +675,8 @@ async function main() {
       emit: (e: import('./agent/server.js').AgentEvent) => void,
       awaitApproval: () => Promise<boolean>,
       signal: AbortSignal,
+      resumeSessionId: string | undefined,
+      onSdkSession: (sdkSessionId: string) => void,
     ): Promise<void> => {
       const browser = makeLiveExtensionBrowser(channel, {});
       // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
@@ -691,6 +693,11 @@ async function main() {
           emit,
           awaitApproval,
           signal,
+          // Conversation continuity: resume the SDK session the server remembered for this
+          // panel conversation, and hand the captured session id back so the NEXT goal
+          // resumes it too. No re-listing routes / re-orienting on follow-ups.
+          resumeSessionId,
+          onSdkSession,
         });
       } finally {
         // RECORD the run into the map on END (done / error / stop). Housekeeping never

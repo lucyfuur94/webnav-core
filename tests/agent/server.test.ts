@@ -376,6 +376,60 @@ describe('agent-serve', () => {
     second.close();
   });
 
+  // ---- SDK conversation continuity: server remembers the SDK session per panel key --
+  it('two goals with the SAME panel sessionId: the 2nd run receives resume = the id captured from the 1st', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const resumes: Array<string | undefined> = [];
+    let n = 0;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, _a, _s, resumeSessionId, onSdkSession) => {
+        resumes.push(resumeSessionId);
+        onSdkSession?.('sdk-' + (++n)); // each run "reports" a fresh SDK session id
+      },
+    });
+    await postJson(port, '/api/agent/goal', { goal: 'open progneo', sessionId: 'agent-1', mode: 'act' });
+    for (let i = 0; i < 50 && resumes.length < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    await postJson(port, '/api/agent/goal', { goal: 'now open Reports', sessionId: 'agent-1', mode: 'act' });
+    for (let i = 0; i < 50 && resumes.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(resumes[0]).toBeUndefined();  // 1st: no prior session → fresh
+    expect(resumes[1]).toBe('sdk-1');    // 2nd: resumes the id the 1st reported
+  });
+
+  it('a DIFFERENT panel sessionId does NOT resume (new conversation = fresh)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const resumes: Array<string | undefined> = [];
+    let n = 0;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, _a, _s, resumeSessionId, onSdkSession) => {
+        resumes.push(resumeSessionId);
+        onSdkSession?.('sdk-' + (++n));
+      },
+    });
+    await postJson(port, '/api/agent/goal', { goal: 'g1', sessionId: 'agent-1', mode: 'act' });
+    for (let i = 0; i < 50 && resumes.length < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    await postJson(port, '/api/agent/goal', { goal: 'g2', sessionId: 'agent-2', mode: 'act' });
+    for (let i = 0; i < 50 && resumes.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(resumes[1]).toBeUndefined(); // different key → no stored session → fresh
+  });
+
+  it('newChat:true drops the stored SDK session for that key → the run runs fresh', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const resumes: Array<string | undefined> = [];
+    let n = 0;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, _a, _s, resumeSessionId, onSdkSession) => {
+        resumes.push(resumeSessionId);
+        onSdkSession?.('sdk-' + (++n));
+      },
+    });
+    await postJson(port, '/api/agent/goal', { goal: 'g1', sessionId: 'agent-1', mode: 'act' });
+    for (let i = 0; i < 50 && resumes.length < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    // Same key but newChat → the stored sdk session is dropped before running.
+    await postJson(port, '/api/agent/goal', { goal: 'g2', sessionId: 'agent-1', mode: 'act', newChat: true });
+    for (let i = 0; i < 50 && resumes.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(resumes[1]).toBeUndefined(); // newChat cleared the stored session → fresh
+  });
+
   it('POST /api/agent/stop rejects pending command promises', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     let channelRef: any;
