@@ -698,6 +698,7 @@ async function main() {
       goal: import('./agent/server.js').AgentGoalBody,
       channel: import('./router/live-extension-browser.js').AgentChannel,
       emit: (e: import('./agent/server.js').AgentEvent) => void,
+      awaitApproval: () => Promise<boolean>,
     ): Promise<void> => {
       const browser = makeLiveExtensionBrowser(channel, {});
       // ponytail: no /stop AbortSignal threaded — the server rejects pending commands
@@ -712,6 +713,7 @@ async function main() {
         store: mapStore,
         states,
         emit,
+        awaitApproval,
       });
     };
     // Per-run auth secret: the extension must present it on every /api/agent/* call

@@ -60,16 +60,27 @@ chrome.storage.local.get(['sid', 'base', 'mode', 'token']).then((s) => {
   if (s.base) { baseEl.value = s.base as string; base = s.base as string; }
   if (s.token) { tokenEl.value = s.token as string; token = s.token as string; }
   if (s.mode && (MODES as readonly string[]).includes(s.mode as string)) mode = s.mode as Mode;
-  modeEl.textContent = mode;
+  applyMode();
   openStream(); // re-open once the persisted token is loaded (initial open may have been token-less)
 });
 baseEl.onchange = () => { base = baseEl.value; chrome.storage.local.set({ base }); openStream(); };
 sidEl.onchange = () => chrome.storage.local.set({ sid: sidEl.value });
 tokenEl.onchange = () => { token = tokenEl.value.trim(); chrome.storage.local.set({ token }); openStream(); };
 
+// One-line, honest description of what each mode gates (crit #3/#4). Shown as the
+// button's tooltip so the three modes read as genuinely different, not cosmetic.
+const MODE_HINT: Record<Mode, string> = {
+  Ask: 'Ask: shows a plan and WAITS for your Approve before driving anything.',
+  Auto: 'Auto: drives on its own, but asks before navigating to a new site.',
+  Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
+};
+function applyMode(): void {
+  modeEl.textContent = mode;
+  modeEl.title = MODE_HINT[mode];
+}
 modeEl.onclick = () => {
   mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-  modeEl.textContent = mode;
+  applyMode();
   chrome.storage.local.set({ mode });
 };
 
@@ -243,12 +254,17 @@ async function postResult(id: string, result: unknown): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Ask-mode plan gate.
+// Approval gate (crit #3/#4). The plan bar now REALLY gates: the server's loop has
+// emitted the plan and is BLOCKED on awaitApproval() — nothing drives until we POST
+// /api/agent/approve. Approve → {approved:true} lets it run; Deny → {approved:false}
+// aborts. Used in Ask (gates the whole run up front) and Auto (gates a cross-site goto).
 // ---------------------------------------------------------------------------
-// The server ALREADY started the run (POST /goal responded ok and streams). Simpler
-// correct wiring per the brief: show the plan; Approve just dismisses the bar and the
-// server proceeds on its own; Deny POSTs /stop to abort the run. (We do not re-POST the
-// goal on approve — that would start a second run.)
+function postApprove(approved: boolean): void {
+  fetch(base + '/api/agent/approve', {
+    method: 'POST', headers: postHeaders(),
+    body: JSON.stringify({ approved }),
+  }).catch(() => {});
+}
 function renderPlan(steps: string[]): void {
   const el = document.createElement('div');
   el.className = 'plan';
@@ -257,7 +273,7 @@ function renderPlan(steps: string[]): void {
   el.appendChild(ol);
   const barText = document.createElement('div');
   barText.style.cssText = 'font-size:11px;color:#888;margin-bottom:6px';
-  barText.textContent = 'Approve to let the agent proceed, or Deny to stop.';
+  barText.textContent = 'The agent is waiting — Approve to let it drive, or Deny to stop.';
   el.appendChild(barText);
   const bar = document.createElement('div');
   bar.className = 'bar';
@@ -265,8 +281,9 @@ function renderPlan(steps: string[]): void {
   approve.className = 'approve'; approve.textContent = 'Approve';
   const deny = document.createElement('button');
   deny.className = 'deny'; deny.textContent = 'Deny';
-  approve.onclick = () => { bar.replaceWith(mkNote('✓ approved')); };
-  deny.onclick = () => { stopRun(); bar.replaceWith(mkNote('✗ denied — stopped')); };
+  approve.onclick = () => { postApprove(true); bar.replaceWith(mkNote('✓ approved')); };
+  // Deny releases the gate (approved:false); the server's loop returns without driving.
+  deny.onclick = () => { postApprove(false); bar.replaceWith(mkNote('✗ denied')); };
   bar.appendChild(approve); bar.appendChild(deny);
   el.appendChild(bar);
   thread.appendChild(el);

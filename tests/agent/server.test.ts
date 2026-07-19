@@ -256,6 +256,67 @@ describe('agent-serve', () => {
     expect(res.status).toBe(200);
   });
 
+  it('POST /api/agent/approve resolves the approval gate handed to onGoal', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let gateResult: boolean | undefined;
+    let awaitP: Promise<void> | undefined;
+    const port = await listen(store, {
+      onGoal: async (_goal, _channel, _emit, awaitApproval) => {
+        awaitP = awaitApproval!().then((v) => { gateResult = v; });
+      },
+    });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'ap1', mode: 'ask' });
+    for (let i = 0; i < 50 && !awaitP; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(awaitP).toBeTruthy();
+    expect(gateResult).toBeUndefined(); // still pending
+
+    const res = await postJson(port, '/api/agent/approve', { approved: true });
+    expect(res.status).toBe(200);
+    await awaitP;
+    expect(gateResult).toBe(true);
+    client.close();
+  });
+
+  it('POST /api/agent/approve {approved:false} denies the gate', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let gateResult: boolean | undefined;
+    let awaitP: Promise<void> | undefined;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, awaitApproval) => { awaitP = awaitApproval!().then((v) => { gateResult = v; }); },
+    });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'ap2', mode: 'ask' });
+    for (let i = 0; i < 50 && !awaitP; i++) await new Promise((r) => setTimeout(r, 10));
+    await postJson(port, '/api/agent/approve', { approved: false });
+    await awaitP;
+    expect(gateResult).toBe(false);
+    client.close();
+  });
+
+  it('POST /api/agent/approve WITHOUT the token → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/approve', { approved: true }, null);
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/agent/stop denies a pending approval gate (false)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let gateResult: boolean | undefined;
+    let awaitP: Promise<void> | undefined;
+    const port = await listen(store, {
+      onGoal: async (_g, _c, _e, awaitApproval) => { awaitP = awaitApproval!().then((v) => { gateResult = v; }); },
+    });
+    const client = openEvents(port);
+    await postJson(port, '/api/agent/goal', { goal: 'g', sessionId: 'ap3', mode: 'ask' });
+    for (let i = 0; i < 50 && !awaitP; i++) await new Promise((r) => setTimeout(r, 10));
+    await postJson(port, '/api/agent/stop', {});
+    await awaitP;
+    expect(gateResult).toBe(false); // stop denies an outstanding approval
+    client.close();
+  });
+
   it('POST /api/agent/stop rejects pending command promises', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     let channelRef: any;
