@@ -491,3 +491,31 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
 // Keep ToolDef exported-type referenced so the import isn't dropped.
 const _typecheck: ToolDef | undefined = undefined;
 void _typecheck;
+
+describe('build_map tool', () => {
+  it('flushes the recorded steps to buildMap and reports what was written', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP) as any;
+    const canned = [{ fromUrl: 'a', toUrl: 'b' }];
+    browser.getRecordedSteps = () => canned;
+    let got: { sessionId: string; steps: unknown[] } | null = null;
+    const store = newStore();
+    const { fn, toolResult } = fakeQueryCalling('build_map', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({
+      goal: 'map it', sessionId: 's-build', mode: 'act', browser, store, states: [], emit, query: fn,
+      buildMap: async (sessionId, steps) => { got = { sessionId, steps }; return { site: 'x.test', statesWritten: 3, edgesWritten: 2 }; },
+    });
+    expect(got).toEqual({ sessionId: 's-build', steps: canned });
+    expect(toolResult()).toContain('3 state(s)');
+    expect(toolResult()).toContain('x.test');
+  });
+
+  it('reports honestly when no recording surface / buildMap is wired', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const store = newStore();
+    const { fn, toolResult } = fakeQueryCalling('build_map', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'map it', sessionId: 's-nb', mode: 'act', browser, store, states: [], emit, query: fn });
+    expect(toolResult()).toMatch(/cannot build/i);
+  });
+});

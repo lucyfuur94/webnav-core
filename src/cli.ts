@@ -682,6 +682,17 @@ async function main() {
       // (teach-save → onTaught builds the map) must be recallable by the very next goal
       // — the whole teach loop is "demonstrate, then ask". One SQLite read per goal.
       const states = mapStore.allStates();
+      // build_map tool: ingest the steps recorded SO FAR this run, fold them into the map
+      // (same zero-LLM path as teach-save), and refresh this run's in-memory states IN
+      // PLACE so list_routes/check_route see the new map without a restart. The end-of-run
+      // flush later re-ingests the full superset (clearSession+start replaces — idempotent).
+      const buildMap = async (sessionId: string, steps: unknown[]) => {
+        ingestAX({ sessionId, steps: steps as import('./recorder/ingest.js').RawAXStep[] }, recordStore);
+        recordStore.setOrigin(sessionId, 'extension');
+        const r = await buildFromSession(sessionId);
+        states.splice(0, states.length, ...mapStore.allStates());
+        return r;
+      };
       // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
       // (loop.ts), so /stop cancels the in-flight turn — not just the next browser command.
       try {
@@ -693,6 +704,7 @@ async function main() {
           browser,
           store: mapStore,
           states,
+          buildMap,
           emit,
           awaitApproval,
           signal,
@@ -772,7 +784,7 @@ async function main() {
     // way the `graph-edit` verb does (both call editGraph — the single shared apply path, so they
     // cannot drift). The human-given name is stamped onto the ONE destination state (the draft
     // state whose urlPattern matches the final landing) so list_routes recalls the flow by name.
-    const onTaught = async (sessionId: string, name?: string, notes?: string): Promise<{ site?: string; stateId?: string; warning?: string }> => {
+    const buildFromSession = async (sessionId: string, name?: string, notes?: string): Promise<{ site?: string; stateId?: string; statesWritten?: number; edgesWritten?: number; warning?: string }> => {
       const effects = recordStore.actionEffects(sessionId);
       if (effects.length === 0) return { warning: 'no effects' };
       const { draftFromEffects } = await import('./explorer/draft.js');
@@ -809,11 +821,13 @@ async function main() {
       if (dest && notes) (dest as any).taughtNotes = notes;
       // Reuse the server's MapStore (same dbPath) so a follow-up recall in the same process
       // sees the taught state without reopening the sqlite file.
-      editGraph(mapStore, site, draft as any);
+      const written = editGraph(mapStore, site, draft as any);
       return dest
-        ? { site, stateId: `${site}:${dest.label}` }
-        : { site, warning: 'route saved but no destination state matched the final landing' };
+        ? { site, stateId: `${site}:${dest.label}`, statesWritten: written.statesWritten, edgesWritten: written.edgesWritten }
+        : { site, statesWritten: written.statesWritten, edgesWritten: written.edgesWritten, warning: 'route saved but no destination state matched the final landing' };
     };
+    // teach-save's hook is the same build, plus the human name/notes stamped on the destination.
+    const onTaught = buildFromSession;
     const { randomBytes } = await import('node:crypto');
     const token = args.token || randomBytes(16).toString('hex');
     const tokenMode = args.token ? 'pinned via --token' : 'random per-run';

@@ -47,6 +47,10 @@ export interface RunAgentGoalArgs {
   browser: WalkBrowser;
   store: MapStore;
   states: State[];
+  // Fold the steps recorded so far THIS RUN into the persistent site map (the same
+  // zero-LLM draft+editGraph path teach-save uses). Wired by agent-serve; absent in
+  // unit fakes → the build_map tool reports honestly that it cannot build.
+  buildMap?: (sessionId: string, steps: unknown[]) => Promise<{ site?: string; stateId?: string; statesWritten?: number; edgesWritten?: number; warning?: string }>;
   emit: (e: AgentEvent) => void;
   query?: QueryFn;
   signal?: AbortSignal;
@@ -152,6 +156,22 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         await browser.scroll(dy);
         emit({ type: 'narrate', label: 'scroll', detail: (dy >= 0 ? 'down ' : 'up ') + Math.abs(dy) + 'px' });
         return text('scrolled ' + (dy >= 0 ? 'down ' : 'up ') + Math.abs(dy) + 'px');
+      },
+    },
+    {
+      name: 'build_map',
+      description: 'Fold everything you have driven THIS RUN into the site\'s persistent map (zero-LLM structural inference — the same path Teach mode uses). Call AFTER systematically exploring a site; future runs then recall routes via list_routes/check_route instead of re-exploring. Returns what was written.',
+      shape: {},
+      handler: async () => {
+        const rb = browser as unknown as { getRecordedSteps?: () => unknown[] };
+        if (!rb.getRecordedSteps || !args.buildMap) return text('this session cannot build the map (no recording surface wired)');
+        const steps = rb.getRecordedSteps();
+        if (!steps.length) return text('nothing recorded yet — drive some pages first, then call build_map');
+        const r = await args.buildMap(args.sessionId, steps);
+        emit({ type: 'narrate', label: 'build_map', detail: (r.statesWritten ?? 0) + ' state(s), ' + (r.edgesWritten ?? 0) + ' edge(s)' + (r.site ? ' on ' + r.site : '') });
+        return text('map updated: ' + (r.statesWritten ?? 0) + ' state(s), ' + (r.edgesWritten ?? 0) + ' edge(s)'
+          + (r.site ? ' for ' + r.site : '') + (r.warning ? ' — ' + r.warning : '')
+          + '. list_routes now reflects it.');
       },
     },
     {
@@ -269,6 +289,7 @@ const SYSTEM = [
   'You navigate a live browser tab to accomplish the user goal.',
   'RECALL FIRST: call list_routes to discover the destination state ids webnav already knows for this site, then call check_route with the relevant id — if the map knows a route, webnav walks it deterministically and reports the result. You do NOT need to guess ids; list_routes shows the real ones.',
   'Only if list_routes is empty or check_route reports no route: call get_page_ax to see the page, then drive manually with click/type/goto by ref.',
+  'MAPPING: your driving is RECORDED automatically. To map a site, explore it systematically (visit each section once — prefer breadth over depth), then call build_map to fold the recorded structure into the persistent map; future runs then recall routes instead of re-exploring.',
   'Irreversible actions (Place Order, Pay, Delete) are never fired automatically — if the walk hits one it stops and hands back to you.',
 ].join(' ');
 
