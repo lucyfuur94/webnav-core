@@ -8,6 +8,9 @@
     "url": "git+https://github.com/lucyfuur94/webnav-core.git"
   },
   "type": "module",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || ^22.0.0"
+  },
   "bin": {
     "webnav": "bin/webnav"
   },
@@ -31,6 +34,7 @@
     "access": "public"
   },
   "scripts": {
+    "preinstall": "node scripts/check-node.mjs",
     "build": "tsc && cp src/mapstore/schema.sql dist/mapstore/",
     "prepack": "rm -rf dist && npm run build",
     "test": "vitest run",

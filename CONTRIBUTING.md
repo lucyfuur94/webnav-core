@@ -36,7 +36,7 @@ See `CLAUDE.md` for the full settled design and mental model.
 ```bash
 git clone https://github.com/lucyfuur94/webnav-core
 cd webnav-core
-npm install            # Node 18+
+npm install            # Node 18, 20, or 22
 npm link               # `webnav` on PATH (runs source via tsx — no build step)
 npm test               # vitest (gated live e2e need WEBNAV_LIVE=1 + playwright-cli)
 npx tsc --noEmit       # typecheck (strict)
