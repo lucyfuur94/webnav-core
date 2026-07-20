@@ -57,12 +57,12 @@ design's original acceptance criteria, both deliberate and documented at the poi
    across different parents within one container — as a future increment, not invented here.
 2. **the analytics SPA dashboards 8001/8002 non-merge accepted as honest, not forced.** Acceptance item 1
    ("dashboards 8001 + 8002 merge into ONE confirmed viewer state") does NOT hold on the real recordings:
-   1210 was captured with a chart's Setup/Customize config panel open on every landing, 1215 collapsed —
+   8001 was captured with a chart's Setup/Customize config panel open on every landing, 8002 collapsed —
    a genuine recording-state conflict, so their widget signatures diverge (jaccard 0.094) independent of
    normalization correctness (proven via mutation check: stubbing normalization off changes nothing about
    the two dashboards). Per the project's fix-upstream rule, this was NOT force-merged or patched
    downstream; it surfaces as an open **Phase-1 research question — main-landmark identity scoping**:
    whether a page's identity face should treat "a landmark region (e.g. a config panel) is open" as its
    own structural axis, distinct from widget-shape, so that two recordings of the same page in different
-   transient UI states still resolve to one template. Fix in the meantime is procedural (re-record 1210
+   transient UI states still resolve to one template. Fix in the meantime is procedural (re-record 8001
    collapsed, or record both dashboards in the same UI state).

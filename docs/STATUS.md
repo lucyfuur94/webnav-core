@@ -66,11 +66,11 @@
 > across heterogeneous per-category wrappers) — a `ponytail:` comment names the follow-up (a container-scope
 > grouping pass matching a shared leaf signature across DIFFERENT parents) that would let it be deleted too.
 > **What honestly did NOT merge:** the analytics SPA dashboards 8001 + 8002 stay SEPARATE states — proven a
-> *recording-state* conflict, not a normalization defect: 1210 was captured with a chart's Setup/Customize
-> config panel OPEN on every landing, 1215 collapsed, so their widget signatures genuinely differ (jaccard
+> *recording-state* conflict, not a normalization defect: 8001 was captured with a chart's Setup/Customize
+> config panel OPEN on every landing, 8002 collapsed, so their widget signatures genuinely differ (jaccard
 > 0.094, both far below the merge thresholds). The mechanism itself is proven correct by a synthetic
 > same-sig-dashboards test (mutation-pinned: stubbing `normFace` back to plain `faceOf` makes it fail).
-> Fix is upstream (re-record 1210 collapsed, or record both dashboards in the same UI state), not a
+> Fix is upstream (re-record 8001 collapsed, or record both dashboards in the same UI state), not a
 > downstream patch — not done here. Named as a **Phase-1 research question: main-landmark identity
 > scoping** (does a page's identity face need to distinguish "landmark region open" as a structural axis,
 > not just widget-shape?) for the next increment to pick up.
