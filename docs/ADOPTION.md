@@ -9,9 +9,9 @@ guesswork. The core objective: agents (via their operators) discover webnav and 
   smoke test passed. The README now leads with the public install path.
 - ✅ **Public release tag:** [`v0.2.1`](https://github.com/lucyfuur94/webnav-core/tree/v0.2.1)
   is tagged on GitHub.
-- ⏳ **Official MCP Registry:** `server.json` validates locally and the GitHub publisher authorization is
-  configured. Registry publish/read requests are currently timing out from this environment; retry from a
-  normal terminal with `mcp-publisher publish server.json`.
+- ⏳ **Official MCP Registry:** `server.json` validates locally. The registry is reachable, but its saved
+  GitHub publisher JWT expired; `mcp-publisher login github` must complete a fresh interactive login
+  before retrying `mcp-publisher publish server.json`.
 - ⛔ **Awesome MCP Servers:** PR #7998 was closed. The maintainers require a claimed Glama listing and
   Glama score badge; Glama requires a Dockerfile so it can start and inspect the server.
 - ✅ **Feedback intake:** GitHub now has a dedicated workflow-feedback issue form alongside bug, feature,
@@ -72,7 +72,8 @@ fit; the MCP registries directly answer "agents need to find it" (webnav already
 ## Repo-side moves that AID discoverability (things we control)
 - ✅ GH description sharpened to the wedge (2026-06-13).
 - ✅ Topics include `mcp`, `model-context-protocol`, `browser-automation`, `ai-agents` (2026-06-13).
-- ✅ README hero cites the honest v2 benchmark; Quickstart leads with import-a-pack; MCP one-liner surfaced.
+- ✅ README hero cites the honest v2 benchmark; Quickstart leads with the public npm install; map-pack
+  import and MCP setup are documented.
 - TODO (heavier, design-worthy): a reproducible one-command walk-vs-raw demo so a skeptic can verify the
   3× themselves; a short demo GIF/asciinema for the social posts; a deeper 4th demo site to widen the win.
 
