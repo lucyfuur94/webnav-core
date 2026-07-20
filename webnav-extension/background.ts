@@ -25,6 +25,37 @@ type AXNode = {
 let driveTabId: number | null = null;
 let lastAxByNodeId: Map<string, AXNode> = new Map();
 
+// ── Session video via CDP screencast ────────────────────────────────────────
+// Page.startScreencast streams base64 JPEG frames; we buffer them (with a ms-relative
+// timestamp) for the whole run and hand them to the panel at detach, which POSTs them to
+// agent-serve → ffmpeg → a .webm the dashboard serves. Capped so a long run can't blow the
+// 50MB POST body: ~2fps effective (everyNthFrame) + a hard frame ceiling.
+type Frame = { data: string; timestampMs: number };
+let videoFrames: Frame[] = [];
+let screencastOn = false;
+let firstFrameAt = 0;
+const MAX_FRAMES = 900;          // ~7.5 min at 2fps; ceiling to bound memory + POST size
+
+async function startScreencast(tabId: number): Promise<void> {
+  videoFrames = []; firstFrameAt = 0; screencastOn = false;
+  try {
+    await chrome.debugger.sendCommand({ tabId }, 'Page.enable');
+    // Low quality + capped dimension keeps each frame small (video is for refinement, not fidelity).
+    await chrome.debugger.sendCommand({ tabId }, 'Page.startScreencast',
+      { format: 'jpeg', quality: 50, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 });
+    screencastOn = true;
+  } catch { /* screencast unsupported / attach lost — run continues without video */ }
+}
+
+async function stopScreencast(tabId: number): Promise<Frame[]> {
+  if (!screencastOn) return [];
+  screencastOn = false;
+  try { await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast'); } catch { /* */ }
+  const out = videoFrames;
+  videoFrames = [];
+  return out;
+}
+
 async function detachDrive(): Promise<void> {
   if (driveTabId == null) return;
   const id = driveTabId;
@@ -53,6 +84,7 @@ async function attachDrive(tabId: number): Promise<void> {
   driveTabId = tabId;
   await chrome.debugger.sendCommand({ tabId }, 'Accessibility.enable');
   await chrome.debugger.sendCommand({ tabId }, 'DOM.enable');
+  await startScreencast(tabId);   // begin buffering the session video
 }
 
 function assertDriving(tabId: number): void {
@@ -265,6 +297,22 @@ function gotoTab(tabId: number, url: string, timeoutMs = 15_000): Promise<void> 
   });
 }
 
+// Screencast frames arrive as CDP events. Throttle to ~2fps (drop frames <450ms after
+// the last kept one) and stop buffering at the ceiling, but ALWAYS ack so CDP keeps
+// sending (an un-acked frame stalls the stream).
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method !== 'Page.screencastFrame' || source.tabId == null || source.tabId !== driveTabId) return;
+  const p = params as { data: string; sessionId: number };
+  chrome.debugger.sendCommand({ tabId: source.tabId }, 'Page.screencastFrameAck', { sessionId: p.sessionId }).catch(() => {});
+  if (!screencastOn || videoFrames.length >= MAX_FRAMES) return;
+  const now = Date.now();
+  if (firstFrameAt === 0) firstFrameAt = now;
+  const last = videoFrames[videoFrames.length - 1];
+  const relMs = now - firstFrameAt;
+  if (last && relMs - last.timestampMs < 450) return;   // ~2fps
+  videoFrames.push({ data: p.data, timestampMs: relMs });
+});
+
 // ---------------------------------------------------------------------------
 // Teardown listeners — a zombie attach is THE failure mode; detach on every path.
 // ---------------------------------------------------------------------------
@@ -308,6 +356,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     (async () => {
       try { await attachDrive(msg.tabId); reply({ ok: true }); }
       catch (e) { reply({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
+
+  // End of run: stop the screencast and hand the buffered frames back so the panel can
+  // POST them for video assembly. Called BEFORE detach-drive (which tears down the CDP
+  // session). Returns [] if screencast wasn't running (unsupported / already ended).
+  if (msg.type === 'end-run') {
+    (async () => {
+      const id = driveTabId;
+      const f = id != null ? await stopScreencast(id) : [];
+      reply({ ok: true, frames: f });
     })();
     return true;
   }

@@ -34,6 +34,10 @@ const LANDING_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"
 // opts.onGoal) a real AgentChannel that drives the extension by emitting `action`
 // commands over SSE and awaiting a POSTed result. Also mounts /ingest-ax so a live
 // goal run is recorded through the same path human/agent recordings use.
+// One CDP screencast frame: a base64 JPEG + ms since the first frame. Assembled into a
+// .webm at run end (server onScreencast → ffmpeg).
+export interface ScreencastFrame { data: string; timestampMs: number }
+
 export type AgentCommand =
   | { kind: 'get-ax' }
   | { kind: 'click'; nodeId: string }
@@ -69,6 +73,10 @@ export interface ServeAgentOpts {
   // `resumeSessionId`. `onSdkSession` (7th arg) persists the SDK session id captured
   // during the run under the panel key, so the NEXT goal on the same conversation resumes.
   onGoal?: (goal: AgentGoalBody, channel: AgentChannel, emit: (e: AgentEvent) => void, awaitApproval: () => Promise<boolean>, signal: AbortSignal, resumeSessionId: string | undefined, onSdkSession: (sdkSessionId: string) => void) => Promise<void>;
+  // Assemble a session video from CDP screencast frames POSTed by the extension at run
+  // end (base64 JPEGs + relative timestamps). The cli implementation pipes them through
+  // ffmpeg into ~/.webnav/recordings/<sessionId>/, where the dashboard already serves them.
+  onScreencast?: (sessionId: string, frames: ScreencastFrame[]) => Promise<void>;
   commandTimeoutMs?: number;
   // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
   // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
@@ -258,6 +266,21 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
           if (!body.sessionId || !Array.isArray(body.steps)) throw new Error('sessionId and steps[] required');
           const appended = ingestAX(body, store);
           sendJson(200, { ok: true, appended });
+        } catch (e) {
+          sendJson(400, { ok: false, error: String(e) });
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/agent/screencast') {
+      readBody(req).then(async (raw) => {
+        try {
+          const body = JSON.parse(raw) as { sessionId?: string; frames?: ScreencastFrame[] };
+          if (!body.sessionId || !Array.isArray(body.frames)) throw new Error('sessionId and frames[] required');
+          // Empty frames (nothing captured) is a no-op success, not an error.
+          if (body.frames.length && opts.onScreencast) await opts.onScreencast(body.sessionId, body.frames);
+          sendJson(200, { ok: true, frames: body.frames.length });
         } catch (e) {
           sendJson(400, { ok: false, error: String(e) });
         }
