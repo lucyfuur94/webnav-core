@@ -166,6 +166,12 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       handler: async () => {
         const rb = browser as unknown as { getRecordedSteps?: () => unknown[] };
         if (!rb.getRecordedSteps || !args.buildMap) return text('this session cannot build the map (no recording surface wired)');
+        // CLOSE the last click's step on its REAL landing before flushing. The recorder
+        // opens a step on click and closes it on the NEXT snapshot; the agent's loop is
+        // usually click→build_map with no read in between, so without this the open step
+        // would flush with the degenerate fallback (toAX=fromAX → navigated=false → NO
+        // edge). One snapshot here captures where the click actually landed → real edges.
+        await browser.snapshot();
         const steps = rb.getRecordedSteps();
         if (!steps.length) return text('nothing recorded yet — drive some pages first, then call build_map');
         const r = await args.buildMap(args.sessionId, steps);

@@ -291,3 +291,39 @@ describe('makeLiveExtensionBrowser — recording (RawAXStep for ingestAX)', () =
     expect(stored).not.toContain('secret_sauce');
   });
 });
+
+describe('recording: a click followed by a snapshot on the LANDED page yields a real navigation step', () => {
+  it('the closed step carries the landing url + AX (not the degenerate same-page fallback)', async () => {
+    // Two pages: home (has a Popular link) and popular (different heading).
+    const HOME: AXNode[] = [
+      { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Home' }, childIds: ['2'] },
+      { nodeId: '2', role: { value: 'link' }, name: { value: 'Popular' }, backendDOMNodeId: 200 },
+    ];
+    const POPULAR: AXNode[] = [
+      { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'r/popular' }, childIds: ['2'] },
+      { nodeId: '2', role: { value: 'heading' }, name: { value: 'Popular feed' }, backendDOMNodeId: 300 },
+    ];
+    let ax = HOME; let url = 'https://r.test/';
+    const channel: AgentChannel = {
+      getAX: async () => ax,
+      dispatch: async () => { /* click fired */ },
+      currentUrl: async () => url,
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const homeYaml = await browser.snapshot();   // read home (lastAX = home)
+    const popRef = parseSnapshot(homeYaml).find((n) => n.role === 'link' && n.name === 'Popular')!.ref!;
+    await browser.act(popRef, null);          // click "Popular" → opens a pending step (fromAX=home)
+    ax = POPULAR; url = 'https://r.test/r/popular/';   // the SPA navigated
+    await browser.snapshot();                 // build_map's snapshot-first: closes the step on the LANDING
+    const steps = browser.getRecordedSteps();
+    expect(steps.length).toBe(1);
+    expect(steps[0].fromUrl).toBe('https://r.test/');
+    expect(steps[0].toUrl).toBe('https://r.test/r/popular/');   // real landing, NOT the degenerate from-url
+
+    // and it ingests as a genuine navigation (distinct from + to → an edge is possible)
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    ingestAX({ sessionId: 'nav', steps }, store);
+    const fx = store.actionEffects('nav')[0];
+    expect(fx.navigated).toBe(true);
+  });
+});
