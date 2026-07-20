@@ -95,7 +95,21 @@ function friendlyLabel(raw: string): string {
 function buildTools(args: RunAgentGoalArgs): ToolDef[] {
   const { browser, store, states, emit } = args;
 
-  return [
+  // Every handler goes through this guard: a browser-channel failure (panel closed,
+  // stream evicted, command timeout) must come back as HONEST, actionable text — the
+  // model can relay it / stop — never a silent empty result or a bare protocol error
+  // (observed: an agent burned its session retrying tools that all returned nothing).
+  const guard = (name: string, fn: ToolDef['handler']): ToolDef['handler'] =>
+    async (a, extra) => {
+      try { return await fn(a, extra); }
+      catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        emit({ type: 'narrate', label: name, detail: 'failed: ' + msg.slice(0, 80) });
+        return text(name + ' failed: ' + msg + ' — the browser channel may be down (side panel closed, reloaded, or taken over by another window). Tell the user to check the webnav side panel is open and connected, then retry.');
+      }
+    };
+
+  const defs: ToolDef[] = [
     {
       name: 'get_page_ax',
       description: 'Return the current page as an accessibility snapshot (YAML). Read this to see refs before clicking or typing.',
@@ -261,6 +275,8 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
       },
     },
   ];
+  // Guard EVERY handler (see `guard` above): channel failures become honest text.
+  return defs.map((t) => ({ ...t, handler: guard(t.name, t.handler) }));
 }
 
 // One-line summary of a walk's terminal response for the agent to read as a tool result.

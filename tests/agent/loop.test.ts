@@ -552,3 +552,18 @@ describe('map_frontier tool', () => {
     expect(toolResult()).toMatch(/EMPTY|complete/i);
   });
 });
+
+describe('tool guard — channel failures come back as honest text, never silent/empty', () => {
+  it('a throwing browser.snapshot() surfaces as an actionable failure message', async () => {
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    browser.snapshot = async () => { throw new Error('agent-serve: command "cmd7" timed out after 30000ms'); };
+    const store = newStore();
+    const { fn, toolResult } = fakeQueryCalling('get_page_ax', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'read', sessionId: 'g1', mode: 'act', browser, store, states: [], emit, query: fn });
+    const out = toolResult();
+    expect(out).toContain('get_page_ax failed');
+    expect(out).toContain('timed out');
+    expect(out).toMatch(/side panel/i);   // actionable: tells the model what to relay
+  });
+});

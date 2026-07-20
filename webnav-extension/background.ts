@@ -569,6 +569,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === 'exec-command') {
     (async () => {
       const cmd = msg.cmd as { kind: string; nodeId?: string; text?: string; url?: string; dy?: number };
+      // Panel reload / takeover can leave the panel's tab reference stale or null while the
+      // debugger is still attached here. Background KNOWS the driven tab — fall back to it,
+      // so a mid-run panel hiccup doesn't kill every subsequent command.
+      if ((msg.tabId == null || msg.tabId < 0) && driveTabId != null) msg.tabId = driveTabId;
       try {
         // withReattach: recover the transient post-cross-origin-nav CDP detach window
         // (re-attach once, retry once); a stale-node/element error is NOT retried.

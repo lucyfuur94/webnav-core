@@ -824,9 +824,14 @@ async function main() {
       // Reuse the server's MapStore (same dbPath) so a follow-up recall in the same process
       // sees the taught state without reopening the sqlite file.
       const written = editGraph(mapStore, site, draft as any);
+      // Report PROJECTED edges, not editGraph's explicit-edges count: a draft's edges array
+      // is always empty by design (edges are projected from navigate-affordances), so
+      // written.edgesWritten is 0 even for a perfectly connected build — that false "0
+      // edges" sent the mapping agent chasing a phantom bug over a successful build.
+      const connected = mapStore.interiorEdges(site).filter((e) => e.to && !e.dangling).length;
       return dest
-        ? { site, stateId: `${site}:${dest.label}`, statesWritten: written.statesWritten, edgesWritten: written.edgesWritten }
-        : { site, statesWritten: written.statesWritten, edgesWritten: written.edgesWritten, warning: 'route saved but no destination state matched the final landing' };
+        ? { site, stateId: `${site}:${dest.label}`, statesWritten: written.statesWritten, edgesWritten: connected }
+        : { site, statesWritten: written.statesWritten, edgesWritten: connected, warning: 'route saved but no destination state matched the final landing' };
     };
     // teach-save's hook is the same build, plus the human name/notes stamped on the destination.
     const onTaught = buildFromSession;
