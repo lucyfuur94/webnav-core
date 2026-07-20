@@ -18,7 +18,7 @@ cd webnav-extension && npm i && npm run build
 ## Current flow — agent side panel (drive a tab with a goal)
 
 A docked side panel chat that streams Claude's replies + live narration and drives the
-active tab over CDP, talking to `webnav agent-serve` (local, port 7779).
+active tab over CDP, talking to `webnav dev agent-serve` (local, port 7779).
 
 **UI — "navigation console" (design-off winner):** a cartographic instrument panel.
 Claude's prose is humanist sans; the agent's actions read as a mono **route ledger**
@@ -74,8 +74,8 @@ detach).
 cd webnav-extension && npm i && npm run build   # tsc, emits *.js beside *.ts
 ```
 
-1. In the webnav repo: `webnav agent-serve --port 7779`. It prints a token — paste that
-   into the panel. (Optional: `webnav agent-serve --port 7779 --token <hex>` to pin a
+1. In the webnav repo: `webnav dev agent-serve --port 7779`. It prints a token — paste that
+   into the panel. (Optional: `webnav dev agent-serve --port 7779 --token <hex>` to pin a
    stable token so you don't have to re-paste it on every restart.)
 2. `chrome://extensions` → Developer mode → Load unpacked → select this folder.
 3. Open the side panel from any tab — the toolbar action icon, or the `toggle-panel`

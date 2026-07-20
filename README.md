@@ -41,6 +41,33 @@ ad-hoc-driving the raw browser — median 6 calls vs 18 — and reached the goal
 shallow 1–2-hop routes, or when the agent falls back to manual driving, the two tie. webnav helps
 most exactly where ad-hoc driving hurts most — the long, repeated journeys.
 
+## Drive a tab from a side panel (Chrome extension)
+
+There's also a Chrome extension in [`webnav-extension/`](webnav-extension/) — a docked side
+panel where you type a goal and watch the agent drive your **active tab** (read / click / type /
+scroll, via `chrome.debugger`/CDP), on your own Claude Code subscription. It **recalls first**
+(`list_routes` → `check_route`) so a site you've mapped is replayed, not re-explored — and every
+run is recorded back into the map, so the *next* time is the cheap deterministic `walk`.
+
+<img src="docs/media/extension-sidebar-light.png#gh-light-mode-only" alt="webnav agent side panel — a goal, recall-first action trail, and a streamed reply" width="420">
+<img src="docs/media/extension-sidebar-dark.png#gh-dark-mode-only" alt="webnav agent side panel — a goal, recall-first action trail, and a streamed reply" width="420">
+
+- **Ask** (approve a plan first) or **Act** (run on its own); irreversible steps (pay / place
+  order / delete) always pause for you.
+- **Watch every step** — narration + the tool trail render live; a cursor glides to each action.
+- **Take over** any time, drive by hand, hand back.
+
+**Try it** (needs the local server for the zero-LLM navigation + recording):
+
+```console
+cd webnav-extension && npm i && npm run build   # emits the *.js next to *.ts
+webnav dev agent-serve --port 7779              # prints a token — paste it into the panel
+```
+
+Then `chrome://extensions` → Developer mode → **Load unpacked** → pick `webnav-extension/`,
+open the panel (toolbar icon or **⌘/Ctrl-E**), paste the token, and type a goal. Runs show up on
+the dashboard tagged **Extension**. Full walkthrough: [`webnav-extension/README.md`](webnav-extension/README.md).
+
 ## Why
 
 Web agents re-discover the same websites every single day, paying the same token bill every
@@ -125,12 +152,20 @@ honestly what you get and how it grows, so there are no surprises:
   flow naturally. Every action you take is captured (real playwright a11y snapshots, never typed
   values — only which field changed) into the same session store the agent-record path uses. Stop
   with Ctrl-C or `webnav dev record-stop --session S`, then it's the same `dev graph-analyse
-  <session> --draft` → `graph-edit` → `walk` pipeline. (An earlier Chrome-extension capture path
-  is shelved — it approximated the accessibility tree from the raw DOM and broke on SPAs; see
-  `docs/STATUS.md` for the pivot. `dev ingest` still exists for that receiver.)
-- **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI for
-  sites + credentials, incl. a Recordings tab: record by clicking, replay to verify), or the
-  text views `dev outline <site>` / `dev mermaid <site>`.
+  <session> --draft` → `graph-edit` → `walk` pipeline.
+- **Or drive + record from the Chrome extension** — the [side panel](#drive-a-tab-from-a-side-panel-chrome-extension)
+  above: give the agent a goal, it drives your active tab (recalling known routes first), and the
+  run is captured back into the map. (An earlier extension *capture-only* path that approximated the
+  a11y tree from the raw DOM is retired — it broke on SPAs; the current extension captures via real
+  CDP accessibility instead. `dev ingest` still exists as that legacy receiver.)
+- **Inspect what you have** anytime: `webnav dev dashboard` (a localhost operator UI). Its
+  **Sessions** tab lists every recorded run — tagged by source (**Extension** / **Agent** /
+  **Manual**), with a filter, step counts, and a Verified badge — plus record-by-clicking + replay:
+
+  <img src="docs/media/dashboard-sessions-light.png#gh-light-mode-only" alt="webnav dashboard — Sessions tab with Extension/Agent/Manual source tags and a source filter" width="820">
+  <img src="docs/media/dashboard-sessions-dark.png#gh-dark-mode-only" alt="webnav dashboard — Sessions tab with Extension/Agent/Manual source tags and a source filter" width="820">
+
+  Or the text views `dev outline <site>` / `dev mermaid <site>`.
 
 **TL;DR:** out of the box you can `walk` saucedemo; everything else you map yourself. Same
 machine + a mapped site → instant, cached, self-healing. A brand-new site → you (or your
@@ -155,7 +190,8 @@ webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's
 # Author a site's map (the record -> analyse -> edit flow)
 webnav dev record-start / record-stop        bracket a mapping session
 webnav dev record-live --session S --url U   headed browser; click through it yourself, webnav records
-webnav dev ingest [--port 7778]              receive sessions from the webnav-extension Chrome extension (shelved)
+webnav dev agent-serve [--port 7779]         local server the Chrome extension drives (SSE + CDP); records each run
+webnav dev ingest [--port 7778]              legacy receiver for the retired DOM-capture extension path
 webnav dev graph-analyse --session S [--draft]  mechanical structure from what you recorded
                                              (--draft = a self-verified, ready-to-edit graph spec)
 webnav dev graph-edit --node <id> --graph J  write the validated graph

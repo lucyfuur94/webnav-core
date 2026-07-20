@@ -71,9 +71,17 @@ It is **a map, not a driver.** It gets the agent to where the signals live, chea
 
 - **The default seed is saucedemo ONLY** — one complete worked example (login →
   checkout-complete) proving `walk`/record/self-heal work. Nothing else ships seeded.
-- **What this repo advertises = that example + the record-your-own-site flow** (automation
-  testing, internal tools, repeated agent workflows). Users build maps for THEIR sites;
-  webnav is an open-source blank-slate map tool.
+- **What this repo advertises = that example + the record-your-own-site flow + the Chrome
+  extension** (automation testing, internal tools, repeated agent workflows). Users build maps
+  for THEIR sites; webnav is an open-source blank-slate map tool.
+- **The Chrome extension (`webnav-extension/`) IS an advertised surface (settled 2026-07-20).**
+  A docked agent side panel that drives the active tab (CDP: read/click/type/scroll) on the
+  user's Claude Code subscription, recalls known routes first (`list_routes`/`check_route`), and
+  records each run back into the map (tagged `origin:'extension'` on the dashboard). Backed by
+  `webnav dev agent-serve` (local, zero-LLM navigation + recording; the SDK reasoning is the
+  agent's). Documented in README.md + `webnav-extension/README.md`. (An earlier extension that
+  only CAPTURED via a DOM-approximated a11y tree is retired — see [[webnav-recorder-capture-source]];
+  the current one captures via real CDP accessibility and also DRIVES.)
 - **The GitHub `recall` skeleton + the internet-graph seed are programmatic/test fixtures**
   (`seedGitHubAndGraph`) — deliberately NOT seeded by default, NOT advertised, NOT a product
   surface. (They remain the v1 proof-of-engine and keep their tests.) Consequence: the
