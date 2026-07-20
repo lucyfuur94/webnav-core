@@ -77,27 +77,29 @@ internal tools, automation testing, back-office workflows — that navigation sh
 deterministically, self-heals when the site drifts, and **never** auto-fires an irreversible
 action: commit points always pause for the agent (or you) to decide.
 
-## Quickstart (≈60 seconds to a working walk)
+## Quickstart (≈2 minutes to a working walk)
 
 ```bash
-npm install && npm link     # Node 18/20/22; installs `webnav` on PATH (runs src via tsx — NO build step)
-                            # also needs `playwright-cli` on PATH
+# Node 18, 20, or 22
+npm install --global @playwright/cli@latest @dikshanty94/webnav@latest
 
-# walk a site WITHOUT learning it — import a map someone already made:
-webnav dev import-map mappacks/orangehrm.mappack.json     # 17 states, in-page repertoire + domain shadow
-webnav dev creds set opensource-demo.orangehrmlive.com username=Admin password=admin123   # YOUR creds, local only
-webnav walk --start opensource-demo.orangehrmlive.com:auth-login \
-            --goal  opensource-demo.orangehrmlive.com:recruitment-viewcandidates --headless
-#  → webnav drives login → dashboard → … → the Candidates list, pausing only at genuine forks.
+# A complete Saucedemo map ships with webnav. Credentials stay local on your machine.
+webnav creds set www.saucedemo.com username=standard_user password=secret_sauce
+webnav walk --start www.saucedemo.com:login \
+            --goal www.saucedemo.com:checkout-complete --headless
+# → webnav drives the known route and pauses before irreversible decisions.
 
-webnav dev list             # the sites you have maps for (saucedemo ships seeded by default)
+webnav dev list             # inspect the local map store
 ```
 
-Three packs ship in [`mappacks/`](mappacks/) (saucedemo · OrangeHRM · automationexercise) — skeleton
-only, never credentials. To map **your own** site, hand an agent the prompt in
-[`docs/LEARNING-A-SITE.md`](docs/LEARNING-A-SITE.md). Dev/contributor commands:
+The seeded Saucedemo map is a working example. To map **your own** site, hand an agent the prompt in
+[`docs/LEARNING-A-SITE.md`](docs/LEARNING-A-SITE.md), record a session yourself, or use the Chrome
+extension below. For development, map packs, and contributing from source:
 
 ```bash
+git clone https://github.com/lucyfuur94/webnav-core
+cd webnav-core
+npm install && npm link     # source checkout: runs current TypeScript via tsx
 webnav --help               # the tool menu (a peer of playwright-cli)
 npm test                    # unit tests (+ gated browser e2e)
 npm run build               # tsc -> dist/ (only for the published build; the CLI runs src directly)
