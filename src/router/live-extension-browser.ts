@@ -69,7 +69,9 @@ export function makeLiveExtensionBrowser(
     if (!pending) return;
     const p = pending;
     pending = null;   // clear before await so a re-entrant begin can't double-close
-    steps.push({ fromUrl: p.fromUrl, fromAX: p.fromAX, toUrl: await url(), toAX, clickedRef: p.clickedRef });
+    // tMs = when this step's post-action snapshot landed → the ledger shows real per-step
+    // times instead of the single flush-time. (Browser runtime: Date.now() is fine here.)
+    steps.push({ fromUrl: p.fromUrl, fromAX: p.fromAX, toUrl: await url(), toAX, clickedRef: p.clickedRef, tMs: Date.now() });
   }
 
   // Open a step for a just-fired action. fromAX/fromUrl = the last observed snapshot;
@@ -178,7 +180,7 @@ export function makeLiveExtensionBrowser(
       // Finalize a step whose landing was never snapshotted (run ended right after an
       // action): use its own fromAX as toAX. didNavigate('','') → false; a degenerate but
       // honest same-page effect, better than dropping the click entirely.
-      if (pending) { steps.push({ fromUrl: pending.fromUrl, fromAX: pending.fromAX, toUrl: pending.fromUrl, toAX: pending.fromAX, clickedRef: pending.clickedRef }); pending = null; }
+      if (pending) { steps.push({ fromUrl: pending.fromUrl, fromAX: pending.fromAX, toUrl: pending.fromUrl, toAX: pending.fromAX, clickedRef: pending.clickedRef, tMs: Date.now() }); pending = null; }
       return steps;
     },
   };
