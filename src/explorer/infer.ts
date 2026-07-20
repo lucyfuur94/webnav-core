@@ -323,6 +323,65 @@ export function subtreeFolds(nodes: SnapNode[]): { folds: SubtreeFold[]; foldedI
   return { folds, foldedIndices };
 }
 
+/** Indices of nodes that live INSIDE a repeated CONTENT CONTAINER — a parent with ≥`min` (default
+ *  3) children of the SAME role at the same depth (a content feed's sibling `article`/`listitem`
+ *  post cards, explore's community-category cards). This is the same repetition signal subtreeFolds
+ *  keys on, but PURELY on role+sibling-count — subtreeFolds only folds when child SUBTREE signatures
+ *  match, which heterogeneous cards (each post/card renders different inner structure) never do, so
+ *  the repeat stays invisible to it. A token whose node is such a container OR a descendant of one is
+ *  per-instance DATA, not page structure (principle #6) — the caller excludes it from fingerprint
+ *  candidacy so a post title (`heading:…Hollywood…`) can never anchor identity, while a heading that
+ *  is NOT inside a repeat (`heading:Feed`, `heading:Explore Communities`) stays valid. Site-agnostic:
+ *  keys on the structural repeat (any role), names no site/role. Same depth-stack parent idiom as
+ *  subtreeFolds. */
+export function repeatedContainerIndices(nodes: SnapNode[], min = 3): Set<number> {
+  const n = nodes.length;
+  const children: number[][] = Array.from({ length: n }, () => []);
+  const parent = new Array<number>(n).fill(-1);
+  const stack: number[] = [];
+  for (let i = 0; i < n; i++) {
+    while (stack.length && nodes[stack[stack.length - 1]].depth >= nodes[i].depth) stack.pop();
+    if (stack.length) { parent[i] = stack[stack.length - 1]; children[parent[i]].push(i); }
+    stack.push(i);
+  }
+  const out = new Set<number>();
+  const markSubtree = (root: number) => { const w = (i: number) => { out.add(i); for (const c of children[i]) w(c); }; w(root); };
+  // A repeated CONTENT-ITEM run under one parent: ≥`min` children sharing a single NON-GENERIC role
+  // (the feed's post `article`s, a list's `listitem`s, a category grid's `heading`s). `generic` is
+  // the nameless LAYOUT-wrapper role (a page is deeply nested generics), so a run of sibling generics
+  // is scaffolding, never on its own a content list — else a heading buried under repeated layout
+  // wrappers (`heading:Feed`, a section label) would read as data. The repeated ITEMS' subtrees are
+  // data; a heading that is a DIRECT non-item child of the parent (the feed's own "Feed" label) is
+  // NOT — so we mark the item subtrees, not the whole parent. Generic slots INTERLEAVED among the
+  // items (index between the run's first and last member) are ad/recommendation cards rendered in a
+  // bare wrapper (e.g. a promoted/sponsored card carries a title heading = still per-instance data) → also
+  // marked. Keyed on the structural repeat, names no site role (#5a).
+  // Nameless STRUCTURAL/decorative roles that carry no content of their own — they wrap or separate
+  // items, so a run of them is never a content list (and they may sit interleaved with real items).
+  const NON_CONTENT = new Set(['generic', 'separator', 'none', 'presentation']);
+  const scan = (kids: number[]) => {
+    // A content-ITEM candidate is a NON-decorative sibling that is a SUBTREE (has children) — the
+    // feed's post `article`/`listitem` CARDS. A run of ≥min identical-role cards is the repeated
+    // content list. Requiring children is what separates a card run (article → title/author/votes)
+    // from a run of LEAF section headings (explore's "funny"/"Vehicles" category titles, and the
+    // page's own `heading:Explore Communities`) — leaf headings are the page's structure/labels, not
+    // a card list, so they stay eligible identity.
+    const byRole = new Map<string, number[]>();
+    for (const c of kids) if (!NON_CONTENT.has(nodes[c].role) && children[c].length) (byRole.get(nodes[c].role) ?? byRole.set(nodes[c].role, []).get(nodes[c].role)!).push(c);
+    for (const members of byRole.values()) {
+      if (members.length < min) continue;
+      const lo = members[0], hi = members[members.length - 1];
+      for (const m of members) markSubtree(m);
+      // structural slots interleaved WITHIN the card run's index span are ad/recommendation cards
+      // rendered in a bare wrapper alongside the real items (e.g. promoted/sponsored cards) → part of the list.
+      for (const c of kids) if (NON_CONTENT.has(nodes[c].role) && c > lo && c < hi) markSubtree(c);
+    }
+  };
+  scan(nodes.map((_, i) => i).filter((i) => parent[i] === -1));   // roots
+  for (let i = 0; i < n; i++) if (children[i].length) scan(children[i]);
+  return out;
+}
+
 export interface CoreResult { tokens: Face; provisional: string | null }
 
 /** A state's durable face = tokens repeating across its settled landings (majority k-of-n,

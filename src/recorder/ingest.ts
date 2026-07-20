@@ -34,9 +34,20 @@ export interface IngestAXBody { sessionId: string; steps: RawAXStep[] }
 /** SnapNode[] → playwright-ish snapshot text, using each node's own `.raw` line
  *  re-indented by `.depth`. This is the inverse of parseSnapshot, so AX-sourced
  *  effects store the same text format DOM-walk effects do (draft.ts/coverage.ts
- *  re-parse fromSnapshot/toSnapshot downstream regardless of producer). */
+ *  re-parse fromSnapshot/toSnapshot downstream regardless of producer).
+ *  A node with a URL emits a following `/url:` line (indented one deeper, as
+ *  playwright-cli does) — the adapter carries the href on `.url` but NOT in `.raw`,
+ *  so without this the href is lost on the serialize→re-parse round-trip and every
+ *  AX-recorded link becomes url-less, breaking the cross-link mesh + shell-nav edge
+ *  synthesis (a recorded navigation then produces no edge). parseSnapshot attaches a
+ *  `/url:` line to the node on the line BEFORE it. */
 function serializeNodes(nodes: SnapNode[]): string {
-  return nodes.map((n) => ' '.repeat(n.depth) + n.raw).join('\n');
+  const out: string[] = [];
+  for (const n of nodes) {
+    out.push(' '.repeat(n.depth) + n.raw);
+    if (n.url) out.push(' '.repeat(n.depth + 1) + `/url: ${n.url}`);
+  }
+  return out.join('\n');
 }
 
 /** Shared reconstruction core: fingerprint the clicked node + diff the landing,

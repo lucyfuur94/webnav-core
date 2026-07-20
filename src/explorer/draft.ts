@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, isOpaqueSeg, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, repeatedContainerIndices, isOpaqueSeg, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 import { loadPatternPacks, packDetectsOverlay, packValueNames, type PatternPack } from './patterns.js';
 
@@ -979,7 +979,17 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // HOOK 2c (value-domain pack, `landing` context): pack-marked value names also can't anchor
     // identity — join the folded-name exclusion for the fingerprint candidate pool (same discipline
     // as the interior-synthesis exclusion; only ever shrinks the pool).
-    const fpFolded = new Set([...templateFolds(fpPool).gatedNames, ...packValueNames(packsFor(p.label), fpPool)]);
+    // REPEATED-CONTAINER exclusion (axis 5, principle #6): a token whose node sits inside a repeated
+    // content container (≥3 same-role sibling subtrees — e.g. a feed's post-card `article`s/`listitem`s)
+    // is per-instance DATA, not structure, and must never anchor identity. subtreeFolds misses these
+    // (heterogeneous cards share no subtree signature), so detect the repeat structurally on the FULL
+    // landing (unfiltered depths, across every landing) and exclude those names from the fp candidates.
+    const repeatedNames = new Set<string>();
+    for (const l of p.landings) {
+      const rep = repeatedContainerIndices(l);
+      for (const i of rep) { const nm = l[i].name; if (nm && nm.trim()) repeatedNames.add(nm); }
+    }
+    const fpFolded = new Set([...templateFolds(fpPool).gatedNames, ...packValueNames(packsFor(p.label), fpPool), ...repeatedNames]);
     const fpNodes = fpFolded.size ? fpPool.filter((n) => !(n.name && fpFolded.has(n.name))) : fpPool;
     const cands = candidateTokensFor(fpNodes, isParam);
     // pass B (empty core): a good page whose durable core carries NO candidate token — its only
@@ -995,8 +1005,21 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       exclusive = pageList.every((q, qi) => qi === pi || !goodIdx(qi) || q.faces.every((f) => !fp.every((t) => f.has(t))));
       if (exclusive) break;
     }
-    // a page that NEVER became exclusive (its core content is shared with a sibling) is degenerate.
-    if (!exclusive) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
+    // A page that NEVER became structurally exclusive shares its whole face with a sibling. When that
+    // sibling is at a DIFFERENT URL key (the common case — every page in pageList has a distinct
+    // canonical key), the page is NOT degenerate: its URL is its coordinate (the tier-1 addressable
+    // place — CLAUDE.md coordinate system), and structurally-identical siblings at distinct URLs are
+    // distinct navigable places (e.g. a site's several feed pages: same structure, several
+    // real destinations). Keep it with its best structural tokens as a (non-unique) fingerprint — the
+    // self-verify pass already flags the non-uniqueness with a `_warning`, and the walk lands by URL.
+    // Only hold out when NO structural candidate survived (the empty-core case handled above at
+    // `!cands.length`) — a page whose only tokens are shared shell chrome has no coordinate at all.
+    if (!exclusive) {
+      const rivalSharesKey = pageList.some((q, qi) => qi !== pi && goodIdx(qi) && q.key === p.key);
+      if (rivalSharesKey) { degenerate.set(pi, `no distinctive content — only shared sidebar chrome (blank/empty or unresolved landing)`); continue; }
+      // else: keep, identified by URL; fp = its full candidate list (best-effort structural face).
+      fp.length = 0; for (const tok of cands) fp.push(tok);
+    }
     // rule 1 (axis 4): on a {param} page whose identity rests ONLY on heading token(s), the
     // discriminator is CROSS-INSTANCE VARIANCE, split by how many instances we saw:
     //   • ≥2 instances (provisional=null): the heading REPEATED across instances → it's the
