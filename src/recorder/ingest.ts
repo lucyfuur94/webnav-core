@@ -6,7 +6,7 @@ import http from 'node:http';
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 import { recoverFingerprint } from '../playwright/fingerprint.js';
 import { diffSnapshots, didNavigate } from '../explorer/diff.js';
-import { adaptAXTree, type AXNode } from '../playwright/ax-adapter.js';
+import { adaptAXTree, adaptAXTreeWithRefs, type AXNode } from '../playwright/ax-adapter.js';
 import type { ActionEffect, ActionRef } from '../mapstore/record.js';
 import { RecordStore } from '../mapstore/record.js';
 
@@ -22,6 +22,11 @@ export interface RawAXStep {
   fromUrl: string; fromAX: AXNode[];
   toUrl: string; toAX: AXNode[];
   clickedRef?: string | null;  // synthetic bN ref (in the ADAPTED fromAX tree) of the clicked node, or null for a pure nav
+  // Teach mode: the RAW CDP AX nodeId (in fromAX) of the element the HUMAN acted on.
+  // The extension stays dumb (it never runs the adapter), so it reports the raw id and
+  // ingestAX resolves it to the adapted bN ref via adaptAXTreeWithRefs' refMap. Ignored
+  // when clickedRef is already set (agent runs resolve refs server-side up front).
+  clickedNodeId?: string | null;
   tMs?: number;                // wall-clock ms when the step COMPLETED (so the ledger shows real per-step times, not one flush time)
 }
 export interface IngestAXBody { sessionId: string; steps: RawAXStep[] }
@@ -85,7 +90,19 @@ export function ingestAX(body: IngestAXBody, store: RecordStore): number {
   for (const step of body.steps) {
     const fromNodes = adaptAXTree(step.fromAX);
     const toNodes = adaptAXTree(step.toAX);
-    const fx = reconstructEffectFromNodes(fromNodes, toNodes, step.fromUrl, step.toUrl, step.clickedRef ?? null);
+    // Teach steps carry the RAW AX nodeId of the human-clicked element (the extension
+    // never runs the adapter). Resolve it to the adapted bN ref here, server-side, via
+    // the same refMap the agent path uses — so downstream (fingerprint recovery, diff)
+    // is byte-identical regardless of who acted. Unresolvable (node vanished from the
+    // adapted tree) degrades honestly to a ref-less step, never a wrong ref.
+    let clickedRef = step.clickedRef ?? null;
+    if (!clickedRef && step.clickedNodeId) {
+      const { refMap } = adaptAXTreeWithRefs(step.fromAX);
+      for (const [bRef, real] of refMap) {
+        if (real.nodeId === step.clickedNodeId) { clickedRef = bRef; break; }
+      }
+    }
+    const fx = reconstructEffectFromNodes(fromNodes, toNodes, step.fromUrl, step.toUrl, clickedRef);
     // Per-step wall-clock time (from the extension). Without it every step got the single
     // flush-time Date.now(), so the dashboard showed them all at the same second.
     const tMs = step.tMs;

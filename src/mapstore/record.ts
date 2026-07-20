@@ -88,9 +88,14 @@ export class RecordStore {
     // state; null ⇒ 'default'). Lets "log in once" apply across every session.
     if (!scols.has('profile')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN profile TEXT');
     // origin = who recorded this session: 'agent' (use session / use-driven CLI walk),
-    // 'extension' (the webnav Chrome extension's agent run), or 'manual' (human
-    // record-live / dashboard). Null (legacy rows) reads as 'manual'.
+    // 'extension' (the webnav Chrome extension's agent run), 'teach' (a human
+    // Teach-mode demonstration in the extension), or 'manual' (human record-live /
+    // dashboard). Null (legacy rows) reads as 'manual'.
     if (!scols.has('origin')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN origin TEXT');
+    // taught_as = the human-given name from a Teach-mode demonstration ("Book a meeting
+    // room"). Session-level so the name survives even before graph-analyse runs; the
+    // build step copies it onto the destination State.taughtAs.
+    if (!scols.has('taught_as')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN taught_as TEXT');
     // review = the capture-review verdict JSON ({approved, gaps, at, model, reason}) — set
     // by `dev review`. A session is GRAPH-READY only when approved (all on-screen actions
     // captured as steps). Null (never reviewed) reads as not-approved.
@@ -106,12 +111,21 @@ export class RecordStore {
     try { return JSON.parse(r.review); } catch { return null; }
   }
   /** Tag who recorded the session ('agent' | 'extension' | 'manual'); only sets if not already set. */
-  setOrigin(sessionId: string, origin: 'agent' | 'extension' | 'manual'): void {
+  setOrigin(sessionId: string, origin: 'agent' | 'extension' | 'manual' | 'teach'): void {
     this.db.prepare('UPDATE record_sessions SET origin=? WHERE session_id=? AND origin IS NULL').run(origin, sessionId);
   }
-  originOf(sessionId: string): 'agent' | 'extension' | 'manual' {
+  originOf(sessionId: string): 'agent' | 'extension' | 'manual' | 'teach' {
     const r: any = this.db.prepare('SELECT origin FROM record_sessions WHERE session_id=?').get(sessionId);
-    return r?.origin === 'agent' || r?.origin === 'extension' ? r.origin : 'manual';   // legacy/null → manual
+    return r?.origin === 'agent' || r?.origin === 'extension' || r?.origin === 'teach' ? r.origin : 'manual';   // legacy/null → manual
+  }
+  /** Teach mode: the human-given name for the demonstrated flow. Overwrites (a re-teach
+   *  of the same session may rename); the build step copies it onto State.taughtAs. */
+  setTaughtAs(sessionId: string, name: string): void {
+    this.db.prepare('UPDATE record_sessions SET taught_as=? WHERE session_id=?').run(name, sessionId);
+  }
+  taughtAsOf(sessionId: string): string | null {
+    const r: any = this.db.prepare('SELECT taught_as FROM record_sessions WHERE session_id=?').get(sessionId);
+    return r?.taught_as ?? null;
   }
   /** Record the intended start URL for a session (idempotent; only sets if given). */
   setStartUrl(sessionId: string, url: string): void {

@@ -89,6 +89,10 @@ export interface State {
   template?: string | null;     // the {param} URL template this state was merged under (e.g.
                                 // /dashboard/{param}); urlPattern stays a concrete instance URL, so
                                 // viewers show the template shape instead of one instance's URL.
+  taughtAs?: string | null;     // human-given name from a Teach-mode demonstration whose route ends
+                                // here ("Book a meeting room"). A LABEL only (structure, not data):
+                                // list_routes prefers it over the inferred semanticName so the agent
+                                // recalls the taught flow by the name the human used. null = untaught.
 }
 
 export function makeState(

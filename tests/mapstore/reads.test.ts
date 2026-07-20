@@ -29,3 +29,15 @@ describe('store interior reads', () => {
     expect(store.statesForNode('saucedemo').map((s) => s.id)).toEqual(['sd:login']);
   });
 });
+
+describe('teach-mode fields', () => {
+  it('State.taughtAs round-trips through upsert/read (and defaults null)', async () => {
+    const { MapStore } = await import('../../src/mapstore/store.js');
+    const { makeState } = await import('../../src/mapstore/types.js');
+    const store = new MapStore(':memory:');
+    store.upsertState(makeState({ id: 't:a', nodeId: 't', semanticName: 'a', urlPattern: 'https://t/a', role: 'detail', taughtAs: 'Book a meeting room' }));
+    store.upsertState(makeState({ id: 't:b', nodeId: 't', semanticName: 'b', urlPattern: 'https://t/b', role: 'detail' }));
+    expect(store.getState('t:a')!.taughtAs).toBe('Book a meeting room');
+    expect(store.getState('t:b')!.taughtAs).toBeNull();
+  });
+});

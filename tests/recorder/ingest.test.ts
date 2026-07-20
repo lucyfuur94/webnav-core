@@ -275,3 +275,39 @@ describe('ingest', () => {
     }
   });
 });
+
+describe('teach-mode step resolution (clickedNodeId -> adapted bN ref)', () => {
+  it('resolves a RAW AX nodeId to the adapted ref so human steps ingest identically to agent steps', async () => {
+    const { adaptAXTreeWithRefs } = await import('../../src/playwright/ax-adapter.js');
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    // Find the RAW nodeId that adapts to b7 (the "Settings" button in the icons fixture).
+    const { refMap } = adaptAXTreeWithRefs(axFixture('icons'));
+    const rawNodeId = refMap.get('b7')!.nodeId;
+    const body: IngestAXBody = {
+      sessionId: 'teach-1',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedNodeId: rawNodeId,   // teach path: raw id, no clickedRef
+      }],
+    };
+    expect(ingestAX(body, store)).toBe(1);
+    const fx = store.actionEffects('teach-1')[0];
+    expect(fx.action?.role).toBe('button');
+    expect(fx.action?.name).toBe('Settings');   // same result as the agent-path b7 test
+  });
+
+  it('an unresolvable clickedNodeId degrades to a ref-less step (never a wrong ref)', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'teach-2',
+      steps: [{
+        fromUrl: 'http://x.test/a', fromAX: axFixture('icons'),
+        toUrl: 'http://x.test/b', toAX: axFixture('table'),
+        clickedNodeId: 'no-such-node-id',
+      }],
+    };
+    expect(ingestAX(body, store)).toBe(1);
+    expect(store.actionEffects('teach-2')[0].action).toBeNull();
+  });
+});

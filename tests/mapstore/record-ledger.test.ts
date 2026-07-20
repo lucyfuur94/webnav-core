@@ -58,3 +58,19 @@ describe('RecordStore ledger (record_events)', () => {
     expect(s.events('b')).toHaveLength(0);
   });
 });
+
+describe('teach-mode session fields', () => {
+  it("origin 'teach' round-trips; taughtAs set/read; legacy stays manual", async () => {
+    const Database = (await import('better-sqlite3')).default;
+    const { RecordStore } = await import('../../src/mapstore/record.js');
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('t1');
+    store.setOrigin('t1', 'teach');
+    store.setTaughtAs('t1', 'File an expense');
+    expect(store.originOf('t1')).toBe('teach');
+    expect(store.taughtAsOf('t1')).toBe('File an expense');
+    store.start('legacy');
+    expect(store.originOf('legacy')).toBe('manual');
+    expect(store.taughtAsOf('legacy')).toBeNull();
+  });
+});
