@@ -3,6 +3,20 @@
 Living notes on getting webnav found and used. Grounded in actual search checks (2026-06-13), not
 guesswork. The core objective: agents (via their operators) discover webnav and install it.
 
+## Current status (updated 2026-07-20)
+
+- ✅ **Public npm package:** `@dikshanty94/webnav@0.2.1` is live. A clean install and `webnav --help`
+  smoke test passed. The README now leads with the public install path.
+- ✅ **Public release tag:** [`v0.2.1`](https://github.com/lucyfuur94/webnav-core/tree/v0.2.1)
+  is tagged on GitHub.
+- ⏳ **Official MCP Registry:** `server.json` validates locally and the GitHub publisher authorization is
+  configured. Registry publish/read requests are currently timing out from this environment; retry from a
+  normal terminal with `mcp-publisher publish server.json`.
+- ⛔ **Awesome MCP Servers:** PR #7998 was closed. The maintainers require a claimed Glama listing and
+  Glama score badge; Glama requires a Dockerfile so it can start and inspect the server.
+- ✅ **Feedback intake:** GitHub now has a dedicated workflow-feedback issue form alongside bug, feature,
+  and site-map templates.
+
 ## Discoverability reality (checked 2026-06-13)
 
 - **webnav does NOT yet surface** for its own value prop in web search — expected at ~0 stars + youth.
@@ -25,12 +39,9 @@ Agents find tools via their operators installing them, so human distribution is 
 fit; the MCP registries directly answer "agents need to find it" (webnav already ships `webnav mcp`).
 
 ### 1. MCP registries/directories — DO FIRST (the literal "where agents find tools")
-- ✅ **`punkpeye/awesome-mcp-servers`** (89k★) — **PR #7998 opened 2026-06-13** (Browser Automation,
-  agent fast-track `🤖🤖🤖`). Format check `check-submission` PASSED. A Glama bot then asked (optional,
-  for a score badge) to **list the server on glama.ai/mcp/servers + add a Dockerfile there**, then add
-  a `…/badges/score.svg` badge to the entry. That's a web-form submission on a third party + wants the
-  server to start (effectively npm-gated) → **USER step**, do alongside npm. The PR can merge without
-  it (many entries have no Glama badge); the badge just adds a quality score.
+- ⛔ **`punkpeye/awesome-mcp-servers`** (91k★) — PR #7998 was closed because the server is not listed
+  on Glama. The maintainers now require a claimed Glama listing and score badge. Reopen only after Glama
+  evaluates the server; that evaluation requires a Dockerfile that starts the MCP server.
 - ⏳ **Official MCP Server Registry** (`registry.modelcontextprotocol.io`) — the `modelcontextprotocol/
   servers` README list is RETIRED; servers now publish a `server.json` to the registry via its
   quickstart. This validates the package exists, so it's effectively **gated on the npm publish** —
