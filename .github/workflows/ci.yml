@@ -21,15 +21,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      # ROOT CAUSE: `npm ci` hung in CI (`Exit handler never called!`) — an npm 10.x
-      # internal exit-handler bug that setup-node's bundled npm hits after the agent-SDK
-      # enlarged the dependency tree. It does NOT reproduce on npm 11 (verified: `npm ci`
-      # runs clean in 2s locally on npm 11.x). Pin npm above the buggy line to remove the
-      # code path entirely, rather than just dodging its trigger.
-      - name: Pin npm (avoid npm 10.x 'Exit handler never called' bug)
-        run: npm i -g npm@11
-      # --prefer-offline: `cache: npm` above is warm, so skip the registry/audit path.
-      # --no-audit: avoids the audit POST that most reliably tripped the 10.x hang.
+      # The 8-minute `npm ci` hang ("Exit handler never called!") was NOT an npm bug:
+      # package-lock.json had been contaminated with internal-mirror tarball URLs
+      # (a dev-machine ~/.npmrc registry override), which CI runners can't reach.
+      # Fixed by rewriting the lockfile to registry.npmjs.org; guarded forever by
+      # tests/lockfile-registry.test.ts. --no-audit/--prefer-offline just keep the
+      # install lean (cache: npm above is warm on repeat runs).
       - name: Install deps
         run: npm ci --no-audit --prefer-offline
       - name: Typecheck
