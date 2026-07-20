@@ -488,19 +488,19 @@ describe('draftFromEffects — observation-based identity', () => {
     const DASH_LIST = shell('Dashboards', ['- button "New dashboard" [ref=e7]', '- listitem "Sales" [ref=e8]', '- textbox "Search" [ref=e9]']);
     // ≥8 named nodes each (readiness gate): shell gives 6, so +2-3 content each. An observed analytics SPA
     // shape: each has a per-instance page TITLE (data), shares the structural `heading:Outline` +
-    // `img:Layout`, and 1210 also carries a per-instance date-range button (1 control, under the ≥4
+    // `img:Layout`, and 8001 also carries a per-instance date-range button (1 control, under the ≥4
     // gate). jaccard stays under 0.5 and control-face under the gate, so ONLY the prior arm merges
-    // them (containment of 1215-in-1210 = 0.67 ≥ the overlap floor).
-    const DASH_1210 = shell('Beta User', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]', '- button "01 Jan - 02 Jan window" [ref=e9]']);
-    const DASH_1215 = shell('Sales Dashboard', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]']);
+    // them (containment of 8002-in-8001 = 0.67 ≥ the overlap floor).
+    const DASH_8001 = shell('Beta User', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]', '- button "01 Jan - 02 Jan window" [ref=e9]']);
+    const DASH_8002 = shell('Sales Dashboard', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]']);
     // filler pages so the 5-link sidebar clears extractShell's ≥80%-of-DISTINCT-pages bar and is
     // subtracted (else the shared chrome inflates the instance faces past every merge bar).
     const ANN = shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]']);
     const HELP = shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]']);
     const g = draftFromEffects([
       nav(`${XB}/dashboard/list`, DASH_LIST),
-      nav(`${XB}/dashboard/8001`, DASH_1210),
-      nav(`${XB}/dashboard/8002`, DASH_1215),
+      nav(`${XB}/dashboard/8001`, DASH_8001),
+      nav(`${XB}/dashboard/8002`, DASH_8002),
       nav(`${XB}/announcements`, ANN),
       nav(`${XB}/help-center`, HELP),
     ] as never);
@@ -1828,9 +1828,9 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     const inst = (h: string, p: string) => shell(h, [...CONTROLS,
       `- paragraph "${p} one" [ref=e12]`, `- paragraph "${p} two" [ref=e13]`, `- paragraph "${p} three" [ref=e14]`]);
     const g = draftFromEffects([
-      nav(`${XB}/r/1/aaaaaaaaaaaaaaaaaaaa`, inst('OS and Device', 'alpha')),
-      nav(`${XB}/r/1/bbbbbbbbbbbbbbbbbbbb`, inst('OS and Device', 'beta')),
-      nav(`${XB}/r/2/cccccccccccccccccccc`, inst('Browser and Device', 'gamma')),
+      nav(`${XB}/r/1/aaaaaaaaaaaaaaaaaaaa`, inst('Report Alpha', 'alpha')),
+      nav(`${XB}/r/1/bbbbbbbbbbbbbbbbbbbb`, inst('Report Alpha', 'beta')),
+      nav(`${XB}/r/2/cccccccccccccccccccc`, inst('Report Beta', 'gamma')),
       // anti-merge: same URL shape but a different first WORD segment = a different SECTION with
       // its OWN controls (faithful: sibling sections differ in what you can do) — must stay split.
       nav(`${XB}/q/2/dddddddddddddddddddd`, shell('Other Section', ['- button "Setup panel" [ref=e7]',
@@ -1845,7 +1845,7 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(rStates.length, 'the three /r instances collapse to ONE state').toBe(1);
     expect(rStates[0].label).toBe('r');                                    // template label, no instance names
     expect(rStates[0].provisional ?? null).toBeNull();                     // ≥2 instances → confirmed
-    expect(rStates[0].fingerprint.join()).not.toMatch(/OS and Device|Browser and Device/);
+    expect(rStates[0].fingerprint.join()).not.toMatch(/Report Alpha|Report Beta/);
     expect(g.states.some((s) => /\/q\//.test(s.urlPattern))).toBe(true);   // other section stays split
   });
 
@@ -1995,7 +1995,7 @@ describe('draftFromEffects — identity-face normalization (subtree widgets)', (
       nnav(`${NB}/announcements`, bar('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
       nnav(`${NB}/help-center`, bar('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
     ] as never);
-    const dash = g.states.filter((s) => /\/dashboard\/(12\d\d|\{param\})/.test(s.urlPattern));
+    const dash = g.states.filter((s) => /\/dashboard\/(8\d{3}|\{param\})/.test(s.urlPattern));
     expect(dash.length, 'the two dashboards merge into ONE state').toBe(1);
     expect(dash[0].template).toBe('/dashboard/{param}');
     expect(dash[0].provisional ?? null, 'two instances → confirmed, NOT provisional').toBeNull();
