@@ -21,16 +21,17 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      # `npm ci` was hanging in CI (`Exit handler never called!`) after the agent-SDK
-      # dependency enlarged the tree with os/cpu-gated optional native packages — a known
-      # npm 10.x stall. Retry/timeout config + --no-audit/--no-fund makes the install
-      # resilient; --foreground-scripts surfaces any native build instead of silently hanging.
+      # ROOT CAUSE: `npm ci` hung in CI (`Exit handler never called!`) — an npm 10.x
+      # internal exit-handler bug that setup-node's bundled npm hits after the agent-SDK
+      # enlarged the dependency tree. It does NOT reproduce on npm 11 (verified: `npm ci`
+      # runs clean in 2s locally on npm 11.x). Pin npm above the buggy line to remove the
+      # code path entirely, rather than just dodging its trigger.
+      - name: Pin npm (avoid npm 10.x 'Exit handler never called' bug)
+        run: npm i -g npm@11
+      # --prefer-offline: `cache: npm` above is warm, so skip the registry/audit path.
+      # --no-audit: avoids the audit POST that most reliably tripped the 10.x hang.
       - name: Install deps
-        run: npm ci --no-audit --no-fund --foreground-scripts
-        env:
-          NPM_CONFIG_FETCH_RETRIES: "5"
-          NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "20000"
-          NPM_CONFIG_FETCH_TIMEOUT: "120000"
+        run: npm ci --no-audit --prefer-offline
       - name: Typecheck
         # --no-install: use the LOCAL typescript; never silently fetch the unrelated
         # `tsc` npm package (the confusing "This is not the tsc command" failure seen when
