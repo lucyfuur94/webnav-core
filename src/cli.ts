@@ -720,25 +720,27 @@ async function main() {
     // `--token <hex>` pins a stable token across restarts (paste once into the panel);
     // omitted → a fresh random token every run, as before.
     // Assemble a session video from the extension's CDP screencast frames. Frames are
-    // base64 JPEGs with ms-relative timestamps; ffmpeg's concat demuxer turns them into a
-    // .webm at ~/.webnav/recordings/<sessionId>/, exactly where the dashboard serves videos.
-    // Best-effort: any failure logs to stderr and never breaks the run (housekeeping rule).
+    // base64 JPEGs with ms-relative timestamps; the concat demuxer sets per-frame durations
+    // and `-r 15 -fps_mode cfr` re-times to a CONSTANT frame rate — without CFR the output
+    // has irregular PTS and no duration metadata, which browsers show as an unseekable video
+    // that jumps 0→end on play (the observed bug). Idle gaps are capped so a "thinking" pause
+    // doesn't become a frozen minute. Writes to ~/.webnav/recordings/<sessionId>/, exactly
+    // where the dashboard serves videos. Best-effort: failures log, never break the run.
     const onScreencast = async (sessionId: string, frames: { data: string; timestampMs: number }[]) => {
       if (!frames.length) return;
-      const { homedir } = await import('node:os');
+      const { homedir, tmpdir } = await import('node:os');
       const { join } = await import('node:path');
       const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
-      const { tmpdir } = await import('node:os');
       const { spawn } = await import('node:child_process');
       const tmp = mkdtempSync(join(tmpdir(), 'webnav-scr-'));
+      const MAX_HOLD_S = 1.5;   // cap a single frame's on-screen time (idle/thinking gaps)
       try {
-        // Write each frame + a concat file with per-frame durations (last frame held 0.5s).
         const lines: string[] = [];
         for (let i = 0; i < frames.length; i++) {
           const f = join(tmp, 'f' + String(i).padStart(5, '0') + '.jpg');
           writeFileSync(f, Buffer.from(frames[i].data, 'base64'));
           const nextMs = i + 1 < frames.length ? frames[i + 1].timestampMs : frames[i].timestampMs + 500;
-          const dur = Math.max(0.03, (nextMs - frames[i].timestampMs) / 1000);
+          const dur = Math.min(MAX_HOLD_S, Math.max(0.06, (nextMs - frames[i].timestampMs) / 1000));
           lines.push("file '" + f + "'", 'duration ' + dur.toFixed(3));
         }
         lines.push("file '" + join(tmp, 'f' + String(frames.length - 1).padStart(5, '0') + '.jpg') + "'"); // concat quirk: repeat last
@@ -749,7 +751,8 @@ async function main() {
         const outFile = join(outDir, 'take-' + Date.now() + '.webm');
         await new Promise<void>((resolve, reject) => {
           const ff = spawn('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', listPath,
-            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p', '-c:v', 'libvpx-vp9', '-b:v', '1M', outFile],
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+            '-r', '15', '-fps_mode', 'cfr', '-c:v', 'libvpx-vp9', '-b:v', '1M', outFile],
             { stdio: 'ignore' });
           ff.on('error', reject);
           ff.on('exit', (code) => code === 0 ? resolve() : reject(new Error('ffmpeg exit ' + code)));

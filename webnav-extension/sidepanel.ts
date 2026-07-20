@@ -516,6 +516,20 @@ function endTurn(): void {
   assistantBubble = null;
 }
 
+// Working indicator (#thinking): a pulsing "working…" row kept as the LAST child of the
+// thread while the agent is busy but not actively streaming text (e.g. mid-tool). Shows the
+// content area is alive between an action and the next reply. Created once, reused.
+const thinkingEl = (() => {
+  const d = document.createElement('div');
+  d.id = 'thinking';
+  d.innerHTML = '<span class="dots"><i></i><i></i><i></i></span><span>working…</span>';
+  return d;
+})();
+function setThinking(on: boolean): void {
+  if (on) { thread.appendChild(thinkingEl); thinkingEl.classList.add('show'); scrollThreadIfNearBottom(); }
+  else { thinkingEl.classList.remove('show'); }
+}
+
 // The blue pulsing `.live` pin means "a tool is running RIGHT NOW". Only the in-flight
 // action should pulse; once the agent moves on (starts talking, runs the next tool, or
 // finishes) the completed row must settle to a plain dot like the others. Called from
@@ -594,6 +608,7 @@ function handleEvent(e: AgentEvent): void {
       // #5: accumulate the RAW text and re-render the whole buffer as markdown each delta
       // (never innerHTML raw model text — mdToHtml escapes first).
       // The agent is talking now, not acting — settle any still-pulsing action row.
+      setThinking(false);   // the streaming reply IS the live indicator now
       if (!assistantBubble) settleLiveAction();
       if (!assistantBubble) { assistantBubble = bubble('assistant'); assistantBubble.classList.add('streaming'); }
       renderMarkdown(assistantBubble, (assistantBubble.dataset.raw ?? '') + e.text);
@@ -605,6 +620,7 @@ function handleEvent(e: AgentEvent): void {
       // #3b — strip any `mcp__webnav__` prefix + humanize before it ever renders.
       const label = friendlyLabel(e.label);
       bubble('action', label + (e.detail ? ': ' + e.detail : ''));
+      if (running) setThinking(true);   // a tool is running — keep the content area alive
       break;
     }
     case 'action':
@@ -613,10 +629,12 @@ function handleEvent(e: AgentEvent): void {
       // human-readable line for this same tool call was already rendered by `narrate`
       // (which always precedes the matching `action`) — don't render a second bubble here.
       endTurn(); // a new turn after the action starts a fresh bubble
+      if (running) setThinking(true);
       execAction(e.id, e.cmd);
       break;
     case 'plan':
       endTurn();
+      setThinking(false);   // an approval gate is now waiting on the user, not "working"
       renderPlan(e.steps);
       break;
     case 'done':
@@ -777,6 +795,7 @@ async function startRun(): Promise<void> {
   // body.running swaps Send → Take-over/Stop and pulses the mark.
   document.body.classList.add('running');
   stickToBottom = true;   // a fresh run should always follow new content
+  setThinking(true);      // show "working…" until the first reply/action arrives
   renderTabChip();
   bubble('user', goal);
   goalEl.value = '';
@@ -836,6 +855,7 @@ async function finishRun(keepDriving = false): Promise<void> {
   running = false;
   sendEl.disabled = false;
   document.body.classList.remove('running');
+  setThinking(false);
   currentRoute?.querySelector('.msg.action.live')?.classList.remove('live');
   currentRoute = null;
   // H3: never leave an Approve/Deny bar live once the run has ended (e.g. an Auto
