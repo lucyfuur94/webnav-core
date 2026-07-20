@@ -275,8 +275,10 @@ mental model, and principles. Design docs: `docs/superpowers/specs/`.
 ## Contributing
 
 PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) (the settled principles, dev setup, and how
-to contribute a **site map** — the highest-leverage contribution). Report security issues privately
-per [`SECURITY.md`](SECURITY.md). Be excellent to each other: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+to contribute a **site map or map pack** — the highest-leverage contribution). Map packs are
+skeleton-only and never include credentials; the shipped examples are in [`mappacks/`](mappacks/).
+Report security issues privately per [`SECURITY.md`](SECURITY.md). Be excellent to each other:
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 

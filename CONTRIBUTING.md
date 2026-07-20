@@ -8,10 +8,10 @@ maps are all welcome.
 
 - **Report a bug / request a feature** — open an issue (templates provided).
 - **Fix a bug or add a feature** — PRs welcome. See "Development" below.
-- **Contribute a site map** — the highest-leverage contribution. webnav ships
-  with one worked example (saucedemo); the project gets more useful as more sites
-  are mapped. (Shareable "map packs" are on the roadmap — for now, map a site via
-  the recording flow and open an issue/PR describing it.)
+- **Contribute a site map / map pack** — the highest-leverage contribution.
+  webnav ships with worked map packs; the project gets more useful as more safe,
+  repeatable workflows are mapped. Propose a candidate with the **Contribute a site
+  map** issue template, or submit a pack as described below.
 - **Improve docs** — `README.md`, `docs/STATUS.md`, `CLAUDE.md`.
 
 ## Ground rules (non-negotiable, from the design)
@@ -30,6 +30,29 @@ These are settled principles — please don't submit changes that violate them:
    credentials anywhere else.
 
 See `CLAUDE.md` for the full settled design and mental model.
+
+## Contributing a map pack
+
+Choose a stable site that you are authorized to automate. Prefer public demos,
+sandboxes, or open-source applications. Do not map private systems, real purchase
+flows, or a site that forbids automation.
+
+1. Follow [`docs/LEARNING-A-SITE.md`](docs/LEARNING-A-SITE.md) to learn the site.
+   Keep any credentials in your local webnav store; never put them in a pack or PR.
+2. Export the skeleton-only pack:
+   ```bash
+   webnav dev export-map <host> > mappacks/<site>.mappack.json
+   ```
+3. In a clean local database, import the file and run at least one representative
+   `webnav walk` route. Verify that no credentials, tokens, private URLs, or personal
+   data are present in the JSON.
+4. Open a focused PR containing the pack and a short addition to
+   [`mappacks/README.md`](mappacks/README.md): site, state count, representative
+   route, and any demo credentials only when they are already publicly documented by
+   the site.
+
+If you are unsure a site is suitable, open the site-map issue first. We would rather
+review the target before anyone spends time mapping it.
 
 ## Development
 
