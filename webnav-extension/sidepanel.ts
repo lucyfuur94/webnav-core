@@ -829,7 +829,10 @@ async function relabelTabGroup(tabId: number, title: string): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-function finishRun(): void {
+// `keepDriving` = paused/take-over: keep the CDP attach + screencast alive (the user is
+// driving). Otherwise this is a true end-of-run: flush the session video, remove the
+// cursor, and detach.
+async function finishRun(keepDriving = false): Promise<void> {
   running = false;
   sendEl.disabled = false;
   document.body.classList.remove('running');
@@ -840,17 +843,33 @@ function finishRun(): void {
   resolvePlanBar('◦ run ended');
   // Relabel the group to done — but NEVER ungroup (that + detach closed the tab).
   if (targetTabId != null) relabelTabGroup(targetTabId, 'webnav ✓');
-  // A finished run with an empty composer / lost connection must re-disable Send;
-  // the `sendEl.disabled = false` above is unconditional, so re-derive the real state.
   updateSendEnabled();
+  if (!keepDriving && targetTabId != null) {
+    await flushVideo();                                              // #6 assemble the session video
+    await chrome.runtime.sendMessage({ type: 'detach-drive' });     // removes cursor (#3) + detaches
+  }
+}
+
+// Pull the buffered screencast frames from background and POST them to agent-serve, which
+// assembles a .webm the dashboard serves. Best-effort: any failure is logged, never thrown
+// (a missing video must not break finishing a run).
+async function flushVideo(): Promise<void> {
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'end-run' });
+    const frames = r?.frames as { data: string; timestampMs: number }[] | undefined;
+    if (!frames?.length) return;
+    await fetch(base + '/api/agent/screencast', {
+      method: 'POST', headers: postHeaders(),
+      body: JSON.stringify({ sessionId: sid, frames }),
+    }).catch(() => {});
+  } catch { /* screencast unsupported / background gone — run still finishes */ }
 }
 
 async function stopRun(): Promise<void> {
   await fetch(base + '/api/agent/stop', { method: 'POST', headers: postHeaders() }).catch(() => {});
   bubble('done', 'loop halted');
-  if (targetTabId != null) await chrome.runtime.sendMessage({ type: 'detach-drive' });
   paused = false;
-  finishRun();
+  await finishRun();   // flushes video + detaches
 }
 
 // New chat (the header "+"): stop any active run, wipe the thread + all render

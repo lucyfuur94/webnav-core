@@ -254,6 +254,33 @@ describe('agent-serve', () => {
     expect(res.status).toBe(401);
   });
 
+  it('POST /api/agent/screencast routes frames to onScreencast', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let got: { sessionId: string; frames: unknown[] } | null = null;
+    const port = await listen(store, { onScreencast: async (sessionId, frames) => { got = { sessionId, frames }; } });
+    const frames = [{ data: 'AAAA', timestampMs: 0 }, { data: 'BBBB', timestampMs: 500 }];
+    const res = await postJson(port, '/api/agent/screencast', { sessionId: 'vid1', frames });
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ ok: true, frames: 2 });
+    expect(got).toEqual({ sessionId: 'vid1', frames });
+  });
+
+  it('POST /api/agent/screencast with empty frames is a no-op success (never calls onScreencast)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    let called = false;
+    const port = await listen(store, { onScreencast: async () => { called = true; } });
+    const res = await postJson(port, '/api/agent/screencast', { sessionId: 'vid1', frames: [] });
+    expect(res.status).toBe(200);
+    expect(called).toBe(false);
+  });
+
+  it('POST /api/agent/screencast WITHOUT the token header → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/screencast', { sessionId: 'x', frames: [] }, null);
+    expect(res.status).toBe(401);
+  });
+
   it('does NOT set Access-Control-Allow-Origin', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const port = await listen(store);
