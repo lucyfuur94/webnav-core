@@ -28,9 +28,21 @@ let lastAxByNodeId: Map<string, AXNode> = new Map();
 async function detachDrive(): Promise<void> {
   if (driveTabId == null) return;
   const id = driveTabId;
+  // Remove the on-screen agent cursor BEFORE detaching — once the run ends the pointer
+  // should go away, not linger. AWAIT it: detach kills the CDP session, so a
+  // fire-and-forget eval would race and leave the cursor stranded. Best-effort.
+  await removeCursor(id);
   driveTabId = null;
   lastAxByNodeId = new Map();
   await chrome.debugger.detach({ tabId: id }).catch(() => {});
+}
+
+// Remove the injected agent cursor. Awaited by detachDrive so it lands before the CDP
+// session closes; a missing cursor / dead page just resolves via .catch.
+async function removeCursor(tabId: number): Promise<void> {
+  await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+    expression: `(() => { try { document.getElementById('__webnav_cursor__')?.remove(); } catch (e) {} })()`,
+  }).catch(() => {});
 }
 
 async function attachDrive(tabId: number): Promise<void> {

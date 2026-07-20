@@ -705,7 +705,10 @@ async function main() {
         // a thrown goal. Empty runs (no action taken) record nothing.
         try {
           const steps = browser.getRecordedSteps();
-          if (steps.length) ingestAX({ sessionId: goal.sessionId, steps }, recordStore);
+          if (steps.length) {
+            ingestAX({ sessionId: goal.sessionId, steps }, recordStore);
+            recordStore.setOrigin(goal.sessionId, 'extension'); // tag: driven by the Chrome extension
+          }
         } catch (e) {
           process.stderr.write(`webnav agent-serve: recording flush failed (run unaffected): ${String(e)}\n`);
         }

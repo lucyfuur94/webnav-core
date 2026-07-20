@@ -86,6 +86,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .badge { border:1px solid currentColor; border-radius:4px; padding:1px 6px; font-size:10px; line-height:1.5;
     white-space:nowrap; display:inline-flex; align-items:center; gap:3px; }
   .badge.origin-agent { color:var(--accent); }
+  .badge.origin-extension { color:var(--ok); }
   .badge.origin-manual { color:var(--muted); }
   .badge.ok { color:var(--ok); }
   .badge.warn { color:var(--warn); }
@@ -213,6 +214,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <script>
 const main = document.getElementById('main');
 let tab = 'recordings';
+let recordingsOriginFilter = 'all';   // Sessions list source filter: all | extension | agent | manual
 
 document.querySelectorAll('nav button[data-tab]').forEach(b => {
   b.onclick = () => {
@@ -783,13 +785,22 @@ async function renderRecordings(openId) {
   // list NEVER reflows/shifts when you select a row). Left: count / "N selected". Right:
   // Delete-selected (shown only when a selection exists) · Clear all · + New session.
   const bar = el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:32px">'
-    + '<span class="muted bar-count" style="font-size:13px"></span><span style="flex:1"></span>'
+    + '<span class="muted bar-count" style="font-size:13px"></span>'
+    + '<select class="bar-origin" style="padding:2px 8px;font-size:12px;background:var(--bg-sunken);color:var(--fg);border:1px solid var(--border);border-radius:6px">'
+    + '<option value="all">All sources</option><option value="extension">Extension</option><option value="agent">Agent</option><option value="manual">Manual</option>'
+    + '</select><span style="flex:1"></span>'
     + '<button class="btn danger bar-delsel" style="padding:2px 10px;display:none"></button>'
     + (recs.length ? '<button class="btn danger bar-clear" style="padding:2px 10px">Clear all</button>' : '')
     + '<button class="btn bar-new" style="padding:2px 10px">+ New session</button></div>');
   wrap.append(bar);
+  // Origin filter — 'agent'/'extension' match exactly; everything else (incl. legacy null) is 'manual'.
+  const originOf = (r) => (r.origin === 'agent' || r.origin === 'extension') ? r.origin : 'manual';
+  const originSel = bar.querySelector('.bar-origin');
+  originSel.value = recordingsOriginFilter;
+  originSel.onchange = () => { recordingsOriginFilter = originSel.value; renderRecordings(); };
+  const shown = recordingsOriginFilter === 'all' ? recs : recs.filter(r => originOf(r) === recordingsOriginFilter);
   const setCount = () => { bar.querySelector('.bar-count').textContent = selected.size
-    ? selected.size+' selected' : recs.length+' session'+(recs.length===1?'':'s'); };
+    ? selected.size+' selected' : shown.length+' session'+(shown.length===1?'':'s'); };
   const syncBulk = () => {
     const b = bar.querySelector('.bar-delsel');
     b.style.display = selected.size ? '' : 'none';
@@ -811,7 +822,7 @@ async function renderRecordings(openId) {
   bar.querySelector('.bar-new').onclick = () => openNewSessionDialog();
 
   const list = el('<div class="list"></div>');
-  recs.forEach(r => {
+  shown.forEach(r => {
     const row = el('<div class="srow"><input type="checkbox" style="width:auto" aria-label="select" /><div class="nm"></div><div class="col site"></div><div class="col steps r"></div><div class="col vid r"></div><div class="col date r"></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
     rowEls[r.sessionId] = row;
     fillRow(row, r);
@@ -827,7 +838,9 @@ async function renderRecordings(openId) {
     };
     list.append(row);
   });
-  if (!recs.length) list.append(el('<div class="empty">No sessions yet. Click <strong>+ New session</strong> to record one.</div>'));
+  if (!shown.length) list.append(el(recs.length
+    ? '<div class="empty">No <strong>'+esc(recordingsOriginFilter)+'</strong> sessions. Change the source filter above.</div>'
+    : '<div class="empty">No sessions yet. Click <strong>+ New session</strong> to record one.</div>'));
   wrap.append(list);
   main.append(wrap);
   startEvents();
@@ -848,9 +861,12 @@ function openDetail(r) {
   main.append(wrap);
   showRecording(r, detail);
 }
+function originLabel(origin) {
+  return origin === 'agent' ? 'Agent' : origin === 'extension' ? 'Extension' : 'Manual';
+}
 function originTag(origin) {
-  const agent = origin === 'agent';
-  return '<span class="badge origin-'+(agent?'agent':'manual')+'">'+(agent?'Agent':'Manual')+'</span>';
+  const o = origin === 'agent' || origin === 'extension' ? origin : 'manual';
+  return '<span class="badge origin-'+o+'">'+originLabel(o)+'</span>';
 }
 // Capture-review badge from the stored verdict (webnav dev review). Verified (green) = zero
 // gaps, graph-ready; needs-fix (amber, with gap count) = review found capture gaps; nothing =
