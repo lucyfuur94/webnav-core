@@ -22,6 +22,7 @@ export interface RawAXStep {
   fromUrl: string; fromAX: AXNode[];
   toUrl: string; toAX: AXNode[];
   clickedRef?: string | null;  // synthetic bN ref (in the ADAPTED fromAX tree) of the clicked node, or null for a pure nav
+  tMs?: number;                // wall-clock ms when the step COMPLETED (so the ledger shows real per-step times, not one flush time)
 }
 export interface IngestAXBody { sessionId: string; steps: RawAXStep[] }
 
@@ -85,7 +86,19 @@ export function ingestAX(body: IngestAXBody, store: RecordStore): number {
     const fromNodes = adaptAXTree(step.fromAX);
     const toNodes = adaptAXTree(step.toAX);
     const fx = reconstructEffectFromNodes(fromNodes, toNodes, step.fromUrl, step.toUrl, step.clickedRef ?? null);
-    store.appendActionEffect(body.sessionId, fx);
+    // Per-step wall-clock time (from the extension). Without it every step got the single
+    // flush-time Date.now(), so the dashboard showed them all at the same second.
+    const tMs = step.tMs;
+    // Ledger event so the Raw pane isn't empty for extension runs: each recorded step IS
+    // one event, captured as a step (1:1, no drops in the AX path). kind = navigate when the
+    // step changed page, else action; descriptor carries the acted element's identity.
+    const kind = fx.navigated ? 'navigate' : 'action';
+    const descriptor: Record<string, unknown> = fx.action
+      ? { role: fx.action.role, name: fx.action.name, url: fx.toUrl }
+      : { url: fx.toUrl };
+    const evSeq = store.appendEvent(body.sessionId, { source: 'agent', kind, descriptor, t: tMs }, tMs);
+    const stepSeq = store.appendActionEffect(body.sessionId, fx, tMs);
+    if (evSeq != null && stepSeq != null) store.stampEvent(body.sessionId, evSeq, 'step:' + stepSeq);
     n++;
   }
   store.stop(body.sessionId);

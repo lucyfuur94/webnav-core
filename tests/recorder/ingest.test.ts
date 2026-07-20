@@ -183,6 +183,32 @@ describe('ingest', () => {
     expect(store.actionEffects('ax-2')[0].action).toBeNull();
   });
 
+  it('ingestAX writes a ledger event per step (Raw pane) + preserves per-step tMs (not one flush time)', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'ax-ledger',
+      steps: [
+        { fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+          toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'), clickedRef: 'b7', tMs: 1000 },
+        { fromUrl: 'http://127.0.0.1:8771/fixtures/table.html', fromAX: axFixture('table'),
+          toUrl: 'http://127.0.0.1:8771/fixtures/icons.html', toAX: axFixture('icons'), clickedRef: null, tMs: 5000 },
+      ],
+    };
+    expect(ingestAX(body, store)).toBe(2);
+
+    // Raw pane: two ledger events, each stamped as a captured step (never empty).
+    const ev = store.events('ax-ledger');
+    expect(ev.length).toBe(2);
+    expect(ev[0].disposition).toBe('step:0');
+    expect(ev[1].disposition).toBe('step:1');
+    expect(ev.map((e) => e.t)).toEqual([1000, 5000]);          // real per-event times
+    expect(ev[0].kind).toBe('navigate');                        // page changed
+
+    // Webnav pane: per-step capturedAt keeps the distinct tMs, not a single flush time.
+    const fx = store.actionEffects('ax-ledger');
+    expect(fx.map((s) => s.capturedAt)).toEqual([1000, 5000]);
+  });
+
   it('ingestAX re-ingesting the same session replaces, does not duplicate', () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const body: IngestAXBody = {
