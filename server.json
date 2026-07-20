@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.lucyfuur94/webnav",
-  "description": "A zero-LLM web-navigation MCP server that replays recorded site maps deterministically instead of re-exploring routes.",
+  "description": "A zero-LLM MCP server that replays recorded site maps instead of re-exploring browser routes.",
   "repository": {
     "url": "https://github.com/lucyfuur94/webnav-core",
     "source": "github"
