@@ -105,10 +105,9 @@ describe('editGraph — full typed affordance authoring', () => {
     expect(e.requiresAffordances).toEqual(['add an item']);
   });
 
-  it('authors affordances on a state, core on an edge, and node capabilities/topics', () => {
+  it('authors affordances on a state, core on an edge, and creates the node row', () => {
     const store = MapStore.fromDatabase(new Database(':memory:'));
     editGraph(store, 'shop.example', {
-      node: { capabilities: ['shopping-demo'], topics: ['shopping', 'demo'] },
       states: [{ label: 'inventory', affordances: ['add to cart', 'open menu'] }, { label: 'cart' }],
       edges: [{ from: 'inventory', to: 'cart', via: 'open cart', core: true }],
     });
@@ -117,15 +116,8 @@ describe('editGraph — full typed affordance authoring', () => {
     expect(affs.map((a) => a.label)).toEqual(['add to cart', 'open menu']);
     expect(affs.every((a) => a.kind === 'mutate')).toBe(true);
     expect(store.edgesFrom('shop.example:inventory')[0].core).toBe(true);
-    const node = store.getNode('shop.example')!;
-    expect(node.capabilities).toEqual(['shopping-demo']);
-    expect(node.topics).toEqual(['shopping', 'demo']);
-  });
-  it('does not clobber existing node capabilities when node metadata is omitted', () => {
-    const store = MapStore.fromDatabase(new Database(':memory:'));
-    editGraph(store, 'shop.example', { node: { capabilities: ['x'], topics: ['y'] }, states: [{ label: 'a' }], edges: [] });
-    editGraph(store, 'shop.example', { states: [{ label: 'b' }], edges: [] });
-    expect(store.getNode('shop.example')!.capabilities).toEqual(['x']);
+    // Editing a graph creates/keeps the site-node row (id + derived home url).
+    expect(store.getNode('shop.example')!.homeUrl).toBe('https://shop.example');
   });
 
   it('throws on an edge endpoint that is neither in the payload nor stored', () => {

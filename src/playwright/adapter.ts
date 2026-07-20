@@ -32,6 +32,22 @@ const defaultRun: RunFn = async (args) => {
   return stdout;
 };
 
+// macOS caps a unix-socket path (sun_path) at 104 bytes. playwright-cli's socket is
+// $TMPDIR/playwright-cli/<16-char-hash>/<session>.sock and the darwin TMPDIR prefix is
+// ~82 chars — so a session NAME over ~16 chars can hit `listen EINVAL` (live crash:
+// 'replay-report-builder', 21 chars). Deterministic cap: same input → same wire name,
+// so reattach through this adapter keeps working; names ≤16 are untouched (every seed/
+// walk/record name in use today).
+const WIRE_MAX = 16;
+// djb2 xor variant — cheap, deterministic, good-enough spread for a 6-hex-digit tag.
+export function wireSessionName(name: string): string {
+  if (name.length <= WIRE_MAX) return name;
+  let h = 5381;
+  for (let i = 0; i < name.length; i++) h = ((h * 33) ^ name.charCodeAt(i)) >>> 0;
+  const head = name.slice(0, 9).replace(/[^\w.-]/g, '_');
+  return head + '-' + h.toString(16).padStart(6, '0').slice(0, 6);
+}
+
 export class PlaywrightAdapter {
   callCount = 0;
   constructor(
@@ -39,7 +55,7 @@ export class PlaywrightAdapter {
     private run: RunFn = defaultRun,
     private readFile: ReadFileFn = (p) => readFileSync(p, 'utf8'),
     private opts: BrowserOpts = { headed: true },   // HEADED by default; pass {headed:false} for CI/headless
-  ) {}
+  ) { this.session = wireSessionName(session); }
 
   private async exec(...args: string[]): Promise<string> {
     this.callCount++;
@@ -65,6 +81,7 @@ export class PlaywrightAdapter {
   async open(url: string) { await throttleOpen(url); return this.exec('open', url, ...this.openFlags()); }
   async goto(url: string) { await throttleOpen(url); return this.exec('goto', url); }
   click(ref: string) { return this.exec('click', ref); }
+  rightClick(ref: string) { return this.exec('click', ref, 'right'); }
   fill(ref: string, text: string) { return this.exec('fill', ref, text); }
   type(text: string) { return this.exec('type', text); }
   press(key: string) { return this.exec('press', key); }

@@ -3,6 +3,7 @@ import { readdirSync, statSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { wireSessionName } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -95,16 +96,6 @@ export function canOpen(liveCount: number, max: number): boolean {
   return liveCount < max;
 }
 
-/** Translate `WEBNAV_SESSION_TTL_HOURS` into a reap plan, or null when the background
- *  sweep is OFF (var unset/blank/non-positive/non-numeric → no surprise reaping).
- *  `current` is the session the calling command is about to use — always protected. */
-export function ttlSweepOpts(envValue: string | undefined, current: string): ReapOpts | null {
-  if (!envValue) return null;
-  const hours = Number(envValue);
-  if (!Number.isFinite(hours) || hours <= 0) return null;
-  return { maxAgeMs: hours * 3600_000, exclude: current };
-}
-
 // ─── live wrappers (not unit-tested; thin shells over fs/ps) ──────────────────
 const DAEMON_DIR = join(homedir(), 'Library', 'Caches', 'ms-playwright', 'daemon');
 
@@ -165,7 +156,7 @@ function pidAlive(pid: number): boolean {
  * session is gone after.
  */
 export async function closeSession(name: string, pid?: number): Promise<boolean> {
-  try { await execFileAsync('playwright-cli', [`-s=${name}`, 'close'], { maxBuffer: 1024 * 1024 }); }
+  try { await execFileAsync('playwright-cli', [`-s=${wireSessionName(name)}`, 'close'], { maxBuffer: 1024 * 1024 }); }
   catch { /* graceful close failed; fall through to force-kill if we have a pid */ }
   if (pid === undefined) { removeSessionFiles(name); return true; }   // orphan: unlink the stale file
   if (!pidAlive(pid)) { removeSessionFiles(name); return true; }      // graceful close worked
@@ -189,19 +180,6 @@ export async function reapSessions(nowMs: number, opts: ReapOpts): Promise<strin
   const closed: string[] = [];
   for (const t of targets) if (await closeSession(t.name, t.pid)) closed.push(t.name);
   return closed;
-}
-
-/**
- * Opt-in background sweep, fired by browser-opening verbs. OFF unless
- * `WEBNAV_SESSION_TTL_HOURS` is set (>0). Reaps orphans + sessions older than the TTL,
- * NEVER `currentSession` (the browser this command is about to drive). Fire-and-forget:
- * any error is swallowed so the actual command is never slowed or broken by housekeeping.
- * `await` is optional — callers can ignore the returned promise.
- */
-export async function maybeTtlSweep(currentSession: string): Promise<void> {
-  const opts = ttlSweepOpts(process.env.WEBNAV_SESSION_TTL_HOURS, currentSession);
-  if (!opts) return;
-  try { await reapSessions(Date.now(), opts); } catch { /* housekeeping must never break the command */ }
 }
 
 /**

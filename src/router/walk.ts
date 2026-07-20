@@ -88,6 +88,12 @@ export interface WalkBrowser {
   // The live browser owns the `inputs` map and looks the slot up; the unit fake
   // ignores both and just advances the scripted snapshot.
   act(ref: string, inputSlot: string | null): Promise<void>;
+  // Type free text into a field by ref, WITHOUT clicking (act() only clicks — its
+  // inputSlot fills are for the walk's own credential/shipping precondition-fills,
+  // not a generic type). Optional: the playwright live adapter doesn't implement
+  // it yet; callers that need raw typing (the agent loop's `type` tool) must check
+  // for its presence and report honestly when absent.
+  typeText?(ref: string, text: string): Promise<void>;
   // Jump to a tier-1 addressable URL (edge.addressableUrl) instead of resolving a
   // ref — for icon-only/unstable links whose destination has a canonical URL. The
   // unit fake just advances its scripted snapshot (ignores the url).
@@ -95,6 +101,11 @@ export interface WalkBrowser {
   // Sleep `ms` between readiness retries (JS-render race). Live browser implements it;
   // the unit fake omits it so tests resolve immediately (no waiting / no retry loop).
   waitMs?(ms: number): Promise<void>;
+  // Scroll the page by `dy` pixels (positive = down, negative = up) so content below
+  // the fold becomes reachable. Reveals nodes, never navigates. Optional: only the live
+  // extension browser supplies it; the unit fake and playwright walk omit it (the agent's
+  // scroll tool reports honestly when absent).
+  scroll?(dy: number): Promise<void>;
   callCount(): number;
   // The URL the browser is currently settled on — needed to classify an SSO-wall
   // landing (classifyAuthLanding wants landedUrl + site host). Optional: the unit

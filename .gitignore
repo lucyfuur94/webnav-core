@@ -10,12 +10,11 @@ tests/tmp/
 
 # dev graph-screenshot artifacts
 *-graph.html
-.playwright-cli/
 
 # OS / editor cruft
 .DS_Store
 
-# webnav-recorder: don't commit tsc output
-webnav-recorder/*.js
-webnav-recorder/package-lock.json
+# webnav-extension: don't commit tsc output
+webnav-extension/*.js
+webnav-extension/package-lock.json
 take-*.webm

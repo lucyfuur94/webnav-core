@@ -155,7 +155,7 @@ webnav eval <url> "<js>" | network <url>     targeted JS extraction | the page's
 # Author a site's map (the record -> analyse -> edit flow)
 webnav dev record-start / record-stop        bracket a mapping session
 webnav dev record-live --session S --url U   headed browser; click through it yourself, webnav records
-webnav dev ingest [--port 7778]              receive sessions from the webnav-recorder Chrome extension (shelved)
+webnav dev ingest [--port 7778]              receive sessions from the webnav-extension Chrome extension (shelved)
 webnav dev graph-analyse --session S [--draft]  mechanical structure from what you recorded
                                              (--draft = a self-verified, ready-to-edit graph spec)
 webnav dev graph-edit --node <id> --graph J  write the validated graph

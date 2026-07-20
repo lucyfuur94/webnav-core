@@ -8,7 +8,7 @@
 //
 // Pure core: deps injected (adapter, store, io, notify, video) so it's unit-tested
 // with scripted stdin + a fake adapter — no real browser.
-import { runActionRecorded, parseEvalResult, settleSnapshot } from '../router/browse.js';
+import { runActionRecorded, parseEvalResult, settleSnapshot, probeLanding } from '../router/browse.js';
 import { diffSnapshots } from '../explorer/diff.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { INSTALLER_JS, MODE_JS } from './live.js';
@@ -37,6 +37,11 @@ export interface AgentSessionCmd {
 // attribute differently (title/aria-label, data-tooltip, data-tooltip-content [react-
 // tooltip], data-title, data-original-title [bootstrap]).
 export const NAME_PROBE_JS = `(el) => {
+  // Defense in depth: even if a page's a11y snapshot exposes our own REC-overlay
+  // pill (a focusable element inside an aria-hidden container isn't reliably
+  // suppressed), never let the probe mint a name for it — that could mint a
+  // bogus overlay affordance into the map (wrong-map class).
+  if (el.closest && el.closest('#__webnav_rec_badge')) return '';
   const ATTRS = ['aria-label','title','data-tooltip-content','data-tooltip','data-title','data-original-title','data-tip','aria-description'];
   const g = (n) => { if (!n || !n.getAttribute) return ''; for (const a of ATTRS) { const v = n.getAttribute(a); if (v && v.trim()) return v.trim(); } return ''; };
   let s = g(el);
@@ -80,7 +85,9 @@ export interface AgentSessionDeps {
   };
   store: {
     isActive(s: string): boolean;
-    appendActionEffect(s: string, fx: ActionEffect): void;
+    appendActionEffect(s: string, fx: ActionEffect): number | null;
+    appendEvent(s: string, ev: { t?: number; source: 'human' | 'agent'; kind: string; descriptor: Record<string, unknown> }): number | null;
+    stampEvent(s: string, seq: number, disposition: string): void;
   };
   // recover an element fingerprint from a snapshot for a ref (durable click key)
   recover: (snapshot: string, ref: string) => { action: { role: string; name: string | null; ref: string; elementFp?: unknown } };
@@ -119,23 +126,31 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
 
       if (c.cmd === 'quit') break;
 
+      let pendingLedger: number | null = null;   // reset per command; stamped by this command or the catch below
       try {
         if (c.cmd === 'navigate') {
           if (!c.url) { out({ ok: false, error: 'navigate needs url' }); continue; }
           const fromUrl = await deps.adapter.currentUrl().catch(() => '');
           const fromSnapshot = fromUrl ? await deps.adapter.snapshot().catch(() => '') : '';
+          pendingLedger = deps.store.appendEvent(deps.sessionId, {
+            source: 'agent', kind: 'navigate', descriptor: { cmd: 'navigate', url: c.url, fromUrl: fromUrl || c.url } });
           await deps.adapter.goto(c.url);
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
           // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
           const toSnapshot = await settleSnapshot(() => deps.adapter.snapshot());
           const toUrl = await deps.adapter.currentUrl();
+          // X6: probe the SETTLED landing's nameless icon controls (title/aria/tooltip) before
+          // appending — fires only when nameless interactive nodes exist. Best-effort.
+          const nameHints = await probeLanding(deps.adapter, toSnapshot).catch(() => undefined);
           if (deps.store.isActive(deps.sessionId)) {
-            deps.store.appendActionEffect(deps.sessionId, {
+            const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl: fromUrl || c.url, fromSnapshot, action: null,
               toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] },
-              requestedUrl: c.url,
+              requestedUrl: c.url, nameHints,
             });
+            if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
+            pendingLedger = null;
             steps++; deps.notify('step', 'agent nav: ' + toUrl);
           }
           out({ ok: true, url: toUrl });
@@ -176,15 +191,20 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
             const probed = parseEvalResult(await deps.adapter.evalJs(NAME_PROBE_JS, c.ref).catch(() => ''));
             action.name = enrichName(action.name, probed);
           }
+          pendingLedger = deps.store.appendEvent(deps.sessionId, {
+            source: 'agent', kind: 'hover',
+            descriptor: { cmd: 'hover', ref: c.ref, role: action.role, name: action.name, url: fromUrl } });
           await deps.adapter.hover(c.ref);
           const toSnapshot = await deps.adapter.snapshot();
           const toUrl = await deps.adapter.currentUrl();
           if (deps.store.isActive(deps.sessionId)) {
-            deps.store.appendActionEffect(deps.sessionId, {
+            const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl, fromSnapshot, action: { ...action, hover: true } as never,
               toUrl, toSnapshot, navigated: false,
               diff: diffSnapshots(parseSnapshot(fromSnapshot), parseSnapshot(toSnapshot)),
             });
+            if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
+            pendingLedger = null;
             steps++; deps.notify('step', 'agent hover: ' + (action.name ?? c.ref));
           }
           out({ ok: true, name: action.name, revealed: parseSnapshot(toSnapshot).length - parseSnapshot(fromSnapshot).length });
@@ -195,6 +215,8 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           out({ ok: false, error: 'unknown cmd: ' + String((c as { cmd?: string }).cmd) });
         }
       } catch (e) {
+        if (pendingLedger != null) { deps.store.stampEvent(deps.sessionId, pendingLedger,
+          'dropped:failed:' + String((e as Error).message ?? e).slice(0, 120)); pendingLedger = null; }
         out({ ok: false, error: String((e as Error).message ?? e) });
       }
     }

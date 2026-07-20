@@ -1,0 +1,9 @@
+- main [ref=e2]:
+  - heading "Icon toolbar" [level=1] [ref=e3]
+  - button [ref=e4]:
+    - img [ref=e5]
+  - button [ref=e6]:
+    - img [ref=e7]
+  - button "Settings" [ref=e8]: ⚙
+  - link "Continue" [ref=e9] [cursor=pointer]:
+    - /url: /next

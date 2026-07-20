@@ -153,8 +153,6 @@ export function makeEdge(
 export interface SiteNode {
   id: string;             // e.g. 'github.com' — also the skeleton namespace prefix
   homeUrl: string;        // entry URL
-  capabilities: string[]; // cluster names this node serves (web-search, code-search, ...)
-  topics: string[];       // declared content tags (v1 of "content similarity")
 }
 
 export type NodeEdgeKind = 'capability' | 'hyperlink' | 'co-use' | 'content';

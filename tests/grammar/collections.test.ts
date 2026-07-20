@@ -122,6 +122,90 @@ describe('grammar: 44/2/59 data grid — row fold, near, effects, URL-template e
   });
 });
 
+// ── X6: the SAME grid landing, now with nameHints naming the per-row icon buttons. The
+// name-probe (Task 1/2) reads a tooltip/aria label off each nameless icon button and stores it
+// on the effect; draft's landing-intake patch applies it BEFORE the name gates, so the repertoire
+// the honest-omission test above proves is dropped now SURVIVES as a folded affordance. Same
+// fixture, hints the only difference — the positive counterpart the matrix's X6 row calls for.
+describe('grammar: X6 — nameHints recover the unnamed icon-only controls (positive)', () => {
+  // realistic playwright refs (parseSnapshot only recognises `e\d+`): each unnamed icon button
+  // gets its own eNN ref, and HINTS keys those. Same fixture shape as the honest-omission case
+  // above (3 rows, one nameless icon button each) — the nameHints are the only difference.
+  const gridRow = (id: number, name: string, iconRef: number) => [
+    `  - row [ref=e${id * 10}]:`,
+    `    - link "${name}" [ref=e${id * 10 + 1}]:\n        - /url: ${B}/items/${id}`,
+    `    - checkbox "Select ${name}" [ref=e${id * 10 + 2}]`,
+    `    - button "${name} Edit" [ref=e${id * 10 + 3}]`,
+    `    - button [ref=e${iconRef}]`,   // UNNAMED icon-only button — nameHints will name it
+  ];
+  const ICON = { 1: 71, 2: 72, 3: 73 };
+  const GRID = (ids: [number, string][]) => [
+    '- heading "Items" [ref=e1]',
+    '- checkbox "Select all" [ref=e2]',
+    '- columnheader "Name" [ref=e3] [aria-sort]',
+    '- table [ref=e9]:',
+    ...ids.flatMap(([id, name]) => gridRow(id, name, (ICON as Record<number, number>)[id])),
+    '- paragraph "1-50 of 500" [ref=e8]',
+  ].join('\n');
+  const LANDING = GRID([[1, 'Alpha widget'], [2, 'Beta widget'], [3, 'Gamma widget']]);
+  // observed tooltip label per icon button (same across rows, as a per-row action's tooltip is)
+  const HINTS = { e71: 'View details', e72: 'View details', e73: 'View details' };
+
+  const enter: StoredActionEffect = { seq: 0, capturedAt: 0, fromUrl: `${B}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${B}/items/list`, toSnapshot: LANDING, navigated: true, diff: { added: [], removed: [] } as any,
+    nameHints: HINTS };
+
+  const g = draftFromEffects([enter] as never);
+  const s = g.states.find((x) => x.label === 'items-list')!;
+
+  it('the hinted icon buttons fold to ONE affordance carrying the observed name', () => {
+    const viewed = s.affordances.filter((a) => a.scope && /View details/.test(a.label));
+    expect(viewed.length).toBe(1);
+  });
+
+  it('no empty-label affordance leaks (the patch only sets names, never blanks)', () => {
+    const allLabels = s.affordances.flatMap((a) => [a.label, ...(a.children ?? []).map((c) => c.label)]);
+    expect(allLabels.some((l) => l === '')).toBe(false);
+  });
+});
+
+// ── X6 mixed-visit identity: a hint patches a name into ONE landing's face; a hint token must
+// obey the SAME cross-visit majority vote (templateCore, infer.ts:331-341, 60% threshold) as any
+// other token — it is not privileged evidence. So the SAME key visited once WITH a hint (agent)
+// and once WITHOUT (human) treats the hint-only token as a MINORITY and drops it from the durable
+// core; a majority of hinted visits keeps it. (The named risk in review — locked here, not left
+// emergent.) NOTE: each visit carries a distinct per-visit token ("visit a/b/c") so neither
+// landing's face is a subset of the other — otherwise the unhinted landing reads as a PARTIAL
+// render of the hinted one (absence-of-name ≈ absence-of-node) and is excluded before the vote,
+// masking it. The distinct token is what makes every visit a FULL landing that actually votes.
+describe('grammar: X6 mixed hinted/unhinted visits — hint tokens obey the cross-visit majority', () => {
+  const BASE = ['- heading "Settings" [ref=e1]', '- button "Save" [ref=e2]', '- button "Cancel" [ref=e3]',
+    '- textbox "Name" [ref=e4b]', '- textbox "Email" [ref=e5b]', `- link "Docs" [ref=e6b]:\n    - /url: ${B}/docs`,
+    '- paragraph "Profile" [ref=e7b]'];
+  const PAGE = (visit: string, iconNamed: boolean) => [...BASE,
+    `- paragraph "visit ${visit}" [ref=e9b]`,
+    iconNamed ? '- button "Toggle panel" [ref=e50]' : '- button [ref=e50]'].join('\n');
+  const HINT = { e50: 'Toggle panel' };
+  const visitEff = (seq: number, visit: string, hinted: boolean): StoredActionEffect => ({
+    seq, capturedAt: 0, fromUrl: `${B}/auth/login`, fromSnapshot: AUTH,
+    action: { role: 'button', name: 'Login', ref: 'e4', elementFp: { role: 'button', name: 'Login', near: null } },
+    toUrl: `${B}/settings`, toSnapshot: PAGE(visit, hinted), navigated: true, diff: { added: [], removed: [] } as any,
+    ...(hinted ? { nameHints: HINT } : {}) });
+  const hasToggle = (effs: StoredActionEffect[]) => {
+    const st = draftFromEffects(effs as never).states.find((x) => x.label === 'settings')!;
+    return st.affordances.some((a) => /Toggle panel/.test(a.label));
+  };
+
+  it('drops the hint-only token when it is the MINORITY (1 hinted of 2 visits)', () => {
+    expect(hasToggle([visitEff(0, 'a', true), visitEff(1, 'b', false)])).toBe(false);
+  });
+
+  it('keeps the hint token when it is the MAJORITY (2 hinted of 3 visits)', () => {
+    expect(hasToggle([visitEff(0, 'a', true), visitEff(1, 'b', true), visitEff(2, 'c', false)])).toBe(true);
+  });
+});
+
 // ── fx-data-grid's row-link -> detail URL template: a title link (/items/:id) becomes the
 // list-to-detail navigate edge (A4 + A5, row 44/49's "home turf"). Verifies the edge kind and
 // that the destination merges under one /items/{param} template rather than one state per id.

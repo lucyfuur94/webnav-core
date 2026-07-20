@@ -22,7 +22,7 @@ describe('startDashboard', () => {
     const store = new MapStore(':memory:');
     seedGraph(store);            // default: saucedemo
     // a second site with a small interior, so the dashboard's multi-site / per-site endpoints are exercised.
-    store.upsertNode({ id: 'example.com', homeUrl: 'https://example.com', capabilities: ['code-search'], topics: ['code'] });
+    store.upsertNode({ id: 'example.com', homeUrl: 'https://example.com' });
     for (const id of ['home', 'list', 'detail']) {
       store.upsertState(makeState({ id: `example.com:${id}`, nodeId: 'example.com', semanticName: id, urlPattern: `https://example.com/${id}`, role: 'detail' }));
     }
@@ -53,7 +53,6 @@ describe('startDashboard', () => {
     const ex = sites.find((s: any) => s.id === 'example.com');
     expect(ex).toBeTruthy();
     expect(ex.stateCount).toBe(3);            // home, list, detail
-    expect(ex.capabilities).toContain('code-search');
   });
 
   it('GET /api/sites/:id returns node + states + interiorEdges; 404 unknown', async () => {
@@ -164,7 +163,8 @@ describe('recordings API', () => {
     open: async () => ({ ok: true as const }),
     record: (id: string) => { calls.push('rec:' + id); return true; },
     stop: (id: string) => { calls.push('stop:' + id); return true; },
-    replay: async () => ({ ok: false as const, error: 'busy' }),
+    replay: async (id: string, mode?: string) => { calls.push('replay:' + id + ':' + mode); return { ok: false as const, error: 'busy' }; },
+    events: (id: string) => ({ events: [{ seq: 1, kind: 'click', source: 'human', descriptor: {}, disposition: 'step:1' }], coverage: { total: 2, captured: 1, dropped: [{ seq: 2, kind: 'click', label: 'X', reason: 'unprocessed' }] } }),
     replayState: () => null,
     replayControl: () => true,
     shotPath: () => null,
@@ -227,6 +227,20 @@ describe('recordings API', () => {
     expect((await fetch(base + '/replays/r1/step-1.png')).status).toBe(404);
     expect((await fetch(base + '/api/recordings/open', { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(400);
+  });
+  it('POST replay passes the mode through (default steps)', async () => {
+    await fetch(base + '/api/recordings/r1/replay', { method: 'POST' });
+    expect(calls).toContain('replay:r1:steps');
+    await fetch(base + '/api/recordings/r1/replay', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'ledger' }) });
+    expect(calls).toContain('replay:r1:ledger');
+  });
+  it('GET /api/recordings/:id/events returns the ledger with coverage', async () => {
+    const r = await fetch(base + '/api/recordings/r1/events');
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.events).toHaveLength(1);
+    expect(body.coverage).toEqual({ total: 2, captured: 1, dropped: [{ seq: 2, kind: 'click', label: 'X', reason: 'unprocessed' }] });
   });
   it('without rec deps the routes are 503', async () => {
     const s2 = startDashboard(new MapStore(':memory:'), new CredStore(join(tmp2, 'c2.json')), { port: 0 });

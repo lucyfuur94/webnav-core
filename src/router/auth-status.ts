@@ -30,7 +30,9 @@ function hasPasswordField(nodes: ReturnType<typeof parseSnapshot>): boolean {
  * rules, just the three honest signals from the design doc. Reused by the verb
  * (Task A) and by the walk/use-navigate wall-handling escalation (Task 2).
  *
- *   valid        — landed on `site`'s host AND the snapshot matches a known map state.
+ *   valid        — the snapshot matches a known map content state (⇒ logged in and on a
+ *                  real page — this is the STRONGEST signal, so it wins over the URL-host
+ *                  heuristic below), OR the landing is on `site`'s host with no wall signal.
  *   needs-login  — foreign-host landing, OR an interstitial/bot-wall, OR a password
  *                  field is present. loginUrl = the landed url.
  *   unknown      — everything else (no map yet / ambiguous landing on the right host).
@@ -38,6 +40,17 @@ function hasPasswordField(nodes: ReturnType<typeof parseSnapshot>): boolean {
 export function classifyAuthLanding(
   landedUrl: string, snapshotYaml: string, site: string, states: State[],
 ): AuthClassification {
+  const nodes = parseSnapshot(snapshotYaml);
+
+  // MATCH FIRST — a snapshot that matches a known content state (non-empty fingerprint,
+  // every token present; matchState never matches a bare login/shell page) is direct
+  // proof the profile is logged in and on a real page. It OVERRIDES the URL-host
+  // heuristic below: `landedUrl` can be a stale/withheld reading from the driver (e.g.
+  // the extension's chrome.tabs.get returns '' or a mid-navigation host), which used to
+  // trip `foreignHost` and fire a false `needs-login` on an authed SPA. The page itself
+  // is the honest evidence; trust it over the address bar.
+  if (matchState(nodes, states).status === 'matched') return { auth: 'valid' };
+
   const landedHost = hostOf(landedUrl);
   const foreignHost = landedHost !== null && landedHost !== site;
   if (foreignHost) return { auth: 'needs-login', loginUrl: landedUrl };
@@ -46,11 +59,7 @@ export function classifyAuthLanding(
     return { auth: 'needs-login', loginUrl: landedUrl };
   }
 
-  const nodes = parseSnapshot(snapshotYaml);
   if (hasPasswordField(nodes)) return { auth: 'needs-login', loginUrl: landedUrl };
-
-  const matched = matchState(nodes, states);
-  if (matched.status === 'matched') return { auth: 'valid' };
 
   return { auth: 'unknown' };
 }

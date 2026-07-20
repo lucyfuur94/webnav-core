@@ -21,6 +21,8 @@ export interface ActionRef {
                     // makes a recorded flow re-runnable with different values; secrets never captured
   hover?: boolean;  // this action was a HOVER (reveal-on-hover menus/tooltips), not a click/type —
                     // a same-page reveal; the diff shows what the hover exposed. Never navigates.
+  rightClick?: boolean;  // this action was a RIGHT-CLICK (context menus) — like hover, a same-page
+                    // reveal whose diff shows the exposed menu. Never navigates, never fires an item.
 }
 export interface ActionEffect {
   fromUrl: string; fromSnapshot: string;
@@ -29,8 +31,23 @@ export interface ActionEffect {
   navigated: boolean; diff: SnapshotDiff;
   requestedUrl?: string;  // the URL a navigate ASKED for, before settle — toUrl may differ
                          // (client-side redirect); Task 7 uses the gap to alias requestedKey→settledKey
+  nameHints?: Record<string, string>;  // ref → observed label for NAMELESS icon controls on the
+                         // LANDING (tooltip/aria/title read from the live DOM by the name-probe,
+                         // X6). Effect-level (bare navigations have action:null); draft's landing
+                         // intake applies these before the name gates. Observed evidence, never invented.
 }
 export interface StoredActionEffect extends ActionEffect { seq: number; capturedAt: number; }
+
+// The raw-event LEDGER: every captured event, appended at the earliest capture point
+// (before assembly can lose it), later stamped with its fate. Descriptors only —
+// role/label/href/non-secret value — never CSS selectors (spec 2026-07-16). Secrets
+// are excluded at the SOURCE (the in-page listener / no agent text), so this table
+// can never contain them.
+export interface LedgerEvent {
+  t?: number; source: 'human' | 'agent'; kind: string;
+  descriptor: Record<string, unknown>;
+}
+export interface StoredLedgerEvent extends LedgerEvent { seq: number; disposition: string | null }
 
 export interface RecordSessionInfo {
   sessionId: string; active: boolean; startedAt: number; stoppedAt: number | null;
@@ -60,7 +77,7 @@ export class RecordStore {
     const have = new Set(cols.map((c) => c.name));
     for (const [col, type] of [['from_url', 'TEXT'], ['from_snapshot', 'TEXT'], ['action', 'TEXT'],
       ['to_url', 'TEXT'], ['to_snapshot', 'TEXT'], ['navigated', 'INTEGER'], ['diff', 'TEXT'],
-      ['requested_url', 'TEXT']] as const) {
+      ['requested_url', 'TEXT'], ['name_hints', 'TEXT']] as const) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE record_observations ADD COLUMN ${col} ${type}`);
     }
     // start_url = the URL the operator ASKED to record at (not wherever an auth
@@ -70,8 +87,9 @@ export class RecordStore {
     // profile = the NAMED browser profile a session runs under (shared logged-in
     // state; null ⇒ 'default'). Lets "log in once" apply across every session.
     if (!scols.has('profile')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN profile TEXT');
-    // origin = who recorded this session: 'agent' (use session / use-driven) or
-    // 'manual' (human record-live / dashboard). Null (legacy rows) reads as 'manual'.
+    // origin = who recorded this session: 'agent' (use session / use-driven CLI walk),
+    // 'extension' (the webnav Chrome extension's agent run), or 'manual' (human
+    // record-live / dashboard). Null (legacy rows) reads as 'manual'.
     if (!scols.has('origin')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN origin TEXT');
     // review = the capture-review verdict JSON ({approved, gaps, at, model, reason}) — set
     // by `dev review`. A session is GRAPH-READY only when approved (all on-screen actions
@@ -87,13 +105,13 @@ export class RecordStore {
     if (!r?.review) return null;
     try { return JSON.parse(r.review); } catch { return null; }
   }
-  /** Tag who recorded the session ('agent' | 'manual'); only sets if not already set. */
-  setOrigin(sessionId: string, origin: 'agent' | 'manual'): void {
+  /** Tag who recorded the session ('agent' | 'extension' | 'manual'); only sets if not already set. */
+  setOrigin(sessionId: string, origin: 'agent' | 'extension' | 'manual'): void {
     this.db.prepare('UPDATE record_sessions SET origin=? WHERE session_id=? AND origin IS NULL').run(origin, sessionId);
   }
-  originOf(sessionId: string): 'agent' | 'manual' {
+  originOf(sessionId: string): 'agent' | 'extension' | 'manual' {
     const r: any = this.db.prepare('SELECT origin FROM record_sessions WHERE session_id=?').get(sessionId);
-    return r?.origin === 'agent' ? 'agent' : 'manual';   // legacy/null → manual
+    return r?.origin === 'agent' || r?.origin === 'extension' ? r.origin : 'manual';   // legacy/null → manual
   }
   /** Record the intended start URL for a session (idempotent; only sets if given). */
   setStartUrl(sessionId: string, url: string): void {
@@ -135,6 +153,7 @@ export class RecordStore {
    *  session id replaces, not appends — the ingest receiver's default session is reused). */
   clearSession(sessionId: string): void {
     this.db.prepare('DELETE FROM record_observations WHERE session_id=?').run(sessionId);
+    this.db.prepare('DELETE FROM record_events WHERE session_id=?').run(sessionId);
   }
   /** Delete a recording ENTIRELY — observations AND the session row (live finding:
    *  clearSession alone left the row, so a "deleted" recording stayed in the list). */
@@ -152,6 +171,7 @@ export class RecordStore {
     this.db.transaction(() => {
       this.db.prepare('UPDATE record_sessions SET session_id=? WHERE session_id=?').run(to, from);
       this.db.prepare('UPDATE record_observations SET session_id=? WHERE session_id=?').run(to, from);
+      this.db.prepare('UPDATE record_events SET session_id=? WHERE session_id=?').run(to, from);
     })();
     return true;
   }
@@ -175,20 +195,46 @@ export class RecordStore {
     return rows.map((r) => ({ url: r.url, fingerprint: JSON.parse(r.fingerprint),
       declaredLinks: JSON.parse(r.declared_links), seq: r.seq, capturedAt: r.captured_at }));
   }
-  appendActionEffect(sessionId: string, fx: ActionEffect, nowMs = Date.now()): void {
-    if (!this.isActive(sessionId)) return;
+  appendActionEffect(sessionId: string, fx: ActionEffect, nowMs = Date.now()): number | null {
+    if (!this.isActive(sessionId)) return null;
     const seq: any = this.db.prepare(
       'SELECT COUNT(*) AS c FROM record_observations WHERE session_id=?').get(sessionId);
     this.db.prepare(
       `INSERT INTO record_observations
         (session_id,seq,url,fingerprint,declared_links,captured_at,
-         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff,requested_url)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+         from_url,from_snapshot,action,to_url,to_snapshot,navigated,diff,requested_url,name_hints)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(sessionId, seq.c,
         fx.toUrl, '[]', '[]', nowMs,
         fx.fromUrl, fx.fromSnapshot, JSON.stringify(fx.action),
         fx.toUrl, fx.toSnapshot, fx.navigated ? 1 : 0, JSON.stringify(fx.diff),
-        fx.requestedUrl ?? null);
+        fx.requestedUrl ?? null, fx.nameHints ? JSON.stringify(fx.nameHints) : null);
+    return seq.c as number;
+  }
+  /** Append one raw event to the session's ledger. isActive-gated like steps:
+   *  recording off = off, for BOTH capture paths. Returns the ledger seq (for the
+   *  later disposition stamp) or null when not recording. `ev.t` (the human path's
+   *  page-clock timestamp) always wins; agent-path callers that pass no `t` get
+   *  stamped with `nowMs` so the dashboard's ledger time column is never blank. */
+  appendEvent(sessionId: string, ev: LedgerEvent, nowMs = Date.now()): number | null {
+    if (!this.isActive(sessionId)) return null;
+    const seq: any = this.db.prepare(
+      'SELECT COUNT(*) AS c FROM record_events WHERE session_id=?').get(sessionId);
+    this.db.prepare(
+      'INSERT INTO record_events (session_id,seq,t,source,kind,descriptor) VALUES (?,?,?,?,?,?)')
+      .run(sessionId, seq.c, ev.t ?? nowMs, ev.source, ev.kind, JSON.stringify(ev.descriptor));
+    return seq.c as number;
+  }
+  /** Stamp an event's fate: 'step:<stepSeq>' or 'dropped:<reason>'. */
+  stampEvent(sessionId: string, seq: number, disposition: string): void {
+    this.db.prepare('UPDATE record_events SET disposition=? WHERE session_id=? AND seq=?')
+      .run(disposition, sessionId, seq);
+  }
+  events(sessionId: string): StoredLedgerEvent[] {
+    const rows: any[] = this.db.prepare(
+      'SELECT * FROM record_events WHERE session_id=? ORDER BY seq').all(sessionId);
+    return rows.map((r) => ({ seq: r.seq, t: r.t ?? undefined, source: r.source, kind: r.kind,
+      descriptor: JSON.parse(r.descriptor), disposition: r.disposition ?? null }));
   }
   actionEffects(sessionId: string): StoredActionEffect[] {
     const rows: any[] = this.db.prepare(
@@ -198,6 +244,7 @@ export class RecordStore {
       action: JSON.parse(r.action), toUrl: r.to_url, toSnapshot: r.to_snapshot,
       navigated: r.navigated === 1, diff: JSON.parse(r.diff),
       requestedUrl: r.requested_url ?? undefined,
+      nameHints: r.name_hints ? JSON.parse(r.name_hints) : undefined,
       seq: r.seq, capturedAt: r.captured_at,
     }));
   }

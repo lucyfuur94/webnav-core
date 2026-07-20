@@ -24,7 +24,18 @@ export interface CommandSpec {
   example: string; // e.g. 'webnav recall "python retry" --top 5'
 }
 
-export const VERSION = '0.1.0';
+// Single source of truth: read the version from package.json at runtime (no
+// resolveJsonModule needed, and no hand-maintained constant to drift). Works from
+// both src/ (tsx) and dist/ — ../package.json resolves to the repo root either way.
+import { readFileSync as _readVersionFile } from 'node:fs';
+import { fileURLToPath as _versionUrl } from 'node:url';
+export const VERSION: string = (() => {
+  try {
+    return JSON.parse(_readVersionFile(_versionUrl(new URL('../package.json', import.meta.url)), 'utf8')).version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 
 // Browser-launch flags shared by every verb that opens a browser (read / navigate
 // / walk). Default is HEADED (a visible window); --headless opts out.
@@ -219,28 +230,14 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'node-add',
-    summary: 'Teach webnav a new site: its id, url, capabilities, topics.',
+    summary: 'Teach webnav a new site: its id and home url.',
     args: [
       { name: 'id', required: true, description: 'Node id (e.g. npmjs.com) — also the skeleton namespace.' },
     ],
     flags: [
       { name: '--url', takesValue: true, description: 'Entry/home URL for the site.' },
-      { name: '--capabilities', takesValue: true, description: 'Comma-separated capability/cluster names this site serves.' },
-      { name: '--topics', takesValue: true, description: 'Comma-separated declared content topics.' },
     ],
-    example: 'webnav dev node-add npmjs.com --url https://www.npmjs.com --capabilities package-search --topics javascript,packages',
-  },
-  {
-    name: 'edge-add',
-    summary: 'Teach webnav a relationship between two known sites.',
-    args: [
-      { name: 'from', required: true, description: 'Source node id (must already be known).' },
-      { name: 'to', required: true, description: 'Target node id (must already be known).' },
-    ],
-    flags: [
-      { name: '--kind', takesValue: true, default: 'capability', description: 'Edge kind: capability | hyperlink | co-use | content.' },
-    ],
-    example: 'webnav dev edge-add github.com pypi.org --kind hyperlink',
+    example: 'webnav dev node-add npmjs.com --url https://www.npmjs.com',
   },
   {
     name: 'capture',
@@ -420,6 +417,17 @@ export const DEV_COMMANDS: CommandSpec[] = [
     example: 'webnav dev verify --node www.saucedemo.com --session sd1',
   },
   {
+    name: 'hover-probe',
+    summary: 'Reveal the HOVER / RIGHT-CLICK repertoire of the page the --session browser is currently on — the mega-menus and context menus that live in NO settled snapshot and so are otherwise omitted from the map (gap X2). An OPT-IN pass over a LIVE recording session: it snapshots the page, picks STRUCTURAL candidates (nodes with aria-haspopup, menuitems, and named interactive nodes inside a banner/navigation landmark — judgment-free, capped at --limit), hovers each, diffs what appears, and appends a reveal ActionEffect (marked hover) to the recording for any candidate that exposed new nodes. REVEAL ONLY — it never clicks anything inside a revealed menu (commit rule). --right-click switches to right-click (context menus, marked rightClick). The session MUST be recording (start it and drive it to the page first) — a non-recording session is refused, never a silent no-op. status done = something revealed · empty = nothing revealed (exit 3). Run it, then re-draft (dev graph-analyse --draft) to pick up the new reveal affordances.',
+    args: [],
+    flags: [
+      { name: '--session', takesValue: true, description: 'A live recording session already ON the page to probe (from dev record-start, driven to the page).' },
+      { name: '--limit', takesValue: true, default: '12', description: 'Max candidates to probe (default 12).' },
+      { name: '--right-click', takesValue: false, description: 'Right-click (context menus) instead of hover (mega-menus). Marks the effect rightClick.' },
+    ],
+    example: 'webnav dev hover-probe --session sd1 --limit 8',
+  },
+  {
     name: 'profile-status',
     summary: 'Evidence-based "is this profile still logged in for this site?" check — call BEFORE walking/recording an authed site instead of guessing. Opens ONE headless session under --profile, loads the site\'s map homeUrl (or --url), settles the landing, and classifies it against the site\'s own map fingerprints (the oracle: matchState) — valid (landed + matched a known state) | needs-login (foreign-host wall, interstitial/bot-wall, or a declared password field — includes loginUrl) | unknown (no map yet / ambiguous landing). The session is always reaped after. Exit 0 in all three cases — needs-login is a normal, useful answer, not a failure.',
     args: [],
@@ -438,7 +446,7 @@ export const DEV_COMMANDS: CommandSpec[] = [
       { name: '--all', takesValue: false, description: 'reap: close EVERY session (default closes only orphans whose browser already died).' },
       { name: '--max-age-hours', takesValue: true, description: 'reap: also close LIVE sessions older than N hours (a TTL sweep).' },
     ],
-    example: 'webnav dev sessions reap            # close dead-browser orphans\nwebnav dev sessions reap --all      # close everything\nwebnav dev sessions list\n# Auto-sweep (opt-in): set WEBNAV_SESSION_TTL_HOURS=6 so walk/use-navigate reap\n# orphans + sessions older than 6h on start (never the one in use). Off by default.',
+    example: 'webnav dev sessions reap                    # close dead-browser orphans\nwebnav dev sessions reap --all              # close everything\nwebnav dev sessions reap --max-age-hours 6  # also close live sessions older than 6h\nwebnav dev sessions list',
   },
   {
     name: 'mcp',
@@ -459,10 +467,20 @@ export const DEV_COMMANDS: CommandSpec[] = [
   },
   {
     name: 'ingest',
-    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-recorder Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse --session <id> --draft`. Runs until Ctrl-C.',
+    summary: 'Run a localhost receiver that turns human-recorded browser sessions into map data. Starts an HTTP server on --port (default 7778); the webnav-extension Chrome extension POSTs recorded steps to POST /ingest — they land in webnav.db as ActionEffects, identical to agent-recorded ones. Then use `dev graph-analyse --session <id> --draft`. Runs until Ctrl-C.',
     args: [],
     flags: [{ name: '--port', takesValue: true, default: '7778', description: 'Localhost port to listen on.' }],
     example: 'webnav dev ingest --port 7778',
+  },
+  {
+    name: 'agent-serve',
+    summary: 'Run the local agent server the webnav-extension sidePanel talks to. Starts an HTTP server on --port (default 7779): GET /api/agent/events streams SSE {type:turn|action|done|error|plan} events (last connection wins — opening a second panel evicts the first); POST /api/agent/goal {goal,sessionId,mode} starts a run; POST /api/agent/command-result {id,result} resolves a pending action command the server emitted; POST /api/agent/stop aborts the current run; POST /ingest-ax lands a live run as ActionEffects (same path as `dev ingest`). Runs until Ctrl-C.',
+    args: [],
+    flags: [
+      { name: '--port', takesValue: true, default: '7779', description: 'Localhost port to listen on.' },
+      { name: '--token', takesValue: true, description: 'Pin the auth token to a fixed hex string, stable across restarts (paste into the panel once). Omit to get a fresh random token every run (the old behavior).' },
+    ],
+    example: 'webnav dev agent-serve --port 7779 --token deadbeef1234',
   },
 ];
 

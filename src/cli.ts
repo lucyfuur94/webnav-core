@@ -1,6 +1,7 @@
 import { topLevelHelp, commandHelp } from './cli-help.js';
 import { VERSION, COMMANDS } from './cli-spec.js';
 import type { BrowserOpts } from './playwright/adapter.js';
+import { wireSessionName } from './playwright/adapter.js';
 import type { RecordingsDeps } from './dashboard/server.js';
 import type { State } from './mapstore/types.js';
 import { dbPath } from './paths.js';
@@ -11,8 +12,7 @@ export type ParsedArgs =
   | { cmd: 'list' }
   | { cmd: 'read'; url: string; raw: boolean; browser: BrowserOpts }
   | { cmd: 'search'; query: string; top: number }
-  | { cmd: 'node-add'; id: string; url: string; capabilities: string[]; topics: string[] }
-  | { cmd: 'edge-add'; from: string; to: string; kind: string }
+  | { cmd: 'node-add'; id: string; url: string }
   | { cmd: 'capture'; url: string; out: string }
   | { cmd: 'eval'; url: string; js: string }
   | { cmd: 'network'; url: string }
@@ -48,20 +48,16 @@ export type ParsedArgs =
   | { cmd: 'review'; session: string; model: string; instructions?: string }
   | { cmd: 'capture-loop'; objective: string; exploreCmd: string; sessionPrefix: string; maxRounds: number; model: string }
   | { cmd: 'verify'; node: string; session: string }
+  | { cmd: 'hover-probe'; session: string; limit: number; rightClick: boolean }
   | { cmd: 'profile-status'; profile: string; site: string; url?: string }
   | { cmd: 'sessions'; sub: string; all: boolean; maxAgeHours?: number }
   | { cmd: 'mcp' }
   | { cmd: 'dashboard'; port: number; open: boolean }
   | { cmd: 'ingest'; port: number }
+  | { cmd: 'agent-serve'; port: number; token?: string }
   | { cmd: 'dev-help' }
   | { cmd: 'use-help' }
   | { cmd: 'dev'; devCmd: string | undefined; devRest: string[] };
-
-// Split a comma-separated flag value into an array; absent flag → empty array.
-function listFlag(args: string[], name: string): string[] {
-  const v = flagValue(args, name);
-  return v === undefined ? [] : v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-}
 
 // Pull the value following a flag (or one of its aliases) out of an arg list.
 function flagValue(args: string[], ...names: string[]): string | undefined {
@@ -152,14 +148,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, query, top };
   }
   if (cmd === 'node-add') {
-    return {
-      cmd, id: rest[0], url: flagValue(rest, '--url') ?? '',
-      capabilities: listFlag(rest, '--capabilities'),
-      topics: listFlag(rest, '--topics'),
-    };
-  }
-  if (cmd === 'edge-add') {
-    return { cmd, from: rest[0], to: rest[1], kind: flagValue(rest, '--kind') ?? 'capability' };
+    return { cmd, id: rest[0], url: flagValue(rest, '--url') ?? '' };
   }
   if (cmd === 'eval') {
     const pos = rest.filter((a) => !a.startsWith('--'));
@@ -214,6 +203,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (cmd === 'review') return { cmd, session: flagValue(rest, '--session') ?? rest.find((a) => !a.startsWith('--')) ?? '', model: flagValue(rest, '--model') ?? 'sonnet', instructions: flagValue(rest, '--instructions') };
   if (cmd === 'capture-loop') return { cmd, objective: flagValue(rest, '--objective') ?? '', exploreCmd: flagValue(rest, '--explore-cmd') ?? '', sessionPrefix: flagValue(rest, '--session-prefix') ?? 'cl', maxRounds: Number(flagValue(rest, '--max-rounds') ?? 5), model: flagValue(rest, '--model') ?? 'sonnet' };
   if (cmd === 'verify') return { cmd, node: flagValue(rest, '--node') ?? '', session: flagValue(rest, '--session') ?? '' };
+  if (cmd === 'hover-probe') return { cmd, session: flagValue(rest, '--session') ?? '', limit: Number(flagValue(rest, '--limit') ?? 12), rightClick: rest.includes('--right-click') };
   if (cmd === 'profile-status') {
     return { cmd, profile: flagValue(rest, '--profile') ?? '', site: flagValue(rest, '--site') ?? '', url: flagValue(rest, '--url') };
   }
@@ -229,6 +219,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { cmd, port, open: rest.includes('--open') };
   }
   if (cmd === 'ingest') return { cmd, port: Number(flagValue(rest, '--port') ?? 7778) };
+  if (cmd === 'agent-serve') return { cmd, port: Number(flagValue(rest, '--port') ?? 7779), token: flagValue(rest, '--token') };
   if (cmd === 'walk') {
     return { cmd, start: flagValue(rest, '--start') ?? '', goal: flagValue(rest, '--goal') ?? '',
       inputs: inputFlags(rest), browser: browserOpts(rest), hosted: rest.includes('--hosted'),
@@ -350,24 +341,8 @@ async function main() {
     const { addNode } = await import('./graph/teach.js');
     const store = new MapStore();
     ensureSeeded(store);
-    const node = addNode(store, {
-      id: args.id, homeUrl: args.url, capabilities: args.capabilities, topics: args.topics,
-    });
+    const node = addNode(store, { id: args.id, homeUrl: args.url });
     console.log(JSON.stringify(node, null, 2));
-    return;
-  }
-  if (args.cmd === 'edge-add') {
-    // edge-add: teach webnav a relationship between two KNOWN sites.
-    const { MapStore } = await import('./mapstore/store.js');
-    const { ensureSeeded } = await import('./graph/seed.js');
-    const { addEdge } = await import('./graph/teach.js');
-    const store = new MapStore();
-    ensureSeeded(store);
-    const result = addEdge(store, { from: args.from, to: args.to, kind: args.kind as any });
-    console.log(JSON.stringify(result, null, 2));
-    // "ran fine but couldn't" — an edge to an unknown node → exit 3, the same
-    // code search/recall use for a clean-but-unsatisfiable result.
-    if (result.status === 'unknown-node') process.exitCode = 3;
     return;
   }
   if (args.cmd === 'eval') {
@@ -657,13 +632,144 @@ async function main() {
   }
   if (args.cmd === 'ingest') {
     // Long-lived localhost receiver (like `dashboard`/`mcp`): does NOT print-and-exit.
-    // The webnav-recorder Chrome extension POSTs recorded sessions here; they land
+    // The webnav-extension Chrome extension POSTs recorded sessions here; they land
     // in webnav.db as ActionEffects via `serveIngest` -> `ingest` (Task 2).
     const { serveIngest } = await import('./recorder/ingest.js');
     const { RecordStore } = await import('./mapstore/record.js');
     const server = serveIngest(args.port, new RecordStore(dbPath()));
     process.stderr.write(`webnav ingest listening on http://127.0.0.1:${args.port}/ingest\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port }));
+    await new Promise(() => {}); // run until killed
+    return;
+  }
+  if (args.cmd === 'agent-serve') {
+    // Long-lived localhost receiver (like `ingest`/`dashboard`): the Chrome extension
+    // sidePanel's local server. Streams AgentEvent over SSE, accepts a goal, runs the
+    // agent loop over a real AgentChannel that drives the extension's tab, and mounts
+    // /ingest-ax so a live goal run is recorded through the same path human/agent
+    // recordings use (Task 3).
+    const { serveAgent } = await import('./agent/server.js');
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { runAgentGoal } = await import('./agent/loop.js');
+    const { makeLiveExtensionBrowser } = await import('./router/live-extension-browser.js');
+    const { ingestAX } = await import('./recorder/ingest.js');
+    const { MapStore } = await import('./mapstore/store.js');
+    const { ensureSeeded } = await import('./graph/seed.js');
+    // One RecordStore for the server's lifetime: it backs BOTH the /ingest-ax route AND
+    // the end-of-run flush below, so an agent run lands in the same webnav.db `dev
+    // dashboard` reads and run-2 recall learns from.
+    const recordStore = new RecordStore(dbPath());
+    // ponytail: one MapStore for the server's lifetime — same seeded map the `walk`
+    // verb uses, so check_route/walkRoute route against the real states. Extra sites
+    // recorded via /ingest-ax build the RecordStore, not this map; that's fine — the
+    // loop drives manually when the live page isn't a known state.
+    const mapStore = new MapStore();
+    ensureSeeded(mapStore);
+    const states = mapStore.allStates();
+    // onGoal: a goal POST runs the loop. Inputs = {} for v1 — the goal body carries no
+    // site/start-state to key CredStore by; the extension user is already logged in on
+    // the live tab, and creds-injection is a walk-verb concern. Real SDK query runs.
+    const onGoal = async (
+      goal: import('./agent/server.js').AgentGoalBody,
+      channel: import('./router/live-extension-browser.js').AgentChannel,
+      emit: (e: import('./agent/server.js').AgentEvent) => void,
+      awaitApproval: () => Promise<boolean>,
+      signal: AbortSignal,
+      resumeSessionId: string | undefined,
+      onSdkSession: (sdkSessionId: string) => void,
+    ): Promise<void> => {
+      const browser = makeLiveExtensionBrowser(channel, {});
+      // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
+      // (loop.ts), so /stop cancels the in-flight turn — not just the next browser command.
+      try {
+        await runAgentGoal({
+          goal: goal.goal,
+          sessionId: goal.sessionId,
+          mode: goal.mode === 'ask' ? 'ask' : 'act',
+          model: goal.model,
+          browser,
+          store: mapStore,
+          states,
+          emit,
+          awaitApproval,
+          signal,
+          // Conversation continuity: resume the SDK session the server remembered for this
+          // panel conversation, and hand the captured session id back so the NEXT goal
+          // resumes it too. No re-listing routes / re-orienting on follow-ups.
+          resumeSessionId,
+          onSdkSession,
+        });
+      } finally {
+        // RECORD the run into the map on END (done / error / stop). Housekeeping never
+        // breaks the command (guardrail-sweep rule): a record failure is a warning, never
+        // a thrown goal. Empty runs (no action taken) record nothing.
+        try {
+          const steps = browser.getRecordedSteps();
+          if (steps.length) {
+            ingestAX({ sessionId: goal.sessionId, steps }, recordStore);
+            recordStore.setOrigin(goal.sessionId, 'extension'); // tag: driven by the Chrome extension
+          }
+        } catch (e) {
+          process.stderr.write(`webnav agent-serve: recording flush failed (run unaffected): ${String(e)}\n`);
+        }
+      }
+    };
+    // Per-run auth secret: the extension must present it on every /api/agent/* call
+    // (header on POSTs, ?token= on the SSE GET). Without it any web page (DNS-rebind /
+    // localhost fetch) or local process could POST a goal and drive the user's browser.
+    // `--token <hex>` pins a stable token across restarts (paste once into the panel);
+    // omitted → a fresh random token every run, as before.
+    // Assemble a session video from the extension's CDP screencast frames. Frames are
+    // base64 JPEGs with ms-relative timestamps; the concat demuxer sets per-frame durations
+    // and `-r 15 -fps_mode cfr` re-times to a CONSTANT frame rate — without CFR the output
+    // has irregular PTS and no duration metadata, which browsers show as an unseekable video
+    // that jumps 0→end on play (the observed bug). Idle gaps are capped so a "thinking" pause
+    // doesn't become a frozen minute. Writes to ~/.webnav/recordings/<sessionId>/, exactly
+    // where the dashboard serves videos. Best-effort: failures log, never break the run.
+    const onScreencast = async (sessionId: string, frames: { data: string; timestampMs: number }[]) => {
+      if (!frames.length) return;
+      const { homedir, tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+      const { spawn } = await import('node:child_process');
+      const tmp = mkdtempSync(join(tmpdir(), 'webnav-scr-'));
+      const MAX_HOLD_S = 1.5;   // cap a single frame's on-screen time (idle/thinking gaps)
+      try {
+        const lines: string[] = [];
+        for (let i = 0; i < frames.length; i++) {
+          const f = join(tmp, 'f' + String(i).padStart(5, '0') + '.jpg');
+          writeFileSync(f, Buffer.from(frames[i].data, 'base64'));
+          const nextMs = i + 1 < frames.length ? frames[i + 1].timestampMs : frames[i].timestampMs + 500;
+          const dur = Math.min(MAX_HOLD_S, Math.max(0.06, (nextMs - frames[i].timestampMs) / 1000));
+          lines.push("file '" + f + "'", 'duration ' + dur.toFixed(3));
+        }
+        lines.push("file '" + join(tmp, 'f' + String(frames.length - 1).padStart(5, '0') + '.jpg') + "'"); // concat quirk: repeat last
+        const listPath = join(tmp, 'frames.txt');
+        writeFileSync(listPath, lines.join('\n'));
+        const outDir = join(homedir(), '.webnav', 'recordings', sessionId);
+        mkdirSync(outDir, { recursive: true });
+        const outFile = join(outDir, 'take-' + Date.now() + '.webm');
+        await new Promise<void>((resolve, reject) => {
+          const ff = spawn('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', listPath,
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+            '-r', '15', '-fps_mode', 'cfr', '-c:v', 'libvpx-vp9', '-b:v', '1M', outFile],
+            { stdio: 'ignore' });
+          ff.on('error', reject);
+          ff.on('exit', (code) => code === 0 ? resolve() : reject(new Error('ffmpeg exit ' + code)));
+        });
+        process.stderr.write('video: saved ' + outFile + ' (' + frames.length + ' frames)\n');
+      } catch (e) {
+        process.stderr.write('video: assembly failed (run unaffected): ' + String(e) + '\n');
+      } finally {
+        try { rmSync(tmp, { recursive: true, force: true }); } catch { /* */ }
+      }
+    };
+    const { randomBytes } = await import('node:crypto');
+    const token = args.token || randomBytes(16).toString('hex');
+    const tokenMode = args.token ? 'pinned via --token' : 'random per-run';
+    const server = serveAgent(args.port, recordStore, { onGoal, token, onScreencast });
+    process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token} (${tokenMode})  (paste this into the extension panel settings)\n`);
+    console.log(JSON.stringify({ status: 'listening', port: args.port, token }));
     await new Promise(() => {}); // run until killed
     return;
   }
@@ -704,12 +810,15 @@ async function main() {
       kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
       label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
     }));
+    const { coverage, landingStructure } = await import('./recorder/coverage.js');
+    const cov = coverage(store.events(args.session));
     const videosRoot = join(homedir(), '.webnav', 'recordings');
     const reviewsRoot = join(homedir(), '.webnav', 'reviews');
     const res = await runSessionReview(args.session, {
       videosDir: join(videosRoot, args.session), outDir: join(reviewsRoot, args.session),
       steps, logs: [], log: (l) => process.stderr.write(l + '\n'),
       claudeModel: args.model, instructions: args.instructions, structured: true,
+      knownDrops: cov.dropped, coverage: cov, structure: landingStructure(fx),
     });
     const gaps = typeof res === 'string' ? [] : res.gaps;
     const approved = gaps.length === 0;
@@ -717,7 +826,7 @@ async function main() {
     store.setReview(args.session, { approved, gaps: gaps.length, at, model: args.model,
       reason: approved ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)` });
     console.log(JSON.stringify({ status: approved ? 'approved' : 'needs-fix', session: args.session,
-      approved, gaps, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
+      approved, gaps, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
     if (!approved) process.exitCode = 3;
     return;
   }
@@ -766,12 +875,17 @@ async function main() {
         return fresh.actionEffects(session).length ? session : null;
       },
       review: async (session) => {
-        const steps = new RecordStore(dbPath()).actionEffects(session).map((e) => ({
+        const fresh = new RecordStore(dbPath());
+        const fx = fresh.actionEffects(session);
+        const steps = fx.map((e) => ({
           seq: e.seq, kind: e.action ? (e.action.hover ? 'hover' : e.navigated ? 'navigate' : e.action.role === 'textbox' ? 'input' : 'click') : (e.navigated ? 'jump' : 'observe'),
           label: e.action?.name ?? e.toUrl, value: e.action?.value, capturedAt: e.capturedAt,
         }));
+        const { coverage, landingStructure } = await import('./recorder/coverage.js');
+        const cov = coverage(fresh.events(session));
         const res = await runSessionReview(session, { videosDir: join(videosRoot, session), outDir: join(reviewsRoot, session),
-          steps, logs: [], log: (l) => process.stderr.write(l + '\n'), claudeModel: args.model, structured: true });
+          steps, logs: [], log: (l) => process.stderr.write(l + '\n'), claudeModel: args.model, structured: true,
+          knownDrops: cov.dropped, coverage: cov, structure: landingStructure(fx) });
         return typeof res === 'string' ? [] : res.gaps;
       },
     });
@@ -818,6 +932,34 @@ async function main() {
     const allUnique = checks.every((c) => c.unique);
     console.log(JSON.stringify({ status: allUnique ? 'done' : 'non-unique', node: args.node, state: state.id, affordances: checks }, null, 2));
     if (!allUnique) process.exitCode = 3;
+    return;
+  }
+  if (args.cmd === 'hover-probe') {
+    // X2 (spec 2026-07-16 §2): an OPT-IN pass over the CURRENT page of a LIVE recording
+    // session. Hover (or --right-click) each structural candidate, diff the reveal, and
+    // append a reveal ActionEffect to the same recording. Attaches by session name (the
+    // `dev verify --session` shape) and appends like the agent-session loop.
+    if (!args.session) {
+      console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev hover-probe --session <S> [--limit N] [--right-click]' }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const { RecordStore } = await import('./mapstore/record.js');
+    const { PlaywrightAdapter } = await import('./playwright/adapter.js');
+    const { runHoverProbe } = await import('./recorder/hover-probe.js');
+    const store = new RecordStore(dbPath());
+    // The probe WRITES effects; a session that isn't recording would silently drop them
+    // (appendEvent/appendActionEffect are isActive-gated). That's dishonest, so refuse.
+    if (!store.isActive(args.session)) {
+      console.log(JSON.stringify({ status: 'error', session: args.session, hint: `session '${args.session}' is not recording — start it with 'dev record-start --session ${args.session}' and drive it to the page first` }, null, 2));
+      process.exitCode = 2; return;
+    }
+    const adapter = new PlaywrightAdapter(args.session);
+    const { probed, revealed } = await runHoverProbe({
+      adapter, store, sessionId: args.session, limit: args.limit, rightClick: args.rightClick,
+      log: (l) => process.stderr.write(l + '\n'),
+    });
+    console.log(JSON.stringify({ status: revealed ? 'done' : 'empty', session: args.session, probed, revealed }, null, 2));
+    if (revealed === 0) process.exitCode = 3;
     return;
   }
   if (args.cmd === 'profile-status') {
@@ -1133,7 +1275,8 @@ async function main() {
     const { RecordStore } = await import('./mapstore/record.js');
     const { runLiveRecord } = await import('./recorder/live-record.js');
     const { MODE_JS } = await import('./recorder/live.js');
-    const { ReplayController, runReplay } = await import('./recorder/replay.js');
+    const { ReplayController, runReplay, runLedgerReplay } = await import('./recorder/replay.js');
+    const { coverage } = await import('./recorder/coverage.js');
     const { draftFromEffects } = await import('./explorer/draft.js');
     const { PlaywrightAdapter } = await import('./playwright/adapter.js');
     const { join } = await import('node:path');
@@ -1308,7 +1451,7 @@ async function main() {
               if (reason === 'closed') {
                 setTimeout(() => { try {
                   if (daemonPid !== undefined && execSync('ps -axo ppid=,comm= | awk \'$1==' + daemonPid + '\'', { encoding: 'utf8' }).toLowerCase().includes('chrom')) {
-                    execSync('pkill -f ' + JSON.stringify('-s=' + session));
+                    execSync('pkill -f ' + JSON.stringify('-s=' + wireSessionName(session)));
                   }
                 } catch { /* gone */ } }, 1500);
               }
@@ -1528,8 +1671,29 @@ async function main() {
           return { ok: true as const };
         } catch (e) { return { ok: false as const, error: String(e) }; }
       },
-      replay: async (id: string) => {
+      events: (id: string) => {
+        const evs = recordStore.events(id);
+        return { events: evs, coverage: coverage(evs) };
+      },
+      replay: async (id: string, mode: 'steps' | 'ledger' = 'steps') => {
         if (busy) return { ok: false as const, error: 'a driven browser is already open (' + busy + ')' };
+        if (mode === 'ledger') {
+          const events = recordStore.events(id);
+          if (!events.length) return { ok: false as const, error: 'no ledger — recorded before the ledger existed; use steps replay' };
+          const site = (() => { try { return new URL(String((events[0].descriptor as Record<string, unknown>).url ?? (events[0].descriptor as Record<string, unknown>).fromUrl)).host; } catch { return ''; } })();
+          const label = (e: (typeof events)[number]) => {
+            const d = e.descriptor as Record<string, unknown>;
+            return String(d.name ?? d.ariaLabel ?? d.leafText ?? d.placeholder ?? e.kind);
+          };
+          busy = 'replay:' + id;
+          const ctl = new ReplayController(id, events.map((e) => ({ seq: e.seq, label: label(e) })));
+          activeCtl = ctl;
+          const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
+          void runLedgerReplay(events, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
+            .catch(() => { /* engine already recorded state.error; never let this reject */ })
+            .finally(() => { busy = null; });
+          return { ok: true as const };
+        }
         const effects = recordStore.actionEffects(id);
         if (!effects.length) return { ok: false as const, error: 'empty recording' };
         busy = 'replay:' + id;
@@ -1538,6 +1702,7 @@ async function main() {
         activeCtl = ctl;
         const adapter = new PlaywrightAdapter('replay-' + id, undefined, undefined, { headed: true });
         void runReplay(effects, ctl, { adapter, creds, site, shotsDir: join(shotsRoot, id) })
+          .catch(() => { /* engine already recorded state.error; never let this reject */ })
           .finally(() => { busy = null; });
         return { ok: true as const };
       },

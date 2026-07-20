@@ -10,6 +10,7 @@ jobs:
   test:
     name: CLI tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -20,8 +21,18 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      # The 8-minute `npm ci` hang ("Exit handler never called!") was NOT an npm bug:
+      # package-lock.json had been contaminated with internal-mirror tarball URLs
+      # (a dev-machine ~/.npmrc registry override), which CI runners can't reach.
+      # Fixed by rewriting the lockfile to registry.npmjs.org; guarded forever by
+      # tests/lockfile-registry.test.ts. --no-audit/--prefer-offline just keep the
+      # install lean (cache: npm above is warm on repeat runs).
+      - name: Install deps
+        run: npm ci --no-audit --prefer-offline
       - name: Typecheck
-        run: npx tsc --noEmit
+        # --no-install: use the LOCAL typescript; never silently fetch the unrelated
+        # `tsc` npm package (the confusing "This is not the tsc command" failure seen when
+        # node_modules was incomplete). Fails loudly if typescript isn't installed.
+        run: npx --no-install tsc --noEmit
       - name: Unit tests (gated live e2e skipped without WEBNAV_LIVE)
         run: npm test

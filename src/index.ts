@@ -1,4 +1,4 @@
-export const VERSION = '0.1.0';
+export { VERSION } from './cli-spec.js';
 
 // The CLI <-> hosted-service contract (MapPack, map types, API protocol) —
 // also importable directly as `@dikshanty94/webnav/contract`.

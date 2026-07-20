@@ -1,0 +1,761 @@
+<!-- webnav-extension/sidepanel.html — "Navigation console" (design-off winner) -->
+<meta charset="utf-8">
+<link rel="stylesheet" href="theme.css">
+<style>
+  /* ────────────────────────────────────────────────────────────────────────
+     webnav agent — navigation console
+     A cartographic instrument panel. Claude's prose is humanist; the agent's
+     actions read as a route ledger traced down a rail of map-pin waypoints.
+     The :root palette / dark @media / *,html,body height / ::selection now live
+     in theme.css (shared with options.html). This file keeps only panel-specific
+     styling below. ──────────────────────────────────────────────────────────── */
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Faint chart-grid wash on the ground — the "map" texture, kept to a whisper. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--rule) 40%, transparent) 1px, transparent 1px);
+    background-size: 22px 22px;
+    opacity: .35;
+    z-index: 0;
+  }
+  body > * { position: relative; z-index: 1; }
+
+  /* ───────────────────────── Header — slim status/toolbar ───────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel);
+  }
+  .spacer { flex: 1; }   /* single definition — the old footer .spacer is deleted */
+
+  @keyframes markpulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%     { opacity: .6; transform: scale(.92); }
+  }
+
+  /* Driven-tab chip — now a header element (was .brand .tab). */
+  .tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tab:empty { display: none; }
+
+  /* Connection lamp — coordinate readout. */
+  .conn {
+    display: inline-flex; align-items: center; gap: 6px;
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    padding: 4px 8px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--bg);
+    white-space: nowrap;
+    cursor: default;
+  }
+  .conn .lamp {
+    width: 7px; height: 7px; border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--ink-faint);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  .conn.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--rule)); }
+  .conn.ok .lamp { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .conn.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--rule)); }
+  .conn.err .lamp { background: var(--err); }
+  /* The lamp pulses while the agent drives (was body.running .mark). */
+  body.running .conn.ok .lamp { animation: markpulse 1.6s ease-in-out infinite; }
+
+  .icon-btn {
+    flex: 0 0 auto;
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--bg);
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 0;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .icon-btn svg { width: 15px; height: 15px; }
+
+  /* Model selector — a compact native <select> in the header. Native (not a custom
+     dropdown) so it's accessible + themes for free; styled to the console chrome.
+     var(--panel) works in both light and dark (it's theme-defined in theme.css). */
+  .modelsel {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    padding: 4px 7px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--panel);
+    cursor: pointer;
+    max-width: 118px;
+  }
+  .modelsel:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .modelsel:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* ───────────────────────── Thread (the route) ───────────────────────── */
+  #thread {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 14px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    scrollbar-width: thin;
+  }
+  #thread::-webkit-scrollbar { width: 8px; }
+  #thread::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 8px; }
+
+  /* User goal — a waypoint entered by hand. Right-aligned card. */
+  .msg.user {
+    align-self: flex-end;
+    max-width: 88%;
+    margin: 10px 0 4px;
+    padding: 9px 12px;
+    background: var(--user-bg);
+    color: var(--user-ink);
+    border-radius: 12px 12px 4px 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: var(--shadow);
+  }
+
+  /* Claude's prose — humanist, warm, left, no bubble chrome. It speaks.
+     Markdown-rendered (#5): breaks come from <br>/lists, so white-space is normal. */
+  .msg.assistant {
+    align-self: stretch;
+    max-width: 100%;
+    padding: 3px 2px 6px 2px;
+    color: var(--ink);
+    font-size: 13.5px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+  .msg.assistant.streaming::after {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 15px;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: var(--accent);
+    animation: caret 1.1s step-end infinite;
+  }
+  @keyframes caret { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+
+  /* Working indicator — shown in the thread while the agent is busy but NOT currently
+     streaming text (e.g. running a tool). Three pulsing dots + a label, so the content
+     area always shows that something is happening. Managed by sidepanel.ts. */
+  #thinking {
+    display: none;
+    align-items: center; gap: 8px;
+    padding: 6px 2px 8px;
+    color: var(--ink-faint);
+    font-size: 12.5px;
+  }
+  #thinking.show { display: flex; }
+  #thinking .dots { display: inline-flex; gap: 4px; }
+  #thinking .dots i {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: think 1.2s ease-in-out infinite;
+  }
+  #thinking .dots i:nth-child(2) { animation-delay: .18s; }
+  #thinking .dots i:nth-child(3) { animation-delay: .36s; }
+  @keyframes think { 0%,80%,100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { #thinking .dots i { animation: none; opacity: .7; } }
+
+  /* #5 — light-markdown element styling, shared by assistant prose + the done summary. */
+  .msg.assistant strong, .msg.done strong { font-weight: 650; }
+  .msg.assistant em, .msg.done em { font-style: italic; }
+  .msg.assistant code, .msg.done code {
+    font-family: var(--mono); font-size: 12px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    padding: 1px 4px; border-radius: 4px;
+  }
+  .msg.assistant pre, .msg.done pre {
+    margin: 6px 0;
+    padding: 8px 10px;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .msg.assistant pre code, .msg.done pre code {
+    background: none; padding: 0; font-size: 11.5px; white-space: pre;
+  }
+  .msg.assistant ul, .msg.assistant ol, .msg.done ul, .msg.done ol {
+    margin: 4px 0; padding-left: 20px;
+  }
+  .msg.assistant li, .msg.done li { margin: 2px 0; }
+
+  /* ── The route rail: agent actions traced down a hairline with pin waypoints ──
+     Consecutive .msg.action rows are grouped by JS into a .route rail; a lone
+     action still shows its own pin, so the CSS anchors the rail on the action
+     itself as a fallback (a .route wrapper just draws the shared spine). */
+  .route {
+    align-self: stretch;
+    position: relative;
+    margin: 5px 0 5px 7px;
+    padding-left: 22px;
+    border-left: 1.5px solid var(--rail);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .msg.action {
+    position: relative;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    padding: 1px 0;
+  }
+  /* A stray action not wrapped in a .route still reads as a ledger row. */
+  #thread > .msg.action {
+    align-self: stretch;
+    margin: 5px 0 5px 7px;
+    padding-left: 22px;
+    border-left: 1.5px solid var(--rail);
+  }
+  /* waypoint pin sitting on the rail */
+  .route .msg.action::before,
+  #thread > .msg.action::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1.5px solid var(--rail);
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .route .msg.action::before { left: -29px; }   /* onto the shared rail */
+  #thread > .msg.action::before { left: -6px; }  /* onto its own left border */
+  /* #4 — routine (past) action rows read as CALM neutral history: the verb is soft ink,
+     the target fainter. Only the LIVE (current) row gets the accent, below. */
+  .msg.action .verb {
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .msg.action .target { color: var(--ink-faint); }
+  /* the live (most recent) action: filled pin, faint pulse, brighter rail above it */
+  .msg.action.live::before {
+    background: var(--rail-live);
+    border-color: var(--rail-live);
+    box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px color-mix(in srgb, var(--rail-live) 30%, transparent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .msg.action.live { color: var(--ink); }
+  /* #4 — the current step is the ONE accented row: verb in accent, target in full ink. */
+  .msg.action.live .verb { color: var(--accent-ink); }
+  .msg.action.live .target { color: var(--ink); }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px color-mix(in srgb, var(--rail-live) 34%, transparent); }
+    50%     { box-shadow: 0 0 0 3px var(--bg), 0 0 0 7px color-mix(in srgb, var(--rail-live) 10%, transparent); }
+  }
+
+  /* Done — SUBTLE completion (#6). Rendered as normal assistant-style prose with a thin
+     top-rule + a quiet ✓ marker, NOT a filled green box. Loud color is reserved for errors.
+     Used both for the agent's closing summary AND stop/pause status notes. */
+  .msg.done {
+    align-self: stretch;
+    max-width: 100%;
+    margin: 8px 0 4px;
+    padding: 8px 2px 4px;
+    border-top: 1px solid var(--rule-soft);
+    color: var(--ink);
+    font-size: 13.5px;
+    line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.done::before {
+    flex: 0 0 auto;
+    width: 13px; height: 13px;
+    margin-right: 6px;
+    display: inline-block;
+    vertical-align: -1px;
+    background: var(--ok);
+    -webkit-mask: var(--glyph) center / contain no-repeat;
+            mask: var(--glyph) center / contain no-repeat;
+    content: "";
+    --glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+  }
+  /* A completed assistant message whose text the done summary duplicated: a quiet ✓ in
+     the margin instead of a second bubble. */
+  .msg.assistant.done-tick { position: relative; }
+  .msg.assistant.done-tick::after {
+    content: "✓";
+    display: inline-block;
+    margin-left: 6px;
+    color: var(--ok);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* Errors STAY loud/red — they should stand out (#6). */
+  .msg.error::before {
+    flex: 0 0 auto; margin-top: 1px;
+    width: 16px; height: 16px;
+    display: inline-block;
+    background: currentColor;
+    -webkit-mask: var(--glyph) center / contain no-repeat;
+            mask: var(--glyph) center / contain no-repeat;
+    content: "";
+    --glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>');
+  }
+
+  .msg.error {
+    align-self: stretch;
+    margin: 8px 0 4px;
+    padding: 9px 11px;
+    background: var(--err-bg);
+    color: var(--err);
+    border: 1px solid color-mix(in srgb, var(--err) 34%, transparent);
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    display: flex; align-items: flex-start; gap: 8px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* Hover-reveal copy affordance on assistant prose + done/error summaries. */
+  .msg.assistant, .msg.done, .msg.error { position: relative; }
+  .copy-btn {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--rule); border-radius: 6px;
+    background: var(--panel); color: var(--ink-faint);
+    cursor: pointer; padding: 0;
+    opacity: 0; transition: opacity .12s;
+  }
+  .msg.assistant:hover .copy-btn, .msg.done:hover .copy-btn, .msg.error:hover .copy-btn,
+  .copy-btn:focus-visible { opacity: 1; }
+  .copy-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .copy-btn svg { width: 12px; height: 12px; }
+  /* Error bubbles also carry an inline Retry at top-right; nudge copy left so they don't stack. */
+  .msg.error .copy-btn { right: 74px; }
+
+  /* Retry — re-run the last goal from an errored run. */
+  .retry-btn {
+    margin-left: auto; align-self: center; flex: 0 0 auto;
+    padding: 4px 10px; border-radius: 7px; cursor: pointer;
+    font: 600 11px var(--sans);
+    border: 1px solid color-mix(in srgb, var(--err) 40%, var(--rule));
+    background: var(--panel); color: var(--err);
+  }
+  .retry-btn:hover { background: var(--err); color: var(--on-accent); border-color: var(--err); }
+
+  /* ── Plan approval (Ask mode): a route brief awaiting sign-off ── */
+  .plan {
+    align-self: stretch;
+    margin: 8px 0 4px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .plan .head {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule-soft);
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .plan .head .pin { width: 12px; height: 12px; color: var(--accent); flex: 0 0 auto; }
+  .plan ol {
+    list-style: none;
+    margin: 0; padding: 10px 12px 4px;
+    counter-reset: step;
+  }
+  .plan li {
+    counter-increment: step;
+    position: relative;
+    padding: 5px 0 5px 26px;
+    font-size: 12.5px;
+    color: var(--ink);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .plan li::before {
+    content: counter(step, decimal-leading-zero);
+    position: absolute; left: 0; top: 5px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .plan li:not(:last-child)::after {
+    content: "";
+    position: absolute; left: 5px; top: 20px; bottom: -1px;
+    width: 1px;
+    background: var(--rule);
+  }
+  .plan .note {
+    padding: 2px 12px 6px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-faint);
+  }
+  .plan .bar { display: flex; gap: 8px; padding: 8px 12px 12px; }
+  .plan .bar button {
+    flex: 1; padding: 8px; border-radius: 8px; font: 600 12.5px var(--sans);
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .plan .approve { background: var(--accent); color: var(--on-accent); }
+  .plan .approve:hover { filter: brightness(1.06); }
+  .plan .deny { background: transparent; color: var(--ink-soft); border-color: var(--rule); }
+  .plan .deny:hover { border-color: var(--err); color: var(--err); }
+  .plan .resolved {
+    padding: 9px 12px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ───────────────────────── Empty / first-run state ───────────────────────── */
+  .empty {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 24px 22px;
+    gap: 0;
+  }
+  .empty .bigmark {
+    width: 52px; height: 52px;
+    color: var(--accent);
+    margin-bottom: 14px;
+    opacity: .95;
+  }
+  .empty h2 {
+    margin: 0 0 6px;
+    font-family: var(--mono);
+    font-size: 15px; font-weight: 600; letter-spacing: .01em;
+    color: var(--ink);
+  }
+  .empty p {
+    margin: 0 0 18px;
+    font-size: 12.5px; line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 260px;
+  }
+  .empty .examples {
+    width: 100%;
+    display: flex; flex-direction: column; gap: 7px;
+    margin-bottom: 18px;
+  }
+  .empty .ex {
+    text-align: left;
+    padding: 9px 11px 9px 30px;
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 9px;
+    font-size: 12px; color: var(--ink);
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .empty .ex:hover { border-color: var(--accent); }
+  .empty .ex::before {
+    content: "";
+    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1.5px solid var(--accent);
+  }
+  /* server-prereq strip — teaches the one real dependency without a wall of text */
+  .empty .prereq {
+    width: 100%;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
+    padding: 9px 11px;
+    border: 1px dashed var(--rule);
+    border-radius: 9px;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-faint);
+    text-align: left;
+  }
+  .empty .prereq .tok { flex-basis: 100%; }
+  .empty .prereq code {
+    color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    padding: 2px 5px; border-radius: 5px;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .empty .prereq.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); border-style: solid; }
+  .empty .prereq .tok { color: var(--ink-faint); }
+  .empty .prereq .lnk {
+    border: 0; background: none; padding: 0; cursor: pointer;
+    font: inherit; color: var(--accent-ink); text-decoration: underline;
+  }
+
+  /* ───────────────────────── Composer ───────────────────────── */
+  footer {
+    position: relative;
+    border-top: 1px solid var(--rule);
+    background: var(--panel);
+    padding: 10px 12px 12px;
+  }
+  /* Jump-to-latest pill — floats above the composer when the user has scrolled up. */
+  .jump-latest {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 100%; margin-bottom: 8px;
+    display: none; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    font: 600 11px var(--mono);
+    background: var(--accent); color: var(--on-accent);
+    border: 0; box-shadow: var(--shadow);
+    z-index: 2;
+  }
+  .jump-latest.show { display: inline-flex; }
+  .composer {
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    background: var(--sunken);
+    padding: 8px 10px 8px;
+    transition: border-color .12s;
+  }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  #goal {
+    width: 100%;
+    resize: none;
+    min-height: 22px; max-height: 140px;
+    border: 0; padding: 0; margin: 0;
+    background: transparent; color: var(--ink);
+    font: 13px/1.5 var(--sans);
+    outline: none;
+  }
+  #goal::placeholder { color: var(--ink-faint); }
+
+  .controls {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 8px;
+  }
+
+  /* #2 — subtle one-line description of the selected mode, under the switch. */
+  /* Permission mode — a native <select> whose option labels carry the description,
+     so there's no separate upfront hint line. sidepanel.ts reads #mode.value. */
+  .modesel {
+    flex: 0 0 auto;
+    max-width: 220px;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font: 600 11px var(--mono);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .modesel:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+  #send {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px;
+    border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--on-accent);
+    font: 600 12.5px var(--sans);
+    cursor: pointer;
+  }
+  #send:hover { filter: brightness(1.06); }
+  #send:disabled { opacity: .5; cursor: default; filter: none; }
+  #send svg { width: 14px; height: 14px; }
+
+  /* Running controls — replace Send while the agent drives. Toggled by JS via
+     the body.running class (set on run start, cleared on finish). */
+  .run-controls { display: none; align-items: center; gap: 7px; flex: 0 0 auto; }
+  body.running .run-controls { display: inline-flex; }
+  body.running #send { display: none; }
+  .runbtn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 12px; border-radius: 8px; cursor: pointer;
+    font: 600 12px var(--sans);
+    border: 1px solid var(--rule);
+    background: var(--panel); color: var(--ink);
+  }
+  .runbtn svg { width: 13px; height: 13px; }
+  .runbtn.pause:hover { border-color: var(--warn); color: var(--warn); }
+  .runbtn.stop { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--rule)); }
+  .runbtn.stop:hover { background: var(--err); color: var(--on-accent); border-color: var(--err); }
+
+  /* Focus visibility everywhere */
+  button:focus-visible, summary:focus-visible, .ex:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .msg.action.live::before,
+    .msg.assistant.streaming::after, body.running .conn.ok .lamp { animation: none; }
+    .msg.assistant.streaming::after { opacity: 1; }
+    body.running .conn.ok .lamp { opacity: 1; transform: none; }
+  }
+
+  @media (max-width: 340px) {
+    #send span { display: none; }
+    #send { padding: 7px 10px; }
+  }
+
+  /* ───────────────────────── Token gate ───────────────────────── */
+  #tokengate {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(3px);
+  }
+  #tokengate[hidden] { display: none; }
+  .tg-card {
+    width: 100%; max-width: 320px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 22px 20px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    text-align: center;
+  }
+  .tg-mark {
+    display: inline-flex; width: 40px; height: 40px;
+    align-items: center; justify-content: center;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 12px;
+  }
+  .tg-mark svg { width: 22px; height: 22px; }
+  .tg-card h2 { margin: 2px 0 0; font-size: 15px; }
+  .tg-card p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-faint); }
+  .tg-cmd {
+    display: flex; align-items: stretch; gap: 6px; width: 100%;
+    margin-top: 2px;
+  }
+  .tg-cmd code {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center;
+    padding: 7px 9px; border-radius: 8px;
+    font: 11px var(--mono); color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    overflow-x: auto; white-space: nowrap;
+  }
+  .tg-cmd button {
+    flex: 0 0 auto; border: 1px solid var(--rule); background: var(--bg);
+    color: var(--ink); border-radius: 8px; padding: 0 10px; cursor: pointer;
+    font: 600 11px var(--mono);
+  }
+  .tg-cmd button:hover { border-color: var(--accent); }
+  #tg-token {
+    width: 100%; box-sizing: border-box;
+    padding: 9px 11px; border-radius: 9px;
+    border: 1px solid var(--rule); background: var(--bg); color: var(--ink);
+    font: 12px var(--mono);
+  }
+  #tg-token:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  #tg-connect {
+    width: 100%; padding: 9px; border: 0; border-radius: 9px; cursor: pointer;
+    font: 600 13px var(--sans, inherit);
+    background: var(--accent); color: var(--on-accent);
+  }
+  #tg-connect:hover { filter: brightness(1.05); }
+  .tg-err { color: var(--err); font-size: 11.5px; }
+  .tg-err[hidden] { display: none; }
+</style>
+
+<header>
+  <span class="conn" id="conn" title="Connection to the local webnav server">
+    <span class="lamp"></span><span id="conn-text">connecting…</span>
+  </span>
+  <span class="tab" id="tab" title="Driving tab"></span>
+  <span class="spacer"></span>
+  <select class="modelsel" id="model" title="Model" aria-label="Model">
+    <option value="claude-haiku-4-5">Haiku 4.5</option>
+    <option value="claude-sonnet-5" selected>Sonnet 5</option>
+    <option value="claude-opus-4-8">Opus 4.8</option>
+  </select>
+  <button class="icon-btn" id="new-chat" title="New chat" aria-label="New chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+  <button class="icon-btn" id="settings-toggle" title="Settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  </button>
+</header>
+
+<!-- THREAD — sidepanel.ts renders into this. Starts empty; JS injects the
+     first-run empty state (.empty) and clears it on the first message. -->
+<div id="thread"></div>
+
+<!-- TOKEN GATE — shown by sidepanel.ts whenever there's no token / the connection
+     is unauthorized. The extension can't work without the token, so we ask for it
+     right here (an overlay over the panel) instead of sending the user to Settings. -->
+<div id="tokengate" hidden>
+  <div class="tg-card">
+    <span class="tg-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.5-5 7-8.4 7-12A7 7 0 0 0 5 10c0 3.6 2.5 7 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg></span>
+    <h2>Connect webnav</h2>
+    <p>Start the local agent server in a terminal, then paste the token it prints. webnav needs it to drive your browser.</p>
+    <div class="tg-cmd"><code>webnav agent-serve --port 7779</code><button type="button" id="tg-copy" title="Copy">Copy</button></div>
+    <input id="tg-token" type="password" placeholder="Paste token" autocomplete="off" spellcheck="false" />
+    <button type="button" id="tg-connect">Connect</button>
+    <p class="tg-err" id="tg-err" hidden></p>
+  </div>
+</div>
+
+<footer>
+  <button class="jump-latest" id="jump-latest" type="button" aria-label="Jump to latest">
+    ↓ latest
+  </button>
+
+  <div class="composer">
+    <textarea id="goal" rows="1" placeholder="Describe what to do on this page…"></textarea>
+    <div class="controls">
+      <select class="modesel" id="mode" aria-label="Permission mode" title="How much the agent may do on its own">
+        <option value="Ask">Ask — approve before it acts</option>
+        <option value="Act">Act — runs on its own</option>
+      </select>
+      <span class="spacer"></span>
+      <button id="send" title="Send (Enter)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        <span>Send</span>
+      </button>
+      <div class="run-controls">
+        <button class="runbtn pause" id="pause" title="Take over — pause the agent and drive by hand">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg>Take over
+        </button>
+        <button class="runbtn stop" id="stop" title="Stop the run">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop
+        </button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="sidepanel.js" type="module"></script>

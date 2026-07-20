@@ -35,15 +35,3 @@ export type RecallResponse =
   // session first; that's the designed pattern).
   | { status: 'checkpoint'; at: number; state: string; snapshot: string; repertoire: Affordance[] }
   | { status: 'failed'; reason: string };
-
-// --- Place lookup ("where is A?"): return a coordinate WITHOUT traversing. ---
-// webnav's two-tier coordinate (see CLAUDE.md "Coordinate system"):
-//  - addressable: a canonical URL the agent can `goto` directly, no routing.
-//  - unaddressable: a semantic state name + fingerprint (+ a goal/route to reach it).
-export type Coordinate =
-  | { kind: 'url'; url: string }
-  | { kind: 'state'; semanticName: string; fingerprint: string[]; viaGoal?: string };
-
-export type LocateResponse =
-  | { status: 'found'; place: string; coordinate: Coordinate }
-  | { status: 'unknown'; place: string };

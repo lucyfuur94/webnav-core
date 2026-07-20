@@ -64,6 +64,12 @@ export const INSTALLER_JS = `() => {
     const p = document.createElement('button');
     p.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#e5484d;color:#fff;font:700 11px/1 -apple-system,sans-serif;padding:6px 12px;border-radius:999px;pointer-events:auto;cursor:pointer;border:0;';
     p.textContent = '\\u23FA record';
+    // A focusable element inside an aria-hidden container is STILL exposed by the
+    // a11y tree (aria-hidden on an ancestor doesn't suppress a focusable descendant) —
+    // the wrapper div's aria-hidden alone does not hide this button from snapshots.
+    // Make the pill itself a11y-invisible too. Doesn't touch pointer-events/onclick.
+    p.setAttribute('aria-hidden', 'true');
+    p.setAttribute('tabindex', '-1');
     d.appendChild(p);
     (document.body || document.documentElement).appendChild(d);
   }
@@ -141,7 +147,7 @@ export const INSTALLER_JS = `() => {
       el = document.createElement('div');
       el.id = '__webnav_ptr';
       el.setAttribute('aria-hidden', 'true');
-      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .05s linear,top .05s linear;display:none;';
+      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .2s ease-out,top .2s ease-out;display:none;';
       (document.body || document.documentElement).appendChild(el);
     }
     return el;

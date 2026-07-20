@@ -30,7 +30,8 @@ export interface RecordingsDeps {
   open(url: string, session: string, persistent: boolean, armedOnly?: boolean, profile?: string): Promise<{ ok: true } | { ok: false; error: string }>;
   record(id: string): boolean;
   stop(id: string): boolean;
-  replay(id: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  replay(id: string, mode?: 'steps' | 'ledger'): Promise<{ ok: true } | { ok: false; error: string }>;
+  events(id: string): unknown;
   replayState(): ReplayState | null;
   replayControl(action: string, payload: { value?: string; save?: boolean; fire?: boolean }): boolean;
   shotPath(session: string, file: string): string | null;
@@ -99,7 +100,7 @@ export function startDashboard(
       // ---- SITES (read-only) ----
       if (path === '/api/sites' && method === 'GET') {
         const sites = store.allNodes().map((n) => ({
-          id: n.id, homeUrl: n.homeUrl, capabilities: n.capabilities, topics: n.topics,
+          id: n.id, homeUrl: n.homeUrl,
           stateCount: store.statesForNode(n.id).length,
         }));
         return sendJson(200, sites);
@@ -279,6 +280,9 @@ export function startDashboard(
         const stepsM = path.match(/^\/api\/recordings\/([^/]+)\/steps$/);
         if (stepsM && method === 'GET') return sendJson(200, rec.steps(decodeURIComponent(stepsM[1])));
 
+        const evM = path.match(/^\/api\/recordings\/([^/]+)\/events$/);
+        if (evM && method === 'GET') return sendJson(200, rec.events(decodeURIComponent(evM[1])));
+
         const draftM = path.match(/^\/api\/recordings\/([^/]+)\/draft$/);
         if (draftM && method === 'GET') return sendJson(200, rec.draft(decodeURIComponent(draftM[1])));
 
@@ -303,7 +307,9 @@ export function startDashboard(
         }
         const replayM = path.match(/^\/api\/recordings\/([^/]+)\/replay$/);
         if (replayM && method === 'POST') {
-          const result = await rec.replay(decodeURIComponent(replayM[1]));
+          let mode: 'steps' | 'ledger' = 'steps';
+          try { const b = JSON.parse(await readBody(req)); if (b?.mode === 'ledger') mode = 'ledger'; } catch { /* empty body = steps */ }
+          const result = await rec.replay(decodeURIComponent(replayM[1]), mode);
           return sendJson(result.ok ? 200 : 409, result);
         }
 

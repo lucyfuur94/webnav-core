@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { RecordStore } from '../../src/mapstore/record.js';
-import { ingest, serveIngest, type IngestBody } from '../../src/recorder/ingest.js';
+import {
+  ingest, ingestAX, serveIngest, reconstructEffectFromNodes,
+  type IngestBody, type IngestAXBody,
+} from '../../src/recorder/ingest.js';
 import { serializeSnapshot, type SerializableNode } from '../../src/recorder/snapshot-dom.js';
+import { adaptAXTree, type AXNode } from '../../src/playwright/ax-adapter.js';
+import { parseSnapshot } from '../../src/playwright/snapshot.js';
 import { draftFromEffects } from '../../src/explorer/draft.js';
+
+const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/ax');
+const axFixture = (name: string): AXNode[] => JSON.parse(readFileSync(join(fixturesDir, `${name}.ax.json`), 'utf8'));
 
 const page = (name: string, extra: SerializableNode[] = []): SerializableNode => ({
   role: 'RootWebArea', name,
@@ -114,5 +125,153 @@ describe('ingest', () => {
     expect(json.ok).toBe(true);
     expect(json.appended).toBe(1);
     expect(store.actionEffects('http-1').length).toBe(1);
+  });
+
+  it('reconstructEffectFromNodes is the shared core: DOM-walk reconstructEffect matches it byte-for-byte on the parsed nodes', () => {
+    const from = serializeSnapshot(page('Login'));
+    const to = serializeSnapshot(page('Inventory', [{ role: 'link', name: 'Cart', url: 'https://s.test/cart' }]));
+    const viaCore = reconstructEffectFromNodes(
+      parseSnapshot(from), parseSnapshot(to), 'https://s.test/login', 'https://s.test/inventory', 'e2',
+    );
+    expect(viaCore.action?.role).toBe('button');
+    expect(viaCore.action?.name).toBe('Login');
+    expect(viaCore.navigated).toBe(true);
+    expect(viaCore.diff.added.some((n) => n.name === 'Cart')).toBe(true);
+  });
+
+  it('ingestAX adapts raw AX trees and reconstructs effects identically to the DOM-walk path', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'ax-1',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedRef: 'b7',  // the "Settings" button in adaptAXTree(icons) — see icons.expected.a.yaml
+      }],
+    };
+    expect(ingestAX(body, store)).toBe(1);
+
+    const effects = store.actionEffects('ax-1');
+    expect(effects.length).toBe(1);
+    const fx = effects[0];
+    // fingerprint recovered from the adapted AX node (role+name), same as the DOM-walk path
+    expect(fx.action?.role).toBe('button');
+    expect(fx.action?.name).toBe('Settings');
+    expect(fx.action?.elementFp?.role).toBe('button');
+    expect(fx.action?.elementFp?.name).toBe('Settings');
+    // navigated recomputed via didNavigate (host+path), not trusted from the extension
+    expect(fx.navigated).toBe(true);
+    // stored snapshots round-trip through parseSnapshot into the same structure adaptAXTree produced
+    expect(parseSnapshot(fx.fromSnapshot).map((n) => [n.role, n.name]))
+      .toEqual(adaptAXTree(axFixture('icons')).map((n) => [n.role, n.name]));
+    expect(parseSnapshot(fx.toSnapshot).map((n) => [n.role, n.name]))
+      .toEqual(adaptAXTree(axFixture('table')).map((n) => [n.role, n.name]));
+    // diff surfaces the table's new nodes
+    expect(fx.diff.added.some((n) => n.role === 'table')).toBe(true);
+  });
+
+  it('ingestAX: a pure navigation step (clickedRef omitted) still ingests with action:null', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'ax-2',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+      }],
+    };
+    expect(ingestAX(body, store)).toBe(1);
+    expect(store.actionEffects('ax-2')[0].action).toBeNull();
+  });
+
+  it('ingestAX writes a ledger event per step (Raw pane) + preserves per-step tMs (not one flush time)', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'ax-ledger',
+      steps: [
+        { fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+          toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'), clickedRef: 'b7', tMs: 1000 },
+        { fromUrl: 'http://127.0.0.1:8771/fixtures/table.html', fromAX: axFixture('table'),
+          toUrl: 'http://127.0.0.1:8771/fixtures/icons.html', toAX: axFixture('icons'), clickedRef: null, tMs: 5000 },
+      ],
+    };
+    expect(ingestAX(body, store)).toBe(2);
+
+    // Raw pane: two ledger events, each stamped as a captured step (never empty).
+    const ev = store.events('ax-ledger');
+    expect(ev.length).toBe(2);
+    expect(ev[0].disposition).toBe('step:0');
+    expect(ev[1].disposition).toBe('step:1');
+    expect(ev.map((e) => e.t)).toEqual([1000, 5000]);          // real per-event times
+    expect(ev[0].kind).toBe('navigate');                        // page changed
+
+    // Webnav pane: per-step capturedAt keeps the distinct tMs, not a single flush time.
+    const fx = store.actionEffects('ax-ledger');
+    expect(fx.map((s) => s.capturedAt)).toEqual([1000, 5000]);
+  });
+
+  it('ingestAX re-ingesting the same session replaces, does not duplicate', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const body: IngestAXBody = {
+      sessionId: 'ax-dup',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedRef: 'b7',
+      }],
+    };
+    ingestAX(body, store);
+    ingestAX(body, store);
+    expect(store.actionEffects('ax-dup').length).toBe(1);
+  });
+
+  it('serveIngest routes POST /ingest-ax to ingestAX', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const server = serveIngest(0, store);
+    await new Promise((r) => server.on('listening', r));
+    const port = (server.address() as any).port;
+    const body: IngestAXBody = {
+      sessionId: 'ax-http-1',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedRef: 'b7',
+      }],
+    };
+    const res = await fetch(`http://127.0.0.1:${port}/ingest-ax`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json() as any;
+    server.close();
+    expect(json.ok).toBe(true);
+    expect(json.appended).toBe(1);
+    expect(store.actionEffects('ax-http-1').length).toBe(1);
+  });
+
+  it('row-fold verification: AX-sourced table effects fold per-row data VALUES out of the draft (producer-agnostic no-values rule)', () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    // A landing step onto the 3-row table (Acme/Globex/Initech owners Dana/Ravi/Mei).
+    // fromAX = icons (a distinct prior page) so the table lands via navigation.
+    ingestAX({
+      sessionId: 'ax-rowfold',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedRef: 'b7',
+      }],
+    }, store);
+
+    const draft = draftFromEffects(store.actionEffects('ax-rowfold'));
+    const allText = JSON.stringify(draft);
+    // The per-row data VALUES must never appear in the map from an AX-sourced landing —
+    // the no-values rule holding producer-agnostically. Mechanism (verified by mutation):
+    // the table's structure enters via extractShadow (src/explorer/shadow.ts), which reads
+    // ONLY columnheader names into collections[].columns — it has no cell/row/gridcell text
+    // path — and the per-row action buttons are separately widget-folded. (Not COLLECTION_ROLES
+    // /gridRepaint: those don't gate this fixture — a future value-leak regression will surface
+    // in extractShadow, look there.)
+    for (const value of ['Acme Corp', 'Globex', 'Initech', 'Dana', 'Ravi', 'Mei']) {
+      expect(allText.includes(value)).toBe(false);
+    }
   });
 });

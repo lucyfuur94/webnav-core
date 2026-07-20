@@ -68,6 +68,55 @@ describe('recordNavigateEffect', () => {
       vi.useRealTimers();
     }
   });
+
+  it('probes a nameless landing → effect carries nameHints (observed labels)', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('nh');
+    // a landing of icon-only buttons: no accessible name, has a ref → probe target.
+    const NAMELESS = '- button [ref=e5]\n- button [ref=e6]\n- heading "Dash" [ref=e1]';
+    let evals = 0;
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => NAMELESS,
+      currentUrl: async () => 'https://x.test/dash',
+      evalJs: async (_js: string, ref?: string) => { evals++; return JSON.stringify(ref === 'e5' ? 'Expand' : 'Favorite'); },
+    };
+    await recordNavigateEffect('https://x.test/dash', 'nh', rec, adapter as any);
+    expect(evals).toBe(2);   // one per nameless interactive node
+    const fx = rec.actionEffects('nh')[0];
+    expect(fx.nameHints).toEqual({ e5: 'Expand', e6: 'Favorite' });
+  });
+
+  it('a fully-named landing triggers ZERO evals and stores no nameHints', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('nn');
+    let evals = 0;
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => READY,   // every interactive node has a name
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+      evalJs: async () => { evals++; return JSON.stringify('x'); },
+    };
+    await recordNavigateEffect('https://x.test/', 'nn', rec, adapter as any);
+    expect(evals).toBe(0);
+    expect(rec.actionEffects('nn')[0].nameHints).toBeUndefined();
+  });
+
+  it('ledgers the navigate before settling and stamps step:<seq> after', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('nav2');
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => READY,
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+    };
+    await recordNavigateEffect('https://x.test/', 'nav2', rec, adapter as any);
+    const evs = rec.events('nav2');
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({ source: 'agent', kind: 'navigate' });
+    expect(evs[0].descriptor).toMatchObject({ cmd: 'navigate', url: 'https://x.test/', fromUrl: 'https://x.test/' });
+    expect(evs[0].disposition).toMatch(/^step:\d+$/);
+  });
 });
 
 // `use navigate`'s authWall surfacing (design item 2, no-retry half): cli.ts feeds

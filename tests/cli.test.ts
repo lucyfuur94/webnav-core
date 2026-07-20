@@ -50,24 +50,9 @@ describe('parseArgs', () => {
     expect(parseArgs(['creds', 'rm', 'site.com', 'username']))
       .toEqual({ cmd: 'creds', sub: 'rm', site: 'site.com', key: 'username', values: {} });
   });
-  it('parses node-add with comma-split capabilities/topics', () => {
-    expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com',
-      '--capabilities', 'package-search,registry', '--topics', 'javascript,packages']))
-      .toEqual({ cmd: 'node-add', id: 'npmjs.com', url: 'https://www.npmjs.com',
-        capabilities: ['package-search', 'registry'], topics: ['javascript', 'packages'] });
-  });
-  it('parses node-add with absent capabilities/topics as empty arrays', () => {
+  it('parses node-add with id and url', () => {
     expect(parseArgs(['node-add', 'npmjs.com', '--url', 'https://www.npmjs.com']))
-      .toEqual({ cmd: 'node-add', id: 'npmjs.com', url: 'https://www.npmjs.com',
-        capabilities: [], topics: [] });
-  });
-  it('parses edge-add with default kind', () => {
-    expect(parseArgs(['edge-add', 'github.com', 'pypi.org']))
-      .toEqual({ cmd: 'edge-add', from: 'github.com', to: 'pypi.org', kind: 'capability' });
-  });
-  it('parses edge-add --kind', () => {
-    expect(parseArgs(['edge-add', 'github.com', 'pypi.org', '--kind', 'hyperlink']))
-      .toEqual({ cmd: 'edge-add', from: 'github.com', to: 'pypi.org', kind: 'hyperlink' });
+      .toEqual({ cmd: 'node-add', id: 'npmjs.com', url: 'https://www.npmjs.com' });
   });
   it('parses dashboard with default port; does NOT auto-open by default', () => {
     expect(parseArgs(['dashboard'])).toEqual({ cmd: 'dashboard', port: 7777, open: false });

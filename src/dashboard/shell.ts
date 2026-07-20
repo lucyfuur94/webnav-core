@@ -1,7 +1,7 @@
 // The dashboard shell: a single self-contained page (vanilla JS + fetch) for the
 // SITES and CREDENTIALS operator views. No build step — matches webnav's ethos
-// for its OWN UI; the heavy xyflow graph viewer is the separate web/dist bundle,
-// linked from here as the "Graph" tab (opens /graph). Kept deliberately plain.
+// for its OWN UI. Kept deliberately plain. (The heavy graph viewer left with the
+// webnav-site repo; inspect a map via `dev outline` / `dev mermaid` instead.)
 export const SHELL_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -86,6 +86,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .badge { border:1px solid currentColor; border-radius:4px; padding:1px 6px; font-size:10px; line-height:1.5;
     white-space:nowrap; display:inline-flex; align-items:center; gap:3px; }
   .badge.origin-agent { color:var(--accent); }
+  .badge.origin-extension { color:var(--ok); }
   .badge.origin-manual { color:var(--muted); }
   .badge.ok { color:var(--ok); }
   .badge.warn { color:var(--warn); }
@@ -213,6 +214,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <script>
 const main = document.getElementById('main');
 let tab = 'recordings';
+let recordingsOriginFilter = 'all';   // Sessions list source filter: all | extension | agent | manual
 
 document.querySelectorAll('nav button[data-tab]').forEach(b => {
   b.onclick = () => {
@@ -281,7 +283,7 @@ async function renderSites() {
   const detail = el('<div class="detail"><div class="empty">select a site to see its JSON map</div></div>');
   if (!sites.length) list.append(el('<div class="empty">no sites mapped yet</div>'));
   sites.forEach(s => {
-    const row = el('<div class="row"><div class="name">'+esc(s.id)+'</div><div class="meta">'+s.stateCount+' states · '+esc((s.capabilities||[]).join(', ')||'—')+'</div></div>');
+    const row = el('<div class="row"><div class="name">'+esc(s.id)+'</div><div class="meta">'+s.stateCount+' states</div></div>');
     row.onclick = async () => {
       list.querySelectorAll('.row').forEach(r => r.classList.remove('active'));
       row.classList.add('active');
@@ -783,13 +785,22 @@ async function renderRecordings(openId) {
   // list NEVER reflows/shifts when you select a row). Left: count / "N selected". Right:
   // Delete-selected (shown only when a selection exists) · Clear all · + New session.
   const bar = el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:32px">'
-    + '<span class="muted bar-count" style="font-size:13px"></span><span style="flex:1"></span>'
+    + '<span class="muted bar-count" style="font-size:13px"></span>'
+    + '<select class="bar-origin" style="padding:2px 8px;font-size:12px;background:var(--bg-sunken);color:var(--fg);border:1px solid var(--border);border-radius:6px">'
+    + '<option value="all">All sources</option><option value="extension">Extension</option><option value="agent">Agent</option><option value="manual">Manual</option>'
+    + '</select><span style="flex:1"></span>'
     + '<button class="btn danger bar-delsel" style="padding:2px 10px;display:none"></button>'
     + (recs.length ? '<button class="btn danger bar-clear" style="padding:2px 10px">Clear all</button>' : '')
     + '<button class="btn bar-new" style="padding:2px 10px">+ New session</button></div>');
   wrap.append(bar);
+  // Origin filter — 'agent'/'extension' match exactly; everything else (incl. legacy null) is 'manual'.
+  const originOf = (r) => (r.origin === 'agent' || r.origin === 'extension') ? r.origin : 'manual';
+  const originSel = bar.querySelector('.bar-origin');
+  originSel.value = recordingsOriginFilter;
+  originSel.onchange = () => { recordingsOriginFilter = originSel.value; renderRecordings(); };
+  const shown = recordingsOriginFilter === 'all' ? recs : recs.filter(r => originOf(r) === recordingsOriginFilter);
   const setCount = () => { bar.querySelector('.bar-count').textContent = selected.size
-    ? selected.size+' selected' : recs.length+' session'+(recs.length===1?'':'s'); };
+    ? selected.size+' selected' : shown.length+' session'+(shown.length===1?'':'s'); };
   const syncBulk = () => {
     const b = bar.querySelector('.bar-delsel');
     b.style.display = selected.size ? '' : 'none';
@@ -811,7 +822,7 @@ async function renderRecordings(openId) {
   bar.querySelector('.bar-new').onclick = () => openNewSessionDialog();
 
   const list = el('<div class="list"></div>');
-  recs.forEach(r => {
+  shown.forEach(r => {
     const row = el('<div class="srow"><input type="checkbox" style="width:auto" aria-label="select" /><div class="nm"></div><div class="col site"></div><div class="col steps r"></div><div class="col vid r"></div><div class="col date r"></div><button class="btn danger" title="delete" style="padding:2px 8px">✕</button></div>');
     rowEls[r.sessionId] = row;
     fillRow(row, r);
@@ -827,7 +838,9 @@ async function renderRecordings(openId) {
     };
     list.append(row);
   });
-  if (!recs.length) list.append(el('<div class="empty">No sessions yet. Click <strong>+ New session</strong> to record one.</div>'));
+  if (!shown.length) list.append(el(recs.length
+    ? '<div class="empty">No <strong>'+esc(recordingsOriginFilter)+'</strong> sessions. Change the source filter above.</div>'
+    : '<div class="empty">No sessions yet. Click <strong>+ New session</strong> to record one.</div>'));
   wrap.append(list);
   main.append(wrap);
   startEvents();
@@ -848,9 +861,12 @@ function openDetail(r) {
   main.append(wrap);
   showRecording(r, detail);
 }
+function originLabel(origin) {
+  return origin === 'agent' ? 'Agent' : origin === 'extension' ? 'Extension' : 'Manual';
+}
 function originTag(origin) {
-  const agent = origin === 'agent';
-  return '<span class="badge origin-'+(agent?'agent':'manual')+'">'+(agent?'Agent':'Manual')+'</span>';
+  const o = origin === 'agent' || origin === 'extension' ? origin : 'manual';
+  return '<span class="badge origin-'+o+'">'+originLabel(o)+'</span>';
 }
 // Capture-review badge from the stored verdict (webnav dev review). Verified (green) = zero
 // gaps, graph-ready; needs-fix (amber, with gap count) = review found capture gaps; nothing =
@@ -897,10 +913,10 @@ async function softRefresh(kind) {
       const stateChanged = fresh.active !== detailCtx.r.active || (winSession === fresh.sessionId) !== detailCtx.hasWindow;
       detailCtx.r = fresh;
       if (stateChanged) buildHead(detailCtx);   // recording→stopped, window gained/lost → repaint header NOW
-      // GROUND TRUTH over inference (advisor): any sessions/step event while the Steps
-      // tab is open → just refetch steps. One cheap call; retires the whole "steps
-      // blank until re-click" class instead of guessing when the count moved.
-      if (detailCtx.subTab === 'steps') loadSteps(detailCtx);
+      // GROUND TRUTH over inference (advisor): any sessions/step event while the Ledger
+      // tab is open → just refetch both panes. One cheap call each; retires the whole
+      // "steps blank until re-click" class instead of guessing when the count moved.
+      if (detailCtx.subTab === 'ledger') { loadSteps(detailCtx); loadLedger(detailCtx); }
       if (detailCtx.subTab === 'review') loadReview(detailCtx);   // review start/finish emits 'sessions'
     }
   }
@@ -975,7 +991,9 @@ function buildHead(ctx) {
   const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid var(--ok);color:var(--ok);border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
   const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong>'+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
-  const repB = btn('Replay'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
+  const repB = btn('▶ Replay'), repXB = btn('▶ Replay exact'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
+  repB.title = 'Replays the cleaned-up route. Finds each element again even if the page changed. Best for repeatable automation.';
+  repXB.title = 'Replays exactly what was done, event by event, nothing skipped. Best for exact reruns and for checking the recording caught everything.';
   // Open window and Record are SEPARATE intents here (live feedback): the window
   // opens ARMED; Record activates once the window exists.
   const openB = btn(hasWindow ? '🪟 window open' : (r.hasProfile ? '\\uD83D\\uDD10 Open (' + r.profile + ')' : 'Open window'));
@@ -1017,16 +1035,20 @@ function buildHead(ctx) {
   delB.onclick = async () => { if (confirm('Delete session '+r.sessionId+'?')) { await fetch('/api/recordings/'+encodeURIComponent(r.sessionId), { method:'DELETE' }); renderRecordings(); } };
   anB.onclick = async () => {
     const d = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/draft');
-    ctx.stepsBox.innerHTML = ''; setSubTab(ctx, 'steps');
+    ctx.stepsBox.innerHTML = ''; setSubTab(ctx, 'ledger');
     ctx.stepsBox.append(el('<pre>'+esc(JSON.stringify(d, null, 2))+'</pre>'));
   };
-  repB.onclick = async () => {
-    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay', { method:'POST' });
+  // Two replay modes: 'steps' (the cleaned-up route) and 'ledger' (event-by-event, exact).
+  const startReplay = async (mode) => {
+    const res = await fetch('/api/recordings/'+encodeURIComponent(r.sessionId)+'/replay',
+      { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode: mode }) });
     if (!res.ok) { toast((await res.json()).error); return; }
-    setSubTab(ctx, 'steps');
+    setSubTab(ctx, 'ledger');
     pollReplay(ctx.stepsBox, r.sessionId);
   };
-  head.append(openB, recB, repB, anB, delB);
+  repB.onclick = () => startReplay('steps');
+  repXB.onclick = () => startReplay('ledger');
+  head.append(openB, recB, repB, repXB, anB, delB);
   ctx.headBox.append(head);
 }
 
@@ -1041,17 +1063,45 @@ async function loadSteps(ctx) {
   ctx.stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' })), ctx.r.sessionId));
 }
 
+// --- Ledger sub-tab: the RAW event record with each event's fate. This is the
+// deterministic capture-coverage view (events → steps); drops are assembly losses.
+async function loadLedger(ctx) {
+  let d = null;
+  try { d = await getJSON('/api/recordings/'+encodeURIComponent(ctx.r.sessionId)+'/events'); } catch { return; }
+  ctx.rawBox.innerHTML = '';
+  if (!d || !d.events || !d.events.length) {
+    ctx.rawBox.append(el('<div class="muted" style="margin:8px 0">No ledger — this session was recorded before the ledger existed. Steps replay still works.</div>'));
+    return;
+  }
+  const c = d.coverage;
+  ctx.rawBox.append(el('<div style="margin:8px 0">'+c.total+' events \\u2192 '+c.captured+' steps'
+    + (c.dropped.length ? ' \\u00B7 <span style="color:var(--rec);font-weight:600">'+c.dropped.length+' dropped</span>' : ' \\u00B7 all captured')+'</div>'));
+  const rows = d.events.map(e => {
+    const desc = e.descriptor || {};
+    const label = desc.name || desc.ariaLabel || desc.leafText || desc.placeholder || (e.kind === 'navigate' ? (desc.url || '') : '');
+    // fate uses the same positive-state color the Steps table's ✓ and the Review ok badge use (var(--ok));
+    // a drop reason is flagged in var(--rec) like the "dropped" summary; a null disposition is muted.
+    const fate = !e.disposition ? '<span class="muted">unprocessed</span>'
+      : e.disposition.indexOf('step:') === 0 ? '<span style="color:var(--ok);font-weight:600">step '+esc(e.disposition.slice(5))+'</span>'
+      : '<span style="color:var(--rec)">'+esc(e.disposition.replace('dropped:',''))+'</span>';
+    const t = e.t ? new Date(e.t).toLocaleTimeString() : '';
+    return '<tr><td class="muted">'+e.seq+'</td><td>'+esc(t)+'</td><td>'+esc(e.source)+'</td><td>'+esc(e.kind)+'</td><td>'+esc(String(label))+'</td><td>'+fate+'</td></tr>';
+  }).join('');
+  ctx.rawBox.append(el('<table><tr><th>#</th><th>time</th><th>src</th><th>kind</th><th>label</th><th>fate</th></tr>'+rows+'</table>'));
+}
+
 function setSubTab(ctx, name) {
   ctx.subTab = name;
   ctx.tabsBar.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.sub === name));
-  ctx.stepsBox.style.display = name === 'steps' ? '' : 'none';
   ctx.logsBox.style.display = name === 'logs' ? '' : 'none';
   ctx.videosBox.style.display = name === 'videos' ? '' : 'none';
   ctx.reviewBox.style.display = name === 'review' ? '' : 'none';
-  if (name === 'steps') loadSteps(ctx);   // refetch — steps landed while you were on Logs (live bug: stale view)
+  ctx.ledgerBox.style.display = name === 'ledger' ? 'flex' : 'none';
   if (name === 'logs') loadLogs(ctx);
   if (name === 'videos') loadVideos(ctx);
   if (name === 'review') loadReview(ctx);
+  // Ledger tab = two panes, refreshed together: Raw (loadLedger) + Webnav (loadSteps).
+  if (name === 'ledger') { loadSteps(ctx); loadLedger(ctx); }
 }
 
 // Minimal markdown → HTML for the review report (esc() runs FIRST, so this only
@@ -1164,17 +1214,26 @@ async function showRecording(r, detail) {
   const steps = await getJSON('/api/recordings/'+encodeURIComponent(r.sessionId)+'/steps');
   detail.innerHTML = '';
   const headBox = el('<div style="margin-bottom:10px"></div>');
-  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="steps" class="active">Steps</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button><button data-sub="logs">Logs</button></nav>');
-  const stepsBox = el('<div></div>');
+  const tabsBar = el('<nav style="padding:0;border-bottom:1px solid var(--border);margin-bottom:10px"><button data-sub="ledger" class="active">Ledger</button><button data-sub="videos">Session videos</button><button data-sub="review">Review</button><button data-sub="logs">Logs</button></nav>');
+  // Ledger tab = one flex row, two panes: left Raw (event ledger), right Webnav (assembled steps).
+  const rawPane = el('<div style="flex:1 1 0;min-width:0"></div>');
+  const webnavPane = el('<div style="flex:1 1 0;min-width:0"></div>');
+  const rawBox = el('<div></div>');
+  const webnavBox = el('<div></div>');
+  rawPane.append(el('<div class="cat-head">Raw</div>'), rawBox);
+  webnavPane.append(el('<div class="cat-head">Webnav</div>'), webnavBox);
+  const ledgerBox = el('<div style="display:flex;gap:14px;align-items:flex-start"></div>');
+  ledgerBox.append(rawPane, webnavPane);
   const logsBox = el('<div style="display:none"></div>');
   const videosBox = el('<div style="display:none"></div>');
   const reviewBox = el('<div style="display:none"></div>');
-  const ctx = { r, headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox, subTab: 'steps', hasWindow: winSession === r.sessionId };
+  const ctx = { r, headBox, tabsBar, stepsBox: webnavBox, logsBox, videosBox, reviewBox, ledgerBox, rawBox, subTab: 'ledger', hasWindow: winSession === r.sessionId };
   detailCtx = ctx;
   tabsBar.querySelectorAll('button').forEach(b => { b.onclick = () => setSubTab(ctx, b.dataset.sub); });
   buildHead(ctx);
-  stepsBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
-  detail.append(headBox, tabsBar, stepsBox, logsBox, videosBox, reviewBox);
+  webnavBox.append(stepTable(steps.map(x => ({ ...x, status: '' }))));
+  loadLedger(ctx);   // Raw pane has no initial data yet (unlike Webnav, prefilled above) — fetch it
+  detail.append(headBox, tabsBar, ledgerBox, logsBox, videosBox, reviewBox);
 }
 
 // --- Logs sub-tab: continuous stream + freshness ping ---

@@ -45,4 +45,39 @@ describe('RecordStore action-effects', () => {
     s.appendActionEffect('sess', { fromUrl: 'u', fromSnapshot: '', action: null, toUrl: 'u', toSnapshot: '', navigated: false, diff: { added: [], removed: [] } });
     expect(s.actionEffects('sess')).toHaveLength(0);
   });
+
+  it('round-trips nameHints (present → equal; absent → undefined)', () => {
+    const s = store();
+    s.start('sess');
+    s.appendActionEffect('sess', {
+      fromUrl: 'https://x.com/', fromSnapshot: '', action: null,
+      toUrl: 'https://x.com/dash', toSnapshot: SNAP_A, navigated: true,
+      diff: { added: [], removed: [] }, nameHints: { e5: 'Expand', e6: 'Favorite' },
+    });
+    s.appendActionEffect('sess', {
+      fromUrl: 'https://x.com/dash', fromSnapshot: SNAP_A, action: null,
+      toUrl: 'https://x.com/dash2', toSnapshot: SNAP_B, navigated: true,
+      diff: { added: [], removed: [] },   // no nameHints
+    });
+    const fx = s.actionEffects('sess');
+    expect(fx[0].nameHints).toEqual({ e5: 'Expand', e6: 'Favorite' });
+    expect(fx[1].nameHints).toBeUndefined();
+  });
+
+  it('opens an old db with no name_hints column (migrate adds it, reads undefined)', () => {
+    // Simulate a pre-X6 db: a bare table with the older columns, no name_hints.
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE record_observations (session_id TEXT, seq INTEGER, url TEXT,
+      fingerprint TEXT, declared_links TEXT, captured_at INTEGER, from_url TEXT,
+      from_snapshot TEXT, action TEXT, to_url TEXT, to_snapshot TEXT, navigated INTEGER, diff TEXT);
+      CREATE TABLE record_sessions (session_id TEXT PRIMARY KEY, active INTEGER, started_at INTEGER, stopped_at INTEGER);
+      CREATE TABLE record_events (session_id TEXT, seq INTEGER, t INTEGER, source TEXT, kind TEXT, descriptor TEXT, disposition TEXT);`);
+    const s = RecordStore.fromDatabase(db);   // migrate() must ADD name_hints, not throw
+    s.start('old');
+    s.appendActionEffect('old', {
+      fromUrl: 'u', fromSnapshot: 'x', action: null, toUrl: 'u2', toSnapshot: SNAP_A,
+      navigated: true, diff: { added: [], removed: [] },
+    });
+    expect(s.actionEffects('old')[0].nameHints).toBeUndefined();
+  });
 });
