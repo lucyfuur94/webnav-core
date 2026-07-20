@@ -17,7 +17,13 @@ export interface SnapNode {
 // both lowercase roles (`link`, `searchbox`) and capitalized ones
 // (`StaticText`, `RootWebArea`, `WebArea`).
 const NODE_RE = /^(\w[\w-]*)\s*(?:"([^"]*)")?/;
-const REF_RE = /\[ref=(e\d+)\]/;
+// Accept BOTH ref dialects: playwright-cli emits `eN`; the extension's AX adapter
+// (adaptAXTree) emits `bN`. Without `bN` here, re-parsing an extension-recorded snapshot
+// left every node ref=null, so draft.ts's interior synthesis (gated on resolveByFingerprint
+// finding a ref) skipped every unclicked control — an extension-recorded landing lost its
+// whole form/control repertoire (Email/Password/Log in never entered the map). Matching both
+// makes the two capture paths produce identical interior repertoire (parity harness proves it).
+const REF_RE = /\[ref=([eb]\d+)\]/;
 // Any bracketed attribute, e.g. [ref=e6], [level=1], [cursor=pointer].
 const ATTR_RE = /\[[^\]]+\]/;
 const URL_RE = /^\/url:\s*(.+)$/;
