@@ -772,7 +772,7 @@ async function main() {
     // way the `graph-edit` verb does (both call editGraph — the single shared apply path, so they
     // cannot drift). The human-given name is stamped onto the ONE destination state (the draft
     // state whose urlPattern matches the final landing) so list_routes recalls the flow by name.
-    const onTaught = async (sessionId: string, name?: string): Promise<{ site?: string; stateId?: string; warning?: string }> => {
+    const onTaught = async (sessionId: string, name?: string, notes?: string): Promise<{ site?: string; stateId?: string; warning?: string }> => {
       const effects = recordStore.actionEffects(sessionId);
       if (effects.length === 0) return { warning: 'no effects' };
       const { draftFromEffects } = await import('./explorer/draft.js');
@@ -806,6 +806,7 @@ async function main() {
         if (best < 0) dest = null;
       }
       if (dest && name) (dest as any).taughtAs = name;
+      if (dest && notes) (dest as any).taughtNotes = notes;
       // Reuse the server's MapStore (same dbPath) so a follow-up recall in the same process
       // sees the taught state without reopening the sqlite file.
       editGraph(mapStore, site, draft as any);
@@ -1416,7 +1417,8 @@ async function main() {
           let videoCount = 0;
           try { videoCount = readdirSync(join(videosRoot, x.sessionId)).filter((f) => f.endsWith('.webm')).length; } catch { /* none */ }
           return { ...x, profile, hasProfile: !!profile && existsSync2(profileDir(profile)),
-            startUrl: recordStore.startUrl(x.sessionId), videoCount, origin: recordStore.originOf(x.sessionId) };
+            startUrl: recordStore.startUrl(x.sessionId), videoCount, origin: recordStore.originOf(x.sessionId),
+            taughtAs: recordStore.taughtAsOf(x.sessionId), taughtNotes: recordStore.taughtNotesOf(x.sessionId) };
         });
       },
       steps: (id: string) => recordStore.actionEffects(id).map((e) => ({ seq: e.seq,

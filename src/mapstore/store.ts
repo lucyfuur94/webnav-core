@@ -89,6 +89,9 @@ export class MapStore implements IMapStore {
     if (!scols2.some((c) => c.name === 'taught_as')) {            // Teach-mode human-given route name (label only)
       this.db.exec('ALTER TABLE states ADD COLUMN taught_as TEXT');
     }
+    if (!scols2.some((c) => c.name === 'taught_notes')) {         // Teach-mode teacher description (route context for the agent)
+      this.db.exec('ALTER TABLE states ADD COLUMN taught_notes TEXT');
+    }
     if (!scols2.some((c) => c.name === 'url_template')) {         // /dashboard/{param} — viewer shows the template, not an instance URL
       this.db.exec('ALTER TABLE states ADD COLUMN url_template TEXT');
     }
@@ -111,10 +114,10 @@ export class MapStore implements IMapStore {
     // Explicit column names (NOT positional VALUES): on a migrated DB the
     // `node_id` column is appended LAST by ALTER TABLE, not 2nd as in fresh
     // schema. Naming the columns keeps the write correct regardless of order.
-    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state,provisional,url_template,taught_as)
-      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent,@provisional,@template,@taughtAs)
+    this.db.prepare(`INSERT INTO states (id,node_id,semantic_name,url_pattern,role,available_signals,fingerprint,affordances,declared_shadow,parent_state,provisional,url_template,taught_as,taught_notes)
+      VALUES (@id,@nodeId,@semanticName,@urlPattern,@role,@sig,@fp,@aff,@shadow,@parent,@provisional,@template,@taughtAs,@taughtNotes)
       ON CONFLICT(id) DO UPDATE SET node_id=@nodeId, semantic_name=@semanticName, url_pattern=@urlPattern,
-      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent, provisional=@provisional, url_template=@template, taught_as=@taughtAs`)
+      role=@role, available_signals=@sig, fingerprint=@fp, affordances=@aff, declared_shadow=@shadow, parent_state=@parent, provisional=@provisional, url_template=@template, taught_as=@taughtAs, taught_notes=@taughtNotes`)
       .run({
         id: s.id, nodeId: s.nodeId, semanticName: s.semanticName, urlPattern: s.urlPattern, role: s.role,
         sig: JSON.stringify(s.availableSignals), fp: JSON.stringify(s.fingerprint),
@@ -124,6 +127,7 @@ export class MapStore implements IMapStore {
         provisional: s.provisional ?? null,
         template: s.template ?? null,
         taughtAs: s.taughtAs ?? null,
+        taughtNotes: s.taughtNotes ?? null,
       });
   }
   getState(id: string): State | null {
@@ -413,7 +417,8 @@ function rowToState(r: any): State {
     parentState: r.parent_state ?? null,
     provisional: r.provisional ?? null,
     template: r.url_template ?? null,
-    taughtAs: r.taught_as ?? null };
+    taughtAs: r.taught_as ?? null,
+    taughtNotes: r.taught_notes ?? null };
 }
 
 function rowToEdge(r: any): Edge {

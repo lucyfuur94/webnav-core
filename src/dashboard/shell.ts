@@ -884,7 +884,10 @@ function reviewBadge(review) {
 function fillRow(row, r) {
   // name column: recording dot (if active) + name + Agent/Manual + Verified badges, on ONE line.
   row.querySelector('.nm').innerHTML = (r.active ? '<span style="color:var(--rec)" class="pulse">●</span>' : '')
-    + '<span class="t">'+esc(r.sessionId)+'</span>'+originTag(r.origin)+reviewBadge(r.review);
+    + (r.taughtAs
+      ? '<span class="t">'+esc(r.taughtAs)+'</span><span class="muted" style="font-size:11px">'+esc(r.sessionId)+'</span>'
+      : '<span class="t">'+esc(r.sessionId)+'</span>')
+    + originTag(r.origin)+reviewBadge(r.review);
   const site = row.querySelector('.col.site'); if (site) site.textContent = r.site || '—';
   const steps = row.querySelector('.col.steps'); if (steps) steps.textContent = r.steps+' step'+(r.steps===1?'':'s');
   const vid = row.querySelector('.col.vid'); if (vid) vid.innerHTML = r.videoCount ? '\\uD83C\\uDFA5 '+r.videoCount : '';   // 🎥 N
@@ -990,7 +993,7 @@ function buildHead(ctx) {
     : winSession ? '<span class="muted">window busy: '+esc(winSession)+'</span>' : '';
   ctx.headBox.innerHTML = '';
   const profBadge = r.hasProfile ? ' <span title="runs under this saved-login profile" style="border:1px solid var(--ok);color:var(--ok);border-radius:4px;padding:0 5px;font-size:10px">\uD83D\uDD10 '+esc(r.profile)+'</span>' : '';
-  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.sessionId)+'</strong>'+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
+  const head = el('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><strong>'+esc(r.taughtAs||r.sessionId)+'</strong>'+(r.taughtAs?'<span class="muted" style="font-size:12px">'+esc(r.sessionId)+'</span>':'')+originTag(r.origin)+'<span class="muted">'+esc(r.site||'')+'</span>'+profBadge+'<span class="hstate">'+recState+'</span><span style="flex:1"></span></div>');
   const btn = (t, danger) => el('<button class="btn'+(danger?' danger':'')+'">'+t+'</button>');
   const repB = btn('▶ Replay'), repXB = btn('▶ Replay exact'), anB = btn('Analyse → draft'), delB = btn('Delete', true);
   repB.title = 'Replays the cleaned-up route. Finds each element again even if the page changed. Best for repeatable automation.';
@@ -1051,6 +1054,8 @@ function buildHead(ctx) {
   repXB.onclick = () => startReplay('ledger');
   head.append(openB, recB, repB, repXB, anB, delB);
   ctx.headBox.append(head);
+  // The teacher's own description of a taught flow — context for whoever reviews it.
+  if (r.taughtNotes) ctx.headBox.append(el('<div class="muted" style="margin-top:6px;font-size:12.5px;line-height:1.5;white-space:pre-wrap">'+esc(r.taughtNotes)+'</div>'));
 }
 
 // Refetch the session's steps and re-render the table. This is the single source

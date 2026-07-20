@@ -827,9 +827,9 @@ async function startRun(): Promise<void> {
   // body.running swaps Send → Take-over/Stop and pulses the mark.
   document.body.classList.add('running');
   stickToBottom = true;   // a fresh run should always follow new content
-  setThinking(true);      // show "working…" until the first reply/action arrives
   renderTabChip();
   bubble('user', goal);
+  setThinking(true);      // AFTER the user bubble, so "working…" reads as the reply-in-progress
   goalEl.value = '';
   autosize();
 
@@ -999,6 +999,15 @@ function renderTeachConfirm(steps: unknown[], suggestedName: string): void {
   input.setAttribute('aria-label', 'Name for this taught flow');
   el.appendChild(input);
 
+  // Optional longer description — the teacher's own words about what this flow does and
+  // when to use it. Rides to the map as route CONTEXT for the agent (never interpreted
+  // by webnav's zero-LLM engine) and shows on the dashboard session.
+  const details = document.createElement('textarea');
+  details.className = 'teach-name teach-notes'; details.rows = 3;
+  details.placeholder = 'optional details — what does this flow do? when should an agent use it? anything to watch out for?';
+  details.setAttribute('aria-label', 'Details about this taught flow');
+  el.appendChild(details);
+
   const note = document.createElement('div');
   note.className = 'note';
   note.textContent = 'Save to make this recallable by any agent. Your typed values are never stored.';
@@ -1010,7 +1019,7 @@ function renderTeachConfirm(steps: unknown[], suggestedName: string): void {
   save.className = 'approve'; save.textContent = 'Save';
   const discard = document.createElement('button');
   discard.className = 'discard'; discard.textContent = 'Discard';
-  save.onclick = () => { save.disabled = true; discard.disabled = true; void saveTeach(steps, input.value.trim() || suggestedName, el); };
+  save.onclick = () => { save.disabled = true; discard.disabled = true; void saveTeach(steps, input.value.trim() || suggestedName, el, details.value.trim()); };
   discard.onclick = () => { void discardTeach(el); };
   bar.appendChild(save); bar.appendChild(discard);
   el.appendChild(bar);
@@ -1020,11 +1029,11 @@ function renderTeachConfirm(steps: unknown[], suggestedName: string): void {
   input.focus(); input.select();
 }
 
-async function saveTeach(steps: unknown[], name: string, card: HTMLDivElement): Promise<void> {
+async function saveTeach(steps: unknown[], name: string, card: HTMLDivElement, notes?: string): Promise<void> {
   const teachSid = 'teach-' + Date.now().toString(36);
   const res = await fetch(base + '/api/agent/teach-save', {
     method: 'POST', headers: postHeaders(),
-    body: JSON.stringify({ sessionId: teachSid, name, steps }),
+    body: JSON.stringify({ sessionId: teachSid, name, steps, ...(notes ? { notes } : {}) }),
   }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   card.remove();
   if (!res?.ok) {
@@ -1036,7 +1045,7 @@ async function saveTeach(steps: unknown[], name: string, card: HTMLDivElement): 
   // demo becomes a dashboard clip. background buffered frames since teach-start's attach.
   await flushVideo(teachSid);
   await chrome.runtime.sendMessage({ type: 'detach-drive' });
-  bubble('done', `✓ Saved "${name}" — recallable by any agent now.` + (res.warning ? '\n' + res.warning : ''));
+  bubble('done', `Saved "${name}" — recallable by any agent now.` + (res.warning ? '\n' + res.warning : ''));
   await resetTeachUI();
 }
 

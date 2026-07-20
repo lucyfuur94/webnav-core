@@ -96,6 +96,10 @@ export class RecordStore {
     // room"). Session-level so the name survives even before graph-analyse runs; the
     // build step copies it onto the destination State.taughtAs.
     if (!scols.has('taught_as')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN taught_as TEXT');
+    // taught_notes = the teacher's own longer description of the demonstrated flow (what
+    // it does / when to use it). Human words, not site data — shown on the dashboard and
+    // surfaced to the calling agent as route context (the AGENT judges relevance, #5a).
+    if (!scols.has('taught_notes')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN taught_notes TEXT');
     // review = the capture-review verdict JSON ({approved, gaps, at, model, reason}) — set
     // by `dev review`. A session is GRAPH-READY only when approved (all on-screen actions
     // captured as steps). Null (never reviewed) reads as not-approved.
@@ -126,6 +130,13 @@ export class RecordStore {
   taughtAsOf(sessionId: string): string | null {
     const r: any = this.db.prepare('SELECT taught_as FROM record_sessions WHERE session_id=?').get(sessionId);
     return r?.taught_as ?? null;
+  }
+  setTaughtNotes(sessionId: string, notes: string): void {
+    this.db.prepare('UPDATE record_sessions SET taught_notes=? WHERE session_id=?').run(notes, sessionId);
+  }
+  taughtNotesOf(sessionId: string): string | null {
+    const r: any = this.db.prepare('SELECT taught_notes FROM record_sessions WHERE session_id=?').get(sessionId);
+    return r?.taught_notes ?? null;
   }
   /** Record the intended start URL for a session (idempotent; only sets if given). */
   setStartUrl(sessionId: string, url: string): void {

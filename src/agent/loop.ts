@@ -174,7 +174,10 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         if (dests.length === 0) return text('no recallable destinations known for this site — drive manually with click/type/goto.');
         // Prefer a human-taught route NAME over the inferred semanticName, and flag it so the agent
         // knows the flow was demonstrated by a human (a taught route is the trusted recall target).
-        const lines = dests.map((s) => '- ' + s.id + ' — ' + (s.taughtAs ?? s.semanticName) + (s.taughtAs ? ' [taught]' : ''));
+        const lines = dests.map((s) => '- ' + s.id + ' — ' + (s.taughtAs ?? s.semanticName) + (s.taughtAs ? ' [taught]' : '')
+          // The teacher's own description rides along as route CONTEXT — the agent judges
+          // relevance (#5a); webnav never interprets it. Truncated to keep the list compact.
+          + (s.taughtNotes ? '\n    ' + s.taughtNotes.slice(0, 240).replace(/\s+/g, ' ') : ''));
         return text('known destinations (pass an id to check_route):\n' + lines.join('\n'));
       },
     },

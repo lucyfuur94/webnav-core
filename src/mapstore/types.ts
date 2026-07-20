@@ -93,6 +93,10 @@ export interface State {
                                 // here ("Book a meeting room"). A LABEL only (structure, not data):
                                 // list_routes prefers it over the inferred semanticName so the agent
                                 // recalls the taught flow by the name the human used. null = untaught.
+  taughtNotes?: string | null;  // the teacher's longer description of the flow (what it does / when
+                                // to use it). Human words, never site data. Surfaced to the calling
+                                // agent as route context — the AGENT judges relevance (#5a); the
+                                // zero-LLM engine never interprets it.
 }
 
 export function makeState(
