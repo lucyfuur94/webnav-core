@@ -53,7 +53,7 @@ action: commit points always pause for the agent (or you) to decide.
 ## Quickstart (≈60 seconds to a working walk)
 
 ```bash
-npm install && npm link     # Node 18+; installs `webnav` on PATH (runs src via tsx — NO build step)
+npm install && npm link     # Node 18/20/22; installs `webnav` on PATH (runs src via tsx — NO build step)
                             # also needs `playwright-cli` on PATH
 
 # walk a site WITHOUT learning it — import a map someone already made:
