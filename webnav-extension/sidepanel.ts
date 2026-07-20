@@ -28,8 +28,7 @@ type AgentEvent =
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const thread = byId<HTMLDivElement>('thread');
 const goalEl = byId<HTMLTextAreaElement>('goal');
-const modeEl = byId<HTMLDivElement>('mode'); // segmented switch container (.modeswitch)
-const modeHintEl = byId<HTMLDivElement>('mode-hint'); // #2: one-line selected-mode description
+const modeEl = byId<HTMLSelectElement>('mode'); // permission-mode <select> (Ask / Act)
 const modelEl = byId<HTMLSelectElement>('model'); // header model selector (native <select>)
 const sendEl = byId<HTMLButtonElement>('send');
 const stopEl = byId<HTMLButtonElement>('stop');
@@ -39,6 +38,9 @@ const connText = byId<HTMLSpanElement>('conn-text');
 const tabEl = byId<HTMLSpanElement>('tab');
 const activityStep = byId<HTMLSpanElement>('activity-step');
 const jumpPill = byId<HTMLButtonElement>('jump-latest');
+const gateEl = byId<HTMLDivElement>('tokengate');
+const gateTokenEl = byId<HTMLInputElement>('tg-token');
+const gateErrEl = byId<HTMLParagraphElement>('tg-err');
 
 // The connection lamp keeps its .conn base class + lamp child; we only swap the
 // ok/err state class and the text (never clobber connEl.className outright, or the
@@ -105,10 +107,7 @@ chrome.storage.local.get(['sid', 'base', 'mode', 'token', 'agentModel']).then((s
   if (s.agentModel && isKnownModel(s.agentModel as string)) agentModel = s.agentModel as string;
   applyMode();
   applyModel();
-  openStream(); // re-open once the persisted token is loaded
-  // First-run: no token means the panel can't connect. Open the options tab so the
-  // user can paste it, instead of leaving them staring at "no token".
-  if (!token) chrome.runtime.openOptionsPage();
+  openStream(); // re-open once the persisted token is loaded (shows the gate if absent)
 });
 
 // Editing base/token/sid in the options tab must update the live panel without a
@@ -130,36 +129,53 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (reopen) openStream();
 });
 
-// One-line, honest description of what each mode gates (crit #3/#4). Shown as the
-// button's tooltip so the three modes read as genuinely different, not cosmetic.
+// ── Token gate ──────────────────────────────────────────────────────────────
+// The extension is useless without the token, so we ask for it IN the panel (an
+// overlay) rather than punting to Settings. Saving writes `token` to storage, which
+// the onChanged listener above picks up → re-opens the stream. Shown on no-token and
+// on an unauthorized/dropped connection; hidden the moment the stream connects.
+function showTokenGate(message?: string): void {
+  gateEl.hidden = false;
+  if (message) { gateErrEl.textContent = message; gateErrEl.hidden = false; }
+  else { gateErrEl.hidden = true; }
+  gateTokenEl.value = '';
+  gateTokenEl.focus();
+}
+function hideTokenGate(): void {
+  gateEl.hidden = true;
+  gateErrEl.hidden = true;
+}
+function submitToken(): void {
+  const t = gateTokenEl.value.trim();
+  if (!t) { gateErrEl.textContent = 'Paste the token printed by `webnav agent-serve`.'; gateErrEl.hidden = false; return; }
+  gateErrEl.hidden = true;
+  chrome.storage.local.set({ token: t }); // onChanged updates `token` + re-opens the stream
+}
+byId<HTMLButtonElement>('tg-connect').onclick = submitToken;
+gateTokenEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitToken(); } });
+byId<HTMLButtonElement>('tg-copy').onclick = async () => {
+  const btn = byId<HTMLButtonElement>('tg-copy');
+  try { await navigator.clipboard.writeText('webnav agent-serve --port 7779'); btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 1200); }
+  catch { /* clipboard blocked — the command is visible to copy by hand */ }
+};
+
+// Fuller tooltip for the mode <select>. The visible copy lives in the option labels
+// themselves (#2 — no separate upfront hint line); this is the hover detail.
 const MODE_HINT: Record<Mode, string> = {
   Ask: 'Ask: shows a plan and WAITS for your Approve before driving anything.',
   Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
 };
-// #2 — one-line description of the SELECTED mode, shown under the switch (updated in
-// applyMode). Distinct from MODE_HINT (the hover tooltip) — this is the always-visible copy.
-const MODE_DESC: Record<Mode, string> = {
-  Ask: 'Shows a plan and waits for your approval before it does anything.',
-  Act: 'Runs on its own. Irreversible steps (pay, place order, delete) still pause for you.',
-};
-const modeButtons = Array.from(modeEl.querySelectorAll<HTMLButtonElement>('button[data-mode]'));
 function applyMode(): void {
-  // Reflect the active mode on the segmented switch (aria-pressed drives the styling).
-  for (const b of modeButtons) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  modeEl.value = mode;              // reflect restored/changed state onto the <select>
   modeEl.title = MODE_HINT[mode];
-  modeHintEl.textContent = MODE_DESC[mode]; // #2: keep the visible line in sync with the mode
 }
-// Each segment sets its mode directly (a clearer instrument than a blind cycle);
-// the persisted-state + hint plumbing is unchanged.
-for (const b of modeButtons) {
-  b.onclick = () => {
-    const m = b.dataset.mode as Mode;
-    if (!(MODES as readonly string[]).includes(m)) return;
-    mode = m;
-    applyMode();
-    chrome.storage.local.set({ mode });
-  };
-}
+modeEl.onchange = () => {
+  const m = modeEl.value as Mode;
+  if (!(MODES as readonly string[]).includes(m)) return;
+  mode = m;
+  applyMode();
+  chrome.storage.local.set({ mode });
+};
 
 // Model selector (native <select>). Values ARE the SDK model ids; the option set is
 // the source of truth for what's valid, so a stored/changed value is only honored if
@@ -269,7 +285,7 @@ function renderEmpty(): void {
     '<p>Describe where you want to go on this page, in plain words. The agent reads the page and drives it there — you watch every step.</p>' +
     '<div class="examples"></div>' +
     '<div class="prereq"><span>Needs the local server:</span> <code>webnav agent-serve --port 7779</code>' +
-    '<span class="tok">then paste its token in <button type="button" class="lnk" id="open-opts">settings</button></span></div>';
+    '<span class="tok">then <button type="button" class="lnk" id="open-opts">paste its token</button></span></div>';
   const examples = wrap.querySelector('.examples') as HTMLDivElement;
   for (const ex of ['Log in to this site', 'Search for something and open the first result', 'Fill out and submit the form on this page']) {
     const b = document.createElement('button');
@@ -278,7 +294,7 @@ function renderEmpty(): void {
     examples.appendChild(b);
   }
   const openOpts = wrap.querySelector('#open-opts') as HTMLButtonElement | null;
-  if (openOpts) openOpts.onclick = () => chrome.runtime.openOptionsPage();
+  if (openOpts) openOpts.onclick = () => showTokenGate();
   thread.appendChild(wrap);
   updateEmptyPrereq(connEl.classList.contains('ok'));
 }
@@ -544,16 +560,17 @@ let es: EventSource | null = null;
 function openStream(): void {
   es?.close();
   if (!token) {
-    // No token → the server would 401 the SSE GET; don't even open. Tell the user what to do.
+    // No token → the server would 401 the SSE GET; don't even open. Ask for it IN the
+    // panel (the overlay) — the extension can't do anything without it.
     es = null;
-    setConn('no token', 'err',
-      'The agent server prints a token at startup. Open settings and paste it into the Token field.');
+    setConn('no token', 'err', 'Paste the token from `webnav agent-serve` to connect.');
+    showTokenGate();
     return;
   }
   // EventSource can't set headers, so the per-run token rides as a query param (the server
   // accepts ?token= on the SSE GET and 401s a missing/wrong one).
   es = new EventSource(base + '/api/agent/events?token=' + encodeURIComponent(token));
-  es.onopen = () => setConn('connected', 'ok', 'Connected to the local webnav server');
+  es.onopen = () => { setConn('connected', 'ok', 'Connected to the local webnav server'); hideTokenGate(); };
   // EventSource auto-reconnects natively, so this flips back to 'connected' once the
   // server is up — the message tells a first-time user WHY it's down. A 401 (wrong/stale
   // token) also lands here; EventSource doesn't expose the status, so we name both likely
@@ -780,10 +797,13 @@ async function startRun(): Promise<void> {
     body: JSON.stringify({ goal, sessionId: sid, mode: mode.toLowerCase(), model: agentModel }),
   }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   if (!res?.ok) {
-    const hint = res?.error === 'unauthorized'
-      ? 'goal rejected: unauthorized — paste the token from `webnav agent-serve` into settings'
-      : 'goal rejected: ' + (res?.error ?? '');
-    bubble('error', '✗ ' + hint);
+    if (res?.error === 'unauthorized') {
+      // The saved token is wrong/stale — re-ask IN the panel, not via Settings.
+      finishRun();
+      showTokenGate('That token was rejected. Paste the one printed by `webnav agent-serve`.');
+      return;
+    }
+    bubble('error', '✗ goal rejected: ' + (res?.error ?? ''));
     finishRun();
   }
 }
