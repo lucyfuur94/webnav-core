@@ -317,16 +317,16 @@ export const DEV_COMMANDS: CommandSpec[] = [
   {
     name: 'node-clear',
     summary: 'Wipe a site-node\'s INTERIOR (its states + edges) so the site can be RE-LEARNED from scratch through webnav. The node row itself stays. Use before re-recording a site whose map is stale/wrong — never hand-edit the DB.',
-    args: [],
-    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host) to clear, e.g. github.com.' }],
-    example: 'webnav dev node-clear --node www.saucedemo.com',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host) to clear, e.g. github.com. Also accepts --node.' }],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
+    example: 'webnav dev node-clear www.saucedemo.com',
   },
   {
     name: 'node-rm',
     summary: 'Fully DELETE a site-node — its states, edges, node-edges, AND the node row itself — so a stale or empty site disappears entirely (e.g. from the dashboard). Stronger than node-clear (which keeps the row). Never hand-edit the DB.',
-    args: [],
-    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (host) to delete, e.g. pypi.org.' }],
-    example: 'webnav dev node-rm --node pypi.org',
+    args: [{ name: 'site', required: true, description: 'Site-node id (host) to delete, e.g. pypi.org. Also accepts --node.' }],
+    flags: [{ name: '--node', takesValue: true, description: 'Site-node id (alternative to the positional).' }],
+    example: 'webnav dev node-rm www.reddit.com',
   },
   {
     name: 'export-map',

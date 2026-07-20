@@ -35,6 +35,10 @@ describe('parseArgs — mapping verbs (under dev)', () => {
   });
   it('parses node-rm', () => {
     expect(parseArgs(['dev', 'node-rm', '--node', 'example.com'])).toEqual({ cmd: 'node-rm', node: 'example.com' });
+    // the natural positional form works too (matches outline/export-map) — this is the
+    // ergonomic fix for `node-rm www.reddit.com` silently no-opping without --node.
+    expect(parseArgs(['dev', 'node-rm', 'www.reddit.com'])).toEqual({ cmd: 'node-rm', node: 'www.reddit.com' });
+    expect(parseArgs(['dev', 'node-clear', 'www.saucedemo.com'])).toEqual({ cmd: 'node-clear', node: 'www.saucedemo.com' });
   });
   it('parses import-map with a file', () => {
     expect(parseArgs(['dev', 'import-map', 'packs/saucedemo.json'])).toEqual({ cmd: 'import-map', file: 'packs/saucedemo.json' });

@@ -182,8 +182,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   if (cmd === 'graph-edit') return { cmd, node: flagValue(rest, '--node') ?? '', graph: flagValue(rest, '--graph') ?? '' };
   if (cmd === 'graph-show') return { cmd, node: flagValue(rest, '--node') ?? '' };
-  if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? '' };
-  if (cmd === 'node-rm') return { cmd, node: flagValue(rest, '--node') ?? '' };
+  // Accept the site id as --node OR a bare positional, matching outline/export-map — so the
+  // natural `node-rm www.reddit.com` works, not just `node-rm --node www.reddit.com`.
+  if (cmd === 'node-clear') return { cmd, node: flagValue(rest, '--node') ?? rest.find((a) => !a.startsWith('--')) ?? '' };
+  if (cmd === 'node-rm') return { cmd, node: flagValue(rest, '--node') ?? rest.find((a) => !a.startsWith('--')) ?? '' };
   if (cmd === 'import-map') return { cmd, file: flagValue(rest, '--file') ?? rest[0] ?? '' };
   if (cmd === 'pattern-propose') {
     return { cmd, fromUnknown: flagValue(rest, '--from-unknown') ?? '', name: flagValue(rest, '--name') ?? '', lint: flagValue(rest, '--lint') };
