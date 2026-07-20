@@ -6,12 +6,12 @@
     "url": "https://github.com/lucyfuur94/webnav-core",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@dikshanty94/webnav",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "transport": {
         "type": "stdio"
       }
