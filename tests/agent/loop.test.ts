@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MapStore } from '../../src/mapstore/store.js';
-import { makeState, makeEdge } from '../../src/mapstore/types.js';
+import { makeState, makeEdge, makeAffordance } from '../../src/mapstore/types.js';
 import type { State } from '../../src/mapstore/types.js';
 import { runAgentGoal, type QueryFn, type ToolDef } from '../../src/agent/loop.js';
 import type { AgentEvent } from '../../src/agent/server.js';
@@ -517,5 +517,38 @@ describe('build_map tool', () => {
     const { emit } = emitSpy();
     await runAgentGoal({ goal: 'map it', sessionId: 's-nb', mode: 'act', browser, store, states: [], emit, query: fn });
     expect(toolResult()).toMatch(/cannot build/i);
+  });
+});
+
+describe('map_frontier tool', () => {
+  // local mirror of the in-describe twoSiteStates helper (that one is block-scoped)
+  const siteStates = (): State[] => [
+    makeState({ id: 'siteA:home', nodeId: 'site.example', semanticName: 'Home', urlPattern: '/', role: 'section', fingerprint: ['button:Add to cart'] }),
+    makeState({ id: 'siteA:cart', nodeId: 'site.example', semanticName: 'Cart', urlPattern: '/cart', role: 'section', fingerprint: ['link:Checkout'] }),
+  ];
+
+  it('reports the current site frontier (dangling navigate) with click guidance', async () => {
+    const store = newStore();
+    const states = siteStates();
+    // Give siteA:home a dangling navigate (opener seen, destination never captured).
+    const home = states.find((s) => s.id === 'siteA:home')!;
+    home.affordances = [...(home.affordances ?? []), makeAffordance({ id: 'aff_reports', label: 'Open reports', kind: 'navigate' })];
+    const browser = fakeBrowser(INVENTORY_SNAP);   // matches siteA:home → site resolves
+    const { fn, toolResult } = fakeQueryCalling('map_frontier', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'map', sessionId: 'f1', mode: 'act', browser, store, states, emit, query: fn });
+    const out = toolResult();
+    expect(out).toContain('Open reports');
+    expect(out).toContain('CLICKING');
+  });
+
+  it('empty frontier reports mapping complete', async () => {
+    const store = newStore();
+    const states = siteStates();   // no dangling affordances
+    const browser = fakeBrowser(INVENTORY_SNAP);
+    const { fn, toolResult } = fakeQueryCalling('map_frontier', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'map', sessionId: 'f2', mode: 'act', browser, store, states, emit, query: fn });
+    expect(toolResult()).toMatch(/EMPTY|complete/i);
   });
 });

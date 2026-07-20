@@ -6,6 +6,7 @@ import type { AgentEvent } from './server.js';
 import { walkRoute } from '../router/walk.js';
 import { findPath } from '../router/path.js';
 import { matchState } from '../explorer/fingerprint.js';
+import { computeFrontier } from '../graph/frontier.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 
 // The agent loop — the BRAIN of the extension sidePanel. Runs the Claude Agent SDK
@@ -171,7 +172,24 @@ function buildTools(args: RunAgentGoalArgs): ToolDef[] {
         emit({ type: 'narrate', label: 'build_map', detail: (r.statesWritten ?? 0) + ' state(s), ' + (r.edgesWritten ?? 0) + ' edge(s)' + (r.site ? ' on ' + r.site : '') });
         return text('map updated: ' + (r.statesWritten ?? 0) + ' state(s), ' + (r.edgesWritten ?? 0) + ' edge(s)'
           + (r.site ? ' for ' + r.site : '') + (r.warning ? ' — ' + r.warning : '')
-          + '. list_routes now reflects it.');
+          + '. list_routes now reflects it.'
+          + ((r.edgesWritten ?? 0) === 0 ? ' NOTE: 0 edges — the map learned pages but not how they CONNECT. Explore by clicking in-page links (not goto) so navigations become edges.' : ''));
+      },
+    },
+    {
+      name: 'map_frontier',
+      description: 'Report what the CURRENT site\'s map has seen but NOT explored (dangling links, unopened panels, ambiguous actions). Zero-LLM, read from the stored map. Use it to drive mapping to completion: an EMPTY frontier is the honest "fully mapped" signal.',
+      shape: {},
+      handler: async () => {
+        const match = matchState(parseSnapshot(await browser.snapshot()), states);
+        const site = match.status === 'matched' ? match.state.nodeId : null;
+        if (!site) return text('the current page matches no mapped state — navigate to (or build_map) the site you are mapping first.');
+        const fr = computeFrontier(site, states.filter((s) => s.nodeId === site));
+        emit({ type: 'narrate', label: 'map_frontier', detail: fr.total + ' unexplored item(s) on ' + site });
+        if (fr.total === 0) return text('frontier is EMPTY for ' + site + ' — the map has explored everything it has seen. Mapping is complete.');
+        const lines = fr.frontier.slice(0, 25).map((i) => '- [' + i.kind + '] ' + i.label + ' (at ' + i.state + ') — ' + i.hint);
+        return text(fr.total + ' unexplored item(s) on ' + site + (fr.total > 25 ? ' (showing 25)' : '') + ':\n' + lines.join('\n')
+          + '\nDrive these by CLICKING them on their owning pages, then build_map again.');
       },
     },
     {
@@ -289,7 +307,7 @@ const SYSTEM = [
   'You navigate a live browser tab to accomplish the user goal.',
   'RECALL FIRST: call list_routes to discover the destination state ids webnav already knows for this site, then call check_route with the relevant id — if the map knows a route, webnav walks it deterministically and reports the result. You do NOT need to guess ids; list_routes shows the real ones.',
   'Only if list_routes is empty or check_route reports no route: call get_page_ax to see the page, then drive manually with click/type/goto by ref.',
-  'MAPPING: your driving is RECORDED automatically. To map a site, explore it systematically (visit each section once — prefer breadth over depth), then call build_map to fold the recorded structure into the persistent map; future runs then recall routes instead of re-exploring.',
+  'MAPPING: your driving is RECORDED automatically. To map a site: (1) explore by CLICKING the page\'s real links/nav — a click teaches the map how pages CONNECT; a goto jump records the page but NO edge, so prefer clicks and use goto only for recovery; (2) call build_map to fold what you drove into the map; (3) call map_frontier — the map reports exactly what it has seen but not explored; (4) drive those items (by clicking) and build_map again. Repeat until map_frontier is empty or the user stops you — an empty frontier is the honest done-signal, not your own sense of completeness.',
   'Irreversible actions (Place Order, Pay, Delete) are never fired automatically — if the walk hits one it stops and hands back to you.',
 ].join(' ');
 
