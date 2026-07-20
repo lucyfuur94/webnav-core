@@ -254,6 +254,21 @@ describe('agent-serve', () => {
     expect(res.status).toBe(401);
   });
 
+  it('a second events connection sends {type:evicted} to the FIRST before replacing it (no reconnect war)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const first = openEvents(port);
+    // Give the first connection a beat to be registered as `current`.
+    await new Promise((r) => setTimeout(r, 100));
+    const second = openEvents(port);
+    // The first client must learn the takeover was DELIBERATE — without this event its
+    // EventSource would auto-reconnect and evict the second one back, forever.
+    const evt = await first.waitFor((e) => e.type === 'evicted');
+    expect(evt).toEqual({ type: 'evicted' });
+    first.close();
+    second.close();
+  });
+
   it('POST /api/agent/screencast routes frames to onScreencast', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     let got: { sessionId: string; frames: unknown[] } | null = null;

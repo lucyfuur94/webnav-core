@@ -18,7 +18,10 @@ type AgentEvent =
   | { type: 'action'; id: string; cmd: Cmd }
   | { type: 'done'; summary?: string }
   | { type: 'error'; message: string }
-  | { type: 'plan'; steps: string[] };
+  | { type: 'plan'; steps: string[] }
+  // Server replaced this connection with a newer panel (last-connection-wins). Go
+  // PASSIVE — do not auto-reconnect, or the two panels evict each other forever.
+  | { type: 'evicted' };
 
 // TODO(user-gated): visual load-unpacked pass — both light AND dark themes (contrast,
 // chart-grid whisper, pin/rail alignment, done/error mask glyphs), the running
@@ -571,6 +574,11 @@ function renderDone(lastEl: HTMLDivElement | null, summary?: string): void {
 // SSE stream — opened once, lives for the panel's lifetime.
 // ---------------------------------------------------------------------------
 let es: EventSource | null = null;
+// True after the server sent 'evicted' (another panel took over). While set, the
+// watchdog must NOT reopen the stream — that reconnect is exactly what caused two
+// open panels to evict each other in a loop (connected/disconnected flapping).
+// Cleared when the USER takes over: clicking the connection pill or focusing this window.
+let evicted = false;
 
 function openStream(): void {
   es?.close();
@@ -636,6 +644,17 @@ function handleEvent(e: AgentEvent): void {
       endTurn();
       setThinking(false);   // an approval gate is now waiting on the user, not "working"
       renderPlan(e.steps);
+      break;
+    case 'evicted':
+      // Another panel (e.g. this side panel open in a second Chrome window) connected and
+      // took over. Go passive — closing the stream ourselves prevents the native auto-
+      // reconnect that made both panels evict each other in a loop. The user reclaims
+      // this panel by clicking the connection pill or focusing this window.
+      evicted = true;
+      es?.close();
+      es = null;
+      setThinking(false);
+      setConn('inactive', 'err', 'Another webnav panel took over this server. Click here (or focus this window) to reconnect.');
       break;
     case 'done':
       // #6 — subtle completion. Pass the still-open assistant bubble BEFORE endTurn nulls
@@ -988,5 +1007,18 @@ updateSendEnabled();
 // it to 'connected' on its own — no more manual close-and-reopen. ponytail: a 3s poll is
 // plenty for a localhost dev server; no exponential backoff needed.
 setInterval(() => {
+  if (evicted) return;   // deliberately passive after a takeover — reconnecting here restarts the eviction war
   if (!es || es.readyState === EventSource.CLOSED) openStream();
 }, 3000);
+
+// Reclaim an evicted panel on explicit user intent: clicking the connection pill or
+// focusing this window. The OTHER panel then receives 'evicted' and goes passive — so
+// "the panel you're using is the live one", deterministically, with no reconnect loop.
+function reclaimStream(): void {
+  if (!evicted) return;
+  evicted = false;
+  openStream();
+}
+connEl.style.cursor = 'pointer';
+connEl.addEventListener('click', reclaimStream);
+window.addEventListener('focus', reclaimStream);

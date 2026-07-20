@@ -54,7 +54,13 @@ export type AgentEvent =
   | { type: 'action'; id: string; cmd: AgentCommand }
   | { type: 'done'; summary?: string }
   | { type: 'error'; message: string }
-  | { type: 'plan'; steps: string[] };
+  | { type: 'plan'; steps: string[] }
+  // Sent to the PREVIOUS events connection right before a new one replaces it
+  // (last-connection-wins). Without this, the evicted panel's EventSource auto-
+  // reconnects and evicts the new one back — two open panels then fight forever,
+  // flapping connected/disconnected every few seconds. 'evicted' tells the old
+  // panel the takeover was deliberate so it goes passive instead of reconnecting.
+  | { type: 'evicted' };
 
 // `sessionId` is the PANEL's conversation key (e.g. 'agent-1'); the server maps it to a
 // remembered SDK session id so a follow-up goal RESUMES the same conversation. `newChat`
@@ -191,6 +197,10 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
 
     if (req.method === 'GET' && (req.url ?? '').startsWith('/api/agent/events')) {
       // Evict whatever connection was previously current — last-connection-wins.
+      // Tell it WHY first: a bare end() looks like a network blip, so the old panel's
+      // EventSource auto-reconnects and evicts THIS connection back — two panels then
+      // flap connected/disconnected forever. 'evicted' makes the old panel go passive.
+      current?.send({ type: 'evicted' });
       current?.res.end();
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       res.write(': connected\n\n');
