@@ -665,7 +665,6 @@ async function main() {
     // loop drives manually when the live page isn't a known state.
     const mapStore = new MapStore();
     ensureSeeded(mapStore);
-    const states = mapStore.allStates();
     // onGoal: a goal POST runs the loop. Inputs = {} for v1 — the goal body carries no
     // site/start-state to key CredStore by; the extension user is already logged in on
     // the live tab, and creds-injection is a walk-verb concern. Real SDK query runs.
@@ -679,6 +678,10 @@ async function main() {
       onSdkSession: (sdkSessionId: string) => void,
     ): Promise<void> => {
       const browser = makeLiveExtensionBrowser(channel, {});
+      // FRESH states per run (not a boot-time snapshot): a route taught mid-process
+      // (teach-save → onTaught builds the map) must be recallable by the very next goal
+      // — the whole teach loop is "demonstrate, then ask". One SQLite read per goal.
+      const states = mapStore.allStates();
       // /stop aborts `signal`; runAgentGoal bridges it to the SDK query's abortController
       // (loop.ts), so /stop cancels the in-flight turn — not just the next browser command.
       try {
@@ -764,10 +767,56 @@ async function main() {
         try { rmSync(tmp, { recursive: true, force: true }); } catch { /* */ }
       }
     };
+    // onTaught: turn a just-ingested human demonstration into a map. Zero-LLM: draftFromEffects
+    // folds the recorded effects into a graph-edit spec, then editGraph applies it EXACTLY the
+    // way the `graph-edit` verb does (both call editGraph — the single shared apply path, so they
+    // cannot drift). The human-given name is stamped onto the ONE destination state (the draft
+    // state whose urlPattern matches the final landing) so list_routes recalls the flow by name.
+    const onTaught = async (sessionId: string, name?: string): Promise<{ site?: string; stateId?: string; warning?: string }> => {
+      const effects = recordStore.actionEffects(sessionId);
+      if (effects.length === 0) return { warning: 'no effects' };
+      const { draftFromEffects } = await import('./explorer/draft.js');
+      const { editGraph } = await import('./graph/edit.js');
+      const draft = draftFromEffects(effects);
+      if (draft.states.length === 0) return { warning: 'no states drafted from the demonstration' };
+      // site id = the map host (host of the recording's final landing). Same nodeId convention the
+      // rest of the map uses (host string); the ensureSeeded map keys its own states by their nodeId.
+      const finalUrl = effects[effects.length - 1].toUrl || effects[0].fromUrl;
+      const hostOf = (u: string): string => { try { return new URL(u).host; } catch { return u; } };
+      const site = hostOf(finalUrl);
+      // destination = the draft state whose urlPattern matches the final landing (host+path); fall
+      // back to the state with the largest matching path prefix. No match → build anyway (warning).
+      const samePath = (a: string, b: string): boolean => {
+        try { const ua = new URL(a), ub = new URL(b); return ua.host === ub.host && ua.pathname === ub.pathname; }
+        catch { return false; }
+      };
+      const prefixLen = (a: string, b: string): number => {
+        try {
+          const ua = new URL(a), ub = new URL(b);
+          if (ua.host !== ub.host) return -1;
+          let n = 0; const la = ua.pathname, lb = ub.pathname;
+          while (n < la.length && n < lb.length && la[n] === lb[n]) n++;
+          return n;
+        } catch { return -1; }
+      };
+      let dest = draft.states.find((s) => samePath(s.urlPattern, finalUrl)) ?? null;
+      if (!dest) {
+        let best = -1;
+        for (const s of draft.states) { const p = prefixLen(s.urlPattern, finalUrl); if (p > best) { best = p; dest = s; } }
+        if (best < 0) dest = null;
+      }
+      if (dest && name) (dest as any).taughtAs = name;
+      // Reuse the server's MapStore (same dbPath) so a follow-up recall in the same process
+      // sees the taught state without reopening the sqlite file.
+      editGraph(mapStore, site, draft as any);
+      return dest
+        ? { site, stateId: `${site}:${dest.label}` }
+        : { site, warning: 'route saved but no destination state matched the final landing' };
+    };
     const { randomBytes } = await import('node:crypto');
     const token = args.token || randomBytes(16).toString('hex');
     const tokenMode = args.token ? 'pinned via --token' : 'random per-run';
-    const server = serveAgent(args.port, recordStore, { onGoal, token, onScreencast });
+    const server = serveAgent(args.port, recordStore, { onGoal, token, onScreencast, onTaught });
     process.stderr.write(`webnav agent-serve on http://127.0.0.1:${args.port}  token: ${token} (${tokenMode})  (paste this into the extension panel settings)\n`);
     console.log(JSON.stringify({ status: 'listening', port: args.port, token }));
     await new Promise(() => {}); // run until killed

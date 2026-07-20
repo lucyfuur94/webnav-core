@@ -443,6 +443,28 @@
     display: flex; align-items: center; gap: 6px;
   }
 
+  /* ── Teach mode: a subtle red ⏺ REC treatment on the connection lamp while the
+     user is demonstrating, + a confirm card reusing the .plan chrome. ── */
+  body.teaching .conn { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--rule)); }
+  body.teaching .conn .lamp { background: var(--err); animation: markpulse 1.4s ease-in-out infinite; }
+  body.teaching .conn #conn-text::before {
+    content: "⏺ REC ";
+    color: var(--err); font-weight: 700; letter-spacing: .04em;
+  }
+  @media (prefers-reduced-motion: reduce) { body.teaching .conn .lamp { animation: none; } }
+
+  /* The save/discard confirm card reuses .plan chrome; this only styles its name input. */
+  .plan .teach-name {
+    width: 100%; box-sizing: border-box;
+    margin: 4px 12px 2px; width: calc(100% - 24px);
+    padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--rule); background: var(--sunken); color: var(--ink);
+    font: 12.5px var(--sans);
+  }
+  .plan .teach-name:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .plan .discard { background: transparent; color: var(--ink-soft); border-color: var(--rule); }
+  .plan .discard:hover { border-color: var(--err); color: var(--err); }
+
   /* ───────────────────────── Empty / first-run state ───────────────────────── */
   .empty {
     flex: 1;
@@ -740,6 +762,7 @@
       <select class="modesel" id="mode" aria-label="Permission mode" title="How much the agent may do on its own">
         <option value="Ask">Ask — approve before it acts</option>
         <option value="Act">Act — runs on its own</option>
+        <option value="Teach">Teach — show it, I'll remember</option>
       </select>
       <span class="spacer"></span>
       <button id="send" title="Send (Enter)">

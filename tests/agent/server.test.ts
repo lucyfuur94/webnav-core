@@ -186,6 +186,50 @@ describe('agent-serve', () => {
     expect(store.actionEffects('ax-agent-1').length).toBeGreaterThan(0);
   });
 
+  it('POST /api/agent/teach-save ingests, tags origin:teach, sets taughtAs + human review, calls onTaught', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const calls: { sessionId: string; name?: string }[] = [];
+    const port = await listen(store, {
+      onTaught: async (sessionId, name) => { calls.push({ sessionId, name }); return { site: 'example.com', stateId: 'example.com:home' }; },
+    });
+    const body: IngestAXBody & { name: string } = {
+      sessionId: 'teach-1',
+      name: 'Book a meeting room',
+      steps: [{
+        fromUrl: 'http://127.0.0.1:8771/fixtures/icons.html', fromAX: axFixture('icons'),
+        toUrl: 'http://127.0.0.1:8771/fixtures/table.html', toAX: axFixture('table'),
+        clickedRef: 'b7',
+      }],
+    };
+    const res = await postJson(port, '/api/agent/teach-save', body);
+    expect(res.status).toBe(200);
+    expect(res.json.ok).toBe(true);
+    expect(res.json.appended).toBe(1);
+    expect(res.json.taughtAs).toBe('Book a meeting room');
+    expect(res.json.site).toBe('example.com');
+    expect(store.originOf('teach-1')).toBe('teach');
+    expect(store.taughtAsOf('teach-1')).toBe('Book a meeting room');
+    expect(store.reviewOf('teach-1')?.approved).toBe(true);
+    expect(store.reviewOf('teach-1')?.model).toBe('human');
+    expect(calls).toEqual([{ sessionId: 'teach-1', name: 'Book a meeting room' }]);
+  });
+
+  it('POST /api/agent/teach-save WITHOUT the token header → 401', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/teach-save', { sessionId: 'x', steps: [] }, null);
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/agent/teach-save with empty steps → 400 no steps captured', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    const port = await listen(store);
+    const res = await postJson(port, '/api/agent/teach-save', { sessionId: 'x', steps: [] });
+    expect(res.status).toBe(400);
+    expect(res.json.ok).toBe(false);
+    expect(String(res.json.error)).toContain('no steps captured');
+  });
+
   it('POST /api/agent/command-result with an unknown id returns 404, does not throw', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const port = await listen(store);

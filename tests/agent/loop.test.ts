@@ -183,6 +183,21 @@ describe('runAgentGoal — agent loop over webnav tools', () => {
     expect(out).not.toContain('siteB:home');     // a different site
   });
 
+  it('list_routes prefers a state\'s human-taught name over the inferred semanticName and marks it [taught]', async () => {
+    const store = newStore();
+    const taught = makeState({ id: 'siteA:cart', nodeId: 'site.example', semanticName: 'Cart', urlPattern: '/cart', role: 'section', fingerprint: ['link:Checkout'], taughtAs: 'Book a meeting room' });
+    const plain = makeState({ id: 'siteA:home', nodeId: 'site.example', semanticName: 'Home', urlPattern: '/', role: 'section', fingerprint: ['button:Add to cart'] });
+    const states = [taught, plain];
+    const browser = fakeBrowser(INVENTORY_SNAP);   // matches siteA:home → current site = site.example
+    const { fn, toolResult } = fakeQueryCalling('list_routes', {});
+    const { emit } = emitSpy();
+    await runAgentGoal({ goal: 'discover', sessionId: 'lt', mode: 'act', browser, store, states, emit, query: fn });
+    const out = toolResult();
+    expect(out).toContain('Book a meeting room');   // the taught name is shown
+    expect(out).toContain('[taught]');              // marked as human-taught
+    expect(out).toContain('Home');                  // an untaught state still shows its semanticName
+  });
+
   it('list_routes when the current page matches NO state falls back to ALL sites\' destinations (still excludes _shell + empty-fp)', async () => {
     const store = newStore();
     const states = twoSiteStates();

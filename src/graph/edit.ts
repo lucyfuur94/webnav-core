@@ -25,7 +25,7 @@ export interface EditAffordanceObj {
 export type EditAffordance = string | EditAffordanceObj;
 // provisional: undefined = leave prior as-is (the common case — most edits say nothing about
 // it); null = CLEAR prior (a confirming re-record removes the seen-once note); string = set/replace.
-export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; provisional?: string | null; template?: string | null; }
+export interface EditState { label: string; urlPattern?: string; fingerprint?: string[]; affordances?: EditAffordance[]; declaredShadow?: DeclaredShadow; role?: string; parentState?: string | null; provisional?: string | null; template?: string | null; taughtAs?: string | null; }
 export interface EditEdge { from: string; to: string; via: string; needsInput?: boolean; why?: string; requiresAffordances?: string[]; core?: boolean; }
 export interface EditGraph { states: EditState[]; edges: EditEdge[]; }
 export interface EditResult { node: string; statesWritten: number; edgesWritten: number; }
@@ -181,10 +181,12 @@ export function editGraph(store: MapStore, node: string, graph: EditGraph): Edit
     const provisional = s.provisional !== undefined ? s.provisional : (prior?.provisional ?? null);
     // template: additive like urlPattern — take the incoming template, else keep the prior's.
     const template = s.template !== undefined ? s.template : (prior?.template ?? null);
+    // taughtAs: same additive rule — an incoming teach name sets it, else keep the prior's.
+    const taughtAs = s.taughtAs !== undefined ? s.taughtAs : (prior?.taughtAs ?? null);
     return [s.label, makeState({
       id: stateId(s.label), nodeId: node, semanticName: s.label,
       urlPattern: s.urlPattern ?? prior?.urlPattern ?? '', role,
-      fingerprint, affordances, declaredShadow, parentState, provisional, template,
+      fingerprint, affordances, declaredShadow, parentState, provisional, template, taughtAs,
     })];
   }));
 

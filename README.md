@@ -56,6 +56,8 @@ run is recorded back into the map, so the *next* time is the cheap deterministic
   order / delete) always pause for you.
 - **Watch every step** — narration + the tool trail render live; a cursor glides to each action.
 - **Take over** any time, drive by hand, hand back.
+- **Teach mode** — flip to Teach and demonstrate a task by hand once; it becomes a named,
+  deterministic route any agent can `walk` (typed values never leave the browser).
 
 **Try it** (needs the local server for the zero-LLM navigation + recording):
 

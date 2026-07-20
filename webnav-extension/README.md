@@ -90,3 +90,36 @@ cd webnav-extension && npm i && npm run build   # tsc, emits *.js beside *.ts
    the side panel itself (without clicking Stop) also detaches — the panel holds a
    long-lived port open for its own lifetime, and background.ts tears down the debugger
    attach on that port's disconnect, so the banner never lingers as a zombie.
+
+## Teach mode
+
+A third segment beside Ask/Act: **flip to Teach, demonstrate the task by hand in your own
+tab, and webnav records it as a named, walkable route** — no goal prompt, no agent driving.
+Live step chips (the same route-ledger rail the agent runs use) appear as you click and
+type, so you can see each action land. Click **Done**, confirm the inferred **name** (or
+type your own), and **Save** — that's the whole flow.
+
+**What's captured:** page structure and element identity — the same `RawAXStep[]` shape an
+agent-driven run produces (role/name/fingerprint of what you clicked, the AX diff between
+pages). **Typed VALUES never leave the browser.** The content script that watches your
+clicks/keystrokes reports only where and what kind of action happened; the accessibility
+tree captured around a text field has its `value` scrubbed before anything is sent to the
+local server. A password you type while teaching a login step is never transmitted or
+stored — only the fact that a field was filled.
+
+**What happens on Save:** the session is tagged `origin:'teach'` and auto-reviewed
+(`human-confirmed teach demonstration` — you watching the live chips land is the
+attestation, so it skips the usual capture-gap audit), then folds into the map through the
+same `graph-analyse`/`graph-edit` pipeline every other recording uses. The destination
+state gets your confirmed name (`taughtAs`), and it's recallable exactly like any other
+route: `list_routes` surfaces it, `check_route` finds it from a natural-language goal, and
+`walk` replays it deterministically — by any agent, not just the one that taught it.
+
+**Honest limits:** phase 1 captures **clicks and field-touches only** — no typed-value
+capture, no parameter/commit toggles yet (those are a later increment; see
+`docs/superpowers/specs/2026-07-20-teach-mode-ideation.md`). Drift on replay is handled
+exactly like any other walk: the route self-heals via fingerprint where it can, and
+otherwise stops and escalates to the agent rather than guessing — one demonstration is not
+a promise the site won't change. And there's no stealth: the "webnav is debugging this
+browser" banner stays visible the whole time you're teaching, same as driving — Teach is a
+sensor, not a covert recorder.

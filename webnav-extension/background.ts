@@ -349,9 +349,196 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 // ---------------------------------------------------------------------------
+// Teach recorder — the human DEMONSTRATES, we capture STRUCTURE only.
+// ---------------------------------------------------------------------------
+// Mirrors the screencast section: attachDrive already starts the session video, so a
+// taught flow gets a demo recording for free. We add ONE capture-phase click/change
+// listener in the page (injected) that reports only {kind,x,y} — never text, never the
+// tree (secret-safety is enforced at the capture boundary: nothing sensitive leaves the
+// page). For each event we resolve WHAT was acted on via DOM.getNodeForLocation, snapshot
+// the SCRUBBED before/after AX trees, and push a RawAXStep-shaped record for the panel to
+// POST at Done. teachTabId reuses driveTabId's attach (teach and drive are mutually
+// exclusive — one CDP session, one job at a time).
+type TeachStep = {
+  fromUrl: string; fromAX: AXNode[];
+  toUrl: string; toAX: AXNode[];
+  clickedNodeId: string | null;
+  tMs: number;
+};
+let teachTabId: number | null = null;
+let teachSteps: TeachStep[] = [];
+let teachCachedAX: AXNode[] = [];
+let teachCachedUrl = '';
+// Serialize event handling: a `change` fired while a prior click is still settling must
+// not interleave two half-captured steps. Each evt chains onto the previous one's promise.
+let teachChain: Promise<void> = Promise.resolve();
+
+// VALUE SCRUB — INVARIANT: typed text must NEVER leave the browser. The AX tree itself
+// carries a field's current value (role textbox/searchbox/combobox/spinbutton → node.value),
+// so blanking it here, before any tree is cached or pushed, is the real enforcement (the
+// chips-layer masking in the panel is cosmetic and NOT sufficient). Mutates in place.
+const VALUE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton']);
+function scrubValues(nodes: AXNode[]): AXNode[] {
+  for (const n of nodes) {
+    const role = (n.role as { value?: string } | undefined)?.value;
+    const val = n.value as { value?: unknown } | undefined;
+    if (role && VALUE_ROLES.has(role) && val && 'value' in val) val.value = '';
+  }
+  return nodes;
+}
+
+// The injected capture script. Adds ONE capture-phase listener each for click + change,
+// gated on a window flag so teach-stop can disable them (a second executeScript flips the
+// flag false). Transmits ONLY {type,kind,x,y} — NO values, NO innerText, NO tree.
+// (Secret-safety is enforced HERE, at the capture boundary: the page never ships content.)
+function teachCaptureFunc(): void {
+  const w = window as unknown as { __webnavTeach?: boolean };
+  if (w.__webnavTeach !== undefined) { w.__webnavTeach = true; return; } // already injected → re-enable
+  w.__webnavTeach = true;
+  const send = (kind: string, x: number, y: number): void => {
+    if (!w.__webnavTeach) return;
+    try { chrome.runtime.sendMessage({ type: 'teach-evt', kind, x: x ?? 0, y: y ?? 0 }); } catch (e) { /* */ }
+  };
+  document.addEventListener('click', (e) => { send('click', (e as MouseEvent).clientX, (e as MouseEvent).clientY); }, true);
+  document.addEventListener('change', (e) => {
+    const el = e.target as Element | null;
+    const r = el?.getBoundingClientRect?.();
+    send('change', r ? r.left + r.width / 2 : 0, r ? r.top + r.height / 2 : 0);
+  }, true);
+}
+
+async function teachStart(tabId: number): Promise<void> {
+  await attachDrive(tabId);              // one CDP attach; also starts the session screencast
+  teachTabId = tabId;
+  teachSteps = [];
+  teachChain = Promise.resolve();
+  await chrome.scripting.executeScript({ target: { tabId }, func: teachCaptureFunc });
+  teachCachedAX = scrubValues(await getAX(tabId));
+  const tab = await chrome.tabs.get(tabId);
+  teachCachedUrl = tab.url ?? '';
+}
+
+// Resolve the acted element (x,y → backendNodeId → cached AX node), settle the landing,
+// snapshot the after-tree, push the step, and notify the panel. Chained so steps never
+// interleave. clickedNodeId miss → null (amber health: captured but not pinned).
+async function teachHandleEvt(kind: string, x: number, y: number): Promise<void> {
+  if (teachTabId == null) return;
+  const tabId = teachTabId;
+  let clickedNodeId: string | null = null;
+  let name = '';
+  try {
+    const loc = (await chrome.debugger.sendCommand(
+      { tabId }, 'DOM.getNodeForLocation', { x, y, includeUserAgentShadowDOM: false },
+    )) as { backendNodeId?: number };
+    const backend = loc.backendNodeId;
+    if (backend != null) {
+      const hit = teachCachedAX.find((n) => n.backendDOMNodeId === backend);
+      if (hit) {
+        clickedNodeId = hit.nodeId;
+        name = (hit.name as { value?: string } | undefined)?.value ?? '';
+      }
+    }
+  } catch { /* resolve miss → amber (null nodeId), never a wrong pin */ }
+
+  await settleTab(tabId);
+  const tab = await chrome.tabs.get(tabId);
+  const toUrl = tab.url ?? '';
+  const toAX = scrubValues(await getAX(tabId));
+  teachSteps.push({ fromUrl: teachCachedUrl, fromAX: teachCachedAX, toUrl, toAX, clickedNodeId, tMs: Date.now() });
+  teachCachedAX = toAX;
+  teachCachedUrl = toUrl;
+  chrome.runtime.sendMessage({
+    type: 'teach-step', n: teachSteps.length, kind, label: name,
+    health: clickedNodeId ? 'ok' : 'amber',
+  }).catch(() => {});
+}
+
+// Wait for the tab to finish loading OR go quiet for 600ms, whichever first (5s cap).
+// A click that navigates resolves on 'complete'; an in-page change resolves on the quiet
+// timer. Same onUpdated pattern as gotoTab.
+function settleTab(tabId: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(quiet); clearTimeout(cap);
+      resolve();
+    };
+    const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo): void => {
+      if (id === tabId && info.status === 'complete') finish();
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    const quiet = setTimeout(finish, 600);
+    const cap = setTimeout(finish, 5000);
+  });
+}
+
+// Derive a human name for the taught flow: the last step's clicked-element name, else the
+// last URL's final de-slugged path segment, else a generic fallback.
+function teachSuggestedNameFor(steps: TeachStep[]): string {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const s = steps[i];
+    const hit = s.clickedNodeId ? s.fromAX.find((n) => n.nodeId === s.clickedNodeId) : null;
+    const nm = (hit?.name as { value?: string } | undefined)?.value?.trim();
+    if (nm) return nm;
+  }
+  const last = steps[steps.length - 1]?.toUrl ?? '';
+  try {
+    const seg = new URL(last).pathname.split('/').filter(Boolean).pop();
+    if (seg) return decodeURIComponent(seg).replace(/[-_]+/g, ' ').replace(/\.[a-z0-9]+$/i, '').trim() || 'Taught flow';
+  } catch { /* */ }
+  return 'Taught flow';
+}
+
+function teachStop(): TeachStep[] {
+  const steps = teachSteps;
+  const tabId = teachTabId;
+  teachTabId = null;
+  // Disable the page listeners (flag false). Do NOT detach — the panel flushes the video
+  // and detaches after (mirrors finishRun's ordering).
+  if (tabId != null) {
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { (window as unknown as { __webnavTeach?: boolean }).__webnavTeach = false; },
+    }).catch(() => {});
+  }
+  teachSteps = [];
+  return steps;
+}
+
+// ---------------------------------------------------------------------------
 // Message router.
 // ---------------------------------------------------------------------------
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  // ── Teach mode ──
+  if (msg.type === 'teach-start') {
+    (async () => {
+      // Teach and drive are mutually exclusive — one CDP session, one job.
+      if (driveTabId != null && teachTabId == null) { reply({ ok: false, error: 'a run is driving — stop it first' }); return; }
+      try { await teachStart(msg.tabId); reply({ ok: true }); }
+      catch (e) { teachTabId = null; reply({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
+  if (msg.type === 'teach-evt') {
+    // No reply needed (fire-and-forget from the page). Serialize onto the chain so a
+    // change firing mid-settle can't interleave two half-captured steps.
+    if (teachTabId != null) {
+      teachChain = teachChain.then(() => teachHandleEvt(msg.kind, msg.x, msg.y)).catch(() => {});
+    }
+    return false;
+  }
+  if (msg.type === 'teach-stop') {
+    // Drain any in-flight capture before replying so the last step isn't dropped.
+    teachChain.then(() => {
+      const steps = teachStop();
+      reply({ steps, suggestedName: teachSuggestedNameFor(steps) });
+    }).catch(() => reply({ steps: [], suggestedName: 'Taught flow' }));
+    return true;
+  }
+
   if (msg.type === 'attach-drive') {
     (async () => {
       try { await attachDrive(msg.tabId); reply({ ok: true }); }

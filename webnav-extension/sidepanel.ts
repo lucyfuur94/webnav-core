@@ -60,10 +60,11 @@ function setConn(text: string, state: 'ok' | 'err' | '' , title?: string): void 
 // otherwise so a click that would silently no-op (empty) or 401 (no token) can't happen.
 function updateSendEnabled(): void {
   if (running) return; // run-controls own the button state during a run
+  if (teaching) { sendEl.disabled = false; return; } // 'Done' is always clickable while teaching
   sendEl.disabled = !goalEl.value.trim() || !connEl.classList.contains('ok');
 }
 
-const MODES = ['Ask', 'Act'] as const;
+const MODES = ['Ask', 'Act', 'Teach'] as const;
 type Mode = (typeof MODES)[number];
 
 // Launching from a chrome://, New-Tab, blank, or extension tab can't be driven (the CDP
@@ -88,6 +89,7 @@ let lastGoal = ''; // the goal of the most recent run, for Retry on error
 let targetTabId: number | null = null;
 let running = false;
 let paused = false; // handed control to the user without detaching the debugger
+let teaching = false; // Teach mode capture session live (human demonstrating in the tab)
 let assistantBubble: HTMLDivElement | null = null; // current streaming assistant reply
 
 // Long-lived port tracking the PANEL DOCUMENT's lifetime (not the run's) — connect once at
@@ -105,7 +107,9 @@ chrome.storage.local.get(['sid', 'base', 'mode', 'token', 'agentModel']).then((s
   if (s.sid) sid = s.sid as string;
   if (s.base) base = s.base as string;
   if (s.token) token = (s.token as string).trim();
-  if (s.mode && (MODES as readonly string[]).includes(s.mode as string)) mode = s.mode as Mode;
+  // Teach is a live capture session, not a resumable preference — a stored 'Teach' means
+  // the panel was closed mid-demo; fall back to Ask (there's no session to resume).
+  if (s.mode && (MODES as readonly string[]).includes(s.mode as string) && s.mode !== 'Teach') mode = s.mode as Mode;
   if (s.agentModel && isKnownModel(s.agentModel as string)) agentModel = s.agentModel as string;
   applyMode();
   applyModel();
@@ -122,7 +126,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.sid) sid = (changes.sid.newValue as string) ?? sid;
   if (changes.mode) {
     const m = changes.mode.newValue as string;
-    if ((MODES as readonly string[]).includes(m)) { mode = m as Mode; applyMode(); }
+    // Don't let an external mode write flip the <select> mid-teach, and never enter Teach
+    // this way (it's a live session started only by this panel's enterTeach).
+    if ((MODES as readonly string[]).includes(m) && m !== 'Teach' && !teaching) { mode = m as Mode; applyMode(); }
   }
   if (changes.agentModel) {
     const m = changes.agentModel.newValue as string;
@@ -166,6 +172,7 @@ byId<HTMLButtonElement>('tg-copy').onclick = async () => {
 const MODE_HINT: Record<Mode, string> = {
   Ask: 'Ask: shows a plan and WAITS for your Approve before driving anything.',
   Act: 'Act: drives freely without confirmations (irreversible actions are still never auto-fired).',
+  Teach: 'Teach: you demonstrate the flow in the tab; webnav captures the structure (never your typed values) and remembers it.',
 };
 function applyMode(): void {
   modeEl.value = mode;              // reflect restored/changed state onto the <select>
@@ -174,6 +181,11 @@ function applyMode(): void {
 modeEl.onchange = () => {
   const m = modeEl.value as Mode;
   if (!(MODES as readonly string[]).includes(m)) return;
+  // Teach is a live capture SESSION, not just a stored preference. Entering it attaches +
+  // injects; leaving it (to Ask/Act) DISCARDS the in-progress demo. Handle the transition
+  // before committing `mode` so a failed teach-start doesn't strand the UI.
+  if (m === 'Teach' && mode !== 'Teach') { void enterTeach(); return; }
+  if (m !== 'Teach' && mode === 'Teach') { void exitTeach(/*save*/ false); }
   mode = m;
   applyMode();
   chrome.storage.local.set({ mode });
@@ -786,6 +798,7 @@ function renderPlan(steps: string[]): void {
 // Run lifecycle: attach CDP + tab-group scope, POST the goal.
 // ---------------------------------------------------------------------------
 async function startRun(): Promise<void> {
+  if (teaching) return; // teaching owns the tab + CDP session; no agent run while demonstrating
   const goal = goalEl.value.trim();
   if (!goal || running) return;
   lastGoal = goal; // B4: remember it so an error can offer Retry
@@ -892,17 +905,185 @@ async function finishRun(keepDriving = false): Promise<void> {
 // Pull the buffered screencast frames from background and POST them to agent-serve, which
 // assembles a .webm the dashboard serves. Best-effort: any failure is logged, never thrown
 // (a missing video must not break finishing a run).
-async function flushVideo(): Promise<void> {
+async function flushVideo(sessionId = sid): Promise<void> {
   try {
     const r = await chrome.runtime.sendMessage({ type: 'end-run' });
     const frames = r?.frames as { data: string; timestampMs: number }[] | undefined;
     if (!frames?.length) return;
     await fetch(base + '/api/agent/screencast', {
       method: 'POST', headers: postHeaders(),
-      body: JSON.stringify({ sessionId: sid, frames }),
+      body: JSON.stringify({ sessionId, frames }),
     }).catch(() => {});
   } catch { /* screencast unsupported / background gone — run still finishes */ }
 }
+
+// ---------------------------------------------------------------------------
+// Teach mode — the human demonstrates, the extension captures STRUCTURE only.
+// enterTeach attaches + injects (background), flips the UI to a recording state, and
+// live-renders each captured step as an action row. Done → confirm card → POST teach-save
+// (+ the session video, exactly like finishRun) → detach → reset to Ask.
+// ---------------------------------------------------------------------------
+async function enterTeach(): Promise<void> {
+  if (running) { bubble('done', 'Finish or stop the current run before teaching.'); applyMode(); return; }
+  await resolveTab();
+  // Same drivability rule as a run — but for Teach we can't silently open a landing tab
+  // (there'd be nothing to demonstrate). If the current tab isn't drivable, say so and bail.
+  if (targetTabId == null || drivableReason(targetTabUrl)) {
+    bubble('error', 'Teach needs a normal web page to demonstrate on — open a site tab first.');
+    applyMode(); // revert the <select> to the current mode
+    return;
+  }
+  const res = await chrome.runtime.sendMessage({ type: 'teach-start', tabId: targetTabId });
+  if (!res?.ok) { bubble('error', '✗ could not start teaching: ' + (res?.error ?? '')); applyMode(); return; }
+
+  teaching = true;
+  mode = 'Teach';
+  applyMode();
+  chrome.storage.local.set({ mode });
+  document.body.classList.add('teaching');
+  goalEl.disabled = true;
+  goalEl.placeholder = 'demonstrating — click through the flow…';
+  sendEl.querySelector('span')!.textContent = 'Done';
+  sendEl.disabled = false;
+  await scopeTabGroup(targetTabId, 'webnav ⏺ teaching');
+  bubble('done', 'Teach mode — demonstrate the flow in the tab. Every step you take appears here. Click Done when finished.');
+}
+
+// Live step chip: reuse the action-row rail. Amber (unpinned) steps get a '~' prefix + a
+// title explaining the element couldn't be pinned. Also update the composer placeholder
+// with a running count (setConn stays reserved for SERVER status).
+function renderTeachStep(n: number, kind: string, label: string, health: string): void {
+  const verb = kind === 'change' ? 'type' : 'click';
+  const target = label || (kind === 'change' ? 'a field' : 'an element');
+  const el = bubble('action', verb + ': ' + target);
+  if (health === 'amber') {
+    const t = el.querySelector('.target') ?? el;
+    t.textContent = '~' + (t.textContent ?? '');
+    el.title = 'captured, but the exact element could not be pinned';
+  }
+  goalEl.placeholder = `demonstrating — ${n} step${n === 1 ? '' : 's'} captured…`;
+}
+
+// Done: stop capture, get the steps + suggested name, show the inline confirm card.
+async function finishTeach(): Promise<void> {
+  if (!teaching) return;
+  const res = await chrome.runtime.sendMessage({ type: 'teach-stop' });
+  teaching = false;
+  document.body.classList.remove('teaching');
+  goalEl.disabled = false;
+  goalEl.placeholder = 'Describe what to do on this page…';
+  sendEl.querySelector('span')!.textContent = 'Send';
+  const steps = (res?.steps ?? []) as unknown[];
+  const suggestedName = (res?.suggestedName as string) ?? 'Taught flow';
+  if (!steps.length) {
+    bubble('done', 'Nothing captured — no steps to save.');
+    await resetTeachUI();
+    return;
+  }
+  renderTeachConfirm(steps, suggestedName);
+}
+
+// Inline confirm card (reuses .plan chrome): a prefilled name input + Save / Discard.
+function renderTeachConfirm(steps: unknown[], suggestedName: string): void {
+  clearEmpty();
+  currentRoute = null;
+  const el = document.createElement('div');
+  el.className = 'plan';
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.appendChild(document.createTextNode(`Save this flow — ${steps.length} step${steps.length === 1 ? '' : 's'}`));
+  el.appendChild(head);
+
+  const input = document.createElement('input');
+  input.type = 'text'; input.className = 'teach-name'; input.value = suggestedName;
+  input.setAttribute('aria-label', 'Name for this taught flow');
+  el.appendChild(input);
+
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'Save to make this recallable by any agent. Your typed values are never stored.';
+  el.appendChild(note);
+
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  const save = document.createElement('button');
+  save.className = 'approve'; save.textContent = 'Save';
+  const discard = document.createElement('button');
+  discard.className = 'discard'; discard.textContent = 'Discard';
+  save.onclick = () => { save.disabled = true; discard.disabled = true; void saveTeach(steps, input.value.trim() || suggestedName, el); };
+  discard.onclick = () => { void discardTeach(el); };
+  bar.appendChild(save); bar.appendChild(discard);
+  el.appendChild(bar);
+
+  thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+  input.focus(); input.select();
+}
+
+async function saveTeach(steps: unknown[], name: string, card: HTMLDivElement): Promise<void> {
+  const teachSid = 'teach-' + Date.now().toString(36);
+  const res = await fetch(base + '/api/agent/teach-save', {
+    method: 'POST', headers: postHeaders(),
+    body: JSON.stringify({ sessionId: teachSid, name, steps }),
+  }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
+  card.remove();
+  if (!res?.ok) {
+    bubble('error', '✗ could not save: ' + (res?.error ?? 'unknown error'));
+    await resetTeachUI();
+    return;
+  }
+  // Flush the session video under the SAME teach sessionId (exactly like finishRun): the
+  // demo becomes a dashboard clip. background buffered frames since teach-start's attach.
+  await flushVideo(teachSid);
+  await chrome.runtime.sendMessage({ type: 'detach-drive' });
+  bubble('done', `✓ Saved "${name}" — recallable by any agent now.` + (res.warning ? '\n' + res.warning : ''));
+  await resetTeachUI();
+}
+
+async function discardTeach(card: HTMLDivElement): Promise<void> {
+  card.remove();
+  // teach-stop already ran (disabled the listeners); just detach + reset.
+  await chrome.runtime.sendMessage({ type: 'detach-drive' });
+  bubble('done', 'Discarded — nothing saved.');
+  await resetTeachUI();
+}
+
+// Back to Ask, UI reset. Relabel the group done (never ungroup — same rule as finishRun).
+async function resetTeachUI(): Promise<void> {
+  teaching = false;
+  document.body.classList.remove('teaching');
+  goalEl.disabled = false;
+  goalEl.placeholder = 'Describe what to do on this page…';
+  const span = sendEl.querySelector('span'); if (span) span.textContent = 'Send';
+  if (targetTabId != null) await relabelTabGroup(targetTabId, 'webnav ✓');
+  mode = 'Ask';
+  applyMode();
+  chrome.storage.local.set({ mode });
+  updateSendEnabled();
+}
+
+// Selecting Ask/Act while teaching (via the <select>) discards the in-progress demo.
+async function exitTeach(_save: boolean): Promise<void> {
+  if (!teaching) return;
+  await chrome.runtime.sendMessage({ type: 'teach-stop' }).catch(() => {});
+  teaching = false;
+  document.body.classList.remove('teaching');
+  goalEl.disabled = false;
+  goalEl.placeholder = 'Describe what to do on this page…';
+  const span = sendEl.querySelector('span'); if (span) span.textContent = 'Send';
+  await chrome.runtime.sendMessage({ type: 'detach-drive' }).catch(() => {});
+  if (targetTabId != null) await relabelTabGroup(targetTabId, 'webnav ✓');
+  bubble('done', 'Teach discarded.');
+  updateSendEnabled();
+}
+
+// Live step chips from background's capture loop.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === 'teach-step' && teaching) {
+    renderTeachStep(msg.n, msg.kind, msg.label ?? '', msg.health ?? 'ok');
+  }
+  return false;
+});
 
 async function stopRun(): Promise<void> {
   await fetch(base + '/api/agent/stop', { method: 'POST', headers: postHeaders() }).catch(() => {});
@@ -988,13 +1169,14 @@ thread.addEventListener('scroll', () => {
   if (atBottom) jumpPill.classList.remove('show');
 });
 
-sendEl.onclick = startRun;
+// Send doubles as "Done" while teaching (the button is relabelled in enterTeach).
+sendEl.onclick = () => { if (teaching) void finishTeach(); else void startRun(); };
 stopEl.onclick = stopRun;
 pauseEl.onclick = pauseRun;
 // Enter sends; Shift+Enter inserts a newline (Claude/ChatGPT/Slack convention).
 // !isComposing guards IME: Enter mid-composition commits the candidate, doesn't send.
 goalEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); startRun(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!teaching) startRun(); }
 });
 
 renderEmpty(); // first-run orientation until the first message

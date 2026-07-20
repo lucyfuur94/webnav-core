@@ -83,6 +83,11 @@ export interface ServeAgentOpts {
   // end (base64 JPEGs + relative timestamps). The cli implementation pipes them through
   // ffmpeg into ~/.webnav/recordings/<sessionId>/, where the dashboard already serves them.
   onScreencast?: (sessionId: string, frames: ScreencastFrame[]) => Promise<void>;
+  // Teach-mode: after a human demonstration is ingested, build the recorded effects into a
+  // map (zero-LLM draftFromEffects → graph-edit) and stamp the human-given name on the
+  // destination state. The cli implements it; a build failure returns a warning, never
+  // throws (the session is safe on disk — build can be retried via the CLI).
+  onTaught?: (sessionId: string, name?: string) => Promise<{ site?: string; stateId?: string; warning?: string }>;
   commandTimeoutMs?: number;
   // Per-run secret. Every /api/agent/* and /ingest-ax request must present it
   // (header `x-webnav-token` on POSTs; `?token=` on the SSE GET, which can't set a
@@ -291,6 +296,38 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
           // Empty frames (nothing captured) is a no-op success, not an error.
           if (body.frames.length && opts.onScreencast) await opts.onScreencast(body.sessionId, body.frames);
           sendJson(200, { ok: true, frames: body.frames.length });
+        } catch (e) {
+          sendJson(400, { ok: false, error: String(e) });
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/agent/teach-save') {
+      readBody(req).then(async (raw) => {
+        try {
+          const body = JSON.parse(raw) as { sessionId?: string; name?: string; steps?: unknown };
+          if (!body.sessionId || !Array.isArray(body.steps)) throw new Error('sessionId and steps[] required');
+          if (body.steps.length === 0) throw new Error('no steps captured');
+          const appended = ingestAX({ sessionId: body.sessionId, steps: body.steps as IngestAXBody['steps'] }, store);
+          store.setOrigin(body.sessionId, 'teach');
+          if (body.name) store.setTaughtAs(body.sessionId, body.name);
+          // Use the EXISTING review-gate mechanism: the human who demonstrated the flow WATCHED
+          // each captured step live (the panel's step chips), so the demonstration IS the
+          // capture-fidelity attestation — approve it directly rather than running an LLM review.
+          store.setReview(body.sessionId, {
+            approved: true, gaps: 0, at: Date.now(), model: 'human',
+            reason: 'human-confirmed teach demonstration (the teacher watched each captured step live)',
+          });
+          let built: { site?: string; stateId?: string; warning?: string } = {};
+          if (opts.onTaught) {
+            // A build failure must NOT lose the session: it's ingested + approved on disk and the
+            // map build can be retried via `webnav dev graph-analyse … | graph-edit`. Report ok:true
+            // with a warning so the extension shows "saved" not "failed".
+            try { built = await opts.onTaught(body.sessionId, body.name); }
+            catch (e) { built = { warning: 'saved but map build failed: ' + String(e) }; }
+          }
+          sendJson(200, { ok: true, appended, ...built, taughtAs: body.name });
         } catch (e) {
           sendJson(400, { ok: false, error: String(e) });
         }

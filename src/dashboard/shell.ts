@@ -88,6 +88,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .badge.origin-agent { color:var(--accent); }
   .badge.origin-extension { color:var(--ok); }
   .badge.origin-manual { color:var(--muted); }
+  .badge.origin-teach { color:var(--warn); }
   .badge.ok { color:var(--ok); }
   .badge.warn { color:var(--warn); }
   .badge.fail { color:var(--danger); }
@@ -787,14 +788,14 @@ async function renderRecordings(openId) {
   const bar = el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:32px">'
     + '<span class="muted bar-count" style="font-size:13px"></span>'
     + '<select class="bar-origin" style="padding:2px 8px;font-size:12px;background:var(--bg-sunken);color:var(--fg);border:1px solid var(--border);border-radius:6px">'
-    + '<option value="all">All sources</option><option value="extension">Extension</option><option value="agent">Agent</option><option value="manual">Manual</option>'
+    + '<option value="all">All sources</option><option value="extension">Extension</option><option value="agent">Agent</option><option value="teach">Taught</option><option value="manual">Manual</option>'
     + '</select><span style="flex:1"></span>'
     + '<button class="btn danger bar-delsel" style="padding:2px 10px;display:none"></button>'
     + (recs.length ? '<button class="btn danger bar-clear" style="padding:2px 10px">Clear all</button>' : '')
     + '<button class="btn bar-new" style="padding:2px 10px">+ New session</button></div>');
   wrap.append(bar);
-  // Origin filter — 'agent'/'extension' match exactly; everything else (incl. legacy null) is 'manual'.
-  const originOf = (r) => (r.origin === 'agent' || r.origin === 'extension') ? r.origin : 'manual';
+  // Origin filter — 'agent'/'extension'/'teach' match exactly; everything else (incl. legacy null) is 'manual'.
+  const originOf = (r) => (r.origin === 'agent' || r.origin === 'extension' || r.origin === 'teach') ? r.origin : 'manual';
   const originSel = bar.querySelector('.bar-origin');
   originSel.value = recordingsOriginFilter;
   originSel.onchange = () => { recordingsOriginFilter = originSel.value; renderRecordings(); };
@@ -862,10 +863,10 @@ function openDetail(r) {
   showRecording(r, detail);
 }
 function originLabel(origin) {
-  return origin === 'agent' ? 'Agent' : origin === 'extension' ? 'Extension' : 'Manual';
+  return origin === 'agent' ? 'Agent' : origin === 'extension' ? 'Extension' : origin === 'teach' ? 'Taught' : 'Manual';
 }
 function originTag(origin) {
-  const o = origin === 'agent' || origin === 'extension' ? origin : 'manual';
+  const o = origin === 'agent' || origin === 'extension' || origin === 'teach' ? origin : 'manual';
   return '<span class="badge origin-'+o+'">'+originLabel(o)+'</span>';
 }
 // Capture-review badge from the stored verdict (webnav dev review). Verified (green) = zero
