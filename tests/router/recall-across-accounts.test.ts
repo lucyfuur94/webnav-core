@@ -5,13 +5,13 @@ import { makeState } from '../../src/mapstore/types.js';
 
 // #3a — a map recorded on one account path (.../v3/9999/report/list) must still be
 // RECALLABLE when the user browses the same page under a DIFFERENT account id
-// (.../v3/9999/report/list). Volatile numeric/opaque id path segments are NOT page
+// (.../v3/8888/report/list). Volatile numeric/opaque id path segments are NOT page
 // identity; the structural fingerprint IS. These tests pin that the recall path keys
 // on the fingerprint, so a differing account/id segment never causes a "no map" miss —
 // while a genuinely different PAGE still misses. Realistic (report-shaped) urls, but
 // the assertions are the GENERAL rule (no site-specific string is asserted on).
 
-// A state recorded on account 1041. urlPattern is a concrete instance URL (an attribute),
+// A state recorded on account 9999. urlPattern is a concrete instance URL (an attribute),
 // the fingerprint is the durable identity.
 const reportList = makeState({
   id: 'site:report-list', nodeId: 'site', semanticName: 'report-list', role: 'detail',
@@ -39,8 +39,8 @@ const dashboardListPage = 'heading "Dashboards" [level=1]\n';
 const reportDraftTablePage = 'tab "Table" [ref=e1]\n';
 
 describe('recall across account ids (#3a — fingerprint identity, url is an attribute)', () => {
-  it('matches the same page under a DIFFERENT account id (1041-recorded -> 1033 live)', () => {
-    // The live url is /v3/9999/report/list — a different account segment than the
+  it('matches the same page under a DIFFERENT account id (9999-recorded -> 8888 live)', () => {
+    // The live url is /v3/8888/report/list — a different account segment than the
     // recorded /v3/9999/... — but the page structure is identical, so recall must match.
     const m = matchState(parseSnapshot(reportListPage), states);
     expect(m.status).toBe('matched');

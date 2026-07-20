@@ -19,7 +19,7 @@ describe('classifyAuthLanding', () => {
   // Regression: the extension driver's currentUrl (chrome.tabs.get) can read '' or a
   // stale/mid-navigation host. A matched snapshot is direct proof we're logged in on a
   // real page, so it must win over the foreign/empty-host heuristic — else an authed
-  // SPA falsely returns needs-login (the observed the analytics SPA agent-run misfire, steps:0).
+  // SPA falsely returns needs-login (an observed analytics-SPA agent-run misfire, steps:0).
   it('valid: known state matches even when the URL host is foreign or empty (stale currentUrl)', () => {
     const states = [state('www.saucedemo.com:inventory', ['heading:Products'])];
     const yml = '- heading "Products" [ref=e1]\n- listitem "Sauce Labs Backpack" [ref=e2]\n'

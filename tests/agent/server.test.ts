@@ -414,9 +414,9 @@ describe('agent-serve', () => {
         onSdkSession?.('sdk-' + (++n)); // each run "reports" a fresh SDK session id
       },
     });
-    await postJson(port, '/api/agent/goal', { goal: 'open the analytics SPA', sessionId: 'agent-1', mode: 'act' });
+    await postJson(port, '/api/agent/goal', { goal: 'open the dashboard', sessionId: 'agent-1', mode: 'act' });
     for (let i = 0; i < 50 && resumes.length < 1; i++) await new Promise((r) => setTimeout(r, 10));
-    await postJson(port, '/api/agent/goal', { goal: 'now open Reports', sessionId: 'agent-1', mode: 'act' });
+    await postJson(port, '/api/agent/goal', { goal: 'now open a report', sessionId: 'agent-1', mode: 'act' });
     for (let i = 0; i < 50 && resumes.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
     expect(resumes[0]).toBeUndefined();  // 1st: no prior session → fresh
     expect(resumes[1]).toBe('sdk-1');    // 2nd: resumes the id the 1st reported

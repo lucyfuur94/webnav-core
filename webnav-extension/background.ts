@@ -258,7 +258,7 @@ async function typeNode(tabId: number, nodeId: string, text: string): Promise<vo
 
 // Scroll the driven page by `dy` px (positive = down). A wheel event at the viewport
 // centre scrolls whatever container sits under that point — the document OR an inner
-// scroll region (the analytics SPA's report builder, long lists), which window.scrollBy can't
+// scroll region (a report builder, long lists), which window.scrollBy can't
 // reach. Cursor + pulse mirror clickNode so the user SEES the scroll happen.
 async function scrollTab(tabId: number, dy: number): Promise<void> {
   assertDriving(tabId);

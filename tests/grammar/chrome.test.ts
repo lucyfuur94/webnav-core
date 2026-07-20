@@ -79,7 +79,7 @@ describe('grammar: 53/54/55/56 app shell — one shell record, from-anywhere mes
 // (row 54) documented this PARTIAL — a per-page-VARYING complementary rail (not constant enough to
 // be shell) leaked into state identity. X3's fix: when a landing DECLARES a `main` landmark, the
 // identity face + fingerprint candidate pool scope to the `main` subtree, so a rail OUTSIDE `main`
-// can no longer anchor identity. The fixture now matches the real the analytics SPA shape — content in
+// can no longer anchor identity. The fixture now matches a real analytics SPA shape — content in
 // `main`, a per-page-varying `Notify: N new` rail in a `complementary` OUTSIDE it. (This was the
 // documented rail-LEAK gap before X3; the assertions below are the FIXED behavior.)
 describe('grammar: 54 app shell OQ1 probe — a rail OUTSIDE `main` does NOT anchor identity (X3 fixed)', () => {

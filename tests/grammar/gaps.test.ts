@@ -20,7 +20,7 @@ const AUTH = ['- heading "Login" [ref=e1]', '- textbox "Username" [ref=e2]', '- 
 // gap by TRANSIENT-SUBTREE tracking: the opener's diff-added tokens join a per-page transient set,
 // so a LATER recorded click whose role:name is in that set is gated as overlay content — the
 // effect-diff's added subtree IS the overlay, declared or not. In-overlay value clicks no longer
-// attribute to the page body (the the analytics SPA pollution class, closed everywhere at once).
+// attribute to the page body (the observed-SPA pollution class, closed everywhere at once).
 describe('grammar: 26 undeclared (role-less) portal overlay — X1 FIXED, containment attribution', () => {
   const PAGE = [
     '- heading "Analytics" [ref=e1]',
@@ -53,7 +53,7 @@ describe('grammar: 26 undeclared (role-less) portal overlay — X1 FIXED, contai
 
   // X1 FIXED: the value click inside the role-less portal is now GATED (transient-set OR-arm) —
   // "United States" no longer leaks as a page affordance. This is the matrix's own framing:
-  // "after X1 asserts containment" (the the analytics SPA pollution class closed).
+  // "after X1 asserts containment" (the observed-SPA pollution class closed).
   it('containment: a value click inside a role-less portal does NOT leak as a page affordance (X1)', () => {
     const g = draftFromEffects([enter, openPopover, clickValue] as never);
     const s = g.states.find((x) => x.label === 'report')!;

@@ -26,7 +26,7 @@ and agent-serve; `allStates()` returns all 47 incl. the analytics SPA). So it is
 **The real cause:** the map was recorded on account path `/v3/9999/…` (e.g.
 `app.example.com:report-list` → `.../v3/9999/report/list`), but the user was browsing
 `/v3/9999/report/list` — a DIFFERENT account id in the path. `check_route`/`matchState`'s
-URL-template comparison treats `1041 ≠ 1033` as different states, so no start state matches → the
+URL-template comparison treats `9999 ≠ 8888` as different states, so no start state matches → the
 agent honestly says "no map." Same site, same page type, different account segment.
 
 **FIX (the correct, valuable one):** URL-template matching should parameterize the volatile
@@ -41,12 +41,12 @@ literal). Concretely:
   numeric account segment as a literal (the bug) vs a variable.
 - Make the comparison treat numeric/opaque id path segments (the `1041`/`1033` and per-report ids
   like `/report/7001/…`) as WILDCARDS when matching a live URL to a stored state's template —
-  so a state recorded on account 1041 matches the same page on account 1033.
+  so a state recorded on account 9999 matches the same page on account 8888.
 - This is an UPSTREAM fix (CLAUDE.md: fix the producing logic, not a downstream scrub). If templates
   are derived at record/draft time, the durable fix may be in template derivation (`draftFromEffects`
   / structure inference) AND/OR in the match-time comparison. Prefer the match-time normalization if
   it's safely site-agnostic (numeric/hex path segments → wildcard); do NOT hardcode the analytics SPA.
-- Keep zero-LLM. After the fix: on `/v3/9999/report/list` with the 1041-recorded map, check_route
+- Keep zero-LLM. After the fix: on `/v3/9999/report/list` with the 9999-recorded map, check_route
   should MATCH the report-list state (or honestly report the specific structural miss if the page
   genuinely differs — but the account number alone must NOT cause a miss).
 - ⚠️ This is the meatiest item — if it's larger than a match-time normalization, the implementer

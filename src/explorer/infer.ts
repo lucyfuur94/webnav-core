@@ -24,12 +24,12 @@ export const isOpaqueSeg = (s: string): boolean =>
 const PARAM = '{param}';
 
 /** Site base = greedy leading segments shared by ≥80% of observed paths (e.g. version+tenant
- *  `v3/1041`). keyOf strips query/hash + the base segments IN ORDER WHERE PRESENT, so a
+ *  `v3/9999`). keyOf strips query/hash + the base segments IN ORDER WHERE PRESENT, so a
  *  pre-redirect URL missing the tenant still lands on the same key (the ghost merges).
  *
  *  A base POSITION whose value VARIES across observed URLs is a PARAM, not a locked literal: when
  *  the position's dominant value is an opaque id AND ≥2 DISTINCT opaque ids appear there (a tenant
- *  slot `{1041,1045}`), the whole position becomes a `{param}` base entry so BOTH tenants' identical
+ *  slot `{9999,8888}`), the whole position becomes a `{param}` base entry so BOTH tenants' identical
  *  pages key to the SAME key (account-portable identity). Guard (reuses isOpaqueSeg): a position
  *  whose varying values are MODULE WORDS (report/shop) is a genuinely different path, NOT a param —
  *  it must stay distinct. `keyOf` emits `{param}` at a param position only when the actual segment

@@ -256,7 +256,7 @@ describe('runAgentSession', () => {
 describe('NAME_PROBE_JS (source contract)', () => {
   it('reads data-tooltip-content (this app\'s tooltip attribute) and falls back to short own-text', async () => {
     const { NAME_PROBE_JS } = await import('../../src/recorder/agent-session.js');
-    expect(NAME_PROBE_JS).toContain('data-tooltip-content');   // the the analytics SPA tooltip source
+    expect(NAME_PROBE_JS).toContain('data-tooltip-content');   // an observed analytics SPA's tooltip source
     expect(NAME_PROBE_JS).toContain('el.textContent');          // last-resort own-text (sort headers / date-range button)
     expect(NAME_PROBE_JS).toContain('length <= 120');           // bounded single-line — long labels OK, no multi-row scrape
   });

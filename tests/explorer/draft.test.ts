@@ -305,13 +305,13 @@ describe('draftFromEffects — Layer 1 in-page repertoire (mutate/reveal/input/n
       mk({ role: 'row', name, ref, elementFp: { role: 'row', name, near: null } }, LIST, false);
     const effs = [
       ENTRY,
-      rowClick('Demo Report - Jul 8, 2026 12:20 IST devbrat.r', 'e40'),
-      rowClick('Demo User - Jan 13, 2026 19:31 IST devbrat.r', 'e41'),
+      rowClick('Alpha Report - Jul 8, 2026 12:20 IST user.a', 'e40'),
+      rowClick('Beta User - Jan 13, 2026 19:31 IST user.a', 'e41'),
     ];
     const draft = draftFromEffects(effs as any);
     const list = draft.states.find((s) => s.label === 'pim-list')!;
     // no affordance carries a row's instance-data name
-    expect(list.affordances.some((a) => /Demo Report|Demo User|IST devbrat/.test(a.label))).toBe(false);
+    expect(list.affordances.some((a) => /Alpha Report|Beta User|IST user\.a/.test(a.label))).toBe(false);
     // exactly ONE row-scoped template, structural label, no per-instance fp
     const rowFolds = list.affordances.filter((a) => a.scope === 'row');
     expect(rowFolds.length).toBe(1);
@@ -481,17 +481,17 @@ describe('draftFromEffects — observation-based identity', () => {
   // controls to clear the full-face or control gates. They merge to ONE PROVISIONAL state when
   // their faces don't contradict; two RICH instances that genuinely differ still split.
   it('thin + rich opaque siblings merge to ONE provisional /dashboard/{param} state', () => {
-    // both under /dashboard/{id}, mirroring the real the analytics SPA case: each has a per-instance title
-    // (Demo User / Sales Dashboard — data) BUT shares the structural `heading:Outline`; both are
+    // both under /dashboard/{id}, mirroring a real analytics SPA case: each has a per-instance title
+    // (Beta User / Sales Dashboard — data) BUT shares the structural `heading:Outline`; both are
     // below the evidence gate and render ~0 named controls, so only the non-contradiction arm can
     // merge them. Neither matches /dashboard/list.
     const DASH_LIST = shell('Dashboards', ['- button "New dashboard" [ref=e7]', '- listitem "Sales" [ref=e8]', '- textbox "Search" [ref=e9]']);
-    // ≥8 named nodes each (readiness gate): shell gives 6, so +2-3 content each. The real the analytics SPA
+    // ≥8 named nodes each (readiness gate): shell gives 6, so +2-3 content each. An observed analytics SPA
     // shape: each has a per-instance page TITLE (data), shares the structural `heading:Outline` +
     // `img:Layout`, and 1210 also carries a per-instance date-range button (1 control, under the ≥4
     // gate). jaccard stays under 0.5 and control-face under the gate, so ONLY the prior arm merges
     // them (containment of 1215-in-1210 = 0.67 ≥ the overlap floor).
-    const DASH_1210 = shell('Demo User', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]', '- button "01 Jan - 02 Jan window" [ref=e9]']);
+    const DASH_1210 = shell('Beta User', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]', '- button "01 Jan - 02 Jan window" [ref=e9]']);
     const DASH_1215 = shell('Sales Dashboard', ['- heading "Outline" [ref=e7]', '- img "Layout" [ref=e8]']);
     // filler pages so the 5-link sidebar clears extractShell's ≥80%-of-DISTINCT-pages bar and is
     // subtracted (else the shared chrome inflates the instance faces past every merge bar).
@@ -677,7 +677,7 @@ describe('draftFromEffects — X3 main-landmark identity scoping', () => {
 // receipt.requests.
 describe('draftFromEffects — core-derived fingerprints (Task 10 rule 1)', () => {
   // Two visits to ONE parameterized dashboard: SAME skeleton (sidebar + Widgets/Export),
-  // DIFFERENT big heading (a per-instance title: "Demo User dashboard" vs "Q3 Board"). The
+  // DIFFERENT big heading (a per-instance title: "Beta User dashboard" vs "Q3 Board"). The
   // heading VARIES → falls out of core → must not appear in the fingerprint.
   const dashLanding = (heading: string) => shell(heading, [
     '- button "Add widget" [ref=e7]', '- button "Export" [ref=e8]', '- listitem "Widget A" [ref=e9]',
@@ -685,7 +685,7 @@ describe('draftFromEffects — core-derived fingerprints (Task 10 rule 1)', () =
   it('a big heading that differs per instance is NOT in the fingerprint (no instance-data identity)', () => {
     // /dashboard/7 and /dashboard/8 merge to /dashboard/{param}; the differing heading is data.
     const g = draftFromEffects([
-      nav(`${XB}/dashboard/7`, dashLanding('Demo User dashboard')),
+      nav(`${XB}/dashboard/7`, dashLanding('Beta User dashboard')),
       nav(`${XB}/dashboard/8`, dashLanding('Q3 Board')),
       // 3 more distinct pages so the shared sidebar registers as shell (≥4-page gate).
       nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
@@ -695,7 +695,7 @@ describe('draftFromEffects — core-derived fingerprints (Task 10 rule 1)', () =
     const dash = g.states.find((s) => /dashboard/.test(s.label))!;
     expect(dash).toBeTruthy();
     // the fingerprint contains NEITHER varying heading — they fell out of core by variance.
-    expect(dash.fingerprint.join()).not.toContain('Demo User');
+    expect(dash.fingerprint.join()).not.toContain('Beta User');
     expect(dash.fingerprint.join()).not.toContain('Q3 Board');
     // and it still resolves to a real durable token (Add widget / Export are core).
     expect(dash.fingerprint.every((t) => !t.startsWith('heading:'))).toBe(true);
@@ -1502,7 +1502,7 @@ describe('draftFromEffects — X1 transient-overlay set lifecycle (dismiss re-op
   });
 });
 
-// ── Task 15: offline-acceptance findings, each reproduced synthetically (the real the analytics SPA data
+// ── Task 15: offline-acceptance findings, each reproduced synthetically (the observed analytics SPA data
 // surfaced these; here they are isolated so the producing-stage fix is pinned without the DB).
 describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', () => {
   it('a pre-redirect 404 sharing a merged key does NOT suffix the healthy sibling (report-list, not report-list-reports)', () => {
@@ -1850,7 +1850,7 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
   });
 
   it('render-skew: mid-query + settled landings of ONE report merge (no subset-fp walk-ambiguous pair)', () => {
-    // LIVE the analytics SPA defect (2026-07-12): /report/7001/{c8c6…} was captured MID-QUERY (sparse,
+    // LIVE analytics SPA defect (2026-07-12): /report/7001/{c8c6…} was captured MID-QUERY (sparse,
     // "Running query" Cancel button, metric chips still UNFOLDED) and /report/7001/{13fe…}
     // SETTLED (full folded data grid). Both are the SAME report 7001 → one `/report/{param}`
     // state. But the dispose's opaque-param control arm ran on normFace'd faces: normFace folds
@@ -1941,15 +1941,15 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
   });
 
   it('single-instance param page with a heading-only fingerprint is held out (no instance-data identity)', () => {
-    // one visit to /dashboard/8001 whose only non-shell token is heading:Demo User → needsFix,
+    // one visit to /dashboard/8001 whose only non-shell token is heading:Beta User → needsFix,
     // NOT a state fingerprinted on the user name.
     const g = draftFromEffects([
-      nav(`${XB}/dashboard/8001`, shell('Demo User', ['- img "avatar" [ref=e7]', '- paragraph "welcome" [ref=e8]'])),
+      nav(`${XB}/dashboard/8001`, shell('Beta User', ['- img "avatar" [ref=e7]', '- paragraph "welcome" [ref=e8]'])),
       nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
       nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
       nav(`${XB}/download/list`, shell('Downloads', ['- button "All" [ref=e7]', '- listitem "a.csv" [ref=e8]'])),
     ] as never);
-    expect(g.states.every((s) => !s.fingerprint.join().includes('Demo User'))).toBe(true);
+    expect(g.states.every((s) => !s.fingerprint.join().includes('Beta User'))).toBe(true);
     expect((g.needsFix ?? []).some((n) => /instance data/i.test(n.reason) && n.urlPattern.includes('/dashboard/8001'))).toBe(true);
   });
 });
@@ -2239,7 +2239,7 @@ describe('draftFromEffects — unknowns report', () => {
   });
 
   // review F2 flip side — a DATE-PICKER's day-cell grid is gridcell-dominated but carries NO
-  // row/columnheader structure (verified on the real the analytics SPA picker: 31 gridcell + 17 button +
+  // row/columnheader structure (verified on an observed analytics SPA picker: 31 gridcell + 17 button +
   // 7 generic, zero rows/headers). A data-grid REPAINT always announces its rows/column headers;
   // the picker doesn't — so the picker must STILL be reported as an undetected-overlay candidate.
   it('(a-guard) a gridcell-dominated but rowless added diff (date-picker shape) IS still reported', () => {

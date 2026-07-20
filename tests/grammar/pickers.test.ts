@@ -129,8 +129,8 @@ describe('grammar: 18 multi-select — PARTIAL (tags-in-trigger nested value dom
   });
 });
 
-// ── X10 worked example — the real the analytics SPA div-soup date-picker (extension-loop plan Task 3) ──
-// Sourced from `graph-analyse --draft` on the real 5-session the analytics SPA recording: clicking the
+// ── X10 worked example — a real analytics SPA's div-soup date-picker (extension-loop plan Task 3) ──
+// Sourced from `graph-analyse --draft` on a real 5-session analytics-SPA recording: clicking the
 // date-range summary button ("Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC") adds a subtree
 // whose calendar grid is nested `generic` wrappers around 31 `gridcell` day cells — no dialog/
 // menu/listbox NAMED-control signal survives the core's own enumeratedNames value-fold (every
@@ -141,7 +141,7 @@ describe('grammar: 18 multi-select — PARTIAL (tags-in-trigger nested value dom
 // (rowfold Fix B: a control labelled by a `<date> - <date>` range is instance data, never stored),
 // and no day cell ever becomes a stored affordance/child either way (the no-values rule holds
 // independent of detection or of whether the opener itself survives).
-describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — value-labelled opener refused, days never stored', () => {
+describe('grammar: X10 div-soup date-picker (real analytics-SPA shape) — value-labelled opener refused, days never stored', () => {
   const REPORT = [
     '- heading "Report" [ref=e1]',
     '- button "Last 7 Days (CD) : 02 Jul 2026 - 08 Jul 2026UTC" [ref=e2]',
@@ -152,7 +152,7 @@ describe('grammar: X10 div-soup date-picker (real the analytics SPA shape) — v
     '- paragraph "Flat" [ref=e7]',
     '- paragraph "Draft" [ref=e8]',
   ].join('\n');
-  // The real shape (from the actual the analytics SPA capture): a dialog root of nested role-less `generic`
+  // The real shape (from the actual analytics-SPA capture): a dialog root of nested role-less `generic`
   // wrappers; the calendar body is WEEK-ROW `generic` wrappers each holding ~7 `gridcell` day
   // cells — identical wrapper shape across rows is a genuine repeated SUBTREE the core's own
   // subtreeFolds/templateFolds already catches (STRAGGLER-UNIT exclusion), which is what actually

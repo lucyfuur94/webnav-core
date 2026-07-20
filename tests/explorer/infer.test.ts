@@ -19,24 +19,24 @@ describe('inferUrlModel', () => {
     expect(m.keyOf('https://x.test/v3/9999/report/list?tab=1#x')).toBe('/report/list'); // query/hash dropped
   });
   it('a VARYING opaque-id base position is a {param}, not a locked literal (two tenants merge)', () => {
-    // Two accounts, SAME product, tenant id in the URL. The majority tenant (1041) must NOT lock
+    // Two accounts, SAME product, tenant id in the URL. The majority tenant (9999) must NOT lock
     // as a literal base segment — the position varies across ≥2 opaque ids → it is a param, so
-    // both accounts' identical pages key to the SAME key. (The defect: 1041 at ~95% frequency won
-    // the ≥80% greedy peel, so /v3/9999/report/list kept its tenant and never merged with 1041's.)
+    // both accounts' identical pages key to the SAME key. (The defect: 9999 at ~95% frequency won
+    // the ≥80% greedy peel, so /v3/8888/report/list kept its tenant and never merged with 9999's.)
     const urls = [
-      // majority tenant (1041) spread across several modules so no single module hits the ≥80%
-      // greedy bar (mirrors the real corpus: report/dashboard/download/help-center/announcements).
+      // majority tenant (9999) spread across several modules so no single module hits the ≥80%
+      // greedy bar (mirrors a real corpus: report/dashboard/download/help-center/announcements).
       'https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
       'https://x.test/v3/9999/download/list', 'https://x.test/v3/9999/help-center',
       'https://x.test/v3/9999/announcements', 'https://x.test/v3/9999/report/list',
-      // second tenant (1045), minority — same modules.
-      'https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
+      // second tenant (8888), minority — same modules.
+      'https://x.test/v3/8888/report/list', 'https://x.test/v3/8888/dashboard/list',
     ];
     const m = inferUrlModel(urls);
     expect(m.base).toEqual(['v3', '{param}']);                  // v3 constant, tenant position = param
     expect(m.keyOf('https://x.test/v3/9999/report/list')).toBe('/{param}/report/list');
-    expect(m.keyOf('https://x.test/v3/9999/report/list')).toBe('/{param}/report/list');   // SAME key → merge
-    expect(m.keyOf('https://x.test/v3/9999/dashboard/list')).toBe('/{param}/dashboard/list');
+    expect(m.keyOf('https://x.test/v3/8888/report/list')).toBe('/{param}/report/list');   // SAME key → merge
+    expect(m.keyOf('https://x.test/v3/8888/dashboard/list')).toBe('/{param}/dashboard/list');
   });
   it('a base position with ONE value stays a literal segment (single tenant unchanged)', () => {
     // The guard: a position is param only when ≥2 DISTINCT opaque ids are observed. One tenant →
@@ -64,8 +64,8 @@ describe('inferUrlModel', () => {
   });
   // Task 15 finding: snapshot link hrefs are RELATIVE (`/v3/9999/report/list`), not absolute.
   // keyOf must strip the base from a relative href to the SAME key as the absolute toUrl — else
-  // every sidebar link keyed to `/` and no from-anywhere shell edge ever resolved (the analytics SPA shell
-  // had 4 affordances instead of the sidebar's full set until this was fixed).
+  // every sidebar link keyed to `/` and no from-anywhere shell edge ever resolved (an observed SPA's
+  // shell had 4 affordances instead of the sidebar's full set until this was fixed).
   it('keys a RELATIVE href to the same key as the absolute url (shell edges resolve)', () => {
     const m = inferUrlModel(['https://x.test/v3/9999/report/list', 'https://x.test/v3/9999/dashboard/list',
       'https://x.test/v3/9999/announcements', 'https://x.test/v3/9999/help-center']);

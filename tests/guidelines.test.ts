@@ -14,7 +14,7 @@ function tsFiles(dir: string): string[] {
 describe('core guidelines (settled 2026-07-10)', () => {
   const files = tsFiles('src').filter((p) => !EXEMPT.test(p));
   it('no site-specific names in src/', () => {
-    const SITES = /the analytics SPA|orangehrm|analytics\.mn|automationexercise/i;
+    const SITES = /orangehrm|automationexercise/i;
     for (const p of files) expect(SITES.test(readFileSync(p, 'utf8')), p).toBe(false);
   });
   it('no site-shaped one-shot heuristics (deleted 2026-07-10)', () => {

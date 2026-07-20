@@ -168,7 +168,7 @@ const segsOf = (url: string): string[] => {
 export interface UrlModel { base: string[]; keyOf(url: string): string }
 
 /** Site base = greedy leading segments shared by ≥80% of observed paths (e.g. version+tenant
- *  `v3/1041`). keyOf strips query/hash + the base segments IN ORDER WHERE PRESENT, so a
+ *  `v3/9999`). keyOf strips query/hash + the base segments IN ORDER WHERE PRESENT, so a
  *  pre-redirect URL missing the tenant still lands on the same key (the ghost merges). */
 export function inferUrlModel(urls: string[]): UrlModel {
   let work = urls.map(segsOf);

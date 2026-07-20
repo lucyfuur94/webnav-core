@@ -39,9 +39,9 @@ describe('computeFrontier — kinds', () => {
     expect(f.frontier[0]).toMatchObject({ kind: 'reveal', reason: 'unopened-panel' });
   });
 
-  it('switcher-shaped mutate → ambiguous-action frontier (the the analytics SPA account/model switcher)', () => {
+  it('switcher-shaped mutate → ambiguous-action frontier (an analytics SPA account/model switcher)', () => {
     const f = computeFrontier('x', [st('x:_shell', [
-      makeAffordance({ id: 'sw', label: 'O Overview Merged Change', kind: 'mutate' }),
+      makeAffordance({ id: 'sw', label: 'O Sales Dashboard Merged Change', kind: 'mutate' }),
     ])]);
     expect(f.total).toBe(1);
     expect(f.frontier[0]).toMatchObject({ kind: 'mutate', reason: 'ambiguous-action' });
@@ -71,11 +71,11 @@ describe('computeFrontier — kinds', () => {
 describe('computeFrontier — exclusions', () => {
   it('--exclude label moves the item to excluded[] (visible, off the worklist)', () => {
     const f = computeFrontier('x', [st('x:_shell', [
-      makeAffordance({ id: 'sw', label: 'O Overview Merged Change', kind: 'mutate' }),
+      makeAffordance({ id: 'sw', label: 'O Sales Dashboard Merged Change', kind: 'mutate' }),
       makeAffordance({ id: 'classic', label: 'Switch to Classic', kind: 'mutate' }),
     ])], ['Switch to Classic']);
     expect(f.total).toBe(1);
-    expect(f.frontier.map((i) => i.label)).toEqual(['O Overview Merged Change']);
+    expect(f.frontier.map((i) => i.label)).toEqual(['O Sales Dashboard Merged Change']);
     expect(f.excluded.map((i) => i.label)).toEqual(['Switch to Classic']);
   });
 
