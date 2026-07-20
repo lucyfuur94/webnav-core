@@ -36,7 +36,6 @@ const pauseEl = byId<HTMLButtonElement>('pause');
 const connEl = byId<HTMLSpanElement>('conn');
 const connText = byId<HTMLSpanElement>('conn-text');
 const tabEl = byId<HTMLSpanElement>('tab');
-const activityStep = byId<HTMLSpanElement>('activity-step');
 const jumpPill = byId<HTMLButtonElement>('jump-latest');
 const gateEl = byId<HTMLDivElement>('tokengate');
 const gateTokenEl = byId<HTMLInputElement>('tg-token');
@@ -315,11 +314,13 @@ function clearEmpty(): void {
 // any non-action message closes it.
 let currentRoute: HTMLDivElement | null = null;
 
-// Only yank to the bottom if the user is already there (within 40px); otherwise leave
-// their scroll position and show the jump-to-latest pill so they can return in one click.
+// Auto-scroll: STICK to the bottom as new content streams in, so the user never has to
+// scroll manually. Sticking turns OFF only when the user deliberately scrolls up, and
+// back ON when they return to the bottom (the scroll listener below manages the flag).
+// While stuck, every new delta/message follows; while unstuck, we show the jump pill.
+let stickToBottom = true;
 function scrollThreadIfNearBottom(): void {
-  const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
-  if (nearBottom) thread.scrollTop = thread.scrollHeight;
+  if (stickToBottom) thread.scrollTop = thread.scrollHeight;
   else jumpPill.classList.add('show');
 }
 
@@ -603,8 +604,6 @@ function handleEvent(e: AgentEvent): void {
       endTurn();
       // #3b — strip any `mcp__webnav__` prefix + humanize before it ever renders.
       const label = friendlyLabel(e.label);
-      // Show the driven step in the activity strip too (the live "what it's doing" readout).
-      activityStep.textContent = e.detail ? label + ': ' + e.detail : label;
       bubble('action', label + (e.detail ? ': ' + e.detail : ''));
       break;
     }
@@ -775,9 +774,9 @@ async function startRun(): Promise<void> {
   paused = false;
   running = true;
   sendEl.disabled = true;
-  // body.running swaps Send → Take-over/Stop, shows the activity strip, pulses the mark.
+  // body.running swaps Send → Take-over/Stop and pulses the mark.
   document.body.classList.add('running');
-  activityStep.textContent = 'working…';
+  stickToBottom = true;   // a fresh run should always follow new content
   renderTabChip();
   bubble('user', goal);
   goalEl.value = '';
@@ -872,7 +871,7 @@ async function resetChat(): Promise<void> {
   pendingPlanBar = null;     // any open plan gate is gone with the thread
   lastGoal = '';             // R3+B4: nothing to retry in a fresh chat
   thread.replaceChildren();  // clear #thread
-  activityStep.textContent = 'working…';
+  stickToBottom = true;
   jumpPill.classList.remove('show');
 
   renderEmpty();             // first-run orientation again
@@ -922,9 +921,13 @@ byId<HTMLButtonElement>('new-chat').onclick = resetChat;
 
 // Jump-to-latest pill: snap to the bottom and hide it; also hide once the user scrolls
 // back to the bottom on their own.
-jumpPill.onclick = () => { thread.scrollTop = thread.scrollHeight; jumpPill.classList.remove('show'); };
+jumpPill.onclick = () => { stickToBottom = true; thread.scrollTop = thread.scrollHeight; jumpPill.classList.remove('show'); };
 thread.addEventListener('scroll', () => {
-  if (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40) jumpPill.classList.remove('show');
+  // At the bottom → resume sticking + hide the pill. Scrolled up → stop sticking so
+  // streaming content stops yanking the view away from what they're reading.
+  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
+  stickToBottom = atBottom;
+  if (atBottom) jumpPill.classList.remove('show');
 });
 
 sendEl.onclick = startRun;

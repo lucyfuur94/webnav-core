@@ -149,14 +149,6 @@
     word-break: break-word;
     box-shadow: var(--shadow);
   }
-  .msg.user::before {
-    content: "GOAL";
-    display: block;
-    font-family: var(--mono);
-    font-size: 9px; letter-spacing: .12em;
-    color: color-mix(in srgb, var(--user-ink) 60%, transparent);
-    margin-bottom: 3px;
-  }
 
   /* Claude's prose — humanist, warm, left, no bubble chrome. It speaks.
      Markdown-rendered (#5): breaks come from <br>/lists, so white-space is normal. */
@@ -594,48 +586,14 @@
   .runbtn.stop { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--rule)); }
   .runbtn.stop:hover { background: var(--err); color: var(--on-accent); border-color: var(--err); }
 
-  /* Live activity strip — the instrument "working" readout above the composer.
-     Shown only while body.running. */
-  .activity {
-    display: none;
-    align-items: center; gap: 9px;
-    padding: 7px 11px;
-    margin-bottom: 9px;
-    background: var(--sunken);
-    border: 1px solid var(--rule);
-    border-radius: 9px;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-soft);
-  }
-  body.running .activity { display: flex; }
-  .activity .beam {
-    position: relative;
-    flex: 1; height: 3px; border-radius: 3px;
-    background: var(--rule);
-    overflow: hidden;
-  }
-  .activity .beam::after {
-    content: "";
-    position: absolute; inset: 0;
-    width: 38%;
-    border-radius: 3px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: sweep 1.4s ease-in-out infinite;
-  }
-  @keyframes sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
-  .activity .label { flex: 0 0 auto; color: var(--accent-ink); letter-spacing: .02em; }
-  .activity .step { flex: 0 0 auto; color: var(--ink-faint); }
-
   /* Focus visibility everywhere */
   button:focus-visible, summary:focus-visible, .ex:focus-visible {
     outline: 2px solid var(--focus); outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .msg.action.live::before, .activity .beam::after,
+    .msg.action.live::before,
     .msg.assistant.streaming::after, body.running .conn.ok .lamp { animation: none; }
-    .activity .beam::after { width: 100%; opacity: .6; transform: none; }
     .msg.assistant.streaming::after { opacity: 1; }
     body.running .conn.ok .lamp { opacity: 1; transform: none; }
   }
@@ -753,12 +711,6 @@
   <button class="jump-latest" id="jump-latest" type="button" aria-label="Jump to latest">
     ↓ latest
   </button>
-
-  <div class="activity" aria-live="polite">
-    <span class="label">tracing</span>
-    <span class="beam"></span>
-    <span class="step" id="activity-step">working…</span>
-  </div>
 
   <div class="composer">
     <textarea id="goal" rows="1" placeholder="Describe what to do on this page…"></textarea>
