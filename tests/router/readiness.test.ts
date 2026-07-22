@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyReadiness } from '../../src/router/readiness.js';
+import { classifyReadiness, snapshotsPlateaued } from '../../src/router/readiness.js';
 
 describe('classifyReadiness', () => {
   it('detects a Cloudflare interstitial (escalate, never evade)', () => {
@@ -25,5 +25,45 @@ describe('classifyReadiness', () => {
     const yml = Array.from({length: 12}, (_, i) =>
       `- paragraph "Human resources article number ${i} about workplace policy and benefits" [ref=e${i}]`).join('\n');
     expect(classifyReadiness(yml)).toBe('ready'); // "human" alone isn't the bot-wall phrase
+  });
+});
+
+// snapshotsPlateaued: the settle-stability comparator (design's "layered settle" truth
+// test). Plateaued = (1) equal parsed node count AND (2) equal sorted multiset of
+// TOKEN_ROLES identity tokens (role:name) — NOT exact-YAML equality (that's the walk's
+// bot-throttle primitive, a different concern with different tolerance).
+describe('snapshotsPlateaued', () => {
+  it('a shell that grows into a full render has NOT plateaued', () => {
+    const shell = '- heading "Dashboard" [ref=e1]\n- button "Menu" [ref=e2]';
+    const full = Array.from({ length: 10 }, (_, i) => `- button "Widget ${i}" [ref=e${i + 3}]`).join('\n');
+    expect(snapshotsPlateaued(shell, `${shell}\n${full}`)).toBe(false);
+  });
+
+  it('identical successive snapshots have plateaued', () => {
+    const yml = '- heading "Dashboard" [ref=e1]\n- button "Refresh" [ref=e2]';
+    expect(snapshotsPlateaued(yml, yml)).toBe(true);
+  });
+
+  it('a same-count rename of an identity token (button relabeled) has NOT plateaued', () => {
+    const prev = '- heading "Dashboard" [ref=e1]\n- button "Save" [ref=e2]';
+    const cur = '- heading "Dashboard" [ref=e1]\n- button "Submit" [ref=e2]';
+    expect(snapshotsPlateaued(prev, cur)).toBe(false);
+  });
+
+  it('a paragraph clock ticking at constant node count HAS plateaued (ticker tolerance)', () => {
+    // paragraph is not a TOKEN_ROLES identity role — a mutating clock/ticker text
+    // must not burn the settle budget forever (map stores structure, not values).
+    const prev = '- heading "Dashboard" [ref=e1]\n- paragraph "12:00:01" [ref=e2]\n- button "Refresh" [ref=e3]';
+    const cur = '- heading "Dashboard" [ref=e1]\n- paragraph "12:00:02" [ref=e2]\n- button "Refresh" [ref=e3]';
+    expect(snapshotsPlateaued(prev, cur)).toBe(true);
+  });
+
+  it('bulk hydration of new named identity nodes at the same total count is NOT plateaued', () => {
+    // Pins the hydration-catch case: even if total node count somehow matched, added
+    // named img/paragraph nodes are non-identity roles — but added BUTTONS are identity
+    // and must be caught even when they replace equal-count filler.
+    const prev = '- heading "Dash" [ref=e1]\n- generic "" [ref=e2]\n- generic "" [ref=e3]';
+    const cur = '- heading "Dash" [ref=e1]\n- button "Export" [ref=e2]\n- button "Share" [ref=e3]';
+    expect(snapshotsPlateaued(prev, cur)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
+import { parseSnapshot, TOKEN_ROLES, type SnapNode } from '../playwright/snapshot.js';
 
 export type Readiness =
   | 'ready'          // page has real interactive/content nodes; proceed
@@ -72,4 +72,34 @@ export function classifyReadiness(snapshotYaml: string, opts?: ReadinessOpts): R
 
   // 4. Ready otherwise.
   return 'ready';
+}
+
+// Identity roles for the plateau comparator = TOKEN_ROLES (draft.ts's own fingerprint
+// vocabulary), as a Set for O(1) membership.
+const IDENTITY_ROLES = new Set(TOKEN_ROLES);
+
+/**
+ * Has rendering PLATEAUED between two successive snapshots (settle's truth test, as
+ * opposed to classifyReadiness's floor check)? Plateaued = (1) equal parsed node count
+ * AND (2) equal sorted multiset of `role:name` identity tokens (TOKEN_ROLES only).
+ *
+ * Deliberately NOT exact-YAML equality (that's walk.ts's bot-throttle primitive, a
+ * different concern): a ticking clock/paragraph mutates text at constant node count on
+ * a non-identity role, so it must read as plateaued (map stores structure, not values —
+ * the settle budget must not be burned by a live timestamp). Bulk hydration that adds
+ * or renames identity nodes (buttons/tabs/headings/…) is NOT plateaued even at equal
+ * total count, catching the shell→full-render case the design incident named.
+ */
+export function snapshotsPlateaued(prevYaml: string, curYaml: string): boolean {
+  const prev = parseSnapshot(prevYaml);
+  const cur = parseSnapshot(curYaml);
+  if (prev.length !== cur.length) return false;
+  const tokens = (nodes: SnapNode[]) => nodes
+    .filter((n) => IDENTITY_ROLES.has(n.role.toLowerCase()) && (n.name ?? '').trim() !== '')
+    .map((n) => `${n.role.toLowerCase()}:${n.name}`)
+    .sort();
+  const a = tokens(prev);
+  const b = tokens(cur);
+  if (a.length !== b.length) return false;
+  return a.every((t, i) => t === b[i]);
 }

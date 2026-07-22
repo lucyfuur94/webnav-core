@@ -1,3 +1,9 @@
+// Identity-bearing roles, most page-identifying first (headings, then structural
+// controls). Shared by draft.ts's candidateTokens (page fingerprinting) and
+// readiness.ts's snapshotsPlateaued (settle-stability comparator) — a leaf module
+// so both can import it without a cycle.
+export const TOKEN_ROLES = ['heading', 'tab', 'button', 'textbox', 'link', 'checkbox', 'combobox'];
+
 export interface SnapNode {
   role: string;
   name: string | null;

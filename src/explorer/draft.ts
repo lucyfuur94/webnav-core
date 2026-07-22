@@ -1,5 +1,5 @@
 import type { StoredActionEffect } from '../mapstore/record.js';
-import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
+import { parseSnapshot, TOKEN_ROLES, type SnapNode } from '../playwright/snapshot.js';
 import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
@@ -100,8 +100,8 @@ export interface DraftGraph {
 // (after heading) because a page's tab-set is structural + durable — e.g. a report builder
 // with no heading is still uniquely identified by tab:Table + tab:Charts, without falling
 // back to data-specific buttons (a particular report's "OS Remove"). `tablist` groups tabs;
-// its children carry the names.
-const TOKEN_ROLES = ['heading', 'tab', 'button', 'textbox', 'link', 'checkbox', 'combobox'];
+// its children carry the names. (TOKEN_ROLES itself now lives in snapshot.ts —
+// shared with readiness.ts's settle-stability comparator.)
 function candidateTokens(nodes: SnapNode[]): string[] {
   const seen = new Set<string>(); const out: string[] = [];
   // headings first (most page-identifying), then the rest in role priority, doc order within.
