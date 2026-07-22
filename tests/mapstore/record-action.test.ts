@@ -80,4 +80,51 @@ describe('RecordStore action-effects', () => {
     });
     expect(s.actionEffects('old')[0].nameHints).toBeUndefined();
   });
+
+  it('round-trips settled (present true/false → equal; absent → undefined)', () => {
+    const s = store();
+    s.start('sess');
+    s.appendActionEffect('sess', {
+      fromUrl: 'https://x.com/', fromSnapshot: '', action: null,
+      toUrl: 'https://x.com/dash', toSnapshot: SNAP_A, navigated: true,
+      diff: { added: [], removed: [] }, settled: true,
+    });
+    s.appendActionEffect('sess', {
+      fromUrl: 'https://x.com/dash', fromSnapshot: SNAP_A, action: null,
+      toUrl: 'https://x.com/dash2', toSnapshot: SNAP_B, navigated: true,
+      diff: { added: [], removed: [] }, settled: false,
+    });
+    s.appendActionEffect('sess', {
+      fromUrl: 'https://x.com/dash2', fromSnapshot: SNAP_B,
+      action: { role: 'button', name: 'Sort', ref: 'e9' },
+      toUrl: 'https://x.com/dash2', toSnapshot: SNAP_B, navigated: false,
+      diff: { added: [], removed: [] },   // in-page mutate: no settled by design
+    });
+    const fx = s.actionEffects('sess');
+    expect(fx[0].settled).toBe(true);
+    expect(fx[1].settled).toBe(false);
+    expect(fx[2].settled).toBeUndefined();
+  });
+
+  it('opens an old db with no settled column (migrate adds it idempotently, reads undefined)', () => {
+    // Same pre-existing-db shape as the name_hints migration test above, but this one
+    // ALSO already has name_hints — proving migrate() adding `settled` is idempotent
+    // alongside an already-migrated column, not just on a bare legacy table.
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE record_observations (session_id TEXT, seq INTEGER, url TEXT,
+      fingerprint TEXT, declared_links TEXT, captured_at INTEGER, from_url TEXT,
+      from_snapshot TEXT, action TEXT, to_url TEXT, to_snapshot TEXT, navigated INTEGER, diff TEXT,
+      requested_url TEXT, name_hints TEXT);
+      CREATE TABLE record_sessions (session_id TEXT PRIMARY KEY, active INTEGER, started_at INTEGER, stopped_at INTEGER);
+      CREATE TABLE record_events (session_id TEXT, seq INTEGER, t INTEGER, source TEXT, kind TEXT, descriptor TEXT, disposition TEXT);`);
+    const s = RecordStore.fromDatabase(db);   // migrate() must ADD settled, not throw
+    s.start('old2');
+    s.appendActionEffect('old2', {
+      fromUrl: 'u', fromSnapshot: 'x', action: null, toUrl: 'u2', toSnapshot: SNAP_A,
+      navigated: true, diff: { added: [], removed: [] },
+    });
+    expect(s.actionEffects('old2')[0].settled).toBeUndefined();
+    // re-opening the SAME db a second time (migrate runs again) must not throw or duplicate the column.
+    expect(() => RecordStore.fromDatabase(db)).not.toThrow();
+  });
 });
