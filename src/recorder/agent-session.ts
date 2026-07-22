@@ -138,7 +138,8 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
           // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
-          const toSnapshot = await settleSnapshot(() => deps.adapter.snapshot());
+          const toSnapshot = (await settleSnapshot(() => deps.adapter.snapshot(), undefined,
+            { evalJs: (js) => deps.adapter.evalJs(js) })).snapshot;
           const toUrl = await deps.adapter.currentUrl();
           // X6: probe the SETTLED landing's nameless icon controls (title/aria/tooltip) before
           // appending — fires only when nameless interactive nodes exist. Best-effort.

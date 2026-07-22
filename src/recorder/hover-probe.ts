@@ -97,7 +97,7 @@ export async function runHoverProbe(deps: HoverProbeDeps): Promise<{ probed: num
     });
     const from = await adapter.snapshot();     // re-baseline per candidate (a prior Escape may have changed the page)
     if (rightClick) await adapter.rightClick(ref); else await adapter.hover(ref);
-    const to = await settleSnapshot(() => adapter.snapshot());
+    const to = (await settleSnapshot(() => adapter.snapshot())).snapshot;
     const diff = diffSnapshots(parseSnapshot(from), parseSnapshot(to));
     if (diff.added.length > 0) {
       const action = { role: c.role, name: c.name, ref, ...(rightClick ? { rightClick: true } : { hover: true }) };

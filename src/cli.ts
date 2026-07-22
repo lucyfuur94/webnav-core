@@ -1068,7 +1068,7 @@ async function main() {
     try {
       await adapter.open(url);
       const landedUrl = await adapter.currentUrl();
-      const snapshot = await settleSnapshot(() => adapter.snapshot());
+      const snapshot = (await settleSnapshot(() => adapter.snapshot())).snapshot;
       const states = store.statesForNode(args.site);
       const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, args.site, states);
       console.log(JSON.stringify({
@@ -1715,7 +1715,7 @@ async function main() {
         try {
           await adapter.open(url);
           const landedUrl = await adapter.currentUrl();
-          const snapshot = await settleSnapshot(() => adapter.snapshot());
+          const snapshot = (await settleSnapshot(() => adapter.snapshot())).snapshot;
           const states = store.statesForNode(site);
           const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, site, states);
           const checkedAt = new Date().toISOString();
@@ -1864,7 +1864,7 @@ async function main() {
         try {
           await adapter.open(node.homeUrl ?? 'about:blank');
           const landedUrl = await adapter.currentUrl();
-          const snapshot = await settleSnapshot(() => adapter.snapshot());
+          const snapshot = (await settleSnapshot(() => adapter.snapshot())).snapshot;
           const { auth, loginUrl } = classifyAuthLanding(landedUrl, snapshot, suite.site, states);
           return { auth, loginUrl };
         } finally { await adapter.close().catch(() => {}); }

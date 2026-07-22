@@ -87,18 +87,21 @@ describe('recordNavigateEffect', () => {
     expect(fx.nameHints).toEqual({ e5: 'Expand', e6: 'Favorite' });
   });
 
-  it('a fully-named landing triggers ZERO evals and stores no nameHints', async () => {
+  it('a fully-named landing triggers ZERO name-probe evals and stores no nameHints', async () => {
     const rec = RecordStore.fromDatabase(new Database(':memory:'));
     rec.start('nn');
-    let evals = 0;
+    const probeEvals: string[] = [];
     const adapter = {
       open: async () => '', close: async () => '',
       snapshot: async () => READY,   // every interactive node has a name
       currentUrl: async () => 'https://x.test/web/index.php/auth/login',
-      evalJs: async () => { evals++; return JSON.stringify('x'); },
+      // settleSnapshot's own DOM-quiet fast path also calls evalJs (page-global,
+      // no ref) — distinct from the per-node name-probe (always called WITH a ref).
+      // Track only the name-probe calls; the fully-named landing must trigger zero.
+      evalJs: async (js: string, ref?: string) => { if (ref) probeEvals.push(js); return JSON.stringify('x'); },
     };
     await recordNavigateEffect('https://x.test/', 'nn', rec, adapter as any);
-    expect(evals).toBe(0);
+    expect(probeEvals).toHaveLength(0);
     expect(rec.actionEffects('nn')[0].nameHints).toBeUndefined();
   });
 

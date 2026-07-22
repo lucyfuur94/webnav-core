@@ -2,7 +2,7 @@ import { PlaywrightAdapter } from '../playwright/adapter.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
 import { fingerprintPage, declaredLinks } from '../explorer/fingerprint-page.js';
 import { diffSnapshots, didNavigate } from '../explorer/diff.js';
-import { classifyReadiness } from './readiness.js';
+import { classifyReadiness, snapshotsPlateaued } from './readiness.js';
 import { classifyAuthLanding } from './auth-status.js';
 import { namelessInteractive, probeNames } from '../recorder/probe.js';
 import type { RecordStore } from '../mapstore/record.js';
@@ -89,17 +89,99 @@ export async function runNetwork(
   }
 }
 
-/** Bounded settle: retry while the snapshot classifies as 'loading' (3x700ms) so a
- *  client-side redirect/late render is never captured as the page (the ghost-state
- *  class of bugs). Pass `first` when the caller already took the initial snapshot.
- *  Never infinite: a permanently-loading page proceeds after 3 retries. */
-export async function settleSnapshot(snap: () => Promise<string>, first?: string): Promise<string> {
+export interface SettleOpts {
+  quietMs?: number;    // DOM-quiet window for the fast path (default WEBNAV_SETTLE_QUIET_MS or 600)
+  gapMs?: number;      // poll interval for the fallback plateau loop (default WEBNAV_SETTLE_GAP_MS or 800)
+  budgetMs?: number;   // total wall-clock cap, either path (default WEBNAV_SETTLE_BUDGET_MS or 10000)
+  // When present, one injected MutationObserver round-trip gates the fast path (see
+  // settleSnapshot doc comment). Absent (unit fakes, restricted contexts) → the
+  // fallback plateau-polling loop runs instead. Signature matches BrowseAdapter.evalJs
+  // with no ref (a page-global expression, not element-scoped).
+  evalJs?: (js: string) => Promise<string>;
+}
+export interface SettleResult { snapshot: string; settled: boolean; }
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// One page-global expression: resolve 'quiet' after `quietMs` with no childList/subtree/
+// characterData mutation, or 'budget' if that never happens inside `capMs`. Passive
+// observation only (no site-specific hook) — the same signal for every page.
+function domQuietJs(quietMs: number, capMs: number): string {
+  return `() => new Promise((resolve) => {
+    let t = setTimeout(() => { obs.disconnect(); resolve('quiet'); }, ${quietMs});
+    const cap = setTimeout(() => { obs.disconnect(); clearTimeout(t); resolve('budget'); }, ${capMs});
+    const obs = new MutationObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(() => { obs.disconnect(); clearTimeout(cap); resolve('quiet'); }, ${quietMs});
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  })`;
+}
+
+/** Layered settle-by-quiescence: capture what a page ACTUALLY looks like once rendering
+ *  has stopped, not just once a loading token is gone (classifyReadiness's floor check
+ *  passes a still-hydrating SPA shell — the design incident this fixes). Two layers,
+ *  cheapest first:
+ *
+ *  1. Fast path (evalJs supplied): ONE injected MutationObserver round-trip waits for
+ *     the DOM to go quiet for `quietMs`, THEN one snapshot-plateau pair confirms against
+ *     the actual recorded artifact (snapshotsPlateaued — the truth test; the DOM-quiet
+ *     signal is only a trigger, never trusted blind).
+ *  2. Fallback (no evalJs, or the DOM never quiets): poll snapshots every `gapMs` until
+ *     two successive reads plateau.
+ *
+ *  Both layers also retry-while-loading first (classifyReadiness === 'loading' — the
+ *  original floor-check retry, kept: a nav-only shell isn't even worth a plateau check
+ *  yet). An 'interstitial' reading (a bot-wall) returns settled:true immediately — a
+ *  wall is stable, report it, never wait it out. Bounded by `budgetMs` total; NEVER
+ *  throws on exhaustion — returns the last snapshot read with settled:false so the
+ *  caller records honestly and the driver can re-request the landing.
+ *
+ *  Pass `first` when the caller already took the initial snapshot (counts as sample 1
+ *  — no redundant extra read). Internal setTimeout only; no adapter.waitMs dependency. */
+export async function settleSnapshot(
+  snap: () => Promise<string>, first?: string, opts?: SettleOpts,
+): Promise<SettleResult> {
+  const quietMs = opts?.quietMs ?? (Number(process.env.WEBNAV_SETTLE_QUIET_MS) || 600);
+  const gapMs = opts?.gapMs ?? (Number(process.env.WEBNAV_SETTLE_GAP_MS) || 800);
+  const budgetMs = opts?.budgetMs ?? (Number(process.env.WEBNAV_SETTLE_BUDGET_MS) || 10000);
+  const deadline = Date.now() + budgetMs;
+
   let s = first ?? await snap();
-  for (let i = 0; i < 3 && classifyReadiness(s) === 'loading'; i++) {
-    await new Promise((r) => setTimeout(r, 700));
+  if (classifyReadiness(s) === 'interstitial') return { snapshot: s, settled: true };
+
+  // Retry-while-loading (the original floor-check behavior), budget-bounded rather than
+  // a fixed 3x — a page that clears 'loading' quickly leaves more budget for the plateau
+  // confirm below.
+  while (classifyReadiness(s) === 'loading' && Date.now() < deadline) {
+    await sleep(Math.min(gapMs, Math.max(0, deadline - Date.now())));
     s = await snap();
+    if (classifyReadiness(s) === 'interstitial') return { snapshot: s, settled: true };
   }
-  return s;
+  if (Date.now() >= deadline) return { snapshot: s, settled: false };
+
+  if (opts?.evalJs) {
+    // Fast path: one DOM-quiet round-trip, then confirm with the artifact we actually
+    // record. A 'budget' report (DOM never quieted inside evalJs's own cap) just means
+    // the trigger didn't fire — fall through to the plateau-poll loop below rather than
+    // trusting an unquieted DOM as settled.
+    const capMs = Math.max(0, deadline - Date.now());
+    const quiet = await opts.evalJs(domQuietJs(quietMs, capMs)).catch(() => 'budget');
+    if (quiet.includes('quiet') && Date.now() < deadline) {
+      const confirm = await snap();
+      if (snapshotsPlateaued(s, confirm)) return { snapshot: confirm, settled: true };
+      s = confirm;   // not actually stable yet — fall through to the poll loop with this as the new baseline
+    }
+  }
+
+  // Fallback: poll until two successive reads plateau, or budget runs out.
+  while (Date.now() < deadline) {
+    await sleep(Math.min(gapMs, Math.max(0, deadline - Date.now())));
+    const next = await snap();
+    if (snapshotsPlateaued(s, next)) return { snapshot: next, settled: true };
+    s = next;
+  }
+  return { snapshot: s, settled: false };
 }
 
 /** X6 landing name-probe: read tooltip/aria labels off the NAMELESS icon controls of a settled
@@ -131,7 +213,7 @@ export async function recordNavigateEffect(
   const led = recordStore.appendEvent(sessionId, {
     source: 'agent', kind: 'navigate', descriptor: { cmd: 'navigate', url, fromUrl: url },
   });
-  const toSnapshot = await settleSnapshot(() => adapter.snapshot!());
+  const toSnapshot = (await settleSnapshot(() => adapter.snapshot!(), undefined, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined)).snapshot;
   const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
   const nameHints = await probeLanding(adapter, toSnapshot);
   const stepSeq = recordStore.appendActionEffect(sessionId, {
@@ -223,7 +305,7 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
     // client-side redirect/late render on the NEW page otherwise records a transient
     // shell as the page (the ghost-state class of bugs). An in-page mutate/reveal has
     // no such settledness concern — its snapshot IS the (possibly sparse) diff.
-    if (navigated) toSnapshot = await settleSnapshot(() => adapter.snapshot!(), toSnapshot);
+    if (navigated) toSnapshot = (await settleSnapshot(() => adapter.snapshot!(), toSnapshot, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined)).snapshot;
     // The clicked node's declared href = the URL the click ASKED for (observed
     // evidence, judgment-free); the settled toUrl may differ when the server
     // redirects the declared destination. Recording it lets the draft alias

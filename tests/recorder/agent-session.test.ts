@@ -93,9 +93,12 @@ describe('runAgentSession', () => {
       startVideo: async () => {}, stopVideo: async () => null,
       startUrl: 'https://s.test/',
     });
-    expect(evalArgs.length).toBe(1);
-    expect(evalArgs[0]).toContain('__webnav_rec_badge');   // INSTALLER_JS overlay
-    expect(evalArgs[0]).toContain("webnavRec = '1'");       // MODE_JS(true) recording-on paint
+    // settleSnapshot's own DOM-quiet fast path now also calls evalJs (a page-global
+    // MutationObserver probe, distinct from the overlay injection) — so more than one
+    // eval call is expected; assert the overlay call specifically, not the total count.
+    const overlayCalls = evalArgs.filter((a) => a.includes('__webnav_rec_badge'));
+    expect(overlayCalls.length).toBe(1);
+    expect(overlayCalls[0]).toContain("webnavRec = '1'");       // MODE_JS(true) recording-on paint
   });
 
   it('re-injects the REC overlay after a click that triggers in-page navigation', async () => {
@@ -115,10 +118,12 @@ describe('runAgentSession', () => {
     });
     // the click reported navigated:true...
     expect(io.out.some((o) => o.ok === true && o.navigated === true)).toBe(true);
-    // ...so the overlay was re-injected (installer + recording-on paint) after it
-    expect(evalArgs.length).toBe(1);
-    expect(evalArgs[0]).toContain('__webnav_rec_badge');
-    expect(evalArgs[0]).toContain("webnavRec = '1'");
+    // ...so the overlay was re-injected (installer + recording-on paint) after it.
+    // (settleSnapshot's DOM-quiet fast path also calls evalJs — assert the overlay
+    // call specifically, not the total eval count.)
+    const overlayCalls = evalArgs.filter((a) => a.includes('__webnav_rec_badge'));
+    expect(overlayCalls.length).toBe(1);
+    expect(overlayCalls[0]).toContain("webnavRec = '1'");
   });
 
   it('EOF (stdin closed) tears down cleanly, same as quit', async () => {
