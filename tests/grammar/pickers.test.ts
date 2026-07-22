@@ -231,3 +231,53 @@ describe('grammar: X10 div-soup date-picker (real analytics-SPA shape) — value
     expect(s.affordances.some((a) => a.label === 'Share')).toBe(true);
   });
 });
+
+// ── report-builder field-picker — scattered CHOICE leaves (one wrapper-div per option) ──
+// The exact shape a real report builder renders (verified against a live analytics-SPA capture):
+// a dimension/metric picker where each option is a checkbox wrapped in its OWN container, so the
+// checkboxes are NOT siblings under a shared parent. subtreeFolds folds repeated sibling SUBTREES
+// under a shared parent, so this scattered layout never reaches its >=3-per-parent bar and each
+// option would survive as its own `input` affordance — leaking the enumerated field NAMES (a
+// report's chosen metrics/dimensions) as page controls, exactly the data-value pollution #6 refuses.
+// The CHOICE-LIST fold gates ALL such names regardless of parent (a choice role repeated >=3x on a
+// page IS a value list, never distinct routes) and emits ONE picker affordance as repertoire.
+describe('grammar: report-builder field-picker — scattered checkbox options never stored, picker survives', () => {
+  const FIELDS = ['Gross Revenue', 'Bid CPM', 'Ad Slot Impressions', 'Total Profit', 'Win Rate', 'Fill Rate'];
+  // Each option wrapped in its own generic — no shared parent => subtreeFolds cannot group them.
+  const optionBlocks = FIELDS.flatMap((f, i) => [
+    `  - generic [ref=e${20 + i * 2}]:`,
+    `    - checkbox "${f}" [ref=e${21 + i * 2}]`,
+  ]);
+  const BUILDER = [
+    '- heading "Build Report" [ref=e1]',
+    '- textbox "Search dimensions" [ref=e2]',
+    '- button "Run" [ref=e3]',
+    '- button "Save" [ref=e4]',
+    '- button "Export CSV" [ref=e5]',
+    '- paragraph "Pick fields to include" [ref=e6]',
+    '- paragraph "Report builder" [ref=e7]',
+    '- group "Fields" [ref=e10]:',
+    ...optionBlocks,
+  ].join('\n');
+  const effs = [enter(`${B}/report/draft`, BUILDER)] as never;
+
+  it('no chosen field NAME becomes an affordance (enumerated options are data, not structure)', () => {
+    const g = draftFromEffects(effs, []);
+    const s = g.states.find((x) => x.label === 'report-draft')!;
+    const labels = s.affordances.flatMap((a) => [a.label, ...(a.children ?? []).map((c) => c.label)]);
+    for (const f of FIELDS) expect(labels.includes(f), `field "${f}" leaked as an affordance`).toBe(false);
+  });
+
+  it('the distinct toolbar buttons (Run/Save/Export CSV) are NOT gated — they survive as affordances', () => {
+    const g = draftFromEffects(effs, []);
+    const s = g.states.find((x) => x.label === 'report-draft')!;
+    for (const b of ['Run', 'Save', 'Export CSV']) expect(s.affordances.some((a) => a.label === b), b).toBe(true);
+  });
+
+  it('the picker still surfaces as ONE repertoire affordance (not silently dropped)', () => {
+    const g = draftFromEffects(effs, []);
+    const s = g.states.find((x) => x.label === 'report-draft')!;
+    // a checkbox picker => one input/mutate scope affordance representing "choose fields here".
+    expect(s.affordances.some((a) => (a.scope === 'row' || a.scope === 'widget') && (a.kind === 'input' || a.kind === 'mutate'))).toBe(true);
+  });
+});

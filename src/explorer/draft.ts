@@ -249,11 +249,69 @@ const isTemplateFold = (fold: SubtreeFold, nodes: SnapNode[]): boolean => {
 // list, per-row chips, per-card instance titles) and `emit` (the folds that yield ONE informational
 // affordance each). Subsumes the old foldRepeats.foldedNames + enumeratedNames. Keyed by NAME
 // because callers filter node lists by name.
-function templateFolds(nodes: SnapNode[]): { emit: SubtreeFold[]; gatedNames: Set<string> } {
+// CHOICE roles: enumerable-by-definition controls (a set of them IS a value list, never distinct
+// routes — unlike button/link/tab whose repetition can be a real toolbar/nav).
+const CHOICE_ROLES = new Set(['checkbox', 'radio', 'switch', 'option', 'menuitemcheckbox', 'menuitemradio']);
+
+// A choice leaf INSIDE a collection-row subtree (`row`/`gridcell`/`cell`) is a per-row selection
+// checkbox — already folded by the row machinery — NOT a picker option. Ancestor test by depth on
+// the STRUCTURAL node list (which still carries the unnamed `row`/`table` containers; coreNodes has
+// them stripped, so this must run on shadowNodes).
+function insideCollectionRow(nodes: SnapNode[], i: number): boolean {
+  let depth = nodes[i].depth;
+  for (let j = i - 1; j >= 0 && depth > 0; j--) {
+    if (nodes[j].depth < depth) {                   // nearest lower-depth node = an ancestor
+      if (COLLECTION_ROLES.has(nodes[j].role)) return true;
+      depth = nodes[j].depth;                       // climb to this ancestor, keep walking up
+    }
+  }
+  return false;
+}
+
+// CHOICE-LIST names on a page: a field-picker rendered as one wrapper-div per option (real report
+// builder: 30 checkboxes across 29 distinct wrapper containers) never reaches subtreeFolds' ≥3-per-
+// SHARED-PARENT bar, so each option would survive as its OWN `input`/`mutate` affordance — the
+// enumerated option NAMES (a report's metric/dimension choices) leaking in as page controls, the
+// data-value pollution principle #6 refuses. ≥3 same CHOICE-role page-body leaves ARE a value list
+// (choice roles are enumerable-by-definition — never distinct routes, unlike button/link/tab). Detected
+// on the STRUCTURAL tree (`structural`, = shadowNodes) so per-row selection boxes inside a collection
+// row are excluded (they fold via the row machinery; a grid's "Select all" toolbar box must survive).
+// Returns the gated names + the qualifying roles (each yields one representative picker affordance).
+function choiceListGate(structural: SnapNode[]): { names: Set<string>; roles: string[] } {
+  const byRole = new Map<string, string[]>();   // role → names of its page-body choice leaves
+  structural.forEach((n, i) => {
+    if (!CHOICE_ROLES.has(n.role) || !n.name || !n.name.trim()) return;
+    if (insideCollectionRow(structural, i)) return;
+    (byRole.get(n.role) ?? byRole.set(n.role, []).get(n.role)!).push(n.name);
+  });
+  const names = new Set<string>(); const roles: string[] = [];
+  for (const [role, ns] of byRole) { if (ns.length < 3) continue; roles.push(role); for (const nm of ns) names.add(nm); }
+  return { names, roles };
+}
+
+function templateFolds(nodes: SnapNode[], opts?: { choiceStructural?: SnapNode[] }): { emit: SubtreeFold[]; gatedNames: Set<string> } {
   const { folds } = subtreeFolds(nodes);
   const kept = folds.filter((f) => isTemplateFold(f, nodes));
   const gatedNames = new Set<string>();
   for (const f of kept) for (const i of f.memberIndices) { const nm = nodes[i].name; if (nm && nm.trim()) gatedNames.add(nm); }
+
+  // Page-body choice-list picker (see choiceListGate). Detected on the caller-supplied structural tree,
+  // NOT on a reveal's added overlay nodes (an overlay listbox/menu's options are gated by the overlay/
+  // enumeratedNames machinery, and gating them here would strip the named content reveal-by-behavior
+  // detection reads to classify the opener as a reveal). Gate the names + emit ONE representative fold
+  // per qualifying role so the picker still surfaces as repertoire ("a checkbox picker exists here").
+  if (opts?.choiceStructural) {
+    const { names, roles } = choiceListGate(opts.choiceStructural);
+    for (const nm of names) gatedNames.add(nm);
+    for (const role of roles) {
+      // synthetic fold → interior-synthesis emits one scope affordance. members = this page's choice
+      // leaves present in `nodes` (coreNodes); unitSize 1 → scope:'row'. Label is a STRUCTURAL descriptor
+      // (`<role> options`), never a member name (a member name IS the value data we're gating, #6).
+      const members = nodes.map((n, i) => [n, i] as const).filter(([n]) => n.role === role && n.name && names.has(n.name)).map(([, i]) => i);
+      if (!members.length) continue;
+      kept.push({ sig: `choice-${role}`, level: 'named', count: members.length, memberIndices: members, label: `${role} options`, unitSize: 1 });
+    }
+  }
   return { emit: kept, gatedNames };
 }
 
@@ -1321,7 +1379,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // real routes, NEVER a repeated template to fold away) and its headings are fingerprint material.
   // The folded member nodes are skipped in the per-node loop below either way (by name).
   for (const p of pageList) {
-    const { emit, gatedNames: baseFolded } = templateFolds(p.coreNodes);
+    const { emit, gatedNames: baseFolded } = templateFolds(p.coreNodes, { choiceStructural: p.shadowNodes });
     // HOOK 2b (value-domain pack, `landing` context): a value-domain trigger over the page's core
     // nodes marks its matched subtree as value data — those names join the excluded set so they
     // never synthesize as an interior affordance / never anchor identity (same gate as templateFolds'
