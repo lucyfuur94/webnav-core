@@ -8,7 +8,7 @@ import type { SnapNode } from '../playwright/snapshot.js';
 // land on the same key as the absolute toUrl (else every sidebar link keys to `/` and no
 // from-anywhere shell edge ever resolves). A dummy base makes the relative parse succeed
 // without affecting the pathname.
-const segsOf = (url: string): string[] => {
+export const segsOf = (url: string): string[] => {
   try { return new URL(url, 'http://_').pathname.split('/').filter(Boolean); } catch { return []; }
 };
 

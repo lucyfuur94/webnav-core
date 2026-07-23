@@ -4,7 +4,7 @@ import { matchState } from './fingerprint.js';
 import { resolveByFingerprint, type ElementFingerprint } from '../playwright/fingerprint.js';
 import { makeState, type State, type DeclaredShadow } from '../mapstore/types.js';
 import { extractShadow } from './shadow.js';
-import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, repeatedContainerIndices, isOpaqueSeg, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
+import { inferUrlModel, proposeTemplates, faceOf, jaccard, containment, controlFace, templateCore, extractShell, insideOverlay, mainScope, subtreeFolds, repeatedContainerIndices, isOpaqueSeg, segsOf, CONTROL_ROLES, type SubtreeFold, type Face } from './infer.js';
 import { classifyReadiness } from '../router/readiness.js';
 import { loadPatternPacks, packDetectsOverlay, packValueNames, type PatternPack } from './patterns.js';
 
@@ -1411,9 +1411,34 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // repeated card/row titles out of the fingerprint pool (Task 10 fpFolded, above) — on the RAW
     // landing (structural containers intact), else a same-host unvisited row-detail link mints one
     // instance-labeled dangling stub per row instead of folding away (map-stores-structure-not-data).
+    // BUT ≥3-same-role-sibling alone over-fires on a PRIMARY NAV group (Reports/Dashboards/Downloads/
+    // Admin — 4 sibling links, each to a DISTINCT destination) — repeatedContainerIndices can't tell
+    // "row instances" from "a wide nav list" on role+count alone. The real distinguishing signal
+    // (matching isTemplateFold's own design note, and the opaqueParams disposal at Task-6 dispose
+    // above): row links share ONE url template varying only at an OPAQUE id segment (/items/1,
+    // /items/2, /items/3 → /items/{param}), while nav links go to genuinely DISTINCT templates
+    // (/report/list, /dashboard/list, /admin — same-length paths can align positionally, but their
+    // varying segment is a WORD, not an id — "a varying WORD segment names a SECTION, not an
+    // instance"). fromPageKey/the site-wide URL model is the WRONG tool here — it's built only from
+    // VISITED urls, so an unvisited row href contributes nothing to it and the model degenerates on
+    // a thin recording. Use proposeTemplates (purely positional, no visited-url dependency) on the
+    // repeated links' own raw hrefs, then dispose exactly like the merge step: only an opaqueParams
+    // template (every member's varying segment is an opaque id) counts as a real row-instance fold.
     const rowRepeated = new Set<string>();
     for (const l of p.landings) {
-      for (const i of repeatedContainerIndices(l)) { const nm = l[i].name; if (nm && nm.trim()) rowRepeated.add(nm); }
+      const namesByPath = new Map<string, string[]>();   // path → every repeated-container link name with that path
+      for (const i of repeatedContainerIndices(l)) {
+        const nd = l[i];
+        if (nd.role !== 'link' || !nd.name?.trim() || !nd.url) continue;
+        const path = '/' + segsOf(nd.url).join('/');
+        (namesByPath.get(path) ?? namesByPath.set(path, []).get(path)!).push(nd.name);
+      }
+      for (const g of proposeTemplates([...namesByPath.keys()])) {
+        if (g.keys.length < 2) continue;
+        const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
+        if (!opaqueParams) continue;                                     // varying WORD → distinct sections, not row instances
+        for (const k of g.keys) for (const nm of namesByPath.get(k)!) rowRepeated.add(nm);
+      }
     }
     for (const n of p.nodes) {
       if (n.role !== 'link' || !n.name || !n.url) continue;

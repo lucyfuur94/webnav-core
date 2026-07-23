@@ -2558,6 +2558,73 @@ describe('draftFromEffects — dangling stubs for declared links to UNVISITED pa
   });
 });
 
+// Row-fold refinement: ≥3 same-role sibling LINKS is row-instance data only when their targets
+// collapse to ONE url {param} template (grid rows /items/1,2,3 → /items/{param}). A run of ≥3
+// sibling links to DISTINCT templates (a primary nav group) is real navigation and must still
+// stub, even though repeatedContainerIndices flags the same ≥3-sibling-link container either way.
+describe('draftFromEffects — row-fold only catches SAME-TEMPLATE sibling links, not a distinct-destination nav group', () => {
+  const B = 'https://programmatic.example.com';
+
+  it('a ≥3-link sidebar NAV group to DISTINCT url templates all stub (not folded away)', () => {
+    // each nav item is its own wrapper (a real sidebar's `listitem`/icon+label nesting) so
+    // repeatedContainerIndices' content-item candidacy (requires children) sees the repeat —
+    // same idiom the row-fold fixture below uses, and the shape the real bug report described
+    // (a flat run of bare `link` leaves never satisfies repeatedContainerIndices at all, so a
+    // fixture without wrapper nesting can't reproduce the over-fold in the first place).
+    const navItem = (ref: string, name: string, href: string) => [
+      `  - listitem [ref=li${ref}]:`,
+      `    - link "${name}" [ref=${ref}]:\n        - /url: ${href}`,
+    ];
+    const NAV_LANDING = [
+      '- heading "Report List" [ref=e1]',
+      '- list [ref=e9]:',
+      ...navItem('e2', 'Reports', '/v3/1063/report/list'),
+      ...navItem('e3', 'Dashboards', '/v3/1063/dashboard/list'),
+      ...navItem('e4', 'Downloads', '/v3/1063/download/list'),
+      ...navItem('e5', 'Admin', '/v3/admin'),
+      '- paragraph "Reports" [ref=e6]',
+      '- paragraph "Filler" [ref=e7]',
+      '- paragraph "Filler2" [ref=e8]',
+    ].join('\n');
+    const entry = { seq: 0, capturedAt: 0, fromUrl: `${B}/v3/1063/report/list`, fromSnapshot: NAV_LANDING,
+      action: null, toUrl: `${B}/v3/1063/report/list`, toSnapshot: NAV_LANDING, navigated: true,
+      diff: { added: [], removed: [] } };
+    const draft = draftFromEffects([entry] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    for (const label of ['Dashboards', 'Downloads', 'Admin']) {
+      const a = list.affordances.find((x) => x.kind === 'navigate' && x.label === label);
+      expect(a, `${label} should stub as a dangling navigate`).toBeTruthy();
+      expect(a!.to).toBeFalsy();
+    }
+  });
+
+  it('a ≥3-row grid of per-row links to the SAME url template still folds (no per-row stub)', () => {
+    // each row is its OWN subtree container (a real grid's `row` nesting) so
+    // repeatedContainerIndices' content-item candidacy (requires children) sees the repeat —
+    // matches the row-fold fixture idiom in tests/grammar/collections.test.ts.
+    const gridRow = (id: number, name: string) => [
+      `  - row [ref=row${id}]:`,
+      `    - link "${name}" [ref=r${id}]:\n        - /url: /items/${id}`,
+    ];
+    const GRID_LANDING = [
+      '- heading "Items" [ref=e1]',
+      '- table [ref=e9]:',
+      ...[[1, 'Alpha widget'], [2, 'Beta widget'], [3, 'Gamma widget']].flatMap(([id, name]) => gridRow(id as number, name as string)),
+      '- paragraph "Filler" [ref=e7]',
+      '- paragraph "Filler2" [ref=e8]',
+      '- paragraph "Filler3" [ref=e10]',
+    ].join('\n');
+    const entry = { seq: 0, capturedAt: 0, fromUrl: `${B}/items/list`, fromSnapshot: GRID_LANDING,
+      action: null, toUrl: `${B}/items/list`, toSnapshot: GRID_LANDING, navigated: true,
+      diff: { added: [], removed: [] } };
+    const draft = draftFromEffects([entry] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    for (const name of ['Alpha widget', 'Beta widget', 'Gamma widget']) {
+      expect(list.affordances.find((a) => a.label === name)).toBeUndefined();
+    }
+  });
+});
+
 // ── Frontier-blindness fix B: a declared TAB (role:tab) becomes a mutate affordance (a tab
 // switches an in-page sub-view; it never routes to a new URL/state, so it's mutate not
 // navigate). Distinct-named tabs must survive as distinct affordances — `tab` is not in
