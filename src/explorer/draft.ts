@@ -76,8 +76,19 @@ const MAX_UNKNOWN_EVIDENCE = 1500;    // a report entry must stay pasteable into
 const MAX_UNKNOWNS = 20;              // total report cap — the loop looks at a handful at a time
 // Collection roles whose dominance (>COLLECTION_DOMINANCE of named added nodes) marks an added
 // subtree as a data-grid REPAINT, not an overlay candidate (review F2). Documented tunable.
-const COLLECTION_ROLES = new Set(['row', 'gridcell', 'columnheader', 'cell']);
+// Also the CONTAINER-ROLE discriminator (BUG 1 fix, row-fold refinement): `grid`/`table`/
+// `rowgroup`/`treegrid` are the ENCLOSING collection containers (a row's ancestor), added
+// alongside the per-row roles so `insideCollectionRow`'s ancestor walk recognizes a row nested
+// directly under a bare `grid`/`table` (no intermediate `row` in some real a11y trees).
+const COLLECTION_ROLES = new Set(['row', 'gridcell', 'columnheader', 'cell', 'grid', 'table', 'rowgroup', 'treegrid']);
 const COLLECTION_DOMINANCE = 0.5;
+// The DECLARED nav-landmark/list roles that mark a container of ROUTES, not row instances (axis
+// 2 declaration, per CLAUDE.md's structure-inference design: ARIA landmarks declare shell/nav).
+// `navigation` is the primary ARIA landmark for site/page navigation; `menu`/`list` cover a
+// sidebar rendered as a list rather than a landmark. A link under one of these is a distinct
+// destination (a section/year-archive/menu item), never a per-row instance — regardless of
+// whether its url's varying segment happens to be numeric.
+const NAV_CONTAINER_ROLES = new Set(['navigation', 'menu', 'list']);
 // Evidence = the first ~25 named lines of the given nodes (their raw snapshot text), joined and
 // capped to MAX_UNKNOWN_EVIDENCE chars. Never the whole page — just the relevant subtree/cluster.
 const evidenceOf = (nodes: SnapNode[]): string => {
@@ -248,9 +259,19 @@ function firstControlNameInFold(nodes: SnapNode[], fold: SubtreeFold): string | 
 //    dimension") is a shared TRAILING WORD → a real-word label; a role-fallback label (no shared
 //    word, label === a member role) is a plain toolbar → NOT a template. A NAMED control fold
 //    (IDENTICAL labels: Expand drilldown ×25) is always a genuine per-row/chip repeat.
+//  • TAB exclusion (BUG 2 fix): a `tab` is never a template unit, even when ≥3 distinct-named tabs
+//    share a trailing word ("Sales Report"/"Cost Report"/"Profit Report" → would-be abstracted
+//    fold label "Report"). Unlike a row/chip control (whose per-instance name IS data), each tab
+//    is an individually-addressable in-page sub-view — folding distinct tabs into one generic
+//    mutate affordance makes them un-selectable (a walk/agent can no longer switch to a SPECIFIC
+//    tab). Same posture as CHOICE_ROLES excluding enumerable value controls from this fold, just
+//    for the opposite reason (a choice list IS one value domain; a tablist is durable structure
+//    whose members must each survive on their own).
 const isTemplateFold = (fold: SubtreeFold, nodes: SnapNode[]): boolean => {
+  const controlRole = dominantControlRole(nodes, fold);
+  if (controlRole === 'tab') return false;                       // distinct sub-views → never folded away
   if (fold.unitSize >= 2) return true;
-  if (dominantControlRole(nodes, fold) === null) return false;   // leaf headings/links → not a control template
+  if (controlRole === null) return false;                        // leaf headings/links → not a control template
   if (fold.level === 'named') return true;                       // identical control labels = genuine repeat
   const memberRoles = new Set(fold.memberIndices.map((i) => nodes[i].role));
   return !memberRoles.has(fold.label);   // abstracted: real shared-word label = template; role fallback = plain toolbar
@@ -278,6 +299,29 @@ function insideCollectionRow(nodes: SnapNode[], i: number): boolean {
     }
   }
   return false;
+}
+
+// BUG 1 fix (row-fold refinement): is node `i` nested under a DATA-COLLECTION container
+// (`row`/`gridcell`/`cell`/`grid`/`table`/`rowgroup`/`treegrid`) rather than a NAV LANDMARK
+// (`navigation`/`menu`/`list`)? This is the CONTAINER-ROLE discriminator the row-fold uses
+// instead of url-shape: a repeated link's role+count alone can't tell "grid row instances" from
+// "a nav list of sections" (both are ≥3 same-role siblings), but their DECLARED ancestor can —
+// a grid/table row is per-instance data, a navigation/menu/list item is a distinct route. Walks
+// to the NEAREST significant ancestor of either kind and stops there (same nearest-lower-depth
+// ancestor idiom as insideCollectionRow/insideOverlay) — whichever container role is closer to
+// the link wins, so a nav list embedded inside an outer page `main` doesn't see past its own
+// immediate landmark, and a grid nested inside an outer `navigation` (unusual, but possible)
+// still folds correctly on its immediate `row`/`table` ancestor.
+function nearestContainerRole(nodes: SnapNode[], i: number): 'collection' | 'nav' | null {
+  let depth = nodes[i].depth;
+  for (let j = i - 1; j >= 0 && depth > 0; j--) {
+    if (nodes[j].depth < depth) {
+      if (COLLECTION_ROLES.has(nodes[j].role)) return 'collection';
+      if (NAV_CONTAINER_ROLES.has(nodes[j].role)) return 'nav';
+      depth = nodes[j].depth;
+    }
+  }
+  return null;
 }
 
 // CHOICE-LIST names on a page: a field-picker rendered as one wrapper-div per option (real report
@@ -1413,30 +1457,33 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // instance-labeled dangling stub per row instead of folding away (map-stores-structure-not-data).
     // BUT ≥3-same-role-sibling alone over-fires on a PRIMARY NAV group (Reports/Dashboards/Downloads/
     // Admin — 4 sibling links, each to a DISTINCT destination) — repeatedContainerIndices can't tell
-    // "row instances" from "a wide nav list" on role+count alone. The real distinguishing signal
-    // (matching isTemplateFold's own design note, and the opaqueParams disposal at Task-6 dispose
-    // above): row links share ONE url template varying only at an OPAQUE id segment (/items/1,
-    // /items/2, /items/3 → /items/{param}), while nav links go to genuinely DISTINCT templates
-    // (/report/list, /dashboard/list, /admin — same-length paths can align positionally, but their
-    // varying segment is a WORD, not an id — "a varying WORD segment names a SECTION, not an
-    // instance"). fromPageKey/the site-wide URL model is the WRONG tool here — it's built only from
-    // VISITED urls, so an unvisited row href contributes nothing to it and the model degenerates on
-    // a thin recording. Use proposeTemplates (purely positional, no visited-url dependency) on the
-    // repeated links' own raw hrefs, then dispose exactly like the merge step: only an opaqueParams
-    // template (every member's varying segment is an opaque id) counts as a real row-instance fold.
+    // "row instances" from "a wide nav list" on role+count alone.
+    // BUG 1 FIX (was: url-shape only — "a varying segment is opaque ⇒ row instance"). A numeric-
+    // varying segment is NOT proof of a row instance: year archives (/blog/2021, /blog/2022,
+    // /blog/2023) and other numbered sections are DISTINCT destinations that happen to vary at a
+    // digit segment, so the old isOpaqueSeg-only discriminator folded them away and lost three real
+    // roads. The RELIABLE distinction is the DECLARED CONTAINER, not the url shape: a grid/table row
+    // link is per-instance data (nearestContainerRole → 'collection'); a nav-landmark/menu/list link
+    // is a distinct route (nearestContainerRole → 'nav') — regardless of whether its varying segment
+    // is a word or a number (a word-slug grid row, e.g. /products/blue-widget, must fold exactly
+    // like a numeric one). So the CONTAINER check is now the primary AND sole url-shape gate: only
+    // a 'collection'-contained link is even a row-fold CANDIDATE (a 'nav'-contained or uncontained
+    // link always keeps its stub); among candidates, proposeTemplates still requires them to
+    // collapse to ONE positional template (≥2 keys, one varying position) — same-shape row hrefs
+    // that don't even share a template are left alone — but the varying segment's opaque-vs-word
+    // SHAPE is no longer consulted (the container already proved these are row instances).
     const rowRepeated = new Set<string>();
     for (const l of p.landings) {
       const namesByPath = new Map<string, string[]>();   // path → every repeated-container link name with that path
       for (const i of repeatedContainerIndices(l)) {
         const nd = l[i];
         if (nd.role !== 'link' || !nd.name?.trim() || !nd.url) continue;
+        if (nearestContainerRole(l, i) !== 'collection') continue;   // nav landmark/menu/list → a real road, never a row-fold candidate
         const path = '/' + segsOf(nd.url).join('/');
         (namesByPath.get(path) ?? namesByPath.set(path, []).get(path)!).push(nd.name);
       }
       for (const g of proposeTemplates([...namesByPath.keys()])) {
-        if (g.keys.length < 2) continue;
-        const opaqueParams = g.keys.every((k) => isOpaqueSeg(k.split('/').filter(Boolean)[g.paramPos] ?? ''));
-        if (!opaqueParams) continue;                                     // varying WORD → distinct sections, not row instances
+        if (g.keys.length < 2) continue;                                 // must actually share ONE template
         for (const k of g.keys) for (const nm of namesByPath.get(k)!) rowRepeated.add(nm);
       }
     }

@@ -2623,6 +2623,65 @@ describe('draftFromEffects — row-fold only catches SAME-TEMPLATE sibling links
       expect(list.affordances.find((a) => a.label === name)).toBeUndefined();
     }
   });
+
+  it('a ≥3-row grid of per-row links to a SAME WORD-SLUG url template also folds (container, not url shape, drives it)', () => {
+    // Same grid shape as above but the varying tail segment is a WORD SLUG ("blue-widget"), not
+    // an opaque id. Proves the discriminator is the `row` CONTAINER, not isOpaqueSeg — a grid row
+    // link must fold regardless of its url's segment shape.
+    const gridRow = (slug: string, name: string) => [
+      `  - row [ref=row-${slug}]:`,
+      `    - link "${name}" [ref=r-${slug}]:\n        - /url: /products/${slug}`,
+    ];
+    const GRID_LANDING = [
+      '- heading "Products" [ref=e1]',
+      '- table [ref=e9]:',
+      ...[['blue-widget', 'Blue widget'], ['red-widget', 'Red widget'], ['green-widget', 'Green widget']]
+        .flatMap(([slugv, name]) => gridRow(slugv, name)),
+      '- paragraph "Filler" [ref=e7]',
+      '- paragraph "Filler2" [ref=e8]',
+      '- paragraph "Filler3" [ref=e10]',
+    ].join('\n');
+    const entry = { seq: 0, capturedAt: 0, fromUrl: `${B}/products/list`, fromSnapshot: GRID_LANDING,
+      action: null, toUrl: `${B}/products/list`, toSnapshot: GRID_LANDING, navigated: true,
+      diff: { added: [], removed: [] } };
+    const draft = draftFromEffects([entry] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    for (const name of ['Blue widget', 'Red widget', 'Green widget']) {
+      expect(list.affordances.find((a) => a.label === name)).toBeUndefined();
+    }
+  });
+
+  it('BUG 1: a `navigation` landmark of ≥3 year-archive links (numeric-varying, distinct destinations) all stub — never folded', () => {
+    // Reproduces the confirmed defect: 3 links under a `navigation` landmark, each a DISTINCT
+    // destination, varying only at a NUMERIC segment (/blog/2021, /blog/2022, /blog/2023). The
+    // old isOpaqueSeg-only discriminator treated "numeric-varying" as proof of a row instance and
+    // folded all three away — losing three real roads. The container is a NAV LANDMARK, not a
+    // data collection (grid/table/rowgroup), so none of these may fold.
+    const navItem = (ref: string, name: string, href: string) => [
+      `    - listitem [ref=li${ref}]:`,
+      `      - link "${name}" [ref=${ref}]:\n          - /url: ${href}`,
+    ];
+    const NAV_LANDING = [
+      '- heading "Blog" [ref=e1]',
+      '- navigation [ref=e9]:',
+      ...navItem('e2', '2021 Archive', '/blog/2021'),
+      ...navItem('e3', '2022 Archive', '/blog/2022'),
+      ...navItem('e4', '2023 Archive', '/blog/2023'),
+      '- paragraph "Latest posts" [ref=e6]',
+      '- paragraph "Filler" [ref=e7]',
+      '- paragraph "Filler2" [ref=e8]',
+    ].join('\n');
+    const entry = { seq: 0, capturedAt: 0, fromUrl: `${B}/blog`, fromSnapshot: NAV_LANDING,
+      action: null, toUrl: `${B}/blog`, toSnapshot: NAV_LANDING, navigated: true,
+      diff: { added: [], removed: [] } };
+    const draft = draftFromEffects([entry] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    for (const label of ['2021 Archive', '2022 Archive', '2023 Archive']) {
+      const a = list.affordances.find((x) => x.kind === 'navigate' && x.label === label);
+      expect(a, `${label} should stub as a dangling navigate, not fold away`).toBeTruthy();
+      expect(a!.to).toBeFalsy();
+    }
+  });
 });
 
 // ── Frontier-blindness fix B: a declared TAB (role:tab) becomes a mutate affordance (a tab
@@ -2658,5 +2717,33 @@ describe('draftFromEffects — declared TAB nodes synthesize as mutate affordanc
     const list = draft.states.find((s) => s.label !== '_shell')!;
     const tabs = list.affordances.filter((a) => a.elementFp?.role === 'tab');
     expect(tabs.length).toBe(3);
+  });
+
+  // BUG 2: tabs whose names share a trailing word ("Sales Report"/"Cost Report"/"Profit Report")
+  // must NOT abstracted-fold into one generic 'Report' affordance — the abstracted TEMPLATE fold
+  // (templateFolds/isTemplateFold) previously collapsed them because `tab` was a CONTROL_ROLES
+  // member with no exclusion, the same shared-trailing-word signal that legitimately folds "<X>
+  // Remove" row chips. Each tab is an individually-addressable sub-view, never a repeated-row
+  // template, so `tab` must be excluded from the abstracted fold the same way CHOICE_ROLES excludes
+  // enumerable value controls.
+  it('BUG 2: tabs sharing a trailing word stay THREE distinct mutate affordances, not one folded "Report"', () => {
+    const SHARED_WORD_LANDING = [
+      '- heading "Reports" [ref=e1]',
+      '- tab "Sales Report" [ref=e2]',
+      '- tab "Cost Report" [ref=e3]',
+      '- tab "Profit Report" [ref=e4]',
+      '- paragraph "Body" [ref=e5]',
+      '- paragraph "Filler" [ref=e6]',
+      '- paragraph "Filler2" [ref=e7]',
+      '- paragraph "Filler3" [ref=e8]',
+    ].join('\n');
+    const entry = { seq: 0, capturedAt: 0, fromUrl: `${B}/reports`, fromSnapshot: SHARED_WORD_LANDING,
+      action: null, toUrl: `${B}/reports`, toSnapshot: SHARED_WORD_LANDING, navigated: true,
+      diff: { added: [], removed: [] } };
+    const draft = draftFromEffects([entry] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    const tabs = list.affordances.filter((a) => a.elementFp?.role === 'tab');
+    expect(tabs.map((a) => a.label).sort()).toEqual(['Cost Report', 'Profit Report', 'Sales Report']);
+    expect(list.affordances.some((a) => a.label === 'Report')).toBe(false);   // never the generic folded label
   });
 });
