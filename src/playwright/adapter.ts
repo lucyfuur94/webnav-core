@@ -22,9 +22,9 @@ export interface BrowserOpts {
   persistent?: boolean;
   profile?: string;
   browser?: string;
-  configPath?: string;   // playwright-cli --config (JSON): used to launch the window MAXIMIZED
-                         // (launchOptions.args --start-maximized + contextOptions.viewport:null)
-                         // for headed capture sessions. Ignored on headless (fixed viewport is fine).
+  configPath?: string;   // playwright-cli --config (JSON): fixes the viewport to a sharp, consistent
+                         // size (1280x800) for headed capture sessions' recorded video. Ignored on
+                         // headless (which already gets a fixed viewport by default).
 }
 
 const defaultRun: RunFn = async (args) => {
@@ -69,8 +69,8 @@ export class PlaywrightAdapter {
     if (this.opts.persistent) f.push('--persistent');
     if (this.opts.profile) f.push('--profile', this.opts.profile);
     if (this.opts.browser) f.push('--browser', this.opts.browser);
-    // --config launches the window MAXIMIZED (viewport follows the window). Headed only:
-    // headless has no window to maximize and wants a fixed viewport, so skip it there.
+    // --config sets a fixed, sharp capture viewport. Headed only: headless already
+    // launches with its own fixed viewport, so skip it there.
     if (this.opts.configPath && this.opts.headed) f.push('--config', this.opts.configPath);
     return f;
   }

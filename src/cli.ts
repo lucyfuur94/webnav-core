@@ -382,7 +382,7 @@ async function main() {
     const profilesRoot = join(homedir(), '.webnav', 'profiles');
     // profile resolve + prep (same discipline as every other launch path)
     const sbrowser = { ...args.browser };
-    // Maximized-window config for HEADED capture sessions (repo-root playwright-cli.json;
+    // Fixed-viewport capture config for HEADED capture sessions (repo-root playwright-cli.json;
     // adapter applies it only when headed). Resolved from THIS module so CWD doesn't matter.
     if (sbrowser.headed) {
       const { fileURLToPath } = await import('node:url');

@@ -1,7 +1,6 @@
 {
-  "_comment": "Headed capture-session launch config. --start-maximized opens the OS window full-screen; viewport:null makes the render size follow the window (so recorded video shows the page as a real user sees it). playwright-cli's `resize` only sets the VIEWPORT, not the window frame — the window must be launched maximized, which is what this does. Applied ONLY on headed launches (see adapter openFlags); headless keeps a fixed viewport.",
+  "_comment": "Headed capture-session launch config. A fixed 1280x800 viewport (clean 16:10) keeps the recorded video sharp and a consistent aspect — the earlier --start-maximized + viewport:null captured at the full monitor resolution, which downscaled soft and mismatched the dashboard panel's aspect. Applied ONLY on headed launches (see adapter openFlags); headless keeps its own fixed viewport.",
   "browser": {
-    "launchOptions": { "args": ["--start-maximized"] },
-    "contextOptions": { "viewport": null }
+    "contextOptions": { "viewport": { "width": 1280, "height": 800 } }
   }
 }
