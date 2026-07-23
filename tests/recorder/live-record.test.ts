@@ -223,17 +223,16 @@ it('Fix B: an unresolved same-page click that visibly CHANGED the page is record
   const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/inventory.html',
     tagName: 'div' }]);   // no role, no leafText → never resolves
   const CHANGED_INV = INV + '\n  StaticText "Line chart selected" [ref=e10]';
+  // The baseline landing tick is stable INV (settle plateaus on it immediately);
+  // from the drain tick onward the DOM has visibly re-rendered to CHANGED_INV, so the
+  // Fix-B fresh-snapshot probe diffs CHANGED_INV against the INV baseline and records it.
+  // (Was a snapshot-call counter — invalidated now that the landing tick settles, which
+  // consumes several snapshot() calls; keying off the script row is settle-robust.)
   const adapter = fakeAdapter([
     { url: 'https://s.test/inventory.html', snap: INV },
-    { url: 'https://s.test/inventory.html', snap: INV, drain: clickEvt },
-    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: CHANGED_INV, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: CHANGED_INV },
   ]);
-  // override snapshot() to return the CHANGED dom on the fresh-diff probe (i.e.
-  // every call after the initial baseline tick) — simulates the page having
-  // visibly re-rendered by the time we take the extra Fix-B snapshot.
-  let snapCalls = 0;
-  const origSnapshot = adapter.snapshot;
-  adapter.snapshot = async () => { snapCalls++; return snapCalls === 1 ? await origSnapshot() : CHANGED_INV; };
   let n = 0;
   const logs: string[] = [];
   await runLiveRecord({ adapter, store, sessionId: 'fixb-1', intervalMs: 0,
@@ -324,6 +323,94 @@ it('does not ledger events drained while recording is off (armed)', async () => 
   await runLiveRecord({ adapter, store: ledgeringStore, sessionId: 'armed-ledger', intervalMs: 0, armed: true,
     log: () => {}, isStopped: () => ++n > 6, sleep: async () => {} });
   expect(ledger).toHaveLength(0);
+});
+
+// Task 6: a navigation lands on a still-hydrating shell; the poll loop settles it
+// (the human is also waiting for the render) and archives the PLATEAUED snapshot,
+// stamped settled:true on the navigated effect.
+it('navigation tick settles to the plateaued snapshot and stamps settled:true', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('settle-1');
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/',
+    tagName: 'button', leafText: 'Login' }]);
+  // Post-nav renders: a sparse shell first, then it grows and PLATEAUS at INV.
+  const SHELL = ['RootWebArea "Products" [ref=e1]', '  button "Open Menu" [ref=e2]',
+    '  heading "Products" [ref=e3]', '  StaticText "loading widgets" [ref=e4]',
+    '  StaticText "a" [ref=e5]', '  StaticText "b" [ref=e6]', '  StaticText "c" [ref=e7]',
+    '  StaticText "d" [ref=e8]'].join('\n');
+  // snapshot() returns the growing sequence (SHELL→INV→INV): the plateau loop must
+  // poll past the 8-node shell before two successive reads (INV,INV) plateau.
+  const grow = [SHELL, INV, INV];
+  let gi = 0;
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  adapter.snapshot = async () => grow[Math.min(gi++, grow.length - 1)];
+  let n = 0;
+  await runLiveRecord({ adapter, store, sessionId: 'settle-1', intervalMs: 0,
+    log: () => {}, isStopped: () => ++n > 6, sleep: async () => {} });
+  const fx = store.actionEffects('settle-1');
+  expect(fx.length).toBe(1);
+  expect(fx[0].navigated).toBe(true);
+  expect(fx[0].settled).toBe(true);
+  // archived the PLATEAUED render (INV, 9 nodes), not the 8-node shell
+  expect(fx[0].toSnapshot).toContain('Add to cart');
+});
+
+// Task 6 honesty: a landing that never stops changing → settled:false at budget
+// (env knobs are tiny via tests/setup.ts, so this returns in ms, not seconds).
+it('a never-plateauing navigation lands settled:false at budget', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('settle-2');
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/',
+    tagName: 'button', leafText: 'Login' }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/', snap: LOGIN },
+    { url: 'https://s.test/', snap: LOGIN, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: INV },
+  ]);
+  // Every landing snapshot adds a NEW identity node (a growing button list) → never
+  // plateaus; settleSnapshot exhausts its budget and flags settled:false.
+  let churn = 0;
+  adapter.snapshot = async () => INV + '\n  button "Widget ' + (churn++) + '" [ref=eX]';
+  let n = 0;
+  await runLiveRecord({ adapter, store, sessionId: 'settle-2', intervalMs: 0,
+    log: () => {}, isStopped: () => ++n > 6, sleep: async () => {} });
+  const fx = store.actionEffects('settle-2');
+  expect(fx.length).toBe(1);
+  expect(fx[0].navigated).toBe(true);
+  expect(fx[0].settled).toBe(false);
+});
+
+// Latency guard: an in-page (same-url) tick must NOT settle — a reveal has to be
+// captured immediately (it could auto-dismiss). Proof the same-url path never settled:
+// the recorded reveal effect stays UNFLAGGED (settled undefined). The initial landing
+// (a navigation) DID settle a stable page → settled:true, confirming the split is by
+// url-change, not by tick.
+it('a same-url (in-page) reveal is captured unflagged; the landing before it settled', async () => {
+  const store = RecordStore.fromDatabase(new Database(':memory:'));
+  store.start('settle-3');
+  // Reveal a menu with a resolved click (so Fix-B's unresolved fresh-snapshot probe
+  // never fires) that leaves the URL unchanged — an in-page mutation, navigated:false.
+  const OPENED = INV + '\n  link "Logout" [ref=e10]';
+  const clickEvt = JSON.stringify([{ seq: 1, kind: 'click', url: 'https://s.test/inventory.html',
+    tagName: 'link', leafText: 'Logout', href: 'https://s.test/inventory.html' }]);
+  const adapter = fakeAdapter([
+    { url: 'https://s.test/inventory.html', snap: INV },
+    { url: 'https://s.test/inventory.html', snap: OPENED, drain: clickEvt },
+    { url: 'https://s.test/inventory.html', snap: OPENED },
+    { url: 'https://s.test/inventory.html', snap: OPENED },
+  ]);
+  let n = 0;
+  await runLiveRecord({ adapter, store, sessionId: 'settle-3', intervalMs: 0,
+    log: () => {}, isStopped: () => ++n > 5, sleep: async () => {} });
+  const reveal = store.actionEffects('settle-3').find((f) => !f.navigated);
+  expect(reveal).toBeTruthy();
+  expect(reveal!.settled).toBeUndefined();   // same-page effect never carries a settle verdict
 });
 
 it('window close → onEnd(closed) fires and the session is stopped (live #1/#2/#3)', async () => {

@@ -340,7 +340,9 @@ export function resolveEvent(ev: LiveEvent, nodes: SnapNode[]): Resolution {
   return { candidates: cands.map((n) => n.ref!) };
 }
 
-export interface Tick { url: string; snapshot: string }
+// settled: only set on a NAVIGATION tick (the poll loop settle-by-quiescence result);
+// same-url in-page ticks are captured immediately and stay unflagged (undefined).
+export interface Tick { url: string; snapshot: string; settled?: boolean }
 
 /** Latest tick ≤ uptoIdx on the same page as the event (query/hash ignored). */
 export function fromTickFor(ev: LiveEvent, ticks: Tick[], uptoIdx: number): number {
@@ -411,5 +413,9 @@ export function assembleEffect(ev: LiveEvent, ref: string | null, from: Tick, to
     navigated,
     diff: diffSnapshots(parseSnapshot(from.snapshot), parseSnapshot(to.snapshot)),
     requestedUrl,
+    // Carry the landing's settle verdict onto navigated effects only (mirrors
+    // runActionRecorded/recordNavigateEffect); to.settled is set by the poll loop's
+    // settleSnapshot when the tick was a navigation. Same-page effects leave it undefined.
+    ...(navigated && typeof to.settled === 'boolean' ? { settled: to.settled } : {}),
   };
 }

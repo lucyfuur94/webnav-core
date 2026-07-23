@@ -12,7 +12,7 @@ import {
   type LiveEvent, type Tick,
 } from './live.js';
 import { parseSnapshot } from '../playwright/snapshot.js';
-import { parseEvalResult } from '../router/browse.js';
+import { parseEvalResult, settleSnapshot } from '../router/browse.js';
 import { classifyReadiness } from '../router/readiness.js';
 import { didNavigate, diffSnapshots } from '../explorer/diff.js';
 import type { ActionEffect } from '../mapstore/record.js';
@@ -158,8 +158,36 @@ export async function runLiveRecord(deps: LiveRecordDeps): Promise<{ appended: n
           await sleep(deps.intervalMs);
           continue;
         }
-        if (classifyReadiness(snap) !== 'loading') ticks.push({ url, snapshot: snap });
-        else ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
+        if (urlChanged) {
+          // A NAVIGATION landed: settle-by-quiescence before archiving. The human is
+          // also waiting for the render, so plateau-wait the landing (5s cap — well
+          // under the 10s default — keeps stop/toggle responsive; in-page events queue
+          // in sessionStorage and drain next iteration). settleSnapshot feeds `snap` as
+          // sample 1 (no redundant read) and returns the plateaued snapshot + a verdict.
+          // Fast path via evalJs when the adapter exposes it (the real PlaywrightAdapter
+          // does; unit fakes fall through to plateau polling).
+          // If a mid-settle snapshot throws (browser died between renders), degrade to
+          // the snapshot we already have this tick, flagged unsettled — never a crash.
+          const { snapshot: settledSnap, settled } = await settleSnapshot(
+            () => deps.adapter.snapshot(), snap,
+            { budgetMs: Number(process.env.WEBNAV_SETTLE_BUDGET_MS) || 5000,
+              evalJs: (js) => deps.adapter.evalJs(js) },
+          ).catch(() => ({ snapshot: snap, settled: false }));
+          // Still a loading shell after the budget → keep today's guard (never archive
+          // a loading shell): reuse the previous tick so pairing lands on a real page.
+          if (classifyReadiness(settledSnap) === 'loading') {
+            ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: settledSnap });
+          } else {
+            ticks.push({ url, snapshot: settledSnap, settled });
+          }
+        } else if (classifyReadiness(snap) !== 'loading') {
+          // Same-url tick (in-page mutation/reveal): capture immediately, ONE snapshot,
+          // unflagged — a reveal must not be plateau-waited (it could auto-dismiss) and
+          // settling every in-page tick would multiply the loop's snapshot latency.
+          ticks.push({ url, snapshot: snap });
+        } else {
+          ticks.push(ticks[ticks.length - 1] ?? { url, snapshot: snap });  // never archive a loading shell
+        }
       }
 
       // 6. pair pended events to ticks (unchanged semantics).

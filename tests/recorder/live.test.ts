@@ -151,6 +151,17 @@ describe('assembleEffect', () => {
     expect(fx.action?.name).toBe('Username');
     expect(JSON.stringify(fx)).not.toContain('secret');
   });
+  it('carries the settle flag from the LANDING tick — but only on a navigated fx', () => {
+    // Task 6: the human waited for the render too; the poll loop settles the landing
+    // and stamps to.settled onto the navigated effect (mirrors runActionRecorded).
+    const e = ev({ tagName: 'button', leafText: 'Login' });
+    const settledTo: Tick = { ...tInv, settled: true };
+    const unsettledTo: Tick = { ...tInv, settled: false };
+    expect(assembleEffect(e, 'e3', tLogin, settledTo)!.settled).toBe(true);
+    expect(assembleEffect(e, 'e3', tLogin, unsettledTo)!.settled).toBe(false);
+    // Non-navigated (same-page reveal) never plateau-waits → flag absent by design.
+    expect(assembleEffect(e, 'e3', tLogin, { ...tLogin, settled: true }).settled).toBeUndefined();
+  });
 });
 
 describe('requestedUrl (Task 3 — human-recorder redirect evidence, mirrors browse.ts runActionRecorded)', () => {
