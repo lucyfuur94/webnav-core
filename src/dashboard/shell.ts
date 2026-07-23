@@ -1322,7 +1322,10 @@ async function loadVideos(ctx) {
     const m = v.match(/take-(\\d+)\\.webm/);
     const when = m ? new Date(Number(m[1])).toLocaleString() : v;
     const wrap = el('<div style="margin-bottom:12px"><div class="cat-head">'+esc(when)+'</div></div>');
-    const vid = el('<video controls preload="metadata" style="max-width:100%;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>');
+    // width:100% (not max-width) so the take fills the available panel width — a screencast's
+    // intrinsic pixel size is the capture viewport, and max-width:100% would cap it there
+    // (leaving a large empty gutter on a wide screen). display:block drops the inline baseline gap.
+    const vid = el('<video controls preload="metadata" style="width:100%;display:block;background:#000;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>');
     // Screencast webm is written live → no duration in the header → the browser
     // reports Infinity and the scrubber is dead. Standard fix: seek to a huge
     // time once; the browser scans the file, learns the real duration, and the
