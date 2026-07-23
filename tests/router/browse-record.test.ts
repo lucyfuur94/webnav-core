@@ -87,21 +87,67 @@ describe('recordNavigateEffect', () => {
     expect(fx.nameHints).toEqual({ e5: 'Expand', e6: 'Favorite' });
   });
 
-  it('a fully-named landing triggers ZERO name-probe evals and stores no nameHints', async () => {
+  it('threads settleSnapshot\'s DOM-quiet fast path: an evalJs adapter gets the page-global (ref-less) eval (T5)', async () => {
+    // Production wiring regression net for F1's threading: recordNavigateEffect must pass its
+    // adapter.evalJs into settleSnapshot so the DOM-quiet fast path actually fires on the CLI
+    // navigate path. The DOM-quiet probe is the ONLY ref-less eval on a fully-named landing
+    // (name-probe evals always carry a ref); assert exactly one ref-less eval was made.
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('fq');
+    const evalCalls: { js: string; ref?: string }[] = [];
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => READY,   // fully named → no name-probe eval; stable → plateaus at once
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+      evalJs: async (js: string, ref?: string) => { evalCalls.push({ js, ref }); return JSON.stringify('quiet'); },
+    };
+    await recordNavigateEffect('https://x.test/', 'fq', rec, adapter as any);
+    const refless = evalCalls.filter((c) => c.ref === undefined);
+    expect(refless).toHaveLength(1);                       // exactly one DOM-quiet round-trip
+    expect(refless[0].js).toContain('MutationObserver');   // it IS the DOM-quiet probe
+  });
+
+  it('an adapter WITHOUT evalJs makes NO eval and settles via the fallback only (T5)', async () => {
+    // The other half of the wiring pin: a bare adapter (no evalJs) must never attempt an eval
+    // — settleSnapshot's fallback plateau loop handles it. Guards against unconditional eval.
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('nq');
+    let snapCalls = 0;
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => { snapCalls++; return READY; },   // stable → fallback plateaus
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+      // no evalJs property at all
+    };
+    const fx = (await (async () => {
+      await recordNavigateEffect('https://x.test/', 'nq', rec, adapter as any);
+      return rec.actionEffects('nq')[0];
+    })());
+    expect(fx.toSnapshot).toBe(READY);   // settled correctly with no eval available
+    expect(snapCalls).toBeGreaterThanOrEqual(2);   // fallback took at least the plateau pair
+  });
+
+  it('a fully-named landing triggers ZERO name-probe evals and exactly one DOM-quiet eval (T6)', async () => {
     const rec = RecordStore.fromDatabase(new Database(':memory:'));
     rec.start('nn');
-    const probeEvals: string[] = [];
+    const probeEvals: string[] = [];      // name-probe calls (ALWAYS carry a ref)
+    const domQuietEvals: string[] = [];   // settle's DOM-quiet probe (page-global, no ref)
     const adapter = {
       open: async () => '', close: async () => '',
       snapshot: async () => READY,   // every interactive node has a name
       currentUrl: async () => 'https://x.test/web/index.php/auth/login',
-      // settleSnapshot's own DOM-quiet fast path also calls evalJs (page-global,
-      // no ref) — distinct from the per-node name-probe (always called WITH a ref).
-      // Track only the name-probe calls; the fully-named landing must trigger zero.
-      evalJs: async (js: string, ref?: string) => { if (ref) probeEvals.push(js); return JSON.stringify('x'); },
+      // Split the two eval kinds by presence of a ref so we can assert EXACT per-kind counts
+      // (T6: restore strength) — zero name-probe evals AND exactly one DOM-quiet probe. A
+      // duplicated-settle bug (two DOM-quiet evals) must fail this.
+      evalJs: async (js: string, ref?: string) => {
+        if (ref) probeEvals.push(js); else domQuietEvals.push(js);
+        return JSON.stringify('quiet');
+      },
     };
     await recordNavigateEffect('https://x.test/', 'nn', rec, adapter as any);
     expect(probeEvals).toHaveLength(0);
+    expect(domQuietEvals).toHaveLength(1);
+    expect(domQuietEvals[0]).toContain('MutationObserver');
     expect(rec.actionEffects('nn')[0].nameHints).toBeUndefined();
   });
 

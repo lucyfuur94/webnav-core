@@ -9,7 +9,6 @@
 // REVEAL ONLY: the probe never clicks anything INSIDE a revealed menu (commit rule #2).
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 import { diffSnapshots } from '../explorer/diff.js';
-import { settleSnapshot } from '../router/browse.js';
 
 // Landmark roles whose named interactive descendants are primary-nav triggers worth probing.
 const LANDMARK_ROLES = new Set(['banner', 'navigation']);
@@ -97,7 +96,13 @@ export async function runHoverProbe(deps: HoverProbeDeps): Promise<{ probed: num
     });
     const from = await adapter.snapshot();     // re-baseline per candidate (a prior Escape may have changed the page)
     if (rightClick) await adapter.rightClick(ref); else await adapter.hover(ref);
-    const to = (await settleSnapshot(() => adapter.snapshot())).snapshot;
+    // A reveal is an IN-PAGE overlay, not a navigation — capture it IMMEDIATELY, do NOT settle.
+    // settle-by-quiescence is scoped to navigated landings only (runActionRecorded settles just
+    // when navigated; the extension plateaus just when a navigated step is pending). A hover
+    // mega-menu / context menu can auto-dismiss or keep animating during settle's ≥800ms
+    // plateau gap, losing or thrashing the reveal diff — so the bare post-hover snapshot IS the
+    // reveal, same discipline as the agent-session hover branch.
+    const to = await adapter.snapshot();
     const diff = diffSnapshots(parseSnapshot(from), parseSnapshot(to));
     if (diff.added.length > 0) {
       const action = { role: c.role, name: c.name, ref, ...(rightClick ? { rightClick: true } : { hover: true }) };

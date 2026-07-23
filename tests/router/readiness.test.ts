@@ -66,4 +66,14 @@ describe('snapshotsPlateaued', () => {
     const cur = '- heading "Dash" [ref=e1]\n- button "Export" [ref=e2]\n- button "Share" [ref=e3]';
     expect(snapshotsPlateaued(prev, cur)).toBe(false);
   });
+
+  it('an IDENTICAL identity multiset with +3 extra NON-identity nodes is NOT plateaued (node-count clause)', () => {
+    // The identity token multiset is byte-identical between the two, so ONLY the node-count
+    // clause can reject this. Pins that clause directly: a chart/image hydration that adds
+    // img/paragraph/generic bulk (109→300+ nodes, the design incident) without touching any
+    // identity token must still read as "not plateaued yet".
+    const identity = '- heading "Dash" [ref=e1]\n- button "Refresh" [ref=e2]\n- link "Home" [ref=e3]';
+    const grown = `${identity}\n- img "chart" [ref=e4]\n- paragraph "loaded copy" [ref=e5]\n- generic "" [ref=e6]`;
+    expect(snapshotsPlateaued(identity, grown)).toBe(false);
+  });
 });

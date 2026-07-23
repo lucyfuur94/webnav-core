@@ -28,7 +28,7 @@ import { RecordStore } from '../../src/mapstore/record.js';
 import { MapStore } from '../../src/mapstore/store.js';
 import { editGraph } from '../../src/graph/edit.js';
 import { draftFromEffects, type DraftAffordance } from '../../src/explorer/draft.js';
-import { parseSnapshot, type SnapNode } from '../../src/playwright/snapshot.js';
+import { parseSnapshot, TOKEN_ROLES as TOKEN_ROLES_LIST, type SnapNode } from '../../src/playwright/snapshot.js';
 import { adaptAXTree, type AXNode } from '../../src/playwright/ax-adapter.js';
 import {
   makeLiveExtensionBrowser, type AgentChannel,
@@ -46,7 +46,9 @@ const ICONS_SETTINGS_YAML_REF = 'e8';
 
 // TOKEN_ROLES: the roles draft.ts uses as fingerprint/identity material (candidateTokens).
 // Parity on THIS multiset is what makes two producers yield the same state identities.
-const TOKEN_ROLES = new Set(['heading', 'tab', 'button', 'textbox', 'link', 'checkbox', 'combobox']);
+// Imported from the source of truth (snapshot.ts) rather than hand-copied, so a change to
+// the identity vocabulary can't silently desync this parity check.
+const TOKEN_ROLES = new Set(TOKEN_ROLES_LIST);
 const tokenMultiset = (nodes: SnapNode[]): string[] =>
   nodes.filter((n) => TOKEN_ROLES.has(n.role) && n.name && n.name.trim())
     .map((n) => `${n.role}:${n.name}`).sort();

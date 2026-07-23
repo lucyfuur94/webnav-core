@@ -93,11 +93,14 @@ describe('runAgentSession', () => {
       startVideo: async () => {}, stopVideo: async () => null,
       startUrl: 'https://s.test/',
     });
-    // settleSnapshot's own DOM-quiet fast path now also calls evalJs (a page-global
-    // MutationObserver probe, distinct from the overlay injection) — so more than one
-    // eval call is expected; assert the overlay call specifically, not the total count.
+    // settleSnapshot's own DOM-quiet fast path also calls evalJs (a page-global
+    // MutationObserver probe, distinct from the overlay injection). Assert the EXACT per-kind
+    // counts (T6: restore strength) — exactly one overlay injection AND exactly one DOM-quiet
+    // probe for one navigate — so a duplicated-eval bug (e.g. double-settling) fails this test.
     const overlayCalls = evalArgs.filter((a) => a.includes('__webnav_rec_badge'));
+    const domQuietCalls = evalArgs.filter((a) => a.includes('MutationObserver'));
     expect(overlayCalls.length).toBe(1);
+    expect(domQuietCalls.length).toBe(1);
     expect(overlayCalls[0]).toContain("webnavRec = '1'");       // MODE_JS(true) recording-on paint
   });
 
@@ -119,10 +122,12 @@ describe('runAgentSession', () => {
     // the click reported navigated:true...
     expect(io.out.some((o) => o.ok === true && o.navigated === true)).toBe(true);
     // ...so the overlay was re-injected (installer + recording-on paint) after it.
-    // (settleSnapshot's DOM-quiet fast path also calls evalJs — assert the overlay
-    // call specifically, not the total eval count.)
+    // Assert EXACT per-kind counts (T6): exactly one overlay injection AND exactly one
+    // DOM-quiet probe for the one navigation — a duplicated-eval bug must fail this.
     const overlayCalls = evalArgs.filter((a) => a.includes('__webnav_rec_badge'));
+    const domQuietCalls = evalArgs.filter((a) => a.includes('MutationObserver'));
     expect(overlayCalls.length).toBe(1);
+    expect(domQuietCalls.length).toBe(1);
     expect(overlayCalls[0]).toContain("webnavRec = '1'");
   });
 

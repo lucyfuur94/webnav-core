@@ -108,7 +108,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // observation only (no site-specific hook) — the same signal for every page.
 function domQuietJs(quietMs: number, capMs: number): string {
   return `() => new Promise((resolve) => {
-    let t = setTimeout(() => { obs.disconnect(); resolve('quiet'); }, ${quietMs});
+    let t = setTimeout(() => { obs.disconnect(); clearTimeout(cap); resolve('quiet'); }, ${quietMs});
     const cap = setTimeout(() => { obs.disconnect(); clearTimeout(t); resolve('budget'); }, ${capMs});
     const obs = new MutationObserver(() => {
       clearTimeout(t);
@@ -165,9 +165,17 @@ export async function settleSnapshot(
     // record. A 'budget' report (DOM never quieted inside evalJs's own cap) just means
     // the trigger didn't fire — fall through to the plateau-poll loop below rather than
     // trusting an unquieted DOM as settled.
-    const capMs = Math.max(0, deadline - Date.now());
-    const quiet = await opts.evalJs(domQuietJs(quietMs, capMs)).catch(() => 'budget');
-    if (quiet.includes('quiet') && Date.now() < deadline) {
+    //
+    // The raw output is playwright-cli's eval WRAPPER (`### Result\n<value>\n### Ran
+    // Playwright code\n<source>\n…`), and the source we send is domQuietJs — whose text
+    // literally contains the word 'quiet'. So we MUST parse out the Result value and test
+    // THAT (parseEvalResult also JSON-decodes a quoted scalar, giving 'quiet' not '"quiet"');
+    // a substring check on the raw wrapper would be true on every verdict. A fake adapter
+    // returning a bare 'quiet'/'budget' still parses correctly (parseEvalResult falls back
+    // to the trimmed raw when there's no Result block).
+    const capMs = Math.max(0, Math.min(deadline - Date.now(), budgetMs / 2));   // reserve room for the plateau fallback (F2)
+    const quiet = parseEvalResult(await opts.evalJs(domQuietJs(quietMs, capMs)).catch(() => 'budget'));
+    if (quiet === 'quiet' && Date.now() < deadline) {
       const confirm = await snap();
       if (snapshotsPlateaued(s, confirm)) return { snapshot: confirm, settled: true };
       s = confirm;   // not actually stable yet — fall through to the poll loop with this as the new baseline
