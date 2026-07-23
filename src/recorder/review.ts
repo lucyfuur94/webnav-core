@@ -28,10 +28,20 @@ export function parseShowinfoTimes(stderr: string): number[] {
  *  surface CAPTURE GAPS — visible changes with no recorded step. */
 export const DEFAULT_INSTRUCTIONS = `Your job — compare what the video SHOWS against what was CAPTURED:
 1. For each frame, say what user action most likely produced that screen state.
-2. CAPTURE GAPS: visible changes in the frames with NO captured step near that
-   timestamp (±5s). These are recorder misses — the deliverable. Be specific:
-   what happened on screen, when, and what kind of event the recorder should
-   have caught (click / input / navigation / scroll / hover-menu ...).
+2. CAPTURE GAPS: a gap is a VISIBLE ON-SCREEN CHANGE in the frames — a menu/dropdown/
+   tooltip/panel/dialog appeared, the page navigated, a value changed — with NO captured
+   step near that timestamp (±5s). These are recorder misses — the deliverable. Be
+   specific: what CHANGED on screen, when, and what event the recorder should have caught
+   (click / input / navigation / scroll / hover-menu ...).
+   NOT A GAP — do not report these:
+   • The agent runs a HOVER-PROBE SWEEP: it moves the cursor across MANY interactive
+     elements in turn and, BY DESIGN, records a step ONLY when a hover actually REVEALS
+     new UI (a menu/tooltip/flyout appears). A frame showing the cursor resting on an
+     element with NOTHING new revealed is EXPECTED and correct — it is not a missed step.
+     Only flag a hover as a gap when the frame clearly shows a menu/tooltip/flyout that
+     APPEARED and no hover step captured it. Cursor movement alone is never a gap.
+   • So do NOT count "the cursor visited N targets but only M hover steps were recorded"
+     as a coverage gap — that difference is the intended reveal-only selectivity, not a miss.
 3. Steps with no visual correlate in any frame (possible over-capture or noise).
 4. A short verdict: is this recording complete enough to replay the user's
    journey? What single capture improvement would help most?
@@ -48,7 +58,9 @@ const STRUCTURED_TAIL = `
 OUTPUT FORMAT (STRICT): after any brief reasoning, end your reply with ONE JSON
 object on its own, exactly:
 {"gaps":[{"atMs":<frame time ms>,"kind":"click|input|navigation|scroll|hover-menu|other","whatHappened":"...","shouldHaveCaptured":"..."}],"verdict":"..."}
-A gap = a visible change in the frames with NO captured step within ±5s. If capture
+A gap = a visible ON-SCREEN CHANGE (menu/tooltip/panel APPEARED, navigation, value change)
+with NO captured step within ±5s. A cursor merely hovering an element that revealed NOTHING
+is NOT a gap (the hover-probe sweep records reveals only — see the rules above). If capture
 is complete, return {"gaps":[],"verdict":"complete"}. Emit NOTHING after the JSON.`;
 
 /** Tolerant extraction of the gap JSON from a review reply (may be wrapped in
