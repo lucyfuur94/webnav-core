@@ -28,6 +28,7 @@ export interface RawAXStep {
   // when clickedRef is already set (agent runs resolve refs server-side up front).
   clickedNodeId?: string | null;
   tMs?: number;                // wall-clock ms when the step COMPLETED (so the ledger shows real per-step times, not one flush time)
+  settled?: boolean;           // did the extension's plateau loop confirm this landing stopped changing? (absent = legacy/not-applicable — reads as undefined on the effect, same as a non-navigated capture)
 }
 export interface IngestAXBody { sessionId: string; steps: RawAXStep[] }
 
@@ -114,6 +115,10 @@ export function ingestAX(body: IngestAXBody, store: RecordStore): number {
       }
     }
     const fx = reconstructEffectFromNodes(fromNodes, toNodes, step.fromUrl, step.toUrl, clickedRef);
+    // Carry the extension's capture-quality verdict onto the stored effect (Task 5 parity
+    // with the CLI/agent path). Absent → undefined = legacy/not-applicable, same as a
+    // non-navigated (in-page mutate/reveal) capture.
+    fx.settled = step.settled;
     // Per-step wall-clock time (from the extension). Without it every step got the single
     // flush-time Date.now(), so the dashboard showed them all at the same second.
     const tMs = step.tMs;

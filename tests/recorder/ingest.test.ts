@@ -183,6 +183,23 @@ describe('ingest', () => {
     expect(store.actionEffects('ax-2')[0].action).toBeNull();
   });
 
+  it('ingestAX round-trips the settled flag onto the stored effect (true / false / absent→undefined)', () => {
+    const step = (settled: boolean | undefined) => ({
+      fromUrl: 'https://s.test/icons', fromAX: axFixture('icons'),
+      toUrl: 'https://s.test/table', toAX: axFixture('table'),
+      clickedRef: 'b7', settled,
+    });
+    for (const [sid, settled, expected] of [
+      ['ax-settled-t', true, true],
+      ['ax-settled-f', false, false],
+      ['ax-settled-absent', undefined, undefined],
+    ] as const) {
+      const store = RecordStore.fromDatabase(new Database(':memory:'));
+      ingestAX({ sessionId: sid, steps: [step(settled)] }, store);
+      expect(store.actionEffects(sid)[0].settled).toBe(expected);
+    }
+  });
+
   it('ingestAX writes a ledger event per step (Raw pane) + preserves per-step tMs (not one flush time)', () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     const body: IngestAXBody = {

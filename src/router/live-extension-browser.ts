@@ -1,7 +1,11 @@
 import { adaptAXTreeWithRefs, type AXNode } from '../playwright/ax-adapter.js';
 import { parseSnapshot, findByRoleAndName } from '../playwright/snapshot.js';
+import { snapshotsPlateaued } from './readiness.js';
+import { didNavigate } from '../explorer/diff.js';
 import type { RawAXStep } from '../recorder/ingest.js';
 import type { WalkBrowser } from './walk.js';
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // The extension-side channel: talks to the live tab over HTTP/SSE (real impl is a
 // later task). getAX() returns the raw CDP AX tree; dispatch() performs one action.
@@ -65,13 +69,32 @@ export function makeLiveExtensionBrowser(
     return channel.currentUrl ? await channel.currentUrl() : lastUrl;
   }
 
-  async function completePending(toAX: AXNode[]): Promise<void> {
+  // completePending pairs `toAX` as the pending step's landing. `settled` records whether
+  // refresh()'s plateau loop below confirmed the landing stopped changing (undefined =
+  // legacy semantics: the caller handed an already-observed snapshot, so we don't claim a
+  // verdict — beginStep's pending-flush does exactly this).
+  async function completePending(toAX: AXNode[], settled?: boolean): Promise<void> {
     if (!pending) return;
     const p = pending;
     pending = null;   // clear before await so a re-entrant begin can't double-close
     // tMs = when this step's post-action snapshot landed → the ledger shows real per-step
     // times instead of the single flush-time. (Browser runtime: Date.now() is fine here.)
-    steps.push({ fromUrl: p.fromUrl, fromAX: p.fromAX, toUrl: await url(), toAX, clickedRef: p.clickedRef, tMs: Date.now() });
+    steps.push({ fromUrl: p.fromUrl, fromAX: p.fromAX, toUrl: await url(), toAX, clickedRef: p.clickedRef, tMs: Date.now(), settled });
+  }
+
+  // Serialize an AX tree to comparable YAML (role/name/depth lines) for the plateau
+  // comparator ONLY. Cheap on purpose: snapshotsPlateaued reads node count + role:name
+  // identity tokens, so the walk-ref rekeying + refMap/eToB build (the expensive block in
+  // refresh) is irrelevant here and MUST NOT run per poll — it runs exactly once, on the
+  // final stable tree, inside refresh().
+  function axLines(ax: AXNode[]): string {
+    const { nodes } = adaptAXTreeWithRefs(ax);
+    const lines: string[] = [];
+    for (const n of nodes) {
+      lines.push(' '.repeat(n.depth) + n.raw);
+      if (n.url) lines.push(' '.repeat(n.depth + 1) + '/url: ' + n.url);
+    }
+    return lines.join('\n');
   }
 
   // Open a step for a just-fired action. fromAX/fromUrl = the last observed snapshot;
@@ -84,10 +107,51 @@ export function makeLiveExtensionBrowser(
   }
 
   async function refresh(): Promise<string> {
-    const ax = await channel.getAX();
-    calls++;
-    // A prior action was awaiting its landing — THIS snapshot is it.
-    await completePending(ax);
+    // THE PITFALL (why the plateau loop lives HERE, at the top of refresh, and completePending
+    // is called EXACTLY ONCE with the FINAL tree): refresh side-effects — its first getAX()
+    // result used to be handed straight to completePending, closing the pending click's step
+    // with WHATEVER snapshot arrived first, i.e. the un-hydrated shell. A heavy SPA renders a
+    // shell (passes classifyReadiness's floor), then hydrates. So we must poll raw getAX() to a
+    // plateau BEFORE completePending sees anything, and pair the STABLE tree as the landing.
+    //
+    // Scope: settle ONLY when a pending step exists AND it navigated (a fresh page must hydrate).
+    // A same-page reveal (non-navigated pending — an overlay/menu) must NOT plateau-loop: an
+    // auto-dismissing menu would lose its reveal diff to the extra polls. Bare no-pending reads
+    // stay exactly ONE getAX (the agent's `snapshot` tool must not balloon). The navigated check
+    // costs one extra url() round-trip, and ONLY when a pending step is open.
+    let ax: AXNode[];
+    let settled: boolean | undefined = undefined;
+    const shouldSettle = pending !== null && didNavigate(pending.fromUrl, await url());
+    if (shouldSettle) {
+      // No eval capability on AgentChannel (getAX/dispatch/currentUrl/goto/scroll only), and we
+      // may NOT add one — webnav-extension/background.ts is untouchable. So this is plateau
+      // polling only (no DOM-quiet fast path); latency is bounded by the same budget knob the
+      // core settle uses. gap/budget read at CALL time (tests/setup.ts pins them tiny).
+      const gapMs = Number(process.env.WEBNAV_SETTLE_GAP_MS) || 800;
+      const budgetMs = Number(process.env.WEBNAV_SETTLE_BUDGET_MS) || 10000;
+      const deadline = Date.now() + budgetMs;
+      ax = await channel.getAX();
+      calls++;
+      settled = false;
+      // Poll until two successive AX trees plateau (compared on structure/identity via axLines
+      // + snapshotsPlateaued), or the budget runs out (→ record the LAST tree, settled:false —
+      // honest: the page never stopped changing, exactly the non-hydration posture).
+      let prevYaml = axLines(ax);
+      while (Date.now() < deadline) {
+        await sleep(Math.min(gapMs, Math.max(0, deadline - Date.now())));
+        const next = await channel.getAX();
+        calls++;
+        const nextYaml = axLines(next);
+        if (snapshotsPlateaued(prevYaml, nextYaml)) { ax = next; settled = true; break; }
+        ax = next; prevYaml = nextYaml;
+      }
+    } else {
+      ax = await channel.getAX();
+      calls++;
+    }
+    // A prior action was awaiting its landing — the FINAL stable snapshot is it. Called EXACTLY
+    // ONCE (never inside the poll loop) so the step closes on the hydrated tree, not the shell.
+    await completePending(ax, settled);
     const { nodes, refMap: bRefMap } = adaptAXTreeWithRefs(ax);
     const walkRefMap = new Map<string, { nodeId: string; backendDOMNodeId?: number }>();
     const walkEToB = new Map<string, string>();
@@ -179,8 +243,9 @@ export function makeLiveExtensionBrowser(
     getRecordedSteps: () => {
       // Finalize a step whose landing was never snapshotted (run ended right after an
       // action): use its own fromAX as toAX. didNavigate('','') → false; a degenerate but
-      // honest same-page effect, better than dropping the click entirely.
-      if (pending) { steps.push({ fromUrl: pending.fromUrl, fromAX: pending.fromAX, toUrl: pending.fromUrl, toAX: pending.fromAX, clickedRef: pending.clickedRef, tMs: Date.now() }); pending = null; }
+      // honest same-page effect, better than dropping the click entirely. settled:false —
+      // the landing was NEVER observed, so we can't claim it plateaued (honest, not legacy).
+      if (pending) { steps.push({ fromUrl: pending.fromUrl, fromAX: pending.fromAX, toUrl: pending.fromUrl, toAX: pending.fromAX, clickedRef: pending.clickedRef, tMs: Date.now(), settled: false }); pending = null; }
       return steps;
     },
   };

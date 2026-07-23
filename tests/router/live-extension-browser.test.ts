@@ -292,6 +292,110 @@ describe('makeLiveExtensionBrowser — recording (RawAXStep for ingestAX)', () =
   });
 });
 
+// ── settle-by-quiescence (Task 5): a navigated click's landing must plateau before the
+// pending step closes, so a hydrating SPA's step carries the FULL tree, not the shell ──
+//
+// A shell (2 content nodes) that hydrates into a full page (5). snapshotsPlateaued sees the
+// growing identity-token multiset as NOT plateaued until it stops.
+const SHELL_AX: AXNode[] = [
+  { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Dash' }, childIds: ['2'] },
+  { nodeId: '2', role: { value: 'heading' }, name: { value: 'Loading' }, backendDOMNodeId: 300 },
+];
+const HYDRATED_AX: AXNode[] = [
+  { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Dash' }, childIds: ['2', '3', '4', '5'] },
+  { nodeId: '2', role: { value: 'heading' }, name: { value: 'Dashboard' }, backendDOMNodeId: 300 },
+  { nodeId: '3', role: { value: 'button' }, name: { value: 'Filter' }, backendDOMNodeId: 301 },
+  { nodeId: '4', role: { value: 'button' }, name: { value: 'Export' }, backendDOMNodeId: 302 },
+  { nodeId: '5', role: { value: 'tab' }, name: { value: 'Overview' }, backendDOMNodeId: 303 },
+];
+
+describe('makeLiveExtensionBrowser — settle-by-quiescence on a navigated landing', () => {
+  it('growing-then-stable NAVIGATED step closes on the hydrated tree with settled:true', async () => {
+    // A pending step whose from-url differs from the landed url. Model it by giving the channel
+    // a from-url on the first read and the landed url thereafter.
+    let phase = 0;   // 0 = on login (pre-click), 1+ = landed on /dash
+    let i = 0; let axCalls = 0;
+    const channel: AgentChannel = {
+      getAX: async () => { axCalls++; const trees = [SHELL_AX, HYDRATED_AX, HYDRATED_AX]; const t = i === 0 ? SHELL_AX : trees[Math.min(i, trees.length - 1)]; i++; return t; },
+      dispatch: async () => { phase = 1; },
+      currentUrl: async () => (phase === 0 ? 'https://x.test/login' : 'https://x.test/dash'),
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const y = await browser.snapshot();          // read login page (shell), phase 0
+    const node = parseSnapshot(y).find((n) => n.role === 'heading')!;
+    await browser.act(node.ref!, null);          // click → phase 1, pending.fromUrl = /login
+    await browser.snapshot();                    // land on /dash → navigated → plateau loop
+    const steps = browser.getRecordedSteps();
+    expect(steps.length).toBe(1);
+    expect(steps[0].settled).toBe(true);
+    // toAX is the HYDRATED tree (adapting it yields the buttons/tab, not just the shell heading).
+    const landed = adaptAXTree(steps[0].toAX);
+    expect(landed.some((n) => n.role === 'button' && n.name === 'Filter')).toBe(true);
+    expect(landed.some((n) => n.role === 'tab' && n.name === 'Overview')).toBe(true);
+    expect(axCalls).toBeGreaterThanOrEqual(2);   // navigated refresh legitimately polls ≥2
+  });
+
+  it('never-stable NAVIGATED step: settled:false at budget, closes on the LAST tree', async () => {
+    // Each getAX returns a DIFFERENT-count tree — never plateaus. Budget (tests/setup.ts = 100ms,
+    // gap 5ms) exhausts; the step records settled:false with whatever tree was last read.
+    let phase = 0; let n = 0; let axCalls = 0;
+    const grow = (k: number): AXNode[] => [
+      { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Feed' }, childIds: Array.from({ length: k }, (_, j) => String(j + 2)) },
+      ...Array.from({ length: k }, (_, j) => ({ nodeId: String(j + 2), role: { value: 'button' }, name: { value: 'Item ' + j }, backendDOMNodeId: 400 + j })),
+    ];
+    const channel: AgentChannel = {
+      getAX: async () => { axCalls++; return grow(2 + n++); },   // 2,3,4,… never repeats
+      dispatch: async () => { phase = 1; },
+      currentUrl: async () => (phase === 0 ? 'https://x.test/a' : 'https://x.test/b'),
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const y = await browser.snapshot();
+    const node = parseSnapshot(y).find((n2) => n2.role === 'button')!;
+    await browser.act(node.ref!, null);          // navigated (/a → /b)
+    await browser.snapshot();
+    const steps = browser.getRecordedSteps();
+    expect(steps.length).toBe(1);
+    expect(steps[0].settled).toBe(false);
+    // closed on the LAST-read (biggest) tree, not the first
+    const landed = adaptAXTree(steps[0].toAX);
+    expect(landed.filter((x) => x.role === 'button').length).toBeGreaterThan(2);
+  });
+
+  it('bare snapshot with NO pending = exactly 1 getAX (agent read never balloons)', async () => {
+    let axCalls = 0;
+    const channel: AgentChannel = {
+      getAX: async () => { axCalls++; return HYDRATED_AX; },
+      dispatch: async () => {},
+      currentUrl: async () => 'https://x.test/p',
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    await browser.snapshot();
+    expect(axCalls).toBe(1);
+    await browser.snapshot();
+    expect(axCalls).toBe(2);   // still 1 per bare read, no plateau polling
+  });
+
+  it('pending NON-navigated (same-page reveal) = exactly 1 getAX, settled undefined', async () => {
+    // from-url == landed url → not navigated → no plateau loop (an auto-dismissing menu would
+    // lose its reveal diff to extra polls). The step closes on the single read, settled=undefined.
+    let i = 0; let axCalls = 0;
+    const channel: AgentChannel = {
+      getAX: async () => { axCalls++; const t = i === 0 ? SHELL_AX : HYDRATED_AX; i++; return t; },
+      dispatch: async () => {},
+      currentUrl: async () => 'https://x.test/same',   // never changes → not navigated
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const y = await browser.snapshot();          // read 1
+    const node = parseSnapshot(y).find((n) => n.role === 'heading')!;
+    await browser.act(node.ref!, null);          // reveal on the same page
+    const before = axCalls;
+    await browser.snapshot();                    // closes the reveal step
+    expect(axCalls - before).toBe(1);            // exactly ONE getAX for the closing read
+    const steps = browser.getRecordedSteps();
+    expect(steps[0].settled).toBeUndefined();
+  });
+});
+
 describe('recording: a click followed by a snapshot on the LANDED page yields a real navigation step', () => {
   it('the closed step carries the landing url + AX (not the degenerate same-page fallback)', async () => {
     // Two pages: home (has a Popular link) and popular (different heading).

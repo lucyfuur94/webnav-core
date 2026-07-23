@@ -33,6 +33,7 @@ import { adaptAXTree, type AXNode } from '../../src/playwright/ax-adapter.js';
 import {
   makeLiveExtensionBrowser, type AgentChannel,
 } from '../../src/router/live-extension-browser.js';
+import { settleSnapshot } from '../../src/router/browse.js';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/ax');
 const axFixture = (name: string): AXNode[] => JSON.parse(readFileSync(join(FIX, `${name}.ax.json`), 'utf8'));
@@ -185,6 +186,89 @@ describe('capture-parity 2: RECORDER-SEMANTICS parity (extension tool-call patte
     await browser.snapshot();
     await browser.snapshot();
     expect(browser.getRecordedSteps()).toEqual([]);
+  });
+});
+
+// ── SETTLED parity (Task 5): the same navigated shell→hydrated transition must yield the
+// SAME `settled` value whether captured by the CLI seam (settleSnapshot, browse.ts) or the
+// extension seam (refresh()'s plateau loop, live-extension-browser.ts). Both truth-test with
+// snapshotsPlateaued, so a plateaued landing reads settled:true on either producer, and a
+// never-plateauing landing reads settled:false on either. This is the parity that lets the
+// maintainer trust CLI-level testing covers the extension's capture quality too.
+describe('capture-parity 4: SETTLED parity (CLI settleSnapshot == extension refresh plateau)', () => {
+  // A shell that hydrates into a fuller page, in matching YAML (CLI) and AX (extension) forms.
+  // Hydrated must clear classifyReadiness's ≥8-node floor (the CLI seam retries-while-loading
+  // before the plateau check); the shell stays sparse so both producers see it as unsettled first.
+  const N = 10;   // hydrated node count, comfortably past the readiness floor
+  const HYDRATED_YAML = Array.from({ length: N }, (_, j) => `- button "Item ${j}" [ref=e${j + 2}]`).join('\n');
+  const SHELL_YAML = '- heading "Loading" [ref=e2]';
+  const SHELL_AX: AXNode[] = [
+    { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Dash' }, childIds: ['2'] },
+    { nodeId: '2', role: { value: 'heading' }, name: { value: 'Loading' }, backendDOMNodeId: 300 },
+  ];
+  const HYDRATED_AX: AXNode[] = [
+    { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Dash' }, childIds: Array.from({ length: N }, (_, j) => String(j + 2)) },
+    ...Array.from({ length: N }, (_, j) => ({ nodeId: String(j + 2), role: { value: 'button' }, name: { value: 'Item ' + j }, backendDOMNodeId: 300 + j })),
+  ];
+
+  // CLI seam: settleSnapshot polls snap() to a plateau (no evalJs → fallback loop, exactly the
+  // extension's polling-only path). Returns settled directly.
+  async function cliSettled(reads: string[]): Promise<boolean> {
+    let i = 0;
+    const snap = async () => reads[Math.min(i++, reads.length - 1)];
+    return (await settleSnapshot(snap)).settled;
+  }
+
+  // Extension seam: drive a navigated click whose landing yields `reads` in order, and read the
+  // recorded step's settled flag.
+  async function extSettled(reads: AXNode[][]): Promise<boolean | undefined> {
+    let phase = 0; let i = 0;
+    const channel: AgentChannel = {
+      getAX: async () => (i === 0 ? (i++, reads[0]) : reads[Math.min(i++, reads.length - 1)]),
+      dispatch: async () => { phase = 1; },
+      currentUrl: async () => (phase === 0 ? 'https://s.test/a' : 'https://s.test/b'),
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const y = parseSnapshot(await browser.snapshot());
+    await browser.act(y.find((n) => n.role === 'heading')!.ref!, null);   // navigated click
+    await browser.snapshot();
+    return browser.getRecordedSteps()[0].settled;
+  }
+
+  it('plateaued landing → BOTH producers stamp settled:true', async () => {
+    const cli = await cliSettled([SHELL_YAML, HYDRATED_YAML, HYDRATED_YAML]);
+    const ext = await extSettled([SHELL_AX, HYDRATED_AX, HYDRATED_AX]);
+    expect(cli).toBe(true);
+    expect(ext).toBe(true);
+    expect(cli).toBe(ext);
+  });
+
+  it('never-plateauing landing → BOTH producers stamp settled:false', async () => {
+    // Each read differs from the last (grows), so it never plateaus within the tiny test budget.
+    const growYaml = (k: number) => Array.from({ length: k }, (_, j) => `- button "Item ${j}" [ref=e${j + 2}]`).join('\n');
+    const growAX = (k: number): AXNode[] => [
+      { nodeId: '1', role: { value: 'RootWebArea' }, name: { value: 'Feed' }, childIds: Array.from({ length: k }, (_, j) => String(j + 2)) },
+      ...Array.from({ length: k }, (_, j) => ({ nodeId: String(j + 2), role: { value: 'button' }, name: { value: 'Item ' + j }, backendDOMNodeId: 400 + j })),
+    ];
+    // settleSnapshot's snap() must keep changing: give it a fresh growing read each call. Start
+    // past the readiness floor (≥8) so it exercises the plateau-never path, not retry-while-loading.
+    let ci = 10;
+    const cli = (await settleSnapshot(async () => growYaml(ci++))).settled;
+    let ei = 10;
+    let phase = 0;
+    const channel: AgentChannel = {
+      getAX: async () => growAX(ei++),
+      dispatch: async () => { phase = 1; },
+      currentUrl: async () => (phase === 0 ? 'https://s.test/a' : 'https://s.test/b'),
+    };
+    const browser = makeLiveExtensionBrowser(channel, {});
+    const yy = parseSnapshot(await browser.snapshot());
+    await browser.act(yy.find((n) => n.role === 'button')!.ref!, null);
+    await browser.snapshot();
+    const ext = browser.getRecordedSteps()[0].settled;
+    expect(cli).toBe(false);
+    expect(ext).toBe(false);
+    expect(cli).toBe(ext);
   });
 });
 
