@@ -882,7 +882,7 @@ async function main() {
     // does). Reuses runSessionReview (the same call capture-loop makes).
     if (!args.session) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev review --session <S> [--model sonnet]' }, null, 2)); process.exitCode = 2; return; }
     const { RecordStore } = await import('./mapstore/record.js');
-    const { runSessionReview } = await import('./recorder/review.js');
+    const { runSessionReview, computeVerdict } = await import('./recorder/review.js');
     const { homedir } = await import('node:os');
     const { join } = await import('node:path');
     const store = new RecordStore(dbPath());
@@ -905,15 +905,17 @@ async function main() {
     });
     const gaps = typeof res === 'string' ? [] : res.gaps;
     const frames = typeof res === 'string' ? 0 : res.frames;
-    const verdict: import('./mapstore/record.js').ReviewVerdict =
-      frames === 0 ? 'unverified' : gaps.length === 0 ? 'verified' : 'needs-fix';
+    const { verdict, blockingGaps } = computeVerdict(frames, gaps);
     const approved = verdict === 'verified';
     const at = Date.now();
+    const sensorLimitCount = gaps.length - blockingGaps.length;
     const reason = verdict === 'unverified' ? 'no video evidence (0 frames) — cannot confirm or rule out capture gaps'
-      : verdict === 'verified' ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)`;
-    store.setReview(args.session, { verdict, approved, gaps: gaps.length, at, model: args.model, reason });
+      : verdict === 'verified' ? 'all on-screen actions captured' + (sensorLimitCount ? ` (${sensorLimitCount} sensor-limit gap(s) reported, non-blocking)` : '')
+      : `${blockingGaps.length} blocking gap(s), ${sensorLimitCount} sensor-limit`;
+    // "gaps" on the stored review = the BLOCKING count — that's what the dashboard badge counts.
+    store.setReview(args.session, { verdict, approved, gaps: blockingGaps.length, at, model: args.model, reason });
     console.log(JSON.stringify({ status: verdict, session: args.session,
-      approved, frames, gaps, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
+      approved, frames, gaps, blockingGaps: blockingGaps.length, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
     if (verdict !== 'verified') process.exitCode = 3;
     return;
   }

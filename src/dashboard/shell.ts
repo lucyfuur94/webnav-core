@@ -107,6 +107,11 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .reprep summary:hover { color:var(--fg); }
   .reprep[open] summary { border-bottom:1px solid var(--border); }
   .reprep .repbody { padding:12px; font-size:13px; }
+  /* Review report text must reflow, never scroll sideways — a long URL or JSON verdict blob in
+     the report otherwise forces a horizontal scrollbar to read it. .detail div already wraps
+     (overflow-wrap:anywhere, line ~185), but mdToHtml's fenced-code blocks render as pre elements,
+     which the global pre rule (line ~123) makes overflow:auto (horizontal scroll) — override for review. */
+  .reprep .repbody pre { white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; overflow-x:visible; }
   @media (max-width: 1100px) { .srow { grid-template-columns:auto minmax(0,1fr) 90px 150px auto; }
     .srow .col.site, .srow .col.vid { display:none; } }
   @media (max-width: 760px) { .srow { grid-template-columns:auto minmax(0,1fr) auto; }
@@ -1322,10 +1327,12 @@ async function loadVideos(ctx) {
     const m = v.match(/take-(\\d+)\\.webm/);
     const when = m ? new Date(Number(m[1])).toLocaleString() : v;
     const wrap = el('<div style="margin-bottom:12px"><div class="cat-head">'+esc(when)+'</div></div>');
-    // width:100% (not max-width) so the take fills the available panel width — a screencast's
-    // intrinsic pixel size is the capture viewport, and max-width:100% would cap it there
-    // (leaving a large empty gutter on a wide screen). display:block drops the inline baseline gap.
-    const vid = el('<video controls preload="metadata" style="width:100%;display:block;background:#000;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>');
+    // width:100% so the take fills the available panel width — a screencast's intrinsic pixel
+    // size is the capture viewport, and max-width:100% would cap it there (leaving a large empty
+    // gutter on a wide screen). max-height:70vh (the same cap as .graph/pre) keeps a tall take
+    // fully visible without scrolling the page; height:auto lets it shrink to fit that cap while
+    // width stays the limiting dimension on normal panels. display:block drops the inline baseline gap.
+    const vid = el('<video controls preload="metadata" style="width:100%;height:auto;max-height:70vh;display:block;background:#000;border:1px solid var(--border);border-radius:6px" src="/recordings-media/'+encodeURIComponent(r.sessionId)+'/'+encodeURIComponent(v)+'"></video>');
     // Screencast webm is written live → no duration in the header → the browser
     // reports Infinity and the scrubber is dead. Standard fix: seek to a huge
     // time once; the browser scans the file, learns the real duration, and the

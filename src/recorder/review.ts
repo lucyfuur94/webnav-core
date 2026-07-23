@@ -42,6 +42,14 @@ export const DEFAULT_INSTRUCTIONS = `Your job — compare what the video SHOWS a
      APPEARED and no hover step captured it. Cursor movement alone is never a gap.
    • So do NOT count "the cursor visited N targets but only M hover steps were recorded"
      as a coverage gap — that difference is the intended reveal-only selectivity, not a miss.
+   NON-BLOCKING GAPS — still real, still worth reporting, but mark "blocking": false:
+   • A pure CSS :hover tooltip/hint/focus-ring that never enters the accessibility tree — no
+     menu/dialog/panel structure backs it, it lives only in pixels. The recorder is AX-based and
+     physically cannot see it; re-recording would miss it every time (a sensor limit, not a miss).
+   • A gap whose content is INSTANCE DATA — a specific value (a name, a date, a count, "Model: X")
+     — rather than a new navigable/actionable surface.
+   A gap that reveals a real menu/dropdown/dialog/new panel stays blocking (omit the field, or
+   set "blocking": true).
 3. Steps with no visual correlate in any frame (possible over-capture or noise).
 4. A short verdict: is this recording complete enough to replay the user's
    journey? What single capture improvement would help most?
@@ -49,7 +57,9 @@ export const DEFAULT_INSTRUCTIONS = `Your job — compare what the video SHOWS a
 Format as markdown with sections: Frames, Capture gaps, Uncorrelated steps, Verdict.
 Be concrete and terse. If the evidence is thin (few frames/steps), say so honestly.`;
 
-export interface CaptureGap { atMs?: number; kind?: string; whatHappened?: string; shouldHaveCaptured?: string }
+// blocking omitted/true = a real recorder miss (counts toward needs-fix). blocking:false = a
+// sensor limit (AX-invisible hover tooltip) or instance-data-only gap — reported, never blocks.
+export interface CaptureGap { atMs?: number; kind?: string; whatHappened?: string; shouldHaveCaptured?: string; blocking?: boolean }
 
 /** Append the structured-output instruction: return a JSON gap list the capture
  *  loop can parse to judge convergence (zero gaps = complete). */
@@ -57,10 +67,12 @@ const STRUCTURED_TAIL = `
 
 OUTPUT FORMAT (STRICT): after any brief reasoning, end your reply with ONE JSON
 object on its own, exactly:
-{"gaps":[{"atMs":<frame time ms>,"kind":"click|input|navigation|scroll|hover-menu|other","whatHappened":"...","shouldHaveCaptured":"..."}],"verdict":"..."}
+{"gaps":[{"atMs":<frame time ms>,"kind":"click|input|navigation|scroll|hover-menu|other","whatHappened":"...","shouldHaveCaptured":"...","blocking":true|false}],"verdict":"..."}
 A gap = a visible ON-SCREEN CHANGE (menu/tooltip/panel APPEARED, navigation, value change)
 with NO captured step within ±5s. A cursor merely hovering an element that revealed NOTHING
-is NOT a gap (the hover-probe sweep records reveals only — see the rules above). If capture
+is NOT a gap (the hover-probe sweep records reveals only — see the rules above). Set
+"blocking":false for an AX-invisible pure-hover tooltip or an instance-data-only gap (see the
+NON-BLOCKING rules above); omit or set true for a real menu/dialog/panel gap. If capture
 is complete, return {"gaps":[],"verdict":"complete"}. Emit NOTHING after the JSON.`;
 
 /** Tolerant extraction of the gap JSON from a review reply (may be wrapped in
@@ -180,6 +192,16 @@ export async function extractFrames(
   const times = parseShowinfoTimes(stderr);
   const files = readdirSync(framesDir).filter((f) => f.endsWith('.png')).sort();
   return files.map((f, i) => ({ path: join(framesDir, f), atMs: trueStartMs + Math.round((times[i] ?? 0) * 1000) }));
+}
+
+/** The tri-state verdict from frame/gap counts. Pure — unit-tested; cli.ts's `dev review`
+ *  calls this rather than inlining the branch. Only BLOCKING gaps (blocking !== false — a real
+ *  recorder miss) count toward needs-fix; a sensor-limit/instance-data gap is still reported but
+ *  never fails the review. 0 frames still always means unverified (tri-state is never weakened). */
+export function computeVerdict(frames: number, gaps: CaptureGap[]): { verdict: 'unverified' | 'verified' | 'needs-fix'; blockingGaps: CaptureGap[] } {
+  const blockingGaps = gaps.filter((g) => g.blocking !== false);
+  const verdict = frames === 0 ? 'unverified' as const : blockingGaps.length === 0 ? 'verified' as const : 'needs-fix' as const;
+  return { verdict, blockingGaps };
 }
 
 export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string | { report: string; gaps: CaptureGap[]; frames: number }> {

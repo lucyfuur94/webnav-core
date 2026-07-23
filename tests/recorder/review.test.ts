@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr, extractFrames, runSessionReview } from '../../src/recorder/review.js';
+import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr, extractFrames, runSessionReview, computeVerdict } from '../../src/recorder/review.js';
 
 describe('parseShowinfoTimes', () => {
   it('pulls pts seconds in order from ffmpeg stderr', () => {
@@ -66,6 +66,44 @@ describe('frameSelectExpr (web-UI tuned selection)', () => {
     const { heartbeatS, minGapS } = frameSelectExpr(0, 20);
     expect(heartbeatS).toBe(5);
     expect(minGapS).toBe(2);
+  });
+});
+
+// FIX (sensor-limit gaps must not block): a gap the AX-based recorder physically cannot see
+// (a pure CSS :hover tooltip with no a11y node) or one that's only an instance-data value is a
+// sensor limit, not a recorder miss — reported, but must never fail the review.
+describe('computeVerdict', () => {
+  it('0 frames → unverified regardless of gaps (tri-state never weakened)', () => {
+    expect(computeVerdict(0, []).verdict).toBe('unverified');
+    expect(computeVerdict(0, [{ blocking: false }]).verdict).toBe('unverified');
+  });
+  it('frames > 0, only non-blocking gaps → verified', () => {
+    const { verdict, blockingGaps } = computeVerdict(5, [
+      { whatHappened: 'hover tooltip, AX-invisible', blocking: false },
+      { whatHappened: 'instance-data value only', blocking: false },
+    ]);
+    expect(verdict).toBe('verified');
+    expect(blockingGaps).toEqual([]);
+  });
+  it('frames > 0, a blocking gap → needs-fix', () => {
+    const { verdict, blockingGaps } = computeVerdict(5, [{ whatHappened: 'missed a menu', blocking: true }]);
+    expect(verdict).toBe('needs-fix');
+    expect(blockingGaps).toHaveLength(1);
+  });
+  it('blocking omitted defaults to true (a real miss)', () => {
+    const { verdict } = computeVerdict(5, [{ whatHappened: 'missed a click' }]);
+    expect(verdict).toBe('needs-fix');
+  });
+  it('mixed blocking + non-blocking → needs-fix, counts only the blocking one', () => {
+    const { verdict, blockingGaps } = computeVerdict(5, [
+      { whatHappened: 'missed a dialog', blocking: true },
+      { whatHappened: 'hover tooltip', blocking: false },
+    ]);
+    expect(verdict).toBe('needs-fix');
+    expect(blockingGaps).toHaveLength(1);
+  });
+  it('frames > 0, zero gaps → verified', () => {
+    expect(computeVerdict(3, []).verdict).toBe('verified');
   });
 });
 
