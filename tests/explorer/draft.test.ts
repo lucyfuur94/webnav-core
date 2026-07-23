@@ -2440,3 +2440,135 @@ describe('draftFromEffects — pattern-pack husk tripwire', () => {
     expect(tw!.context).toContain('page');
   });
 });
+
+// ── Frontier-blindness fix A: a declared link to a page NEVER visited must still surface as a
+// DANGLING navigate stub (to:undefined → editGraph→toState:null → frontier's dangling-target),
+// not be silently dropped. Otherwise a 1-page recording of a site with 5 sidebar links reports
+// 0 unexplored roads and `dev frontier` has nothing to hand the agent. Same-host only: an
+// external-domain link (or mailto/anchor/js) is not a road THIS map owns.
+describe('draftFromEffects — dangling stubs for declared links to UNVISITED pages', () => {
+  const B = 'https://programmatic.example.com';
+  const LANDING = [
+    '- heading "Report List" [ref=e1]',
+    '- link "Dashboards" [ref=e2]:\n    - /url: https://programmatic.example.com/dashboards',
+    '- link "Help Center" [ref=e3]:\n    - /url: https://programmatic.example.com/help',
+    '- link "External Docs" [ref=e4]:\n    - /url: https://other-domain.test/docs',
+    '- link "Subdomain Portal" [ref=e9]:\n    - /url: https://portal.programmatic.example.com/docs',
+    '- link "Mail Us" [ref=e5]:\n    - /url: mailto:support@example.com',
+    '- paragraph "Reports" [ref=e6]',
+    '- paragraph "Filler" [ref=e7]',
+    '- paragraph "Filler2" [ref=e8]',
+  ].join('\n');
+  const ENTRY = { seq: 0, capturedAt: 0, fromUrl: `${B}/report/list`, fromSnapshot: LANDING,
+    action: null, toUrl: `${B}/report/list`, toSnapshot: LANDING, navigated: true,
+    diff: { added: [], removed: [] } };
+
+  it('a same-host link to an unvisited page → a navigate affordance with no `to` (dangling)', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    const dash = list.affordances.find((a) => a.kind === 'navigate' && a.label === 'Dashboards');
+    expect(dash).toBeTruthy();
+    expect(dash!.to).toBeFalsy();
+    expect(dash!.elementFp).toEqual({ role: 'link', name: 'Dashboards', near: null });
+  });
+
+  it('a second same-host link to an unvisited page also stubs', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    expect(list.affordances.find((a) => a.label === 'Help Center' && a.kind === 'navigate')).toBeTruthy();
+  });
+
+  it('an EXTERNAL-host link does NOT stub', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    expect(list.affordances.find((a) => a.label === 'External Docs')).toBeUndefined();
+  });
+
+  it('a DIFFERENT SUBDOMAIN does NOT stub (strict host equality, not eTLD+1)', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    expect(list.affordances.find((a) => a.label === 'Subdomain Portal')).toBeUndefined();
+  });
+
+  it('a mailto: link does NOT stub', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    expect(list.affordances.find((a) => a.label === 'Mail Us')).toBeUndefined();
+  });
+
+  it('feeds through editGraph → interiorEdges as a dangling edge (frontier can see it)', async () => {
+    const { MapStore } = await import('../../src/mapstore/store.js');
+    const { editGraph } = await import('../../src/graph/edit.js');
+    const Database = (await import('better-sqlite3')).default;
+    const draft = draftFromEffects([ENTRY] as any);
+    const store = MapStore.fromDatabase(new Database(':memory:'));
+    editGraph(store, 'programmatic.example.com', { states: draft.states as any, edges: [] });
+    const edges = store.interiorEdges('programmatic.example.com');
+    const dashEdge = edges.find((e) => e.semanticStep === 'Dashboards');
+    expect(dashEdge).toBeTruthy();
+    expect(dashEdge!.to).toBeNull();
+    expect(dashEdge!.dangling).toBe(true);
+  });
+
+  it('REGRESSION: a resolved edge between two VISITED pages stays resolved, no stub added on top', () => {
+    const B2 = 'https://x.com';
+    const LIST2 = [
+      '- heading "List" [ref=e1]',
+      '- link "Detail" [ref=e2]:\n    - /url: https://x.com/detail',
+      '- paragraph "P1" [ref=e3]', '- paragraph "P2" [ref=e4]', '- paragraph "P3" [ref=e5]',
+      '- paragraph "P4" [ref=e6]', '- paragraph "P5" [ref=e7]', '- paragraph "P6" [ref=e8]',
+    ].join('\n');
+    const DETAIL2 = [
+      '- heading "Detail" [ref=e1]',
+      '- link "List" [ref=e2]:\n    - /url: https://x.com/list',
+      '- paragraph "D1" [ref=e3]', '- paragraph "D2" [ref=e4]', '- paragraph "D3" [ref=e5]',
+      '- paragraph "D4" [ref=e6]', '- paragraph "D5" [ref=e7]', '- paragraph "D6" [ref=e8]',
+    ].join('\n');
+    const effs = [
+      { seq: 0, capturedAt: 0, fromUrl: `${B2}/list`, fromSnapshot: LIST2,
+        action: { role: 'link', name: 'Detail', ref: 'e2', elementFp: { role: 'link', name: 'Detail', near: null } },
+        toUrl: `${B2}/detail`, toSnapshot: DETAIL2, navigated: true, diff: { added: [], removed: [] } },
+    ];
+    const draft = draftFromEffects(effs as any);
+    const listState = draft.states.find((s) => s.label.includes('list'))!;
+    const toDetail = listState.affordances.filter((a) => a.kind === 'navigate' && a.label === 'Detail');
+    expect(toDetail.length).toBe(1);
+    expect(toDetail[0].to).toBeTruthy();   // resolved, not dangling
+  });
+});
+
+// ── Frontier-blindness fix B: a declared TAB (role:tab) becomes a mutate affordance (a tab
+// switches an in-page sub-view; it never routes to a new URL/state, so it's mutate not
+// navigate). Distinct-named tabs must survive as distinct affordances — `tab` is not in
+// CHOICE_ROLES, so the choice-list fold must not swallow them.
+describe('draftFromEffects — declared TAB nodes synthesize as mutate affordances', () => {
+  const B = 'https://programmatic.example.com';
+  const LANDING = [
+    '- heading "Report List" [ref=e1]',
+    '- tab "Standard" [ref=e2]',
+    '- tab "Owned/Shared" [ref=e3]',
+    '- tab "Favourites" [ref=e4]',
+    '- paragraph "Reports" [ref=e5]',
+    '- paragraph "Filler" [ref=e6]',
+    '- paragraph "Filler2" [ref=e7]',
+    '- paragraph "Filler3" [ref=e8]',
+  ].join('\n');
+  const ENTRY = { seq: 0, capturedAt: 0, fromUrl: `${B}/report/list`, fromSnapshot: LANDING,
+    action: null, toUrl: `${B}/report/list`, toSnapshot: LANDING, navigated: true,
+    diff: { added: [], removed: [] } };
+
+  it('each declared tab becomes its own mutate affordance', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    const tabs = list.affordances.filter((a) => a.elementFp?.role === 'tab');
+    expect(tabs.map((a) => a.label).sort()).toEqual(['Favourites', 'Owned/Shared', 'Standard']);
+    for (const t of tabs) expect(t.kind).toBe('mutate');
+  });
+
+  it('tabs are NOT folded by the choice-list gate (3 distinct-named tabs stay 3)', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    const tabs = list.affordances.filter((a) => a.elementFp?.role === 'tab');
+    expect(tabs.length).toBe(3);
+  });
+});

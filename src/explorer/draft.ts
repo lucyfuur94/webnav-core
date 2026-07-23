@@ -1390,12 +1390,42 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   const labelByKey = new Map<string, string>();   // canonical page key → its label (alias-resolved)
   for (const p of pageList) if (!labelByKey.has(p.key)) labelByKey.set(p.key, p.label);
   for (const p of pageList) {
+    // Row-fold membership (rule 5, "within-page repetition"): a page's repeated ROW/card links
+    // (`link "Alpha widget"` → /items/1, one per grid row) are per-INSTANCE data, not structure.
+    // templateFolds/gatedNames does NOT catch these — a run of distinct-named `link` leaves is
+    // deliberately UNGATED there (isTemplateFold requires a CONTROL_ROLES unit; `link` isn't one,
+    // by design, so a real toolbar of distinct nav links isn't mistaken for a template). So reuse
+    // repeatedContainerIndices instead — the same ≥3-same-role-sibling signal already used to keep
+    // repeated card/row titles out of the fingerprint pool (Task 10 fpFolded, above) — on the RAW
+    // landing (structural containers intact), else a same-host unvisited row-detail link mints one
+    // instance-labeled dangling stub per row instead of folding away (map-stores-structure-not-data).
+    const rowRepeated = new Set<string>();
+    for (const l of p.landings) {
+      for (const i of repeatedContainerIndices(l)) { const nm = l[i].name; if (nm && nm.trim()) rowRepeated.add(nm); }
+    }
     for (const n of p.nodes) {
       if (n.role !== 'link' || !n.name || !n.url) continue;
       if (shell.has(`link:${n.name}`)) continue;                   // shell link → lives on _shell
       const targetLabel = labelByKey.get(fromPageKey(n.url));      // alias- AND canonical-aware
-      if (!targetLabel || targetLabel === p.label) continue;       // unknown target / self
+      if (targetLabel === p.label) continue;                       // self-link, never an edge
       const have = affById.get(p.label) ?? [];
+      if (!targetLabel) {
+        // FRONTIER-BLINDNESS FIX (A): the target isn't a known state YET — but the link is real,
+        // declared, same-host structure. Dropping it silently means `dev frontier` never sees this
+        // road (a 1-page recording of a 5-link sidebar reported 0 unexplored). Stub it instead:
+        // a navigate affordance with no `to` → editGraph sets toState:null → store/frontier already
+        // treat that as `dangling-target` (store.ts interiorEdges, frontier.ts) — no new plumbing.
+        // SAME-HOST ONLY: an external domain isn't a road this map owns; host() returns null/''
+        // for a bare #fragment / mailto: / javascript: href too, so those fail the compare for free.
+        if (host(n.url) !== mapHost) continue;
+        if (rowRepeated.has(n.name)) continue;                      // per-row instance link → folds, not a stub
+        // dedup by LABEL, not `a.to === targetLabel` (every dangling stub shares `to: undefined`,
+        // so that generic check would wrongly treat a SECOND distinct unresolved link as "already have").
+        if (have.some((a) => a.kind === 'navigate' && a.label === n.name)) continue;  // one stub per link
+        pushAff(p.label, { id: `aff_${affSeq++}_${slug(n.name)}`, label: n.name, kind: 'navigate',
+          elementFp: { role: 'link', name: n.name, near: null } });
+        continue;
+      }
       if (have.some((a) => a.to === targetLabel)) continue;        // already have this edge
       pushAff(p.label, { id: `aff_${affSeq++}_${targetLabel}`, label: n.name, kind: 'navigate',
         to: targetLabel, elementFp: { role: 'link', name: n.name, near: null } });
@@ -1450,7 +1480,12 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       // shadow (collections.columns), NEVER an affordance (else a report's selected metrics leak
       // as page controls — the data-value pollution class the structure-inference design refuses).
       const isSortableHeader = n.role === 'columnheader' && /\[aria-sort/.test(n.raw);
-      if (!INPUT_ROLES.has(n.role) && n.role !== 'button' && !isSortableHeader) continue;
+      // FRONTIER-BLINDNESS FIX (B): a declared `tab` switches an in-page sub-view — same-page,
+      // never routes — so it's real repertoire exactly like a button (mutate, not navigate).
+      // Not in CHOICE_ROLES (draft.ts's fold gate), so ≥3 distinct-named tabs survive as 3
+      // affordances rather than folding into one picker (that fold is for VALUE lists, e.g.
+      // checkbox filters — a site's fixed tab set is structure, not a data domain).
+      if (!INPUT_ROLES.has(n.role) && n.role !== 'button' && n.role !== 'tab' && !isSortableHeader) continue;
       const have = affById.get(p.label) ?? [];
       if (have.some((a) => a.label === n.name && (a.kind === 'input' || a.kind === 'mutate' || a.kind === 'reveal'))) continue;
       const fp: ElementFingerprint = { role: n.role, name: n.name, near: null };
