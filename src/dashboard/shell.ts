@@ -348,9 +348,12 @@ function pageFacts(state, chromeLabels) {
     && !domainSet.has(a.label)).map(a => a.label));
   // SUB-VIEWS = self-loop nav (Table/Charts, Nested/Flat)
   const subviews = uniq(aff.filter(a => a.kind==='navigate' && a.toState===state.id).map(a => a.label));
+  // UNEXPLORED = dangling navigate stubs (declared, never visited — toState:null). The roads
+  // out 'dev frontier' would list; make them a browsable bucket, not just a count.
+  const unexplored = uniq(aff.filter(a => a.kind==='navigate' && !a.toState).map(a => a.label));
   const counts = { navigate:0, reveal:0, mutate:0, input:0 };
   aff.forEach(a => { if (counts[a.kind]!==undefined) counts[a.kind]++; });
-  return { actions, hasSearch, filters, operatesOn, subviews, counts };
+  return { actions, hasSearch, filters, operatesOn, subviews, unexplored, counts };
 }
 
 // ---------- VISUAL GRAPH (zero-dep SVG, LAYERED TREE) ----------
@@ -404,16 +407,27 @@ function graphView(allStates) {
   const depth = {}; names.forEach(n => { const s = states.find(x => lbl(x) === n); depth[n] = depthOf(s); });
   const maxDepth = Math.max(1, ...Object.values(depth));
 
+  // DANGLING navigate stubs (declared-but-unvisited links, toState:null) — the unexplored
+  // frontier ('dev frontier' / the 'dev mermaid' "unexplored" sink). One shared sink node,
+  // laid out on its own row below every real state, so a page with unexplored roads isn't
+  // drawn as a dead-end lonely box.
+  const UNEXPLORED = '◌ unexplored';
+  const danglingEdges = [];
+  states.forEach(st => (st.affordances||[]).forEach(a => { if (a.kind==='navigate' && !a.toState) danglingEdges.push({ from: lbl(st), label: a.label || a.semanticStep || '' }); }));
+  const hasUnexplored = danglingEdges.length > 0;
+  const sinkRow = maxDepth + 1;
+
   // LAYOUT: rows top→down, nodes spread across each row.
   const NW = 158, NH = 48, rowGap = 118, colGap = 22, padX = 30, padTop = 54;  // taller box: name + summary line
-  const byRow = {}; for (let d=0; d<=maxDepth; d++) byRow[d] = [];
+  const byRow = {}; for (let d=0; d<=sinkRow; d++) byRow[d] = [];
   byRow[0] = [ROOT];
   names.forEach(n => byRow[depth[n]].push(n));
+  if (hasUnexplored) byRow[sinkRow] = [UNEXPLORED];
   const rowW = (r) => r.length * NW + (r.length-1) * colGap;
   const maxRowW = Math.max(...Object.values(byRow).map(rowW));
-  const W = Math.max(560, maxRowW + padX*2), H = padTop + (maxDepth)*rowGap + NH + 40;
+  const W = Math.max(560, maxRowW + padX*2), H = padTop + (hasUnexplored ? sinkRow : maxDepth)*rowGap + NH + 40;
   const pos = {};
-  for (let d=0; d<=maxDepth; d++){ const r=byRow[d]; const startX=(W - rowW(r))/2; r.forEach((n,i)=>{ pos[n]={x:startX + i*(NW+colGap) + NW/2, y:padTop + d*rowGap}; }); }
+  for (let d=0; d<=sinkRow; d++){ const r=byRow[d]; const startX=(W - rowW(r))/2; r.forEach((n,i)=>{ pos[n]={x:startX + i*(NW+colGap) + NW/2, y:padTop + d*rowGap}; }); }
 
   // edge from parent-center-bottom to child-center-top (clean vertical-ish flow, no center cross)
   const link = (from,to,cls,label) => {
@@ -422,7 +436,7 @@ function graphView(allStates) {
     const d='M '+a.x+' '+ay+' C '+a.x+' '+midY+', '+b.x+' '+midY+', '+b.x+' '+by;
     const stroke = cls==='struct' ? 'var(--accent)' : 'var(--border)';
     const sw = cls==='struct' ? 2 : 1.2;
-    let out = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none" marker-end="url(#'+(cls==='struct'?'ga':'gm')+')"'+(cls!=='struct'?' opacity="0.6"':'')+'/>';
+    let out = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none" marker-end="url(#'+(cls==='struct'?'ga':'gm')+')"'+(cls==='dangling'?' stroke-dasharray="5 4"':'')+(cls!=='struct'?' opacity="0.6"':'')+'/>';
     if (label) out += '<text x="'+((a.x+b.x)/2)+'" y="'+(midY-3)+'" fill="var(--fg)" font-size="10" text-anchor="middle" paint-order="stroke" stroke="var(--bg-sunken)" stroke-width="3.5">'+svgEsc(label.length>24?label.slice(0,23)+'…':label)+'</text>';
     return out;
   };
@@ -434,6 +448,8 @@ function graphView(allStates) {
   byRow[1].forEach(n => { s += link(ROOT, n, 'sect', ''); });
   // structural edges (bold, labeled) — parent → child (from stored parentState)
   structural.forEach(e => { if (pos[e.from] && pos[e.to]) s += link(e.from, e.to, 'struct', e.via); });
+  // dangling navigate stubs (declared, unvisited) → the shared "unexplored" sink, dashed
+  danglingEdges.forEach(e => { s += link(e.from, UNEXPLORED, 'dangling', e.label); });
   // per-node facts (filtered) → a compact ONE-LINE summary shown under the name.
   // CHROME LABELS = any affordance label present on ≥60% of pages (a shared sidebar/global
   // control — the account switcher, pagination, Clear input, …). Computed from the data, so it
@@ -462,6 +478,9 @@ function graphView(allStates) {
     return g + '</g>'; };
   s += drawNode(ROOT, true);
   names.forEach(n => { s += drawNode(n, false); });
+  // unexplored sink: same dashed-muted treatment as ROOT (it isn't a real page either, so it
+  // shares ROOT's non-clickable look, just placed at the bottom of the tree).
+  if (hasUnexplored) s += drawNode(UNEXPLORED, true);
   s += '</svg>';
 
   const sidebarNote = sidebarLabels.length
@@ -479,7 +498,7 @@ function graphView(allStates) {
       + '<div class="chips" style="margin-top:8px">'+affs.map(chip).join('')+'</div></div>';
   })();
   const wrap = el('<div class="graphwrap">'+shellCard+s+sidebarNote
-    + '<div class="glegend"><span><i class="dot acc"></i> navigates to a specific page</span><span><i class="dot mut"></i> section of the hub</span><span>↻ in-page sub-view</span><span class="muted">click a page for details</span></div>'
+    + '<div class="glegend"><span><i class="dot acc"></i> navigates to a specific page</span><span><i class="dot mut"></i> section of the hub</span><span>↻ in-page sub-view</span><span class="muted">◌ unexplored — a declared road not yet mapped</span><span class="muted">click a page for details</span></div>'
     + '<div class="gpanel" style="display:none"></div></div>');
   // click a node → render its full filtered facts into the panel
   const panel = wrap.querySelector('.gpanel');
@@ -506,6 +525,7 @@ function graphView(allStates) {
     const moreCount = f.actions.length - actShown.length;
     html += sec('Key actions ('+f.actions.length+')', '<div class="chips" data-actions>'+actShown.map(actionChip).join('')
       + (moreCount > 0 ? '<button class="btn morebtn" data-more>+'+moreCount+' more</button>' : '')+'</div>');
+    if (f.unexplored.length) html += sec('Unexplored ('+f.unexplored.length+')', '<div class="chips">'+chips(f.unexplored)+'</div>');
     if (f.hasSearch || f.filters.length) html += sec('Search & filters', '<div class="chips">'+(f.hasSearch?'<span class="chip">🔍 search</span>':'')+chips(f.filters.filter(x=>!/search/i.test(x.field)).map(x=>x.field+' ('+x.control+')'))+'</div>');
     if (f.operatesOn.length) html += sec('Operates on ('+f.operatesOn.length+')', '<div class="chips">'+chips(f.operatesOn)+'</div>');
     if (f.subviews.length) html += sec('In-page sub-views', '<div class="chips">'+chips(f.subviews)+'</div>');
@@ -521,7 +541,7 @@ function graphView(allStates) {
   };
   wrap.querySelectorAll('.gnode').forEach(g => {
     const name = g.getAttribute('data-state');
-    if (name.indexOf('⌂') === 0) return;   // root isn't a real page
+    if (name.indexOf('⌂') === 0 || name === UNEXPLORED) return;   // root / sink aren't real pages
     g.onclick = () => openPanel(name);
     g.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); openPanel(name); } });
   });
