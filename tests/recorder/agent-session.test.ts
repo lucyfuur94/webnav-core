@@ -213,6 +213,22 @@ describe('runAgentSession', () => {
     }
   });
 
+  it('navigate: the reply carries settled (true on a plateaued landing) (T4)', async () => {
+    const store = RecordStore.fromDatabase(new Database(':memory:'));
+    store.start('nav-settled');
+    const ad = fakeAdapter();   // SNAP is stable + fully named → plateaus at once
+    const io = driver(['{"cmd":"navigate","url":"https://s.test/next"}', '{"cmd":"quit"}']);
+    await runAgentSession({
+      sessionId: 'nav-settled', adapter: ad as never, store: store as never,
+      recover: (_s, ref) => ({ action: { role: '', name: null, ref } }),
+      readLine: io.readLine, write: io.write, notify: () => {},
+      startVideo: async () => {}, stopVideo: async () => null, startUrl: 'https://s.test/',
+    });
+    const navReply = io.out.find((o) => o.ok === true && o.url === 'https://s.test/next');
+    expect(navReply.settled).toBe(true);
+    expect(store.actionEffects('nav-settled')[0].settled).toBe(true);
+  });
+
   it('navigate: a nameless landing is probed → effect carries nameHints; a named landing probes nothing', async () => {
     const store = RecordStore.fromDatabase(new Database(':memory:'));
     store.start('nh1');

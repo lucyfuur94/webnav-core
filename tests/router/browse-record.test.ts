@@ -151,6 +151,43 @@ describe('recordNavigateEffect', () => {
     expect(rec.actionEffects('nn')[0].nameHints).toBeUndefined();
   });
 
+  it('stamps settled:true on the effect AND returns it when the landing plateaus (T4)', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('st');
+    const adapter = {
+      open: async () => '', close: async () => '',
+      snapshot: async () => READY,   // stable, fully named → plateaus at once
+      currentUrl: async () => 'https://x.test/web/index.php/auth/login',
+    };
+    const r = await recordNavigateEffect('https://x.test/', 'st', rec, adapter as any);
+    expect(r.settled).toBe(true);
+    expect(rec.actionEffects('st')[0].settled).toBe(true);
+  });
+
+  it('stamps settled:false on the effect AND returns it when the landing never plateaus (T4)', async () => {
+    vi.useFakeTimers();
+    try {
+      const rec = RecordStore.fromDatabase(new Database(':memory:'));
+      rec.start('sf');
+      // Flappy: every read grows the node set by one (a page that keeps hydrating past
+      // budget) → snapshotsPlateaued is always false → settle exhausts to settled:false.
+      let n = 8;
+      const adapter = {
+        open: async () => '', close: async () => '',
+        snapshot: async () => Array.from({ length: n++ }, (_, i) => `- button "b${i}" [ref=e${i}]`).join('\n'),
+        currentUrl: async () => 'https://x.test/dash',
+        // no evalJs → fallback plateau loop; never plateaus → budget-exhausts to false
+      };
+      const p = recordNavigateEffect('https://x.test/', 'sf', rec, adapter as any);
+      await vi.runAllTimersAsync();
+      const r = await p;
+      expect(r.settled).toBe(false);
+      expect(rec.actionEffects('sf')[0].settled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ledgers the navigate before settling and stamps step:<seq> after', async () => {
     const rec = RecordStore.fromDatabase(new Database(':memory:'));
     rec.start('nav2');

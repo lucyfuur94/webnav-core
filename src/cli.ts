@@ -2131,7 +2131,7 @@ async function main() {
       // a client-side redirect otherwise records a pre-render shell as the page, and the
       // requestedUrl (what the agent ASKED for) is the draft's redirect-alias evidence.
       const { recordNavigateEffect, classifyNavigateWall } = await import('./router/browse.js');
-      const { toUrl, toSnapshot } = await recordNavigateEffect(args.url, args.session, rec, adapter);
+      const { toUrl, toSnapshot, settled } = await recordNavigateEffect(args.url, args.session, rec, adapter);
       // Wall check (design item 2, NO auto-retry here — a recording captures what
       // actually happened, judgment-free). Classify against the target site's own
       // map states (the map is the oracle, same as profile-status/walk) and surface
@@ -2142,8 +2142,12 @@ async function main() {
       const { MapStore: MapStoreForWall } = await import('./mapstore/store.js');
       const wallStates = site ? new MapStoreForWall(dbPath()).statesForNode(site) : [];
       const wall = classifyNavigateWall(args.url, toUrl, toSnapshot, wallStates);
+      // settled=false ⇒ the landing kept changing through the settle budget; tell the
+      // driver the recorded snapshot may be incomplete so it can re-visit before trusting
+      // it (the capture-time quality signal, not a draft-time surprise).
       console.log(JSON.stringify({
-        status: 'done', url: toUrl, recorded: true,
+        status: 'done', url: toUrl, recorded: true, settled,
+        ...(settled === false ? { hint: 'landing kept changing through the settle budget — recorded snapshot may be incomplete; re-visit to confirm' } : {}),
         ...(wall.authWall ? { authWall: true, loginUrl: wall.loginUrl } : {}),
       }, null, 2));
     } catch (e) {

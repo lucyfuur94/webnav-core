@@ -124,6 +124,34 @@ describe('runActionRecorded', () => {
     expect(evs[0].disposition).toMatch(/^dropped:failed:/);
   });
 
+  it('stamps settled on a navigated action; leaves it undefined for an in-page action (T4)', async () => {
+    const rec = RecordStore.fromDatabase(new Database(':memory:'));
+    rec.start('s');
+    // in-page: same url → not settled at all (its snapshot IS the diff) → settled undefined
+    const inpage = await runActionRecorded({
+      sessionId: 's', recordStore: rec,
+      fromUrl: 'https://x.com/inventory.html', fromSnapshot: BEFORE,
+      action: { role: 'button', name: 'Add to cart', ref: 'e1' },
+      adapter: fake(AFTER, 'https://x.com/inventory.html') as any,
+    });
+    expect(inpage.settled).toBeUndefined();
+    expect(rec.actionEffects('s')[0].settled).toBeUndefined();
+
+    // navigated: settle ran → settled stamped (stable page plateaus → true)
+    const CART_PAGE = '- heading "Your Cart" [ref=e3]\n- link "Continue Shopping" [ref=e4]\n'
+      + '- button "Checkout" [ref=e5]\n- listitem "Item 1" [ref=e6]\n- listitem "Item 2" [ref=e7]\n'
+      + '- button "Remove" [ref=e8]\n- link "Home" [ref=e9]\n- paragraph "2 items" [ref=e10]';
+    const nav = await runActionRecorded({
+      sessionId: 's', recordStore: rec,
+      fromUrl: 'https://x.com/inventory.html', fromSnapshot: BEFORE,
+      action: { role: 'link', name: 'cart', ref: 'e9' },
+      adapter: fake(CART_PAGE, 'https://x.com/cart.html') as any,
+    });
+    expect(nav.navigated).toBe(true);
+    expect(nav.settled).toBe(true);
+    expect(rec.actionEffects('s')[1].settled).toBe(true);
+  });
+
   it('settles a navigated action: retries a loading snapshot before recording (bounded)', async () => {
     vi.useFakeTimers();
     try {

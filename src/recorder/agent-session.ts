@@ -138,8 +138,10 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
           await deps.adapter.evalJs(OVERLAY_ON_JS).catch(() => {});   // best-effort: video overlay
           // SETTLE before reading url+snapshot: a client-side redirect/late render otherwise
           // records a transient URL as a page (the ghost-state class of bugs). Bounded retry.
-          const toSnapshot = (await settleSnapshot(() => deps.adapter.snapshot(), undefined,
-            { evalJs: (js) => deps.adapter.evalJs(js) })).snapshot;
+          // Keep the settle VERDICT — stamped on the effect (Task 7 draft intake) and echoed
+          // to the driving agent so it learns a half-rendered landing at capture time.
+          const { snapshot: toSnapshot, settled } = await settleSnapshot(
+            () => deps.adapter.snapshot(), undefined, { evalJs: (js) => deps.adapter.evalJs(js) });
           const toUrl = await deps.adapter.currentUrl();
           // X6: probe the SETTLED landing's nameless icon controls (title/aria/tooltip) before
           // appending — fires only when nameless interactive nodes exist. Best-effort.
@@ -148,13 +150,13 @@ export async function runAgentSession(deps: AgentSessionDeps): Promise<{ steps: 
             const stepSeq = deps.store.appendActionEffect(deps.sessionId, {
               fromUrl: fromUrl || c.url, fromSnapshot, action: null,
               toUrl, toSnapshot, navigated: true, diff: { added: [], removed: [] },
-              requestedUrl: c.url, nameHints,
+              requestedUrl: c.url, nameHints, settled,
             });
             if (pendingLedger != null && stepSeq != null) deps.store.stampEvent(deps.sessionId, pendingLedger, 'step:' + stepSeq);
             pendingLedger = null;
             steps++; deps.notify('step', 'agent nav: ' + toUrl);
           }
-          out({ ok: true, url: toUrl });
+          out({ ok: true, url: toUrl, settled });
         } else if (c.cmd === 'snapshot') {
           out({ ok: true, snapshot: await deps.adapter.snapshot() });
         } else if (c.cmd === 'click' || c.cmd === 'type') {

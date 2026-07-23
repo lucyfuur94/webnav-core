@@ -214,24 +214,28 @@ export async function probeLanding(
  *  check, design item 2) without an extra playwright call. */
 export async function recordNavigateEffect(
   url: string, sessionId: string, recordStore: RecordStore, adapter: BrowseAdapter,
-): Promise<{ toUrl: string; toSnapshot: string }> {
+): Promise<{ toUrl: string; toSnapshot: string; settled: boolean }> {
   // Ledger the intent BEFORE settling (spec 2026-07-16): an un-stamped row honestly
   // reads as dropped:unprocessed in coverage if this function has no failure branch
   // of its own — the caller's try owns errors.
   const led = recordStore.appendEvent(sessionId, {
     source: 'agent', kind: 'navigate', descriptor: { cmd: 'navigate', url, fromUrl: url },
   });
-  const toSnapshot = (await settleSnapshot(() => adapter.snapshot!(), undefined, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined)).snapshot;
+  // Keep the settle VERDICT, not just the snapshot: stamp it onto the effect so draft
+  // intake (Task 7) can drop an unsettled landing when a settled sibling exists, and so
+  // the driver learns immediately (the JSON hint) that a landing may be half-rendered.
+  const { snapshot: toSnapshot, settled } = await settleSnapshot(
+    () => adapter.snapshot!(), undefined, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined);
   const toUrl = adapter.currentUrl ? await adapter.currentUrl() : url;
   const nameHints = await probeLanding(adapter, toSnapshot);
   const stepSeq = recordStore.appendActionEffect(sessionId, {
     fromUrl: url, fromSnapshot: '', action: null,
     toUrl, toSnapshot, navigated: true,
     diff: diffSnapshots([], parseSnapshot(toSnapshot)),
-    requestedUrl: url, nameHints,
+    requestedUrl: url, nameHints, settled,
   });
   if (led != null) recordStore.stampEvent(sessionId, led, stepSeq != null ? 'step:' + stepSeq : 'dropped:not-recorded');
-  return { toUrl, toSnapshot };
+  return { toUrl, toSnapshot, settled };
 }
 
 export interface NavigateWallCheck { authWall: boolean; loginUrl?: string }
@@ -286,7 +290,7 @@ export interface RunActionArgs {
   text?: string;              // when present, the action TYPES (fill) instead of clicks
   adapter?: BrowseAdapter;
 }
-export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; reason?: string; stepSeq?: number | null; }
+export interface ActionRecordedResult { status: 'done' | 'failed'; recorded: boolean; navigated?: boolean; settled?: boolean; reason?: string; stepSeq?: number | null; }
 
 /** Perform the agent's action, capture the after-page, record an ActionEffect.
  *  webnav does NOT decide what to fire — the agent supplies `action`; we record
@@ -312,8 +316,14 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
     // SETTLE before using the snapshot, but ONLY when the action navigated: a
     // client-side redirect/late render on the NEW page otherwise records a transient
     // shell as the page (the ghost-state class of bugs). An in-page mutate/reveal has
-    // no such settledness concern — its snapshot IS the (possibly sparse) diff.
-    if (navigated) toSnapshot = (await settleSnapshot(() => adapter.snapshot!(), toSnapshot, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined)).snapshot;
+    // no such settledness concern — its snapshot IS the (possibly sparse) diff, so
+    // `settled` stays undefined (not-applicable) for it.
+    let settled: boolean | undefined;
+    if (navigated) {
+      const res = await settleSnapshot(() => adapter.snapshot!(), toSnapshot, adapter.evalJs ? { evalJs: adapter.evalJs.bind(adapter) } : undefined);
+      toSnapshot = res.snapshot;
+      settled = res.settled;
+    }
     // The clicked node's declared href = the URL the click ASKED for (observed
     // evidence, judgment-free); the settled toUrl may differ when the server
     // redirects the declared destination. Recording it lets the draft alias
@@ -335,13 +345,13 @@ export async function runActionRecorded(args: RunActionArgs): Promise<ActionReco
     if (args.recordStore.isActive(args.sessionId)) {
       stepSeq = args.recordStore.appendActionEffect(args.sessionId, {
         fromUrl: args.fromUrl, fromSnapshot: args.fromSnapshot, action: args.action,
-        toUrl, toSnapshot, navigated, requestedUrl,
+        toUrl, toSnapshot, navigated, requestedUrl, settled,
         diff: diffSnapshots(parseSnapshot(args.fromSnapshot), parseSnapshot(toSnapshot)),
       });
       recorded = stepSeq != null;
     }
     if (led != null) args.recordStore.stampEvent(args.sessionId, led, stepSeq != null ? 'step:' + stepSeq : 'dropped:not-recorded');
-    return { status: 'done', recorded, navigated, stepSeq };
+    return { status: 'done', recorded, navigated, settled, stepSeq };
   } catch (e) {
     if (led != null) args.recordStore.stampEvent(args.sessionId, led,
       'dropped:failed:' + String((e as Error).message ?? e).slice(0, 120));
