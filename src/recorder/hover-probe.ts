@@ -9,40 +9,26 @@
 // REVEAL ONLY: the probe never clicks anything INSIDE a revealed menu (commit rule #2).
 import { parseSnapshot, type SnapNode } from '../playwright/snapshot.js';
 import { diffSnapshots } from '../explorer/diff.js';
+import { NAME_PROBE_JS, enrichName } from './agent-session.js';
+import { parseEvalResult } from '../router/browse.js';
 
-// Landmark roles whose named interactive descendants are primary-nav triggers worth probing.
-const LANDMARK_ROLES = new Set(['banner', 'navigation']);
-// Roles that are a real interactive control (so "named interactive inside a landmark" is honest).
+// Roles that are a real interactive control worth hovering — ANY such node is a candidate,
+// not just ones inside a landmark: a hidden hover flyout can't be predicted without hovering
+// it, so content-area icon buttons, pagination, tabs, toolbar buttons all qualify too.
 const INTERACTIVE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'combobox', 'checkbox', 'radio', 'switch']);
 const HASPOPUP_RE = /\[aria-haspopup(?:=|\])/;
 
-// Nearest-lower-depth ancestor walk (the insideOverlay idiom in infer.ts): is node `idx`
-// inside a banner/navigation landmark subtree? Depth = leading-space count, so an ancestor
-// is any earlier node at a strictly smaller depth.
-function insideLandmark(nodes: SnapNode[], idx: number): boolean {
-  let cur = nodes[idx].depth;
-  for (let i = idx - 1; i >= 0; i--) {
-    if (nodes[i].depth < cur) {
-      if (LANDMARK_ROLES.has(nodes[i].role)) return true;
-      cur = nodes[i].depth;
-    }
-  }
-  return false;
-}
-
-/** STRUCTURAL, judgment-free candidate selection: nodes with aria-haspopup, menuitems, and
- *  named interactive nodes inside a banner/navigation landmark. Requires a ref (can only hover
- *  a resolvable element), deduped by ref, capped (default 12). Zero cost on a page with none. */
-export function hoverCandidates(nodes: SnapNode[], limit = 12): SnapNode[] {
+/** STRUCTURAL, judgment-free candidate selection: EVERY interactive node on the page (named
+ *  or not — an unnamed icon button may still reveal a tooltip/menu on hover, which is exactly
+ *  what we want to discover), plus any node declaring aria-haspopup. Requires a ref (can only
+ *  hover a resolvable element), deduped by ref, capped (default 60 — generous enough to cover
+ *  a real page's full interactive set without being unbounded). Zero cost on a page with none. */
+export function hoverCandidates(nodes: SnapNode[], limit = 60): SnapNode[] {
   const out: SnapNode[] = [];
   const seen = new Set<string>();
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
+  for (const n of nodes) {
     if (!n.ref || seen.has(n.ref)) continue;
-    const isCandidate =
-      HASPOPUP_RE.test(n.raw)                                         // declares a popup
-      || n.role === 'menuitem'                                        // a menu entry (may open a submenu)
-      || (!!n.name && INTERACTIVE_ROLES.has(n.role) && insideLandmark(nodes, i));  // primary-nav trigger
+    const isCandidate = HASPOPUP_RE.test(n.raw) || INTERACTIVE_ROLES.has(n.role);
     if (!isCandidate) continue;
     seen.add(n.ref);
     out.push(n);
@@ -63,6 +49,10 @@ export interface HoverProbeAdapter {
   rightClick(ref: string): Promise<unknown>;
   press(key: string): Promise<unknown>;
   currentUrl(): Promise<string>;
+  // best-effort DOM name-probe (title/aria/tooltip) for an unnamed candidate — same
+  // mechanism as agent-session's hover branch (NAME_PROBE_JS). Optional: a bare adapter
+  // with no evalJs just leaves unnamed candidates unnamed.
+  evalJs?(js: string, ref?: string): Promise<string>;
 }
 export interface HoverProbeDeps {
   adapter: HoverProbeAdapter;
@@ -88,11 +78,23 @@ export async function runHoverProbe(deps: HoverProbeDeps): Promise<{ probed: num
   let revealed = 0;
   for (const c of candidates) {
     const ref = c.ref!;
+    // NAME-PROBE an unnamed candidate before acting: an icon-only button reveals a
+    // tooltip/menu but its a11y name is empty — recover a human label from its own
+    // attributes (title/aria-label/tooltip) the same way agent-session's hover branch
+    // does, so the recorded reveal effect carries a usable name when one exists. No new
+    // probe mechanism — reuse NAME_PROBE_JS/enrichName. Best-effort: a page that blocks
+    // eval, or truly no recoverable label, just leaves the candidate nameless (honest —
+    // draftFromEffects already handles a nameless affordance).
+    let name = c.name;
+    if (!(name ?? '').trim() && adapter.evalJs) {
+      const probed = parseEvalResult(await adapter.evalJs(NAME_PROBE_JS, ref).catch(() => ''));
+      name = enrichName(name, probed);
+    }
     // Ledger the intent BEFORE acting (same discipline as the agent-session hover branch):
     // a probe that fails to reveal still leaves an honest trace of what we tried.
     const led = store.appendEvent(sessionId, {
       source: 'agent', kind,
-      descriptor: { cmd: kind, ref, role: c.role, name: c.name, url },
+      descriptor: { cmd: kind, ref, role: c.role, name, url },
     });
     const from = await adapter.snapshot();     // re-baseline per candidate (a prior Escape may have changed the page)
     if (rightClick) await adapter.rightClick(ref); else await adapter.hover(ref);
@@ -105,13 +107,13 @@ export async function runHoverProbe(deps: HoverProbeDeps): Promise<{ probed: num
     const to = await adapter.snapshot();
     const diff = diffSnapshots(parseSnapshot(from), parseSnapshot(to));
     if (diff.added.length > 0) {
-      const action = { role: c.role, name: c.name, ref, ...(rightClick ? { rightClick: true } : { hover: true }) };
+      const action = { role: c.role, name, ref, ...(rightClick ? { rightClick: true } : { hover: true }) };
       const seq = store.appendActionEffect(sessionId, {
         fromUrl: url, fromSnapshot: from, action, toUrl: url, toSnapshot: to, navigated: false, diff,
       });
       if (led != null && seq != null) store.stampEvent(sessionId, led, 'step:' + seq);
       revealed++;
-      log(`  ${kind} ${c.name ?? ref}: +${diff.added.length} node(s) → reveal`);
+      log(`  ${kind} ${name ?? ref}: +${diff.added.length} node(s) → reveal`);
     } else {
       // honest no-op: a candidate that reveals nothing records no affordance.
       if (led != null) store.stampEvent(sessionId, led, 'dropped:no-reveal');
