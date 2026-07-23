@@ -33,6 +33,28 @@ function landingKey(url: string): string {
   try { const u = new URL(url); return u.host + u.pathname; } catch { return url; }
 }
 
+export interface CaptureReceipt {
+  landings: { url: string; nodes: number; settled: boolean }[];
+  unsettled: number;
+}
+
+/** record-stop's per-landing capture receipt: for each NAVIGATED effect, its
+ *  landing size (parsed node count) and whether the page plateaued before capture.
+ *  `settled` reads `e.settled ?? true` (undefined = legacy/not-applicable = settled;
+ *  see ActionEffect.settled). Lets the driver see a bad capture the moment the
+ *  session ends — not two stages downstream at draft time. */
+export function captureReceipt(effects: Pick<StoredActionEffect, 'navigated' | 'toUrl' | 'toSnapshot' | 'settled'>[]): CaptureReceipt {
+  const landings: CaptureReceipt['landings'] = [];
+  let unsettled = 0;
+  for (const e of effects) {
+    if (!e.navigated) continue;   // in-page mutate/reveal: no landing, no settledness concern
+    const settled = e.settled ?? true;
+    if (!settled) unsettled++;
+    landings.push({ url: e.toUrl, nodes: parseSnapshot(e.toSnapshot).length, settled });
+  }
+  return { landings, unsettled };
+}
+
 /** Structure audit (fidelity roadmap 1c/gap-3): per distinct landing, how many
  *  interactive nodes are named vs NAMELESS. A page thick with nameless controls
  *  is a sensor gap the review prompt should flag for a frame-by-frame compare. */

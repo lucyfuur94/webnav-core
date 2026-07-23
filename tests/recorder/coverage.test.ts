@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coverage, landingStructure } from '../../src/recorder/coverage.js';
+import { coverage, landingStructure, captureReceipt } from '../../src/recorder/coverage.js';
 
 const ev = (seq: number, disposition: string | null, descriptor: Record<string, unknown> = {}) =>
   ({ seq, source: 'human' as const, kind: 'click', descriptor, disposition });
@@ -72,5 +72,32 @@ describe('landingStructure', () => {
 
   it('empty effects → empty structure', () => {
     expect(landingStructure([])).toEqual([]);
+  });
+});
+
+describe('captureReceipt', () => {
+  const fx = (navigated: boolean, toUrl: string, toSnapshot: string, settled?: boolean) =>
+    ({ navigated, toUrl, toSnapshot, settled });
+
+  it('summarizes navigated landings with node counts + settledness; counts unsettled', () => {
+    const r = captureReceipt([
+      fx(true, 'https://x.com/a', 'button "A" [ref=e1]', true),                    // explicit settled
+      fx(true, 'https://x.com/b', 'button "B" [ref=e1]\nlink "L" [ref=e2]', false), // unsettled
+      fx(true, 'https://x.com/c', 'heading "C" [level=1]', undefined),              // legacy → reads settled
+      fx(false, 'https://x.com/d', 'button "D" [ref=e1]', false),                  // non-navigated: excluded
+    ]);
+    expect(r).toEqual({
+      landings: [
+        { url: 'https://x.com/a', nodes: 1, settled: true },
+        { url: 'https://x.com/b', nodes: 2, settled: false },
+        { url: 'https://x.com/c', nodes: 1, settled: true },
+      ],
+      unsettled: 1,
+    });
+  });
+
+  it('no navigated effects → empty receipt', () => {
+    expect(captureReceipt([fx(false, 'https://x.com/d', 'button "D" [ref=e1]', true)]))
+      .toEqual({ landings: [], unsettled: 0 });
   });
 });

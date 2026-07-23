@@ -500,7 +500,8 @@ async function main() {
   }
   if (args.cmd === 'record-stop') {
     const { RecordStore } = await import('./mapstore/record.js');
-    new RecordStore(dbPath()).stop(args.session);
+    const rec = new RecordStore(dbPath());
+    rec.stop(args.session);
     // Close the browser too — record-stop is the end of an agent session, so its
     // window must not leak (the `use` verbs keep the session alive between calls;
     // record-stop is the sanctioned teardown). A long-lived `record-live` owns its
@@ -508,7 +509,11 @@ async function main() {
     const { closeByName } = await import('./playwright/sessions.js');
     let closed = false;
     try { closed = await closeByName(args.session); } catch { /* already gone */ }
-    console.log(JSON.stringify({ status: 'stopped', session: args.session, closed }, null, 2));
+    // Capture receipt: the driver learns about a bad capture (an unsettled landing)
+    // the moment the session ends, not two stages downstream at draft time.
+    const { captureReceipt } = await import('./recorder/coverage.js');
+    const capture = captureReceipt(rec.actionEffects(args.session));
+    console.log(JSON.stringify({ status: 'stopped', session: args.session, closed, capture }, null, 2));
     return;
   }
   if (args.cmd === 'record-live') {
