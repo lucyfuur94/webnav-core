@@ -599,8 +599,17 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   // they feed affordance synthesis (Task 9), read from the raw effect there, not from this map.
   const ready = (snap: string) => classifyReadiness(snap) === 'ready';
   const landingsByKey = new Map<string, SnapNode[][]>();
+  // SETTLEDNESS (axis 1, Task 7): a parallel flag per landing, index-aligned with landingsByKey.
+  // `settled:false` marks a landing captured before the page plateaued (the settle-by-quiescence
+  // budget ran out) — absence in it is not evidence of absence, same as a partial render, so
+  // makePage excludes it from the CORE when a settled sibling exists (a DELIBERATE soft-exclusion,
+  // not a hard refusal: the landing still counts for URL/alias evidence, and an all-unsettled state
+  // still forms — honestly provisional). An entry fromSnapshot has no capture-quality verdict and
+  // legacy/undefined effects predate the flag → both read `true` (settled). The index alignment
+  // with landingsByKey is correctness-critical: every push/fold below mirrors landings and flags.
+  const settledByKey = new Map<string, boolean[]>();
   const urlVotes = new Map<string, Map<string, number>>();   // key → settled landing URL → count
-  const pushLanding = (url: string, snap: string, nameHints?: Record<string, string>) => {
+  const pushLanding = (url: string, snap: string, nameHints?: Record<string, string>, settled?: boolean) => {
     if (!ready(snap)) return;
     // FOREIGN-HOST gate (Finding 7): a ready landing on another host is a blocked door — record
     // it once per host for needsFix and refuse it as a landing (no page → no state, no request,
@@ -619,6 +628,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
       }
     }
     (landingsByKey.get(k) ?? landingsByKey.set(k, []).get(k)!).push(nodes);
+    // push the flag in the SAME order (undefined = legacy/not-applicable ⇒ settled).
+    (settledByKey.get(k) ?? settledByKey.set(k, []).get(k)!).push(settled !== false);
     const votes = urlVotes.get(k) ?? urlVotes.set(k, new Map()).get(k)!;
     votes.set(url, (votes.get(url) ?? 0) + 1);
   };
@@ -633,9 +644,9 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // report-builder husk: 46 real actions dropped). Seed the entry landing at EVERY boundary,
     // through the same readiness-gated pushLanding path.
     const sessionStart = i === 0 || e.seq <= effects[i - 1].seq;
-    if (sessionStart && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);
-    // nameHints are captured on the SETTLED landing (toSnapshot) → only applied there.
-    if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot, e.nameHints);
+    if (sessionStart && e.fromSnapshot) pushLanding(e.fromUrl, e.fromSnapshot);   // entry face → settled
+    // nameHints + the capture-time settled verdict travel on the SETTLED landing (toSnapshot).
+    if (e.navigated && e.toSnapshot) pushLanding(e.toUrl, e.toSnapshot, e.nameHints, e.settled);
   });
   // ── urlPattern per key (axis 1 settledness — live finding): "first observed URL wins" let
   // SESSION ORDERING store a pre-redirect GHOST as a state's urlPattern. An SPA landing can be
@@ -774,12 +785,14 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
   }
   const canonKey = resolveCanon;
 
-  // fold each observed key's landings/url into its canonical key.
-  const byCanon = new Map<string, { landings: SnapNode[][]; url: string; template: string | null }>();
+  // fold each observed key's landings/url into its canonical key. The settled flags fold in the
+  // SAME order as the landings (index alignment carried through to makePage — correctness-critical).
+  const byCanon = new Map<string, { landings: SnapNode[][]; settled: boolean[]; url: string; template: string | null }>();
   for (const k of observedKeys) {
     const ck = canonKey(k);
-    const entry = byCanon.get(ck) ?? { landings: [], url: urlByKey.get(k)!, template: templateForKey.get(ck) ?? null };
+    const entry = byCanon.get(ck) ?? { landings: [], settled: [], url: urlByKey.get(k)!, template: templateForKey.get(ck) ?? null };
     entry.landings.push(...landingsByKey.get(k)!);
+    entry.settled.push(...settledByKey.get(k)!);
     byCanon.set(ck, entry);
   }
 
@@ -790,7 +803,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     const seen = new Set(into.map((n) => `${n.role}:${n.name}`));
     for (const n of add) { const t = `${n.role}:${n.name}`; if (!seen.has(t)) { seen.add(t); into.push(n); } }
   };
-  const makePage = (k: string, url: string, template: string | null, landings: SnapNode[][], labelBase: string): PageInfo => {
+  const makePage = (k: string, url: string, template: string | null, landings: SnapNode[][], settled: boolean[], labelBase: string): PageInfo => {
     const faces = landings.map(faceOf);
     // PARTIAL-RENDER exclusion (axis 1 settledness): a landing whose face is a (near-)strict
     // subset of a sibling's (containment ≥ 0.95, strictly smaller) was captured before the page
@@ -806,17 +819,32 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // them all (honest: we only ever saw the page mid-load — templateCore then marks it provisional).
     const loadingIdx = landings.map((l, i) => [l, i] as const).filter(([l]) => isLoadingRender(l)).map(([, i]) => i);
     const settledExists = loadingIdx.length < landings.length;
-    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i) && !(settledExists && loadingIdx.includes(i)));
+    // CAPTURE-TIME settledness (axis 1, Task 7): a landing the recorder flagged `settled:false` never
+    // plateaued (settle-by-quiescence gave up) — a sparse SPA shell captured before hydration, whose
+    // absence is non-render, NOT absence of a feature. Mirror the loading-render exclusion exactly:
+    // drop it from CORE when a SETTLED sibling exists (else the shell's near-empty face intersects the
+    // core to a husk — the original programmatic incident). When EVERY landing is unsettled, keep them
+    // all (honest: we only ever saw the page mid-render) → templateCore/provisional flags it re-record.
+    const unsettledIdx = settled.map((ok, i) => [ok, i] as const).filter(([ok]) => !ok).map(([, i]) => i);
+    const settledSiblingExists = unsettledIdx.length < landings.length;
+    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i)
+      && !(settledExists && loadingIdx.includes(i))
+      && !(settledSiblingExists && unsettledIdx.includes(i)));
     // rule 5: durable face = templateCore(full faces) minus shell — the site chrome lives on
     // `_shell`, not on each page's core (else every state carries the whole sidebar).
     const { tokens, provisional: coreProvisional } = templateCore(coreIdx.map((i) => faces[i]));
-    // An opaque-template state whose members joined via the non-contradiction PRIOR (not observed
-    // structural agreement) is provisional on that prior: a later contradicting landing re-splits it
-    // naturally on rebuild. This note takes precedence over templateCore's seen-once note.
+    // provisional precedence: (1) prior-merged (a URL-template prior, not observed agreement) →
+    // (2) ALL landings unsettled (never plateaued — the capture is untrustworthy, ask for a fresh
+    // one, not merely a second visit) → (3) templateCore's seen-once/confirmed verdict. A MIXED
+    // settled+unsettled seen-once state (one settled landing survives coreIdx) is NOT all-unsettled,
+    // so it falls to (3): the ordinary seen-once note, because one settled landing IS seen once —
+    // it needs a confirming visit, not a re-record. The prior-merged note stays first (existing).
     const priorMerged = priorMergedTemplates.has(k);
     const provisional = priorMerged
       ? 'merged on URL-template prior — record more visits to confirm shared structure'
-      : coreProvisional;
+      : !settledSiblingExists
+        ? 'captured before the page finished rendering (never plateaued) — re-record this page'
+        : coreProvisional;
     const core = minusShell(tokens);
     const nodes: SnapNode[] = [];
     for (const l of landings) mergeNodes(nodes, l);    // union → full repertoire for affordances
@@ -829,7 +857,7 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     const shadowNodes = landings[coreIdx[0]].filter((n) => !n.name || !n.name.trim() || core.has(`${n.role}:${n.name}`));
     return { key: k, url, template, label: labelBase, landings, faces, core, coreNodes, provisional, priorMerged, nodes, shadowNodes };
   };
-  for (const [k, { landings, url, template }] of byCanon) {
+  for (const [k, { landings, settled, url, template }] of byCanon) {
     const labelBase = labelFromKey(template ?? k);
     // rule 4: SPA split — single-link cluster the landing faces, on SHELL-SUBTRACTED faces (same
     // as dispose): the shared chrome is on every SPA view, so leaving it in would falsely
@@ -869,8 +897,9 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // real cluster (or, if every cluster was an error, all landings — the whole page is degenerate,
     // partition-good-vs-degenerate below holds it out honestly).
     if (realClusters.length <= 1) {
-      const keep = realClusters.length === 1 ? realClusters[0].map((i) => landings[i]) : landings;
-      pages.push(makePage(k, url, template, keep, labelBase)); continue;
+      // keep landings AND their settled flags in lockstep (the cluster is a set of indices).
+      const keepIdx = realClusters.length === 1 ? realClusters[0] : landings.map((_, i) => i);
+      pages.push(makePage(k, url, template, keepIdx.map((i) => landings[i]), keepIdx.map((i) => settled[i]), labelBase)); continue;
     }
     // ≥2 real clusters at one key → CANDIDATE SPA split. The discriminator that names a split state
     // must be STRUCTURAL (a page-TITLE heading / tab), NEVER instance CONTENT. A cluster core computed
@@ -909,7 +938,8 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // structural headings/tabs after data exclusion, so at least one cluster is distinguishable and the
     // split proceeds below.)
     if (distinctPerCluster.every((d) => d === null)) {
-      pages.push(makePage(k, url, template, realClusters.flat().map((i) => landings[i]), labelBase)); continue;
+      const flatIdx = realClusters.flat();
+      pages.push(makePage(k, url, template, flatIdx.map((i) => landings[i]), flatIdx.map((i) => settled[i]), labelBase)); continue;
     }
     // ≥1 cluster is structurally distinct → genuine SPA split, each named by a STRUCTURAL heading
     // unique to its cluster. A cluster with no such heading (its identity is instance data) is held
@@ -917,8 +947,9 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     realClusters.forEach((idxs, ci) => {
       const distinct = distinctPerCluster[ci];
       const clusterLandings = idxs.map((i) => landings[i]);
+      const clusterSettled = idxs.map((i) => settled[i]);   // same index map as clusterLandings
       if (!distinct) { splitNeedsFix.push({ label: labelBase, url, reason: 'same-url state with no distinguishing heading' }); return; }
-      pages.push(makePage(k, url, template, clusterLandings, `${labelBase}-${slug(distinct)}`));
+      pages.push(makePage(k, url, template, clusterLandings, clusterSettled, `${labelBase}-${slug(distinct)}`));
     });
   }
 

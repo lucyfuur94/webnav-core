@@ -1903,6 +1903,84 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(m.status).toBe('matched');
   });
 
+  // ── Task 7: capture-time settledness at draft intake ────────────────────────────────────────
+  // The programmatic.analytics.mn incident, distilled to a fixture: a heavy async SPA landing was
+  // captured before hydration PLATEAUED (settle-by-quiescence gave up → the recorder stamps
+  // settled:false). No loading token is on the page (classifyReadiness/isLoadingRender both miss
+  // this class), so ONLY the stored flag can exclude it. Two SAME-report opaque-param instances
+  // merge via the dispose control arm (like the render-skew test above); one is settled+full, one
+  // unsettled+sparse — so both flow into ONE makePage and the settled arm actually gets exercised
+  // (a same-URL sparse landing would SPA-split off instead — verified during authoring).
+  const RCONTROLS = ['- tab "Table" [ref=e7]', '- tab "Charts" [ref=e8]', '- button "New Report" [ref=e9]',
+    '- button "Export data" [ref=e10]', '- button "Full screen" [ref=e11]'];
+  const RFULL = (name: string) => shell('Sales Report', [...RCONTROLS,
+    `- paragraph "${name} one" [ref=e12]`, `- paragraph "${name} two" [ref=e13]`, `- button "Download as formatted CSV" [ref=e14]`]);
+  // the unsettled render: the control skeleton rendered (so it MERGES with the settled instance via
+  // the dispose control arm — both land in ONE makePage), but a real settled control ("Download as
+  // formatted CSV") had not appeared yet AND a transient "Retry loading" chip was still up. Neither
+  // token is a strict-subset relationship (isPartial can't see it) — only the stored settled:false
+  // flag distinguishes this half-rendered face from the settled one.
+  const RSHELL = shell('Sales Report', [...RCONTROLS,
+    '- paragraph "gamma one" [ref=e12]', '- button "Retry loading" [ref=e14]']);
+
+  it('capture-time settled:false — an unsettled sibling is dropped from CORE when a settled sibling exists', () => {
+    const g = draftFromEffects([
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaaaaaa`, RFULL('alpha'), { settled: true }),
+      nav(`${XB}/report/7001/bbbbbbbbbbbbbbbbbbbb`, RSHELL, { settled: false }),   // same instance, sparse render → merges
+      // fillers so the report controls stay under the cross-page shell bar (same idiom as render-skew).
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const s = g.states.find((x) => /\/report\/7001\//.test(x.urlPattern))!;
+    expect(s, 'the settled + unsettled captures are ONE report state').toBeTruthy();
+    // identity + repertoire come from the SETTLED landing; the shell's stray control never leaks.
+    expect(s.fingerprint.join()).not.toMatch(/Retry loading/);
+    expect(s.affordances.some((a) => a.label === 'Download as formatted CSV')).toBe(true);   // settled control
+    expect(s.affordances.some((a) => a.label === 'Retry loading')).toBe(false);
+    // MIXED settled+unsettled, one settled landing survives coreIdx → SEEN ONCE, not never-plateaued:
+    // the note asks for a confirming VISIT, never a re-record. Pin the precedence exactly (step 5).
+    expect(s.provisional ?? '').toMatch(/seen once/);
+    expect(s.provisional ?? '').not.toMatch(/re-record/);
+  });
+
+  it('capture-time settled — ALL landings unsettled: state still forms, provisional says re-record', () => {
+    // the honest all-unsettled case: we only ever saw the page mid-render → keep the evidence (a
+    // state IS minted, URL/alias/from-edge preserved — a soft-exclusion, NOT a hard refusal), but the
+    // note tells the driver to RE-RECORD a fresh capture, not merely revisit (a second sparse shell
+    // confirms nothing). Two settled:false instances of one /report/{param} template.
+    const g = draftFromEffects([
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaaaaaa`, RFULL('alpha'), { settled: false }),
+      nav(`${XB}/report/7001/bbbbbbbbbbbbbbbbbbbb`, RFULL('beta'), { settled: false }),   // same 7001, merges
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ] as never);
+    const s = g.states.find((x) => /\/report\/7001\//.test(x.urlPattern))!;
+    expect(s, 'the state still forms from unsettled evidence').toBeTruthy();
+    expect(s.provisional ?? '').toMatch(/never plateaued|re-record/);
+    expect(g.receipt.requests.some((r) => /re-record/.test(r))).toBe(true);   // flows to analyse's requests
+  });
+
+  it('settled undefined everywhere is byte-identical legacy behavior (undefined reads as settled)', () => {
+    // the 1124-test suite is the real legacy guard (no other fixture sets settled); this pins it
+    // explicitly: undefined-flag landings behave exactly as settled ones — no exclusion, ordinary
+    // confirm. Same effects, once with settled:true stamped, once with the field absent.
+    const effects = (flag?: boolean) => [
+      nav(`${XB}/report/7001/aaaaaaaaaaaaaaaaaaaa`, RFULL('alpha'), flag === undefined ? {} : { settled: flag }),
+      nav(`${XB}/report/7001/bbbbbbbbbbbbbbbbbbbb`, RFULL('beta'), flag === undefined ? {} : { settled: flag }),
+      nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+      nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+    ];
+    const legacy = draftFromEffects(effects(undefined) as never);
+    const flagged = draftFromEffects(effects(true) as never);
+    const sl = legacy.states.find((x) => /\/report\/7001\//.test(x.urlPattern))!;
+    const sf = flagged.states.find((x) => /\/report\/7001\//.test(x.urlPattern))!;
+    expect(sl).toBeTruthy();
+    expect(sl.fingerprint).toEqual(sf.fingerprint);                              // identical identity
+    expect(sl.affordances.map((a) => a.label).sort()).toEqual(sf.affordances.map((a) => a.label).sort());
+    expect(sl.provisional ?? null).toEqual(sf.provisional ?? null);              // both confirmed (2 instances)
+    expect(sl.provisional ?? '').not.toMatch(/re-record/);
+  });
+
   it('urlPattern = most-observed settled landing URL, not the first-observed ghost (session ordering)', () => {
     // LIVE finding: an SPA landing can be captured on its PRE-REDIRECT URL (the router hasn't
     // inserted the tenant segment yet): /v3/report/list vs /v3/9999/report/list — inferUrlModel's
