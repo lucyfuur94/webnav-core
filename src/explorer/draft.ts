@@ -827,9 +827,20 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
     // all (honest: we only ever saw the page mid-render) → templateCore/provisional flags it re-record.
     const unsettledIdx = settled.map((ok, i) => [ok, i] as const).filter(([ok]) => !ok).map(([, i]) => i);
     const settledSiblingExists = unsettledIdx.length < landings.length;
-    const coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i)
-      && !(settledExists && loadingIdx.includes(i))
-      && !(settledSiblingExists && unsettledIdx.includes(i)));
+    const keepLoadingUnsettled = (i: number) =>
+      !(settledExists && loadingIdx.includes(i)) && !(settledSiblingExists && unsettledIdx.includes(i));
+    let coreIdx = faces.map((_, i) => i).filter((i) => !isPartial(i) && keepLoadingUnsettled(i));
+    // EMPTY-CORE GUARD: the three exclusion arms each keep ≥1 landing ALONE, but combined they can
+    // remove ALL of them — a settled landing whose face is a strict SUBSET of an UNSETTLED sibling's
+    // superset (isPartial drops the settled subset; the settled arm drops the unsettled superset;
+    // loadingIdx empty). Reachable: the settle budget expiring mid-growth yields an unsettled capture
+    // LARGER than an earlier settled subset view. Never let coreIdx empty (landings[coreIdx[0]] would
+    // be undefined and crash the whole draft). Recover the isPartial arm FIRST — a settled partial
+    // subset is trustworthy content, just less of it; a core from the settled subset beats a crash and
+    // still honors settled-over-unsettled + non-loading-over-loading (those two arms stay in force).
+    // If still empty (every landing is loading AND every landing unsettled), fall back to all indices.
+    if (coreIdx.length === 0) coreIdx = faces.map((_, i) => i).filter(keepLoadingUnsettled);
+    if (coreIdx.length === 0) coreIdx = faces.map((_, i) => i);
     // rule 5: durable face = templateCore(full faces) minus shell — the site chrome lives on
     // `_shell`, not on each page's core (else every state carries the whole sidebar).
     const { tokens, provisional: coreProvisional } = templateCore(coreIdx.map((i) => faces[i]));

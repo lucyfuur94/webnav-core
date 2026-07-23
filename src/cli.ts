@@ -2202,7 +2202,13 @@ async function main() {
         text: args.cmd === 'type' ? args.text : undefined,
         adapter: adapter as any,
       });
-      console.log(JSON.stringify(r, null, 2));
+      // Mirror the navigate branch: a navigated action whose landing never plateaued
+      // (settled:false) carries the same re-visit hint. r.settled is only defined on
+      // navigated actions, so undefined/true adds nothing.
+      console.log(JSON.stringify({
+        ...r,
+        ...(r.settled === false ? { hint: 'landing kept changing through the settle budget — recorded snapshot may be incomplete; re-visit to confirm' } : {}),
+      }, null, 2));
       if (r.status === 'failed') process.exitCode = 2;
     } catch (e) {
       console.log(JSON.stringify({ status: 'failed', reason: String(e) }, null, 2));

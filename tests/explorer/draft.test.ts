@@ -1960,6 +1960,36 @@ describe('draftFromEffects — Task 15 acceptance findings (synthetic repros)', 
     expect(g.receipt.requests.some((r) => /re-record/.test(r))).toBe(true);   // flows to analyse's requests
   });
 
+  it('coreIdx cannot empty to a crash — a settled SUBSET + unsettled SUPERSET both excludable', () => {
+    // The verifier's reproduction: two landings under ONE canonical key where the two
+    // soft-exclusion arms overlap to remove EVERY landing. Landing A settled:true but a
+    // strict-subset face (isPartial drops it: smaller AND ≥0.95 contained in B). Landing B
+    // settled:false with the superset face (the settled arm drops it: a settled sibling A
+    // exists). No loading token, so loadingIdx is empty. Both arms combined ⇒ coreIdx=[] ⇒
+    // landings[coreIdx[0]] is undefined ⇒ `.filter` threw, aborting the whole draft. This
+    // shape is reachable: the settle budget expiring while a page is still growing yields an
+    // unsettled capture LARGER than an earlier settled subset view.
+    const RSUB = shell('Sales Report', ['- tab "Table" [ref=e7]', '- button "Export" [ref=e8]']);          // 8 tokens
+    const RSUPER = shell('Sales Report', ['- tab "Table" [ref=e7]', '- button "Export" [ref=e8]',
+      '- button "Download CSV" [ref=e9]', '- paragraph "alpha" [ref=e10]', '- paragraph "beta" [ref=e11]',
+      '- listitem "row one" [ref=e12]']);                                                                   // 12 tokens, ⊃ RSUB
+    let g!: ReturnType<typeof draftFromEffects>;
+    expect(() => {
+      g = draftFromEffects([
+        nav(`${XB}/report/7001/aaaaaaaaaaaaaaaaaaaa`, RSUB, { settled: true }),    // settled subset
+        nav(`${XB}/report/7001/bbbbbbbbbbbbbbbbbbbb`, RSUPER, { settled: false }), // unsettled superset, same instance
+        // fillers keep the report controls under the cross-page shell bar (≥4 pages for shell).
+        nav(`${XB}/announcements`, shell('Announcements', ['- button "Post" [ref=e7]', '- paragraph "News" [ref=e8]'])),
+        nav(`${XB}/help-center`, shell('Help Center', ['- textbox "Ask" [ref=e7]', '- button "Contact" [ref=e8]'])),
+      ] as never);
+    }).not.toThrow();
+    const s = g.states.find((x) => /\/report\/7001\//.test(x.urlPattern))!;
+    expect(s, 'the report state still forms').toBeTruthy();
+    // fallback prefers the SETTLED subset: tokens unique to the unsettled superset are absent from
+    // identity (recovering the isPartial arm — a settled partial subset is trustworthy content).
+    expect(s.fingerprint.join()).not.toMatch(/Download CSV|row one/);
+  });
+
   it('settled undefined everywhere is byte-identical legacy behavior (undefined reads as settled)', () => {
     // the 1124-test suite is the real legacy guard (no other fixture sets settled); this pins it
     // explicitly: undefined-flag landings behave exactly as settled ones — no exclusion, ordinary
