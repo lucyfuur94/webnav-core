@@ -134,30 +134,51 @@ export const INSTALLER_JS = `() => {
     requestAnimationFrame(() => { r.style.transform = 'scale(1.7)'; r.style.opacity = '0'; });
     setTimeout(() => r.remove(), 800);
   };
-  // POINTER DOT: a persistent cursor marker that follows the mouse, so the session
+  // POINTER CURSOR: a persistent cursor marker that follows the mouse, so the session
   // VIDEO shows WHERE the agent/human is pointing — essential for hover-revealed menus
   // (a hover has no click ripple, so without this you can't see what's being hovered).
   // Agent hovers go through playwright's real mouse → dispatch mousemove → this moves.
-  // One reused element (not per-move), pointer-events:none, aria-hidden (never in the
-  // a11y snapshot). Only visible while recording (the frame extractor still keys on the
-  // bigger scene changes; the dot is a small always-on locator, not a scene-change bait).
+  // A real ARROW-cursor glyph (not a dot), swapping to a HAND/POINTER glyph over an
+  // interactive element — mirrors what a real user's OS cursor does. One reused element
+  // (background-image swapped, never recreated), pointer-events:none, aria-hidden (never
+  // in the a11y snapshot). Only visible while recording.
+  const ARROW_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
+    '<path d="M4 2 L4 22 L9.5 17.5 L13 25 L16.5 23.5 L13 16 L20 16 Z" fill="#fff" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '</svg>');
+  const HAND_SVG = "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
+    '<path d="M11 3.5a1.5 1.5 0 0 1 3 0V13a1 1 0 0 1 2 0v1a1.5 1.5 0 0 1 3 0v1a1.5 1.5 0 0 1 3 0v4c0 4-2.5 7-7 7h-1c-3 0-4.3-1-6-3l-3.6-4.5c-.7-.9-.3-2.3.9-2.6.7-.2 1.4 0 1.9.6L11 20V3.5z" ' +
+    'fill="#fff" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '</svg>');
   const pointer = () => {
     let el = document.getElementById('__webnav_ptr');
     if (!el) {
       el = document.createElement('div');
       el.id = '__webnav_ptr';
       el.setAttribute('aria-hidden', 'true');
-      el.style.cssText = 'position:fixed;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid #e5484d;background:rgba(229,72,77,.25);box-shadow:0 0 0 2px rgba(255,255,255,.6);z-index:2147483645;pointer-events:none;transition:left .2s ease-out,top .2s ease-out;display:none;';
+      el.style.cssText = 'position:fixed;left:0;top:0;width:28px;height:28px;margin:-2px 0 0 -2px;background-repeat:no-repeat;background-size:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));z-index:2147483645;pointer-events:none;transition:left .2s ease-out,top .2s ease-out;display:none;';
       (document.body || document.documentElement).appendChild(el);
     }
     return el;
   };
+  let __webnavPtrHand = false;
   document.addEventListener('mousemove', (ev) => {
     const el = pointer();
     const on = document.documentElement.dataset.webnavRec === '1';
     el.style.display = on ? 'block' : 'none';
     el.style.left = ev.clientX + 'px';
     el.style.top = ev.clientY + 'px';
+    // Same signal a real OS cursor uses: the hovered element's OWN computed cursor style.
+    // A real button/link sets cursor:pointer — that's "this changes state on click", exactly
+    // what should show the hand. elementFromPoint can return null (edge of viewport) — guard it.
+    let hand = false;
+    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (target) hand = getComputedStyle(target).cursor === 'pointer';
+    if (hand !== __webnavPtrHand) {
+      __webnavPtrHand = hand;
+      el.style.backgroundImage = 'url("' + (hand ? HAND_SVG : ARROW_SVG) + '")';
+    }
   }, true);
   // ownText/nearestLabel: a role-bearing wrapper (e.g. a chart's role="toolbar"
   // holding BOTH a legend and a dropdown) passes the old takeText check and its
