@@ -315,7 +315,7 @@ describe('capture-parity 3: DRAFT parity (same pages → equal states/fingerprin
 
   it('equal NAVIGATE affordances (the routing-relevant repertoire)', () => {
     expect(A.navAffordances).toEqual(Y.navAffordances);
-    expect(A.navAffordances).toEqual(['icons:navigate:Settings']);
+    expect(A.navAffordances).toEqual(['icons:navigate:Continue', 'icons:navigate:Settings']);
   });
 
   // ────────────────────────────────────────────────────────────────────────────

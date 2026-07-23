@@ -171,6 +171,18 @@ function clickedInOverlay(nodes: SnapNode[], action: { role: string; name: strin
 
 function host(url: string): string | null { try { return new URL(url).host; } catch { return null; } }
 
+// A RELATIVE href (`/v3/admin`) is same-host BY DEFINITION — it has no scheme/host for `new URL()`
+// to parse, so host() above returns null and a naive `=== mapHost` compare rejects it. Real SPA
+// sidebars declare relative hrefs almost exclusively, so that naive compare silently dropped every
+// in-app link. Protocol-relative (`//other.com/...`) DOES name a host and must still be compared.
+function sameHostOrRelative(url: string, mapHost: string | null): boolean {
+  if (/^(mailto|javascript|tel):/i.test(url) || /^#|^$/.test(url)) return false;
+  if (url.startsWith('//')) return host(`https:${url}`) === mapHost;
+  if (url.startsWith('/')) return true;                     // in-app relative path → same host
+  const h = host(url);
+  return h !== null ? h === mapHost : true;                 // unparseable, non-scheme → relative-ish, in-app
+}
+
 // Enumerated VALUE DOMAIN among an OVERLAY's added nodes (axis 2): ≥3 same-role SAME-DEPTH nodes
 // with DISTINCT names are the overlay's choice list (a picker's dimension/metric checkboxes) — data
 // to read live at walk time, never persisted. RETAINED (deviation from plan Task 2(b), see report):
@@ -1415,9 +1427,10 @@ export function draftFromEffects(effects: StoredActionEffect[], packs: PatternPa
         // road (a 1-page recording of a 5-link sidebar reported 0 unexplored). Stub it instead:
         // a navigate affordance with no `to` → editGraph sets toState:null → store/frontier already
         // treat that as `dangling-target` (store.ts interiorEdges, frontier.ts) — no new plumbing.
-        // SAME-HOST ONLY: an external domain isn't a road this map owns; host() returns null/''
-        // for a bare #fragment / mailto: / javascript: href too, so those fail the compare for free.
-        if (host(n.url) !== mapHost) continue;
+        // SAME-HOST ONLY: an external domain isn't a road this map owns. A RELATIVE href (the
+        // common case for an in-app SPA link) has no host to compare and counts as same-host by
+        // definition (sameHostOrRelative); mailto:/javascript:/#fragment are rejected explicitly.
+        if (!sameHostOrRelative(n.url, mapHost)) continue;
         if (rowRepeated.has(n.name)) continue;                      // per-row instance link → folds, not a stub
         // dedup by LABEL, not `a.to === targetLabel` (every dangling stub shares `to: undefined`,
         // so that generic check would wrongly treat a SECOND distinct unresolved link as "already have").

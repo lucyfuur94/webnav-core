@@ -2455,6 +2455,8 @@ describe('draftFromEffects — dangling stubs for declared links to UNVISITED pa
     '- link "External Docs" [ref=e4]:\n    - /url: https://other-domain.test/docs',
     '- link "Subdomain Portal" [ref=e9]:\n    - /url: https://portal.programmatic.example.com/docs',
     '- link "Mail Us" [ref=e5]:\n    - /url: mailto:support@example.com',
+    '- link "Admin" [ref=e10]:\n    - /url: /v3/admin',
+    '- link "Evil Relative" [ref=e11]:\n    - /url: //evil.test/steal',
     '- paragraph "Reports" [ref=e6]',
     '- paragraph "Filler" [ref=e7]',
     '- paragraph "Filler2" [ref=e8]',
@@ -2494,6 +2496,25 @@ describe('draftFromEffects — dangling stubs for declared links to UNVISITED pa
     const draft = draftFromEffects([ENTRY] as any);
     const list = draft.states.find((s) => s.label !== '_shell')!;
     expect(list.affordances.find((a) => a.label === 'Mail Us')).toBeUndefined();
+  });
+
+  // Real SPA sidebars declare RELATIVE hrefs (`/v3/admin`), which `new URL()` can't parse without
+  // a base — a relative same-origin path IS same-host by definition and must still stub.
+  it('a RELATIVE same-host link (no scheme/host) DOES stub', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    const admin = list.affordances.find((a) => a.kind === 'navigate' && a.label === 'Admin');
+    expect(admin).toBeTruthy();
+    expect(admin!.to).toBeFalsy();
+    expect(admin!.elementFp).toEqual({ role: 'link', name: 'Admin', near: null });
+  });
+
+  // Protocol-relative `//host/...` still names a real (possibly different) host — must NOT be
+  // treated as relative-therefore-same-host.
+  it('a protocol-relative link to a DIFFERENT host does NOT stub', () => {
+    const draft = draftFromEffects([ENTRY] as any);
+    const list = draft.states.find((s) => s.label !== '_shell')!;
+    expect(list.affordances.find((a) => a.label === 'Evil Relative')).toBeUndefined();
   });
 
   it('feeds through editGraph → interiorEdges as a dangling edge (frontier can see it)', async () => {

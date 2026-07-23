@@ -441,7 +441,7 @@
     "name": "url",
     "value": {
      "type": "string",
-     "value": "http://127.0.0.1:8771/next"
+     "value": "/next"
     }
    }
   ],
