@@ -600,16 +600,20 @@ async function main() {
       console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev graph-analyse --session <S> [--session <S2> …] [--host <h>] [--draft]' }, null, 2));
       process.exitCode = 2; return;
     }
-    // APPROVAL GATE: only build the map from sessions whose capture-review PASSED. A failed OR
-    // never-reviewed session is NOT trusted — training the graph on it would bake in whatever the
-    // review flagged (a missed step, a broken capture). --skip-review-gate bypasses for a
-    // deliberate raw build. Excluded sessions are reported, not silently dropped.
+    // APPROVAL GATE: only build the map from sessions whose capture-review PASSED (verdict
+    // 'verified' — frames existed AND zero gaps). A 'needs-fix', 'unverified' (no video to
+    // audit — e.g. a `use navigate`/`use click` recording with 0 frames, so absence of gaps
+    // is absence of evidence, not a pass), OR never-reviewed session is NOT trusted — training
+    // the graph on it would bake in whatever the review flagged, or nothing was even checked.
+    // --skip-review-gate bypasses for a deliberate raw build. Excluded sessions are reported,
+    // not silently dropped.
     const excluded: { session: string; reason: string }[] = [];
     if (!args.skipReviewGate) {
       const kept: string[] = [];
       for (const id of sessionIds) {
         const rev = store.reviewOf(id);
         if (rev?.approved) kept.push(id);
+        else if (rev?.verdict === 'unverified') excluded.push({ session: id, reason: 'unverified — no video evidence (recorded via use-path, not record-live)' });
         else excluded.push({ session: id, reason: rev ? `review failed (${rev.gaps} gap${rev.gaps===1?'':'s'})` : 'never reviewed' });
       }
       sessionIds = kept;
@@ -870,9 +874,12 @@ async function main() {
   }
   if (args.cmd === 'review') {
     // Audit ONE recorded session's VIDEO against its captured STEPS (Sonnet over ffmpeg
-    // frames) → capture gaps. Writes a review verdict tag on the session: APPROVED (zero
-    // gaps → graph-ready) or needs-fix (gaps listed). This is the per-session gate the
-    // user asked for. Reuses runSessionReview (the same call capture-loop makes).
+    // frames) → capture gaps. Writes a TRI-STATE verdict on the session: 'verified'
+    // (frames > 0 AND zero gaps — the reviewer actually WATCHED video and found nothing
+    // missing), 'needs-fix' (gaps found), or 'unverified' (0 frames — no video to audit
+    // against, so absence-of-gaps is NOT evidence of completeness; a `use navigate`/`use
+    // click` session has no video, only the long-lived `use session`/`record-live` path
+    // does). Reuses runSessionReview (the same call capture-loop makes).
     if (!args.session) { console.log(JSON.stringify({ status: 'error', hint: 'usage: webnav dev review --session <S> [--model sonnet]' }, null, 2)); process.exitCode = 2; return; }
     const { RecordStore } = await import('./mapstore/record.js');
     const { runSessionReview } = await import('./recorder/review.js');
@@ -897,13 +904,17 @@ async function main() {
       knownDrops: cov.dropped, coverage: cov, structure: landingStructure(fx),
     });
     const gaps = typeof res === 'string' ? [] : res.gaps;
-    const approved = gaps.length === 0;
+    const frames = typeof res === 'string' ? 0 : res.frames;
+    const verdict: import('./mapstore/record.js').ReviewVerdict =
+      frames === 0 ? 'unverified' : gaps.length === 0 ? 'verified' : 'needs-fix';
+    const approved = verdict === 'verified';
     const at = Date.now();
-    store.setReview(args.session, { approved, gaps: gaps.length, at, model: args.model,
-      reason: approved ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)` });
-    console.log(JSON.stringify({ status: approved ? 'approved' : 'needs-fix', session: args.session,
-      approved, gaps, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
-    if (!approved) process.exitCode = 3;
+    const reason = verdict === 'unverified' ? 'no video evidence (0 frames) — cannot confirm or rule out capture gaps'
+      : verdict === 'verified' ? 'all on-screen actions captured' : `${gaps.length} capture gap(s)`;
+    store.setReview(args.session, { verdict, approved, gaps: gaps.length, at, model: args.model, reason });
+    console.log(JSON.stringify({ status: verdict, session: args.session,
+      approved, frames, gaps, coverage: cov, report: join(reviewsRoot, args.session, 'review.md') }, null, 2));
+    if (verdict !== 'verified') process.exitCode = 3;
     return;
   }
   if (args.cmd === 'effects') {

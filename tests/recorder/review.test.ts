@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr, extractFrames } from '../../src/recorder/review.js';
+import { parseShowinfoTimes, buildReviewPrompt, frameSelectExpr, extractFrames, runSessionReview } from '../../src/recorder/review.js';
 
 describe('parseShowinfoTimes', () => {
   it('pulls pts seconds in order from ffmpeg stderr', () => {
@@ -66,6 +66,58 @@ describe('frameSelectExpr (web-UI tuned selection)', () => {
     const { heartbeatS, minGapS } = frameSelectExpr(0, 20);
     expect(heartbeatS).toBe(5);
     expect(minGapS).toBe(2);
+  });
+});
+
+// FIX (verification integrity): runSessionReview's structured result must report HOW MANY
+// frames it actually had evidence from — the review gate needs this to tell "watched the
+// video and found nothing wrong" (verified) apart from "had nothing to watch" (unverified).
+describe('runSessionReview frame count (structured result)', () => {
+  it('no videos dir → 0 frames, reported alongside gaps', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'webnav-review-frames-'));
+    try {
+      const fakeExec = (async (cmd: string) => {
+        if (cmd === 'claude') return { stdout: '{"gaps":[],"verdict":"complete"}', stderr: '' };
+        throw new Error('unexpected exec: ' + cmd);
+      }) as unknown as Parameters<typeof runSessionReview>[1]['exec'];
+      const res = await runSessionReview('s-empty', {
+        videosDir: join(dir, 'no-such-videos'), outDir: join(dir, 'out'),
+        steps: [], logs: [], log: () => {}, structured: true, exec: fakeExec,
+      });
+      expect(typeof res).not.toBe('string');
+      const r = res as { gaps: unknown[]; frames: number };
+      expect(r.frames).toBe(0);
+      expect(r.gaps).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a take with one extracted frame reports frames:1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'webnav-review-frames-'));
+    const videosDir = join(dir, 'videos');
+    try {
+      mkdirSync(videosDir, { recursive: true });
+      writeFileSync(join(videosDir, 'take-1000000.webm'), '');
+      const fakeExec = (async (cmd: string, cargs: string[]) => {
+        if (cmd === 'ffprobe') return { stdout: '10', stderr: '' };
+        if (cmd === 'ffmpeg') {
+          const outDir = cargs[cargs.length - 1].replace(/f-%03d\.png$/, '');
+          mkdirSync(outDir, { recursive: true });
+          writeFileSync(join(outDir, 'f-001.png'), '');
+          return { stdout: '', stderr: '[Parsed_showinfo_1 @ 0x1] n:0 pts:0 pts_time:1.0 ...' };
+        }
+        if (cmd === 'claude') return { stdout: '{"gaps":[],"verdict":"complete"}', stderr: '' };
+        throw new Error('unexpected exec: ' + cmd);
+      }) as unknown as Parameters<typeof runSessionReview>[1]['exec'];
+      const res = await runSessionReview('s-one', {
+        videosDir, outDir: join(dir, 'out'), steps: [], logs: [], log: () => {}, structured: true, exec: fakeExec,
+      });
+      const r = res as { gaps: unknown[]; frames: number };
+      expect(r.frames).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

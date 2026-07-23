@@ -121,10 +121,37 @@ describe('session review verdict (graph-ready gate)', () => {
     const s = RecordStore.fromDatabase(new Database(':memory:'));
     s.start('r1');
     expect(s.reviewOf('r1')).toBe(null);                       // never reviewed → not approved
-    s.setReview('r1', { approved: false, gaps: 2, at: 1000, model: 'sonnet', reason: '2 capture gap(s)' });
-    expect(s.reviewOf('r1')).toMatchObject({ approved: false, gaps: 2 });
-    s.setReview('r1', { approved: true, gaps: 0, at: 2000, model: 'sonnet' });  // re-review after fix
-    expect(s.reviewOf('r1')).toMatchObject({ approved: true, gaps: 0 });         // latest wins
+    s.setReview('r1', { verdict: 'needs-fix', approved: false, gaps: 2, at: 1000, model: 'sonnet', reason: '2 capture gap(s)' });
+    expect(s.reviewOf('r1')).toMatchObject({ verdict: 'needs-fix', approved: false, gaps: 2 });
+    s.setReview('r1', { verdict: 'verified', approved: true, gaps: 0, at: 2000, model: 'sonnet' });  // re-review after fix
+    expect(s.reviewOf('r1')).toMatchObject({ verdict: 'verified', approved: true, gaps: 0 });         // latest wins
+  });
+
+  // FIX (verification integrity): a review with NO video evidence must NOT read as approved.
+  // 0 frames + 0 gaps is not "nothing wrong" — it's "nothing to check". The tri-state
+  // 'unverified' keeps that absence-of-evidence honest and OUT of the approval gate.
+  it('0 frames + 0 gaps stores verdict unverified, NOT approved', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('r2');
+    s.setReview('r2', { verdict: 'unverified', approved: false, gaps: 0, at: 1000, model: 'sonnet',
+      reason: 'no video evidence (0 frames) — cannot confirm or rule out capture gaps' });
+    const rev = s.reviewOf('r2');
+    expect(rev?.verdict).toBe('unverified');
+    expect(rev?.approved).toBe(false);   // unverified is NEVER approved, regardless of gaps===0
+  });
+
+  it('frames > 0 + 0 gaps stores verdict verified, approved', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('r3');
+    s.setReview('r3', { verdict: 'verified', approved: true, gaps: 0, at: 1000, model: 'sonnet' });
+    expect(s.reviewOf('r3')).toMatchObject({ verdict: 'verified', approved: true });
+  });
+
+  it('gaps > 0 stores verdict needs-fix, not approved', () => {
+    const s = RecordStore.fromDatabase(new Database(':memory:'));
+    s.start('r4');
+    s.setReview('r4', { verdict: 'needs-fix', approved: false, gaps: 3, at: 1000, model: 'sonnet' });
+    expect(s.reviewOf('r4')).toMatchObject({ verdict: 'needs-fix', approved: false, gaps: 3 });
   });
 });
 

@@ -170,7 +170,7 @@ export async function extractFrames(
   return files.map((f, i) => ({ path: join(framesDir, f), atMs: trueStartMs + Math.round((times[i] ?? 0) * 1000) }));
 }
 
-export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string | { report: string; gaps: CaptureGap[] }> {
+export async function runSessionReview(session: string, deps: ReviewDeps): Promise<string | { report: string; gaps: CaptureGap[]; frames: number }> {
   const exec = deps.exec ?? run;
   const maxFrames = deps.maxFrames ?? 20;
   deps.log(`review: extracting frames for ${session}…`);
@@ -201,7 +201,7 @@ export async function runSessionReview(session: string, deps: ReviewDeps): Promi
   if (deps.structured) {
     const gaps = parseGaps(report);
     writeFileSync(join(deps.outDir, 'review.json'), JSON.stringify({ gaps, coverage: deps.coverage ?? null, structure: deps.structure ?? null }, null, 2));
-    return { report, gaps };
+    return { report, gaps, frames: frames.length };
   }
   return report;
 }

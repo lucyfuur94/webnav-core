@@ -317,7 +317,7 @@ export function serveAgent(port: number, store: RecordStore, opts: ServeAgentOpt
           // each captured step live (the panel's step chips), so the demonstration IS the
           // capture-fidelity attestation — approve it directly rather than running an LLM review.
           store.setReview(body.sessionId, {
-            approved: true, gaps: 0, at: Date.now(), model: 'human',
+            verdict: 'verified', approved: true, gaps: 0, at: Date.now(), model: 'human',
             reason: 'human-confirmed teach demonstration (the teacher watched each captured step live)',
           });
           let built: { site?: string; stateId?: string; warning?: string } = {};

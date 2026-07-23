@@ -55,10 +55,16 @@ export interface LedgerEvent {
 }
 export interface StoredLedgerEvent extends LedgerEvent { seq: number; disposition: string | null }
 
+export type ReviewVerdict = 'verified' | 'unverified' | 'needs-fix';
+export interface ReviewInfo {
+  verdict: ReviewVerdict;
+  approved: boolean;  // back-compat: true ONLY for 'verified' — 'unverified' is NOT approved (no evidence ≠ passed)
+  gaps: number; at: number; model?: string; reason?: string;
+}
 export interface RecordSessionInfo {
   sessionId: string; active: boolean; startedAt: number; stoppedAt: number | null;
   steps: number; site: string | null;
-  review?: { approved: boolean; gaps: number; at: number; model?: string; reason?: string } | null;  // capture-review verdict → dashboard "verified" badge
+  review?: ReviewInfo | null;  // capture-review verdict → dashboard "verified" badge
 }
 
 /** Persists raw page observations per record-session. Sibling of MapStore;
@@ -112,10 +118,10 @@ export class RecordStore {
     if (!scols.has('review')) this.db.exec('ALTER TABLE record_sessions ADD COLUMN review TEXT');
   }
   /** Store the capture-review verdict for a session (graph-ready gate). */
-  setReview(sessionId: string, verdict: { approved: boolean; gaps: number; at: number; model?: string; reason?: string }): void {
+  setReview(sessionId: string, verdict: ReviewInfo): void {
     this.db.prepare('UPDATE record_sessions SET review=? WHERE session_id=?').run(JSON.stringify(verdict), sessionId);
   }
-  reviewOf(sessionId: string): { approved: boolean; gaps: number; at: number; model?: string; reason?: string } | null {
+  reviewOf(sessionId: string): ReviewInfo | null {
     const r: any = this.db.prepare('SELECT review FROM record_sessions WHERE session_id=?').get(sessionId);
     if (!r?.review) return null;
     try { return JSON.parse(r.review); } catch { return null; }

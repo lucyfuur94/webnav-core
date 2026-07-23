@@ -97,8 +97,9 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .verdict { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:8px 0 10px; }
   .verdict.ok { border-color:var(--ok); background:color-mix(in srgb, var(--ok) 8%, transparent); }
   .verdict.fail { border-color:var(--danger); background:color-mix(in srgb, var(--danger) 8%, transparent); }
+  .verdict.unrev { border-color:var(--muted); background:color-mix(in srgb, var(--muted) 8%, transparent); }
   .verdict .vh { font-weight:600; font-size:14px; }
-  .verdict.ok .vh { color:var(--ok); } .verdict.fail .vh { color:var(--danger); }
+  .verdict.ok .vh { color:var(--ok); } .verdict.fail .vh { color:var(--danger); } .verdict.unrev .vh { color:var(--muted); }
   .verdict .vs { font-size:12px; margin-top:3px; }
   .verdict .vm { font-size:11px; color:var(--muted); margin-top:5px; }
   .reprep { border:1px solid var(--border); border-radius:6px; }
@@ -416,6 +417,14 @@ function graphView(allStates) {
   states.forEach(st => (st.affordances||[]).forEach(a => { if (a.kind==='navigate' && !a.toState) danglingEdges.push({ from: lbl(st), label: a.label || a.semanticStep || '' }); }));
   const hasUnexplored = danglingEdges.length > 0;
   const sinkRow = maxDepth + 1;
+  // Fan out the dangling edges across the sink's WIDTH so each lands (and labels) at a
+  // distinct x — with one shared sink node, every edge used to land dead-center and all
+  // N labels overprinted at the same point (e.g. "Downloads"/"Admin"/"New Report" stacked
+  // illegibly). slotGap is the label's own footprint; the sink widens to fit N slots.
+  const slotGap = 90;
+  const sinkW = Math.max(158, danglingEdges.length * slotGap);
+  const sinkSlotX = (i) => { const n = danglingEdges.length;
+    return -sinkW/2 + (sinkW/(n+1)) * (i+1); };  // n evenly-spaced interior points, relative to sink center
 
   // LAYOUT: rows top→down, nodes spread across each row.
   const NW = 158, NH = 48, rowGap = 118, colGap = 22, padX = 30, padTop = 54;  // taller box: name + summary line
@@ -423,21 +432,26 @@ function graphView(allStates) {
   byRow[0] = [ROOT];
   names.forEach(n => byRow[depth[n]].push(n));
   if (hasUnexplored) byRow[sinkRow] = [UNEXPLORED];
-  const rowW = (r) => r.length * NW + (r.length-1) * colGap;
+  const rowW = (r) => r.reduce((sum,n) => sum + (n===UNEXPLORED?sinkW:NW), 0) + (r.length-1) * colGap;
   const maxRowW = Math.max(...Object.values(byRow).map(rowW));
   const W = Math.max(560, maxRowW + padX*2), H = padTop + (hasUnexplored ? sinkRow : maxDepth)*rowGap + NH + 40;
   const pos = {};
-  for (let d=0; d<=sinkRow; d++){ const r=byRow[d]; const startX=(W - rowW(r))/2; r.forEach((n,i)=>{ pos[n]={x:startX + i*(NW+colGap) + NW/2, y:padTop + d*rowGap}; }); }
+  for (let d=0; d<=sinkRow; d++){ const r=byRow[d]; const startX=(W - rowW(r))/2;
+    let x = startX; r.forEach((n) => { const w = n===UNEXPLORED?sinkW:NW; pos[n]={x:x+w/2, y:padTop + d*rowGap}; x += w+colGap; }); }
 
-  // edge from parent-center-bottom to child-center-top (clean vertical-ish flow, no center cross)
-  const link = (from,to,cls,label) => {
+  // edge from parent-center-bottom to child-center-top (clean vertical-ish flow, no center cross).
+  // toX overrides where the edge actually LANDS on the destination node (default: its center) —
+  // used to fan out many edges converging on ONE shared node (the unexplored sink) so their
+  // labels don't all stack at the same x.
+  const link = (from,to,cls,label,toX) => {
     const a=pos[from], b=pos[to]; if(!a||!b) return '';
+    const bx = toX!==undefined ? toX : b.x;
     const ay=a.y+NH/2, by=b.y-NH/2, midY=(ay+by)/2;
-    const d='M '+a.x+' '+ay+' C '+a.x+' '+midY+', '+b.x+' '+midY+', '+b.x+' '+by;
+    const d='M '+a.x+' '+ay+' C '+a.x+' '+midY+', '+bx+' '+midY+', '+bx+' '+by;
     const stroke = cls==='struct' ? 'var(--accent)' : 'var(--border)';
     const sw = cls==='struct' ? 2 : 1.2;
     let out = '<path d="'+d+'" stroke="'+stroke+'" stroke-width="'+sw+'" fill="none" marker-end="url(#'+(cls==='struct'?'ga':'gm')+')"'+(cls==='dangling'?' stroke-dasharray="5 4"':'')+(cls!=='struct'?' opacity="0.6"':'')+'/>';
-    if (label) out += '<text x="'+((a.x+b.x)/2)+'" y="'+(midY-3)+'" fill="var(--fg)" font-size="10" text-anchor="middle" paint-order="stroke" stroke="var(--bg-sunken)" stroke-width="3.5">'+svgEsc(label.length>24?label.slice(0,23)+'…':label)+'</text>';
+    if (label) out += '<text x="'+((a.x+bx)/2)+'" y="'+(midY-3)+'" fill="var(--fg)" font-size="10" text-anchor="middle" paint-order="stroke" stroke="var(--bg-sunken)" stroke-width="3.5">'+svgEsc(label.length>24?label.slice(0,23)+'…':label)+'</text>';
     return out;
   };
 
@@ -448,8 +462,10 @@ function graphView(allStates) {
   byRow[1].forEach(n => { s += link(ROOT, n, 'sect', ''); });
   // structural edges (bold, labeled) — parent → child (from stored parentState)
   structural.forEach(e => { if (pos[e.from] && pos[e.to]) s += link(e.from, e.to, 'struct', e.via); });
-  // dangling navigate stubs (declared, unvisited) → the shared "unexplored" sink, dashed
-  danglingEdges.forEach(e => { s += link(e.from, UNEXPLORED, 'dangling', e.label); });
+  // dangling navigate stubs (declared, unvisited) → the shared "unexplored" sink, dashed.
+  // Each edge lands at its OWN slot across the sink's width (sinkSlotX) so N labels read as
+  // N distinct positions, not one overprinted stack.
+  danglingEdges.forEach((e,i) => { s += link(e.from, UNEXPLORED, 'dangling', e.label, pos[UNEXPLORED].x + sinkSlotX(i)); });
   // per-node facts (filtered) → a compact ONE-LINE summary shown under the name.
   // CHROME LABELS = any affordance label present on ≥60% of pages (a shared sidebar/global
   // control — the account switcher, pagination, Clear input, …). Computed from the data, so it
@@ -467,12 +483,14 @@ function graphView(allStates) {
     if (f.subviews.length) bits.push(f.subviews.length + ' views');
     return bits.join(' · ');
   };
-  // nodes (root first, then states). NH grows to fit the summary line.
+  // nodes (root first, then states). NH grows to fit the summary line. The sink is drawn WIDER
+  // (sinkW, fit to how many dangling edges fan into it) than a normal node.
   const drawNode = (n, isRoot) => { const p=pos[n]; const summ = isRoot ? '' : summaryLine(n);
     const st = isRoot ? null : states.find(x => lbl(x) === n);
     const provMark = st && st.provisional ? ' ◌' : '';   // grey "seen once" marker; full note in the click panel
+    const w = n===UNEXPLORED ? sinkW : NW;
     let g = '<g class="gnode" data-state="'+svgEsc(n)+'" tabindex="0" role="button" style="cursor:pointer">';
-    g += '<rect x="'+(p.x-NW/2)+'" y="'+(p.y-NH/2)+'" width="'+NW+'" height="'+NH+'" rx="8" fill="var(--panel)" stroke="'+(isRoot?'var(--muted)':'var(--accent)')+'" stroke-width="1.5"'+(isRoot?' stroke-dasharray="4 3"':'')+'/>';
+    g += '<rect x="'+(p.x-w/2)+'" y="'+(p.y-NH/2)+'" width="'+w+'" height="'+NH+'" rx="8" fill="var(--panel)" stroke="'+(isRoot?'var(--muted)':'var(--accent)')+'" stroke-width="1.5"'+(isRoot?' stroke-dasharray="4 3"':'')+'/>';
     g += '<text x="'+p.x+'" y="'+(p.y+(summ?-3:4))+'" fill="var(--fg)" font-size="12" font-weight="600" text-anchor="middle">'+svgEsc(n)+(provMark?'<tspan fill="var(--muted)">'+provMark+'</tspan>':'')+'</text>';
     if (summ) g += '<text x="'+p.x+'" y="'+(p.y+13)+'" fill="var(--muted)" font-size="9" text-anchor="middle">'+svgEsc(summ)+'</text>';
     return g + '</g>'; };
@@ -889,15 +907,18 @@ function originTag(origin) {
   const o = origin === 'agent' || origin === 'extension' || origin === 'teach' ? origin : 'manual';
   return '<span class="badge origin-'+o+'">'+originLabel(o)+'</span>';
 }
-// Capture-review badge from the stored verdict (webnav dev review). Verified (green) = zero
-// gaps, graph-ready; needs-fix (amber, with gap count) = review found capture gaps; nothing =
-// never reviewed. Titled with the verdict reason so hovering explains WHY.
-// Three states, all shown (so failed captures are VISIBLE, not just absent-of-green):
-//  approved → ✓ Verified (green) · reviewed-but-not-approved → ⚠ Failed N gaps (red) ·
-//  never reviewed → Unverified (grey). Only APPROVED sessions build the graph (approval gate).
+// Capture-review badge from the stored verdict (webnav dev review). Verified (green) = frames
+// existed AND zero gaps — the reviewer actually WATCHED video and found nothing missing;
+// needs-fix (amber, with gap count) = review found capture gaps; unverified (grey) = either
+// never reviewed OR reviewed with 0 video frames (no evidence to find gaps in — absence of
+// gaps is NOT a pass). Titled with the verdict reason so hovering explains WHY. Only VERIFIED
+// sessions build the graph (approval gate) — unverified is deliberately NOT the green badge.
 function reviewBadge(review) {
-  if (!review) return '<span class="badge unrev" title="not reviewed yet — run a review before building a graph from it">Unverified</span>';
-  if (review.approved) return '<span class="badge ok" title="'+esc(review.reason||'all on-screen actions captured')+'">✓ Verified</span>';
+  if (!review || review.verdict === 'unverified') {
+    const title = review ? (review.reason||'no video evidence — cannot confirm capture is complete') : 'not reviewed yet — run a review before building a graph from it';
+    return '<span class="badge unrev" title="'+esc(title)+'">◌ Unverified</span>';
+  }
+  if (review.verdict === 'verified' || review.approved) return '<span class="badge ok" title="'+esc(review.reason||'all on-screen actions captured')+'">✓ Verified</span>';
   const n = review.gaps || 0;
   return '<span class="badge fail" title="'+esc(review.reason||'capture gaps found — not used to build the graph')+'">⚠ Failed'+(n?' · '+n+' gap'+(n===1?'':'s'):'')+'</span>';
 }
@@ -1216,11 +1237,15 @@ async function loadReview(ctx) {
     // long prose report tucked behind an expander (it read as a wall of text before).
     const v = state.verdict;
     if (v) {
-      const ok = v.approved, n = v.gaps || 0;
-      const cls = ok ? 'ok' : 'fail';
-      const head = ok ? '✓ Verified — capture is complete' : ('⚠ Failed — '+n+' capture gap'+(n===1?'':'s'));
-      const sub = ok ? 'This session is APPROVED and eligible to build the graph.'
-                     : 'NOT approved — this session is excluded from graph building until it passes.';
+      const n = v.gaps || 0;
+      const unverified = v.verdict === 'unverified';
+      const ok = !unverified && v.approved;
+      const cls = unverified ? 'unrev' : ok ? 'ok' : 'fail';
+      const head = unverified ? '◌ Unverified — no video evidence'
+        : ok ? '✓ Verified — capture is complete' : ('⚠ Failed — '+n+' capture gap'+(n===1?'':'s'));
+      const sub = unverified ? 'No frames to audit — cannot confirm or rule out capture gaps. NOT eligible to build the graph.'
+        : ok ? 'This session is APPROVED and eligible to build the graph.'
+             : 'NOT approved — this session is excluded from graph building until it passes.';
       ctx.reviewBox.append(el('<div class="verdict '+cls+'"><div class="vh">'+esc(head)+'</div>'
         + '<div class="vs">'+esc(sub)+'</div><div class="vm">reviewed '+esc(when)+(v.reason?' · '+esc(v.reason):'')+'</div></div>'));
     } else {
